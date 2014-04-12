@@ -1,0 +1,634 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>Hack 59 Intrusion Detection with Snort, ACID, MySQL, and FreeBSD</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="bsdhks-CHP-6-SECT-6.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="bsdhks-CHP-6-SECT-8.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="bsdhks-CHP-6-SECT-7"></A>
+<H3 class="docSection1Title" id="225793-917">Hack 59 Intrusion Detection with Snort, ACID, MySQL, and FreeBSD</H3><P class="docText"><IMG BORDER="0" id="129022115118" ALIGN="absmiddle" width="14" height="36" SRC="images/0596006799/figs/expert.gif" ALT="figs/expert.gif"> <IMG BORDER="0" id="129022115118" ALIGN="absmiddle" width="36" height="36" SRC="images/0596006799/figs/hack59.gif" ALT="figs/hack59.gif"></P>
+
+<P class="docText"><span class="docEmphBold">How the alert administrator catches the
+worm</span>.</P>
+
+<P class="docText">With the current climate of corporate force reductions and the
+onslaught of new, fast-spreading <A NAME="bsdhks-CHP-6-ITERM-2688"></A>
+viruses and <A NAME="bsdhks-CHP-6-ITERM-2689"></A>
+worms,
+today's administrators are faced with a daunting
+challenge. Not only is the administrator required to fix problems and
+keep things running smoothly, but in some cases he is also
+responsible for keeping the network from becoming worm food. This
+often entails monitoring the traffic going to and from the network,
+identifying infected nodes, and loading numerous vendor patches to
+fix associated vulnerabilities.</P>
+
+<P class="docText">To get a better handle on things, you can deploy an <A NAME="bsdhks-CHP-6-ITERM-2690"></A>
+ <A NAME="bsdhks-CHP-6-ITERM-2691"></A>
+Intrusion Detection System
+(IDS) on the LAN to alert you to the existence of all the nastiness
+associated with the dark side of the computing world.</P>
+
+<P class="docText">This hack will show you how to implement a very effective and stable
+IDS using FreeBSD, MySQL, Snort, and the Analysis Console for
+Intrusion Databases (ACID). While that means installing and
+configuring a few applications, you'll end up with a
+feature-rich, searchable IDS capable of generating custom alerts and
+displaying information in many customizable formats.</P>
+
+<A NAME="bsdhks-CHP-6-SECT-7.1"></A>
+
+<H4 class="docSection2Title">6.7.1 Installing the Software</H4>
+
+<P class="docText">We'll assume that you already have FreeBSD
+4.8-RELEASE or newer installed with plenty of disk space. The system
+is also fully patched and the ports collection is up-to-date. It also
+helps to be familiar with FreeBSD and MySQL commands.</P>
+
+<A NAME="bsdhks-CHP-6-SECT-7.1.1"></A>
+
+<H5 class="docSection3Title">6.7.1.1 Install PHP4, Apache, and MySQL</H5>
+
+<P class="docText">We'll start by installing <A NAME="bsdhks-CHP-6-ITERM-2692"></A>
+ <A NAME="bsdhks-CHP-6-ITERM-2693"></A>
+PHP4,
+Apache, and the MySQL client. As the superuser:</P>
+
+<PRE># <B>cd /usr/ports/www/mod_php4</B>
+# <B>make install clean</B></PRE><BR>
+
+
+<P class="docText">When the <TT>PHP configuration options</TT> screen appears,
+choose the <TT>GD Library</TT> <TT>Support</TT>
+option. Leave the other default selections, and choose
+<TT>OK</TT>.</P>
+
+<P class="docText">The build itself will take a while because it must install Apache and
+the MySQL client in addition to PHP.</P>
+
+
+
+<A NAME="bsdhks-CHP-6-SECT-7.1.2"></A>
+
+<H5 class="docSection3Title">6.7.1.2 Install MySQL-server</H5>
+
+<P class="docText">You'll also need the
+<A NAME="bsdhks-CHP-6-ITERM-2694"></A>
+MySQL server, which is a separate port.
+To ensure this port installs correctly, temporarily set the system
+hostname to <TT>localhost</TT>:</P>
+
+<PRE># <B>hostname localhost</B>
+
+# <B>cd /usr/ports/databases/mysql40-server</B>
+# <B>make install clean</B></PRE><BR>
+
+
+<P class="docText">This one will also take a while.</P>
+
+
+
+<A NAME="bsdhks-CHP-6-SECT-7.1.3"></A>
+
+<H5 class="docSection3Title">6.7.1.3 More installations</H5>
+
+<P class="docText">There are a few other ports to install. The next three applications
+are used by ACID to create graphs of the output. ACID supports bar
+graphs (as shown in <A class="docLink" HREF="#bsdhks-CHP-6-FIG-3">Figure 6-3</A>), line graphs (<A class="docLink" HREF="#bsdhks-CHP-6-FIG-4">Figure 6-4</A>), and pie charts (<A class="docLink" HREF="#bsdhks-CHP-6-FIG-5">Figure 6-5</A>).</P>
+
+<A NAME="bsdhks-CHP-6-FIG-3"></A>
+<p><CENTER>
+<H5 class="docFigureTitle">Figure 6-3. An ACID bar graph</H5>
+<IMG BORDER="0" id="129022115118" width="431" height="323" SRC="images/0596006799/figs/bsdh_0603.gif" ALT="figs/bsdh_0603.gif"></CENTER></p><br>
+
+<A NAME="bsdhks-CHP-6-FIG-4"></A>
+<p><CENTER>
+<H5 class="docFigureTitle">Figure 6-4. An ACID line graph</H5>
+<IMG BORDER="0" id="129022115118" width="431" height="323" SRC="images/0596006799/figs/bsdh_0604.gif" ALT="figs/bsdh_0604.gif"></CENTER></p><br>
+
+<A NAME="bsdhks-CHP-6-FIG-5"></A>
+<p><CENTER>
+<H5 class="docFigureTitle">Figure 6-5. An ACID pie chart</H5>
+<IMG BORDER="0" id="129022115118" width="431" height="323" SRC="images/0596006799/figs/bsdh_0605.gif" ALT="figs/bsdh_0605.gif"></CENTER></p><br>
+
+<P class="docText">We'll need
+<TT>adodb</TT><A NAME="bsdhks-CHP-6-ITERM-2695"></A>
+, a database library for
+PHP:</P>
+
+<PRE># <B>cd /usr/ports/databases/adodb</B>
+# <B>make install clean</B></PRE><BR>
+
+
+<P class="docText"><A NAME="bsdhks-CHP-6-ITERM-2696"></A>
+PHPlot
+adds a graph library to PHP so it will support charts:</P>
+
+<PRE># <B>cd /usr/ports/graphics/phplot</B>
+# <B>make install clean</B></PRE><BR>
+
+
+<P class="docText"><A NAME="bsdhks-CHP-6-ITERM-2697"></A>
+JPGraph
+adds more support to PHP for graphs:</P>
+
+<PRE># <B>cd /usr/ports/graphics/jpgraph</B>
+# <B>make install clean</B></PRE><BR>
+
+
+<P class="docText">Finally, we must install <A NAME="bsdhks-CHP-6-ITERM-2698"></A>
+ACID
+and
+<A NAME="bsdhks-CHP-6-ITERM-2699"></A>
+Snort.
+Start by modifying <TT>snort</TT>'s
+<I>Makefile</I> to include MySQL support:</P>
+
+<PRE># <B>cd /usr/local/ports/security/snort</B>
+# <B>vi Makefile</B></PRE><BR>
+
+
+<P class="docText">Change:</P>
+
+<PRE>CONFIGURE_ARGS= --with-mysql=no</PRE><BR>
+
+
+<P class="docText">to:</P>
+
+<PRE>CONFIGURE_ARGS= --with-mysql=yes</PRE><BR>
+
+
+<P class="docText">Save your changes and exit.</P>
+
+<P class="docText">Finally, install <TT>acid</TT>, which will also install
+<TT>snort</TT> using your modified
+<I>Makefile</I>:</P>
+
+<PRE># <B>cd /usr/ports/security/acid</B>
+# <B>make install clean</B></PRE><BR>
+
+
+
+
+<A NAME="bsdhks-CHP-6-SECT-7.2"></A>
+
+<H4 class="docSection2Title">6.7.2 Configuring</H4>
+
+<P class="docText">Now that we've installed all the necessary pieces
+for our IDS, it's time to configure them to work
+together.</P>
+
+<A NAME="bsdhks-CHP-6-SECT-7.2.1"></A>
+
+<H5 class="docSection3Title">6.7.2.1 Configure Apache and PHP</H5>
+
+<P class="docText">You'll <A NAME="bsdhks-CHP-6-ITERM-2700"></A>
+ <A NAME="bsdhks-CHP-6-ITERM-2701"></A>
+
+<A NAME="bsdhks-CHP-6-ITERM-2702"></A>
+need to
+make two changes to Apache's configuration file,
+<I>/usr/local/etc/apache/httpd-conf</I>. First, search
+for <TT>#ServerName</TT>, remove the hash mark
+(<TT>#</TT>), and change <TT>www.example.com</TT>
+to your actual server name. Then, for security reasons, change
+<TT>ServerSignature On</TT> to <TT>ServerSignature
+Off</TT>. This prevents the server from providing information
+such as HTTP server type and version. Most admins who run IDSs on
+their networks like to keep their presence somewhat hidden, since
+there are exploits/tools written to defeat IDS detection.</P>
+
+
+
+<A NAME="bsdhks-CHP-6-SECT-7.2.2"></A>
+
+<H5 class="docSection3Title">6.7.2.2 Configure PHP</H5>
+
+<P class="docText">After installing PHP, you will notice two sample configuration files
+in <I>/usr/local/etc</I>,
+<I>php.ini-dist</I> and
+<I>php.ini-recommended</I>. As the name suggests, the
+latter is the recommended PHP 4-style configuration file. It contains
+settings that make PHP "more efficient, more secure,
+and [encourage] cleaner coding." Since our focus is
+security, I recommend using this file.</P>
+
+<P class="docText">Configuring PHP is as simple as copying the sample configuration file
+to <I>/usr/local/etc/php.ini</I>:</P>
+
+<PRE># <B>cd /usr/local/etc</B>
+# <B>cp php.ini-recommended php.ini</B></PRE><BR>
+
+
+
+
+<A NAME="bsdhks-CHP-6-SECT-7.2.3"></A>
+
+<H5 class="docSection3Title">6.7.2.3 Configure MySQL</H5>
+
+<P class="docText"><A NAME="bsdhks-CHP-6-ITERM-2703"></A>
+MySQL
+supports several configurations. Use
+<I>my-small.cnf</I> or
+<I>my-medium.cnf</I> if you have less than 64 M of
+memory, <I>my-large.cnf</I> if you have 512 M, and
+<I>my-huge.cnf</I> if you have 1-2 G of memory. Later,
+if you find your system running out of swap space, you can stop
+<TT>mysql</TT> and copy one of the smaller
+<I>*.cnf</I> files to fix the problem. In my example,
+I'll copy over <I>my-large.cnf</I>:</P>
+
+<PRE># <B>cp /usr/local/share/mysql/my-large.cnf /etc/my.cnf</B></PRE><BR>
+
+
+<P class="docText">Next, set up the initial databases and install the server:</P>
+
+<PRE># <B>/usr/local/bin/mysql_install_db</B>
+# <B>/usr/local/etc/rc.d/mysql-server.sh start</B></PRE><BR>
+
+
+<P class="docText">You can use the <TT>sockstat</TT>
+<A NAME="bsdhks-CHP-6-ITERM-2704"></A>
+command to
+confirm that the MySQL server is running. You should see MySQL
+listening on port 3306:</P>
+
+<PRE># <B>sockstat | grep mysql</B>
+
+USER     COMMAND    PID   FD PROTO  LOCAL ADDRESS         FOREIGN ADDRESS
+mysql    mysqld     16262 5  tcp4   *:3306                *:*
+mysql    mysqld     16262 6  stream /tmp/mysql.sock</PRE><BR>
+
+
+<P class="docText">Then, set the password for the root MySQL user.
+You'll have to use the <TT>FLUSH
+PRIVILEGES</TT> command to tell MySQL to reload all of the user
+privileges, or the server will continue using the old (blank)
+password until it restarts:</P>
+
+<PRE># <B>/usr/local/bin/mysql -u root</B>
+
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 1 to server version: 4.0.16-log
+
+Type 'help;' or '\h' for help. Type '\c' to clear the buffer.
+
+mysql&gt;<B>SET PASSWORD FOR root@localhost=PASSWORD('</B>
+<span class="docEmphBoldItalic">your_password_here</span>
+<B>');</B>
+mysql&gt;<B>FLUSH PRIVILEGES;</B>
+Query OK, 0 rows affected (0.00 sec)</PRE><BR>
+
+
+<P class="docText">Then, you can create the <TT>snort</TT> database:</P>
+
+<PRE>mysql&gt;<B>CREATE DATABASE snort;</B>
+Query OK, 1 row affected (0.00 sec)</PRE><BR>
+
+
+<P class="docText">Now we can create a MySQL user with sufficient permissions to access
+the new <TT>snort</TT> database. Do
+<span class="docEmphasis">not</span> use the MySQL <TT>root</TT> user!
+By creating a new user who has access to only one database,
+we've limited the damage an attacker could do if he
+ever gained access to this account.</P>
+
+<P class="docText">MySQL uses the <TT>GRANT</TT> command to give users access
+to databases. You can control which types of statements the user can
+issue, as well as the network hosts from which the user can access
+MySQL. <TT>localhost</TT> is a nice, safe setting, as we
+only need to access the database from the local machine. Again, this
+restricts the damage that an attacker could do from another
+compromised host.</P>
+
+<PRE>mysql&gt; <B>GRANT INSERT,SELECT ON snort.* to </B>
+<span class="docEmphBoldItalic">snort_user_here</span>
+<B>@localhost \</B>
+        <B>IDENTIFIED BY '</B>
+<span class="docEmphBoldItalic">snort_users_password</span>
+<B>';</B>
+Query OK, 0 rows affected (0.00 sec)
+
+mysql&gt; <B>GRANT INSERT,SELECT,CREATE,DELETE on snort.* \</B>
+        <B>to </B>
+<span class="docEmphBoldItalic">snort_user_here</span>
+<B>@localhost IDENTIFIED BY '</B>
+<span class="docEmphBoldItalic">snort_users_password</span>
+<B>';</B>
+Query OK, 0 rows affected (0.01 sec)
+
+mysql&gt; <B>FLUSH PRIVILEGES;</B>
+Query OK, 0 rows affected (0.01 sec)
+
+mysql&gt; <B>quit</B>
+Bye</PRE><BR>
+
+
+
+
+<A NAME="bsdhks-CHP-6-SECT-7.2.4"></A>
+
+<H5 class="docSection3Title">6.7.2.4 Configure Snort</H5>
+
+<P class="docText">First
+<A NAME="bsdhks-CHP-6-ITERM-2705"></A>
+you'll
+need to download the latest sources from <A class="docLink" target="_blank" HREF="http://www.snort.org">http://www.snort.org</A> (currently v2.0.5).
+After unpacking, use the <TT>create_mysql</TT> file to
+create the necessary tables in the <TT>snort</TT> database.
+That's all the configuration you need; you can now
+simply delete the unpacked directory.</P>
+
+<PRE># <B>tar xvfz snort-2.0.5.tar.gz </B>
+# <B>cd snort-2.0.5/contrib </B>
+# <B>cp create_mysql /tmp </B>
+# <B>/usr/local/bin/mysql -p &lt; /tmp/create_mysql snort </B>
+Enter password:           <I> Enter the MySQL root password here</I>
+
+# <B>cd /usr/local/etc </B>
+# <B>cp snort.conf-sample snort.conf </B>
+# <B>vi snort.conf </B></PRE><BR>
+
+
+<P class="docText">Scroll down until you reach the <TT># output database: log,
+mssql</TT>, <TT>dbname=snort user=snort
+password=test</TT> line. Insert the following lines
+<span class="docEmphasis">beneath</span> it:</P>
+
+<PRE>output database: log, mysql, user=<TT><I>mysql_user_name</I></TT> password=<TT><I>mysql_users_</I></TT>
+<TT><I>    password</I></TT> dbname=snort host=localhost
+output database: alert, mysql, user=<TT><I>mysql_user_name</I></TT> password=<TT><I>mysql_users_</I></TT>
+<TT><I>    password</I></TT> dbname=snort host=localhost</PRE><BR>
+
+
+<P class="docText">Now page down toward the bottom of the file and select the types of
+rules you want to monitor for. Keep in mind that the more rules you
+use, the more work <TT>snort</TT> will have to do, using up
+CPU cycles and memory that might be better used elsewhere. For
+example, if you don't want to monitor X11 or Oracle
+on any computer on your network, comment out those rules. When
+you're done, save your changes and exit.</P>
+
+<P class="docText">Finish by creating the <TT>snort</TT> log directory:</P>
+
+<PRE># <B>cd /var/log</B>
+# <B>mkdir snort</B></PRE><BR>
+
+
+
+
+<A NAME="bsdhks-CHP-6-SECT-7.2.5"></A>
+
+<H5 class="docSection3Title">6.7.2.5 Configure ACID</H5>
+
+<P class="docText">Start <A NAME="bsdhks-CHP-6-ITERM-2706"></A>
+by
+tightening the permissions of the configuration file:</P>
+
+<PRE># <B>chmod 644 /usr/local/www/acid/acid_conf.php</B></PRE><BR>
+
+
+<P><table border="0" bgcolor="black" cellspacing="0" cellpadding="1" width="90%" align="center"><tr><td><table bgcolor="white" width="100%" border="0" cellspacing="0" cellpadding="6"><tr><td width="60" valign="top"><img src="images/pushpin.gif" width="52" height="51"></td><td valign="top">
+<P class="docText">Have a good read through the Security section of
+<I>/usr/local/www/acid/README</I> when
+you're configuring ACID. It contains many good
+pointers to ensure your configuration is secure.</P>
+</td></tr></table></td></tr></table></P><br>
+
+<P class="docText">Then, change the section that contains <TT>alert_dbname =
+"snort_log";</TT> to include the appropriate entries:</P>
+
+<PRE>$alert_dbname   = "snort";
+$alert_host     = "localhost";
+$alert_port     = "";
+$alert_user     = "<TT><I>mysql_snort_user</I></TT>";
+$alert_password = "<TT><I>mysql_snort_users_password</I></TT>";</PRE><BR>
+
+
+<P class="docText">Leave the <TT>Archive</TT> parameters alone, unless you
+want to create a separate database for <TT>snort</TT> to
+store archived alert messages in. To do this, you'll
+need to log into MySQL, create an <TT>archive</TT>
+database, set the appropriate permissions, and run the
+<TT>mysql_create script</TT> again as described earlier.
+The Snort and ACID documentation describe this in more detail.</P>
+
+<P class="docText">You do need to tell ACID where to find some of the libraries
+installed earlier. In particular, change:</P>
+
+<PRE>$ChartLib_path = "";</PRE><BR>
+
+
+<P class="docText">to:</P>
+
+<PRE>$ChartLib_path = "/usr/local/share/jpgraph";</PRE><BR>
+
+
+
+
+<A NAME="bsdhks-CHP-6-SECT-7.3"></A>
+
+<H4 class="docSection2Title">6.7.3 Running ACID</H4>
+
+<P class="docText">It's <A NAME="bsdhks-CHP-6-ITERM-2707"></A>
+
+<A NAME="bsdhks-CHP-6-ITERM-2708"></A>
+time to
+start Apache:</P>
+
+<PRE># <B>/usr/local/sbin/apachectl start</B>
+/usr/local/sbin/apachectl start: httpd started</PRE><BR>
+
+
+<P class="docText">Then, link the ACID web directory. Of course, for security reasons, I
+recommend giving the link name something other than
+<I>acid</I>.</P>
+
+<PRE># <B>cd /usr/local/www/</B>
+# <B>ln -s /usr/local/www/acid /usr/local/www/snort</B></PRE><BR>
+
+
+<P class="docText">Point your web browser to <A class="docLink" target="_blank" HREF="http://localhost/snort/acid_main.php">http://localhost/snort/acid_main.php</A> and
+click the Setup link. Click the Create ACID AG button to create the
+extended tables that ACID will use. When it finishes, you should see
+something similar to the following:</P>
+
+<PRE>Successfully created 'acid_ag'
+
+Successfully created 'acid_ag_alert'
+
+Successfully created 'acid_ip_cache'
+
+Successfully created 'acid_event'</PRE><BR>
+
+
+<P class="docText">Now click the Main page link to be taken to ACID's
+main display page. At this point you might ask,
+"Where are the alerts?" There
+aren't any—we didn't start
+<TT>snort</TT>!</P>
+
+
+<A NAME="bsdhks-CHP-6-SECT-7.4"></A>
+
+<H4 class="docSection2Title">6.7.4 Running Snort</H4>
+
+<P class="docText">First,
+<A NAME="bsdhks-CHP-6-ITERM-2709"></A>
+try
+starting <TT>snort</TT> manually to make sure it works. Use
+the <TT>-i</TT> switch to specify the network interface
+that will be monitoring traffic. In my case, it is
+<TT>xl0</TT>.</P>
+
+<PRE># <B>cd /usr/local/etc</B>
+# <B>/usr/local/bin/snort -c snort.conf -i xl0</B>               
+database: using the "alert" facility
+1458 Snort rules read...
+1458 Option Chains linked into 146 Chain Headers
+0 Dynamic rules
++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+Rule application order: -&gt;activation-&gt;dynamic-&gt;alert-&gt;pass-&gt;log
+
+        --=  = Initialization Complete =  =--
+
+-*&gt; Snort! &lt;*-
+Version 2.0.5 (Build 98)
+By Martin Roesch (roesch@sourcefire.com, www.snort.org)</PRE><BR>
+
+
+<P class="docText">If <TT>snort</TT> doesn't show any errors,
+as depicted here, pat yourself on the back: <TT>snort</TT>
+is running!</P>
+
+<P class="docText">Quit <TT>snort</TT> by pressing Ctrl-C, and restart it in
+daemon mode:</P>
+
+<PRE># <B>/usr/local/bin/snort -c snort.conf -i xl0 -D</B></PRE><BR>
+
+
+<P class="docText">Now flip on over to the ACID display page in your web browser. You
+should start to see <A NAME="bsdhks-CHP-6-ITERM-2710"></A>
+
+<A NAME="bsdhks-CHP-6-ITERM-2711"></A>
+alerts
+coming in. <A class="docLink" HREF="#bsdhks-CHP-6-FIG-6">Figure 6-6</A> shows a sample alert listing.</P>
+
+<A NAME="bsdhks-CHP-6-FIG-6"></A>
+<p><CENTER>
+<H5 class="docFigureTitle">Figure 6-6. ACID alerts</H5>
+<IMG BORDER="0" id="129022115118" width="431" height="323" SRC="images/0596006799/figs/bsdh_0606.gif" ALT="figs/bsdh_0606.gif"></CENTER></p><br>
+
+<P class="docText">Note that each detected signature includes a hyperlink to information
+about that particular type of attack. Snort also keeps track of how
+many packets matched that signature, the number of unique source and
+destination addresses, and the time frame between the first and last
+packet.</P>
+
+<P class="docText">You can also configure your own alert groups to better organize your
+results, as shown in <A class="docLink" HREF="#bsdhks-CHP-6-FIG-7">Figure 6-7</A>.</P>
+
+<A NAME="bsdhks-CHP-6-FIG-7"></A>
+<p><CENTER>
+<H5 class="docFigureTitle">Figure 6-7. ACID alert groups</H5>
+<IMG BORDER="0" id="129022115118" width="431" height="270" SRC="images/0596006799/figs/bsdh_0607.gif" ALT="figs/bsdh_0607.gif"></CENTER></p><br>
+
+<P class="docText">ACID can also display each rogue packet in intimate detail, as seen
+in <A class="docLink" HREF="#bsdhks-CHP-6-FIG-8">Figure 6-8</A>.</P>
+
+<A NAME="bsdhks-CHP-6-FIG-8"></A>
+<p><CENTER>
+<H5 class="docFigureTitle">Figure 6-8. An ACID packet in detail</H5>
+<IMG BORDER="0" id="129022115118" width="431" height="323" SRC="images/0596006799/figs/bsdh_0608.gif" ALT="figs/bsdh_0608.gif"></CENTER></p><br>
+
+<P class="docText">Keep in mind that you'll probably start getting
+false positives, depending on the types of traffic on your network.
+However, these can easily be weeded out by making the appropriate
+changes to your <I>/usr/local/etc/snort.conf</I> file
+and the rule files in <I>/usr/local/share/snort</I>.</P>
+
+<P class="docText">If you start noticing a bunch of alerts that look like <A class="docLink" HREF="#bsdhks-CHP-6-FIG-9">Figure 6-9</A>, it's a good indication that
+some nodes on your network are infected with a virus or worm.</P>
+
+<A NAME="bsdhks-CHP-6-FIG-9"></A>
+<p><CENTER>
+<H5 class="docFigureTitle">Figure 6-9. Suspicious Snort alerts</H5>
+<IMG BORDER="0" id="129022115118" width="431" height="323" SRC="images/0596006799/figs/bsdh_0609.gif" ALT="figs/bsdh_0609.gif"></CENTER></p><br>
+
+
+<A NAME="bsdhks-CHP-6-SECT-7.5"></A>
+
+<H4 class="docSection2Title">6.7.5 Hacking the Hack</H4>
+
+<P class="docText">Snort and ACID have many additional features. For example, you can
+use your favorite mail transfer agent, such as Sendmail or Postfix,
+to send out email alerts, and you can create an archive database to
+store <A NAME="bsdhks-CHP-6-ITERM-2712"></A>
+
+<A NAME="bsdhks-CHP-6-ITERM-2713"></A>
+alerts
+generated by <TT>snort</TT>. There's even
+a <TT>snort</TT> plug-in for the <A NAME="bsdhks-CHP-6-ITERM-2714"></A>
+Big Brother
+System and Network Monitor that can alert you when 30 or more alerts
+are generated.</P>
+
+<P class="docText">You can also add additional security to
+<A NAME="bsdhks-CHP-6-ITERM-2715"></A>
+
+<A NAME="bsdhks-CHP-6-ITERM-2716"></A>
+ <A NAME="bsdhks-CHP-6-ITERM-2717"></A>
+MySQL, Snort, and ACID by creating a
+nonprivileged <TT>snort</TT> user and locking down the
+<I>/usr/local/www/acid</I> directory with the use of a
+properly configured <I>.htaccess</I> file.
+Configuration of these features goes beyond the scope of this hack,
+but I encourage you to read all the documentation included with these
+applications, as well as the documentation at each
+application's home page, to find out how you can
+tailor them to suit your needs.</P>
+
+
+<A NAME="bsdhks-CHP-6-SECT-7.6"></A>
+
+<H4 class="docSection2Title">6.7.6 See Also</H4>
+<UL><LI><P class="docList">The MySQL Reference Manual (<A class="docLink" target="_blank" HREF="http://www.mysql.com/documentation/index.html">http://www.mysql.com/documentation/index.html</A>)</P></LI><LI><P class="docList">The Snort web site (<A class="docLink" target="_blank" HREF="http://www.snort.org/">http://www.snort.org/</A>)</P></LI><LI><P class="docList">The Analysis Console for Intrusion Databases (ACID) web site (<A class="docLink" target="_blank" HREF="http://www.cert.org/kb/acid/">http://www.cert.org/kb/acid/</A>)</P></LI><LI><P class="docList">The Big Brother Network and System <A NAME="bsdhks-CHP-6-ITERM-2718"></A>
+Monitor <A NAME="bsdhks-CHP-6-ITERM-2719"></A>
+web <A NAME="bsdhks-CHP-6-ITERM-2720"></A>
+
+<A NAME="bsdhks-CHP-6-ITERM-2721"></A>
+site (<A class="docLink" target="_blank" HREF="http://bb4.com/">http://bb4.com/</A>)</P></LI></UL>
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="bsdhks-CHP-6-SECT-6.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="bsdhks-CHP-6-SECT-8.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

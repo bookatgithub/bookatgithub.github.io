@@ -1,0 +1,383 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>Hack 55 FreeBSD Access Control Lists</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="bsdhks-CHP-6-SECT-2.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="bsdhks-CHP-6-SECT-4.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="bsdhks-CHP-6-SECT-3"></A>
+<H3 class="docSection1Title">Hack 55 FreeBSD Access Control Lists</H3><P class="docText"><IMG BORDER="0" ALIGN="absmiddle" width="14" height="36" SRC="images/0596006799/figs/expert.gif" ALT="figs/expert.gif"> <IMG BORDER="0" ALIGN="absmiddle" width="36" height="36" SRC="images/0596006799/figs/hack55.gif" ALT="figs/hack55.gif"></P>
+
+<P class="docText"><span class="docEmphBold">Unix permissions are flexible and can solve
+almost any access control problem, but what about the ones they
+can't?</span></P>
+
+<P class="docText">Do <A NAME="bsdhks-CHP-6-ITERM-2581"></A>
+you really want to make a group every
+time you want to share a file with another user? What if you
+don't have root access and can't
+create a group at will? What if you want to be able to make a
+directory available to a web server or other user without making the
+files world-readable or -writable? Root-owned configuration files
+often need to be edited by those without root privileges; instead of
+using a program like <TT>sudo</TT> (see   <A class="docLink" HREF="bsdhks-CHP-6-SECT-9.html#bsdhks-CHP-6-SECT-9">[Hack #61]</A> and <A class="docLink" HREF="bsdhks-CHP-6-SECT-10.html#bsdhks-CHP-6-SECT-10"><span class="docEmphBold">[Hack #62]</span></A> ), it would be better just to
+allow certain nonowners to edit these files.</P>
+
+<P class="docText">Access Control Lists (ACLs) solve these problems. They allow more
+flexibility than the standard Unix user/group/other set of
+<A NAME="bsdhks-CHP-6-ITERM-2582"></A>
+permissions. ACLs have been available in
+commercial Unixes such as IRIX and Solaris, as well as Windows NT,
+for years. Now, thanks to the <A NAME="bsdhks-CHP-6-ITERM-2583"></A>
+TrustedBSD project's
+work, ACLs are available in FreeBSD 5.0-RELEASE and beyond.</P>
+
+<P class="docText">ACLs take care of access control problems that are overly complicated
+or impossible to solve with the normal Unix permissions system. By
+avoiding the creation of groups and overuse of root privileges, ACLs
+can keep administrators saner and servers more secure.</P>
+
+<A NAME="bsdhks-CHP-6-SECT-3.1"></A>
+
+<H4 class="docSection2Title">6.3.1 Enabling ACLs</H4>
+
+<P class="docText">ACLs <A NAME="bsdhks-CHP-6-ITERM-2584"></A>
+are
+enabled by an option in the file system superblock, which contains
+internal housekeeping information for the file system.</P>
+
+<P class="docText">Edit the superblock with the <A NAME="bsdhks-CHP-6-ITERM-2585"></A>
+<TT>tunefs</TT> command, which
+can be used only on a read-only or unmounted file system. This means
+that you must first bring the system into single-user mode. Make sure
+there aren't any active connections to the system,
+then shut it down:</P>
+
+<PRE># <B>shutdown now</B>
+
+*** FINAL System shutdown message from root@mycompany.com ***
+System going down IMMEDIATELY
+
+Dec 11 10:28:07 genisis shutdown: shutdown by root:
+System shutdown time has arrived
+Writing entropy file:.
+Shutting down daemon processes:.
+Saving firewall state tables:.
+Dec 11 10:28:10 genisis syslogd: exiting on signal 15
+Enter full pathname of shell or RETURN for /bin/sh:
+#</PRE><BR>
+
+
+<P class="docText">At the prompt, type:</P>
+
+<PRE># <B>/sbin/tunefs -a enable /</B>
+# <B>/sbin/tunefs -a enable /usr</B>
+# <B>exit</B></PRE><BR>
+
+
+<P><table border="0" bgcolor="black" cellspacing="0" cellpadding="1" width="90%" align="center"><tr><td><table bgcolor="white" width="100%" border="0" cellspacing="0" cellpadding="6"><tr><td width="60" valign="top"><img src="images/pushpin.gif" width="52" height="51"></td><td valign="top">
+<P class="docText">To see if ACLs are already set on your system, type
+<TT>mount</TT>.</P>
+</td></tr></table></td></tr></table></P><br>
+
+<P class="docText">If you use the UFS2 file system, you are done. The
+<TT>UFS_ACL</TT> option is enabled in the default GENERIC
+kernel, so reboot and enjoy. If you use UFS1, though,
+don't reboot yet.</P>
+
+<P><table border="0" bgcolor="black" cellspacing="0" cellpadding="1" width="90%" align="center"><tr><td><table bgcolor="white" width="100%" border="0" cellspacing="0" cellpadding="6"><tr><td width="60" valign="top"><img src="images/pushpin.gif" width="52" height="51"></td><td valign="top">
+<P class="docText">To check your version of UFS, try <TT>dumpfs [mountpoint] | grep
+UFS</TT>, where <TT>[mountpoint]</TT> is something
+like <TT>ad0s1a</TT>. <TT>mount</TT> will list
+the names of your particular mount points.</P>
+</td></tr></table></td></tr></table></P><br>
+
+
+<A NAME="bsdhks-CHP-6-SECT-3.2"></A>
+
+<H4 class="docSection2Title">6.3.2 Additional UFS1 Configuration</H4>
+
+<P class="docText">Things <A NAME="bsdhks-CHP-6-ITERM-2586"></A>
+are more difficult if you, like most
+FreeBSD 5.0 users, use UFS1. (FreeBSD 5.1 and later come with UFS2 as
+the default file system.) ACLs are built on top of
+<A NAME="bsdhks-CHP-6-ITERM-2587"></A>
+extended attributes, which are not native
+to UFS1. To enable extended attributes, you must add <TT>options
+UFS_EXTATTR</TT> and <TT>options
+UFS_EXTATTR_AUTOSTART</TT> to your kernel configuration and
+compile and install the new kernel  <A class="docLink" HREF="bsdhks-CHP-6-SECT-2.html#bsdhks-CHP-6-SECT-2"><span class="docEmphBold">[Hack #54]</span></A> . Don't
+reboot yet; you still need to initialize the extended attributes on
+each file system.</P>
+
+<P class="docText">For example, to initialize extended attributes on the
+<I>/var</I> filesystem, use
+<A NAME="bsdhks-CHP-6-ITERM-2588"></A>
+<TT>extattrctl</TT>, the
+extended attributes control command:</P>
+
+<PRE># <B>mkdir -p /var/.attribute/system</B>
+# <B>cd /var/.attribute/system</B>
+# <B>extattrctl initattr -p /var 388 posix1e.acl_access</B>
+# <B>extattrctl initattr -p /var 388 posix1e.acl_default</B></PRE><BR>
+
+
+<P class="docText">Repeat for each filesystem on which you wish to enable ACL support.
+Just replace <I>/var</I> with the mount point of the
+desired file system. After initializing the attributes with
+<TT>reboot</TT>, the extended attributes should be enabled.</P>
+
+
+<A NAME="bsdhks-CHP-6-SECT-3.3"></A>
+
+<H4 class="docSection2Title">6.3.3 Viewing ACLs</H4>
+
+<P class="docText">Okay, <A NAME="bsdhks-CHP-6-ITERM-2589"></A>
+you've
+successfully enabled ACLs. Now what? Let's start by
+viewing ACLs. Looking at ACLs is simple. Files with ACLs will be
+designated with a <TT>+</TT> in the long listing provided
+by <TT>ls -l</TT>:</P>
+
+<PRE>% <B>ls -l acl-test</B>
+-rw-rw-r--+ 1 rob  rob  0 Apr 19 17:27 acl-test</PRE><BR>
+
+
+<P class="docText">Use the <A NAME="bsdhks-CHP-6-ITERM-2590"></A>
+<TT>getfacl</TT> command to
+see information about the ACL:</P>
+
+<PRE>% <B>getfacl acl-test</B>
+#file:acl-test
+#owner:1000
+#group:1000
+user::rw-
+user:nobody:rw-
+group::r--
+group:wheel:rw-
+mask::rw-
+other::r--</PRE><BR>
+
+
+<P class="docText">The <TT>user:</TT>:, <TT>group:</TT>:, and
+<TT>other:</TT>: fields should all be familiar. They are
+simply the ACL representations of the standard Unix
+<A NAME="bsdhks-CHP-6-ITERM-2591"></A>
+permissions system. The
+<TT>nobody</TT> and <TT>wheel</TT> lines,
+however, are new. These specify permissions for specific users and
+groups (in this case, the <TT>nobody</TT> user and the
+<TT>wheel</TT> group) in addition to the normal set of
+permissions.</P>
+
+<P class="docText">The <TT>mask</TT> field sets maximum permissions, so an
+<TT>r--</TT> mask (set with <TT>m::r</TT>) in
+combination with an <TT>rw-</TT> permission for a user will
+give the user only <TT>r--</TT> permissions on the file.</P>
+
+
+<A NAME="bsdhks-CHP-6-SECT-3.4"></A>
+
+<H4 class="docSection2Title">6.3.4 Adding and Subtracting ACLs</H4>
+
+<P class="docText">The <A NAME="bsdhks-CHP-6-ITERM-2592"></A>
+<TT>setfacl</TT>
+<A NAME="bsdhks-CHP-6-ITERM-2593"></A>
+command
+adds, changes, and deletes ACLs. Like <TT>chmod</TT>, only
+the file's owner or the superuser can use this
+command. You only need to use a few of its options to start
+manipulating ACLs.</P>
+
+<P class="docText">First, a word on syntax. ACLs are specified just as
+they're printed by <TT>getfacl</TT>.
+Let's remove and reconstruct the ACL for
+<I>acl-test</I>:</P>
+
+<PRE>% <B>setfacl -b acl-test</B>
+% <B>setfacl -m user:nobody:rw-,group:wheel:rw- acl-test</B></PRE><BR>
+
+
+<P class="docText">The <TT>-b</TT> option removes all ACLs, except for the
+standard user, group, and other lines. The <TT>-m</TT>
+option modifies the ACL with the specified entry (or comma-separated
+entries). Entries may also be abbreviated: the code here could have
+been shortened to <TT>u:nobody:rw-,g:wheel:rw-</TT>.</P>
+
+<P class="docText">You can even use <TT>setfacl</TT> to modify traditional
+permissions; setting a <TT>user::rw-</TT> ACL entry is
+equivalent to running <TT>chmod u=rw</TT> on a file.</P>
+
+<P class="docText">Removing ACLs is almost identical: <TT>setfacl -x
+u:nobody:rw-,g:wheel:rw-</TT> removes that ACL. You can also
+specify ACLs in files. The <TT>-M</TT> and
+<TT>-X</TT> options perform the functions of their
+lowercase relatives, but read their entries from a file. Consider the
+<I>acl-test</I> file again:</P>
+
+<PRE>% <B>cat test-acl-list</B>
+u:nobody:rw-
+# this is a comment
+g:wheel:rw-
+% <B>setfacl -X test-acl-list acl-test</B>
+% <B>getfacl acl-test</B>
+#file:acl-test
+#owner:1000
+#group:1000
+user::rw-
+group::r--
+mask::r--
+other::r--</PRE><BR>
+
+
+
+<A NAME="bsdhks-CHP-6-SECT-3.5"></A>
+
+<H4 class="docSection2Title">6.3.5 Using ACLs with Samba and Windows</H4>
+
+<P class="docText">If you <A NAME="bsdhks-CHP-6-ITERM-2594"></A>
+
+<A NAME="bsdhks-CHP-6-ITERM-2595"></A>
+compile Samba with ACL support, you can
+edit ACLs on files shared by Samba with the native Windows ACL tools.
+Simply compile (or recompile) Samba with ACL support:</P>
+
+<PRE># <B>cd /usr/ports/net/samba</B>
+# <B>make -DWITH_ACL_SUPPORT install clean</B></PRE><BR>
+
+
+<P class="docText">You will see the Samba port configuration dialog with ACL support
+enabled, as shown in <A class="docLink" HREF="#bsdhks-CHP-6-FIG-1">Figure 6-1</A>.</P>
+
+<A NAME="bsdhks-CHP-6-FIG-1"></A>
+<p><CENTER>
+<H5 class="docFigureTitle">Figure 6-1. Configuring Samba with ACLs</H5>
+<IMG BORDER="0" width="323" height="271" SRC="images/0596006799/figs/bsdh_0601.gif" ALT="figs/bsdh_0601.gif"></CENTER></p><br>
+
+<P class="docText">Once you have Samba up and running, browse to a share on an
+ACL-enabled file system. Right-click any file and select Properties,
+and you'll see something like <A class="docLink" HREF="#bsdhks-CHP-6-FIG-2">Figure 6-2</A>. Go to the Security tab, and you can see and
+change the ACL as though it were on a Windows server.</P>
+
+<A NAME="bsdhks-CHP-6-FIG-2"></A>
+<p><CENTER>
+<H5 class="docFigureTitle">Figure 6-2. Manipulating ACLs on FreeBSD from a Samba client</H5>
+<IMG BORDER="0" width="296" height="357" SRC="images/0596006799/figs/bsdh_0602.gif" ALT="figs/bsdh_0602.gif"></CENTER></p><br>
+
+<P class="docText">If you've been reluctant to move from a Windows
+server to Samba because of its lack of ACLs, you can start thinking
+seriously about deploying Samba and FreeBSD on your file servers.</P>
+
+
+<A NAME="bsdhks-CHP-6-SECT-3.6"></A>
+
+<H4 class="docSection2Title">6.3.6 Setting Default ACLs</H4>
+
+<P class="docText">Let's <A NAME="bsdhks-CHP-6-ITERM-2596"></A>
+ <A NAME="bsdhks-CHP-6-ITERM-2597"></A>
+consider a more advanced example. You
+want to make your <I>cool_widgets</I> directory
+accessible to Bob, your partner in coolness, but not to the world. If
+you just add an ACL entry, added files won't
+automatically pick up the directory's ACL. You
+should instead set a <span class="docEmphasis">default ACL</span> on the
+directory. Any files created in the directory will inherit the
+default ACL.</P>
+
+<P class="docText">Passing the <TT>-d</TT> option to either
+<TT>getfacl</TT><A NAME="bsdhks-CHP-6-ITERM-2598"></A>
+ <A NAME="bsdhks-CHP-6-ITERM-2599"></A>
+ or <TT>setfacl</TT> will
+operate on the default ACL of a directory, instead of on the
+directory itself:</P>
+
+<PRE>% <B>mkdir cool_widgets</B>
+% <B>chmod o-rwx cool_widgets</B>
+% <B>ls -l</B>
+drwxr-x---  2 rob  rob   512 Apr 19 21:21 cool_widgets
+
+% <B>getfacl -d cool_widgets</B>
+#file:cool_widgets
+#owner:1000
+#group:1000</PRE><BR>
+
+
+<P class="docText">Pretty boring, isn't it? Let's try
+to add a default ACL:</P>
+
+<PRE>% <B>setfacl -d -m u:bob:rw- cool_widgets</B>
+setfacl: acl_calc_mask( ) failed: Invalid argument
+setfacl: failed to set ACL mask on cool_widgets</PRE><BR>
+
+
+<P class="docText">Oops. Default ACLs don't work quite like regular
+ACLs do. You cannot set specific entries on a default ACL until you
+add the generic <TT>user:</TT>:,
+<TT>group:</TT>:, and <TT>other:</TT>: entries:</P>
+
+<PRE>% <B>setfacl -d -m u::rw-,g::r--,o::---,u:bob:rw- cool_widgets</B>
+% <B>setfacl -m u:bob:r-x cool_widgets</B></PRE><BR>
+
+
+<P class="docText">Note the nondefault <TT>r-x</TT> entry for
+<TT>bob</TT> on the directory. The default ACL affects
+files that will be created inside the directory but
+<span class="docEmphasis">not</span> the directory itself. An ACL entry
+<TT>u:bob:rw-</TT> will now be added to any file created in
+<I>cool_widgets</I>.</P>
+
+<P class="docText">Now you have a <I>cool_widgets</I> directory whose
+files can be read and written by both yourself and Bob, without the
+use of a group. If you later decide to get rid of the default ACL,
+the <TT>-k</TT> option to <TT>setfacl</TT> works
+for directory ACLs just as the <TT>-b</TT> option does for
+file <A NAME="bsdhks-CHP-6-ITERM-2600"></A>
+
+<A NAME="bsdhks-CHP-6-ITERM-2601"></A>
+ACLs.</P>
+
+<P><table border="0" bgcolor="black" cellspacing="0" cellpadding="1" width="90%" align="center"><tr><td><table bgcolor="white" width="100%" border="0" cellspacing="0" cellpadding="6"><tr><td width="60" valign="top"><img src="images/pushpin.gif" width="52" height="51"></td><td valign="top">
+<P class="docText">Use <TT>getfacl -d</TT> to view the new
+directory's default ACL.</P>
+</td></tr></table></td></tr></table></P><br>
+
+
+<A NAME="bsdhks-CHP-6-SECT-3.7"></A>
+
+<H4 class="docSection2Title">6.3.7 See Also</H4>
+<UL><LI><P class="docList"><TT>man tunefs</TT></P></LI><LI><P class="docList"><TT>man extattrctl</TT></P></LI><LI><P class="docList"><TT>man getfacl</TT></P></LI><LI><P class="docList"><TT>man setfacl</TT></P></LI><LI><P class="docList">"FreeBSD Access Control Lists," as originally published on ONLamp's BSD DevCenter (<A class="docLink" target="_blank" HREF="http://www.onlamp.com/pub/a/bsd/2003/08/14/freebsd_acls.html">http://www.onlamp.com/pub/a/bsd/2003/08/14/freebsd_acls.html</A>)</P></LI><LI><P class="docList">The <A NAME="bsdhks-CHP-6-ITERM-2602"></A>
+TrustedBSD <A NAME="bsdhks-CHP-6-ITERM-2603"></A>
+project (<A class="docLink" target="_blank" HREF="http://www.trustedbsd.org/">http://www.trustedbsd.org/</A>)</P></LI></UL>
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="bsdhks-CHP-6-SECT-2.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="bsdhks-CHP-6-SECT-4.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

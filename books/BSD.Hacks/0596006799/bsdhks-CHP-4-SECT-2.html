@@ -1,0 +1,271 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>Hack 35 Back Up FreeBSD with SMBFS</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="bsdhks-CHP-4-SECT-1.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="bsdhks-CHP-4-SECT-3.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="bsdhks-CHP-4-SECT-2"></A>
+<H3 class="docSection1Title">Hack 35 Back Up FreeBSD with SMBFS</H3><P class="docText"><IMG BORDER="0" ALIGN="absmiddle" width="14" height="36" SRC="images/0596006799/figs/moderate.gif" ALT="figs/moderate.gif"> <IMG BORDER="0" ALIGN="absmiddle" width="36" height="36" SRC="images/0596006799/figs/hack35.gif" ALT="figs/hack35.gif"></P>
+<P class="docText"><span class="docEmphBold">A good backup can save the day when things go wrong. A bad—or missing—backup can ruin the whole week.</span></P>
+<P class="docText">Regular <A NAME="bsdhks-CHP-4-ITERM-2192"></A>
+ <A NAME="bsdhks-CHP-4-ITERM-2193"></A>
+backups are vital to good administration.
+You can perform backups with hardware as basic as a SCSI tape drive
+using 8mm tape cartridges or as advanced as an AIT tape library
+system using cartridges that can store up to 50 GB of compressed
+data. But what if you don't have the luxury of
+dedicated hardware for <span class="docEmphasis">each</span> server?</P>
+
+<P class="docText">Since most networks are comprised of multiple systems, you can
+archive data from one server across the network to another.
+We'll back up a FreeBSD system using the
+<TT>tar</TT> and
+<TT>gzip</TT><A NAME="bsdhks-CHP-4-ITERM-2194"></A>
+ archiving utilities and the
+<TT>smbutil</TT> and <TT>mount_smbfs</TT>
+commands to transport that data to network shares. These procedures
+were tested on FreeBSD 4.6-STABLE and 5.1-RELEASE.</P>
+
+<A NAME="bsdhks-CHP-4-SECT-2.1"></A>
+
+<H4 class="docSection2Title">4.2.1 Adding NETSMB Kernel Support</H4>
+
+<P class="docText">Since <A NAME="bsdhks-CHP-4-ITERM-2195"></A>
+SMB is a network-aware filesystem,
+we need to build SMB support into the kernel. This means adding the
+proper <TT>options</TT> lines to the custom kernel
+configuration file. For information on building a custom kernel, see
+ <A class="docLink" HREF="bsdhks-CHP-6-SECT-2.html#bsdhks-CHP-6-SECT-2"><span class="docEmphBold">[Hack #54]</span></A>, the Building and
+Installing a Custom Kernel section (9.3) of the FreeBSD Handbook, and
+relevant information contained in
+<I>/usr/src/sys/i386/conf</I>.</P>
+
+<P class="docText">Add the following options under the <TT>makeoptions</TT>
+section:</P>
+
+<PRE>options    NETSMB            # SMB/CIFS requester
+options    NETSMBCRYPTO      # encrypted password support for SMB
+options    LIBMCHAIN         # mbuf management library
+options    LIBICONV
+options    SMBFS</PRE><BR>
+
+
+<P class="docText">Once you've saved your changes, use the
+<TT>make buildkernel</TT> and <TT>make</TT>
+<TT>installkernel</TT> commands to build and install the
+new kernel.</P>
+
+
+<A NAME="bsdhks-CHP-4-SECT-2.2"></A>
+
+<H4 class="docSection2Title">4.2.2 Establishing an SMB Connection with a Host System</H4>
+
+<P class="docText">The <A NAME="bsdhks-CHP-4-ITERM-2196"></A>
+next step is to decide which system on the
+network to connect to. Obviously, the destination server needs to
+have an active share on the network, as well as enough disk space
+available to hold your archives. It will also need a valid user
+account with which you can log in. You'll probably
+also want to choose a system that's backed up
+regularly to removable media. I'll use a machine
+<A NAME="bsdhks-CHP-4-ITERM-2197"></A>
+
+<A NAME="bsdhks-CHP-4-ITERM-2198"></A>
+named
+<TT>smbserver1</TT>.</P>
+
+<P><table border="0" bgcolor="black" cellspacing="0" cellpadding="1" width="90%" align="center"><tr><td><table bgcolor="white" width="100%" border="0" cellspacing="0" cellpadding="6"><tr><td width="60" valign="top"><img src="images/pushpin.gif" width="52" height="51"></td><td valign="top">
+<P class="docText">The <TT>smbutil</TT> and <TT>mount_smbfs</TT>
+commands both come standard with the base install of FreeBSD. Their
+only requirements are the five kernel options listed in the preceding
+section.</P>
+</td></tr></table></td></tr></table></P><br>
+
+<P class="docText">Once you have chosen the proper host, make an SMB connection manually
+with the <TT>smbutil login</TT> command. This connection
+will remain active, allowing you to interact with the SMB server,
+until you issue the <TT>smbutil</TT>
+<TT>logout</TT> command. So, to log in:</P>
+
+<PRE># <B>smbutil login //jwarner@smbserver1</B>
+Password:
+Connected to smbserver1</PRE><BR>
+
+
+<P class="docText">And to log out:</P>
+
+<PRE># <B>smbutil logout //jwarner@smbserver1</B>
+Password:
+Connection unmarked as permanent and will
+be closed when possible</PRE><BR>
+
+
+
+<A NAME="bsdhks-CHP-4-SECT-2.3"></A>
+
+<H4 class="docSection2Title">4.2.3 Mounting a Share</H4>
+
+<P class="docText">Once you're sure you can manually initiate a
+connection with the host system, create a mount point where you can
+<A NAME="bsdhks-CHP-4-ITERM-2199"></A>
+ <A NAME="bsdhks-CHP-4-ITERM-2200"></A>
+mount the remote share.
+I'll create a mount point directory called
+<I>/backup</I>:</P>
+
+<PRE># <B>mkdir /backup</B></PRE><BR>
+
+
+<P class="docText">Next, reestablish a connection with the host system and mount its
+share:</P>
+
+<PRE># <B>smbutil login //jwarner@smbserver1</B>
+Password:
+Connected to smbserver1
+
+# <B>mount_smbfs -N //jwarner@smbserver1/sharename /backup</B></PRE><BR>
+
+
+<P class="docText">Note that I used the <TT>-N</TT> switch to
+<TT>mount_smbfs</TT> to avoid having to supply a password a
+second time. If you prefer to be prompted for a password when
+mounting the share, simply omit the <TT>-N</TT> switch.</P>
+
+
+<A NAME="bsdhks-CHP-4-SECT-2.4"></A>
+
+<H4 class="docSection2Title">4.2.4 Archiving and Compressing Data with tar and gzip</H4>
+
+<P class="docText">After
+<A NAME="bsdhks-CHP-4-ITERM-2201"></A>
+
+<A NAME="bsdhks-CHP-4-ITERM-2202"></A>
+connecting
+<A NAME="bsdhks-CHP-4-ITERM-2203"></A>
+to the host
+server and mounting its network share, the next step is to back up
+and copy the necessary files. You can get as complicated as you like,
+but I'll create a simple shell script,
+<I>bkup</I>, inside the mounted share that compresses
+important files and directories.</P>
+
+<P class="docText">This script will make compressed archives of the
+<I>/boot</I>, <I>/etc</I>,
+<I>/home</I>, and <I>/usr/local/etc</I>
+directories. Add to or edit this list as you see fit. At a minimum, I
+recommend including the <I>/etc</I> and
+<I>/usr/local/etc</I> directories, as they contain
+important configuration files. See <TT>man hier</TT> for a
+complete description of the FreeBSD directory <A NAME="bsdhks-CHP-4-ITERM-2204"></A>
+structure.</P>
+
+<PRE>#!/bin/sh
+# script that backs up the following four directories:
+tar cvvpzf boot.tar.gz /boot
+tar cvvpzf etc.tar.gz  /etc
+tar cvvpzf home.tar.gz /home
+tar cvvpzf usr_local_etc.tar.gz /usr/local/etc</PRE><BR>
+
+
+<P><table border="0" bgcolor="black" cellspacing="0" cellpadding="1" width="90%" align="center"><tr><td><table bgcolor="white" width="100%" border="0" cellspacing="0" cellpadding="6"><tr><td width="60" valign="top"><img src="images/pushpin.gif" width="52" height="51"></td><td valign="top">
+<P class="docText">This script is an example to get you started. There are many ways to
+use <TT>tar</TT>. Read <TT>man 1 tar</TT>
+carefully, and tailor the script to suit your needs.</P>
+</td></tr></table></td></tr></table></P><br>
+
+<P class="docText">Be sure to make this file executable:</P>
+
+<PRE># <B>chmod 755 bkup</B></PRE><BR>
+
+
+<P class="docText">Run the script to create the archives:</P>
+
+<PRE># <B>./bkup</B>
+tar: Removing leading / from absolute path names in the archive.
+drwxr-xr-x root/wheel        0 Jun 23 18:19 2002 boot/
+drwxr-xr-x root/wheel        0 May 11 19:46 2002 boot/defaults/
+-r--r--r-- root/wheel    10957 May 11 19:46 2002 boot/defaults/loader.conf
+-r--r--r-- root/wheel      512 Jun 23 18:19 2002 boot/mbr
+(snip)</PRE><BR>
+
+
+<P class="docText">After the script finishes running, you'll have
+<I>*.tar.gz</I> files of the directories you chose to
+archive:</P>
+
+<PRE># <B>ls | more</B>
+bkup
+boot.tar.gz
+etc.tar.gz
+home.tar.gz
+usr_local_etc.tar.gz</PRE><BR>
+
+
+<P class="docText">Once you've tested your shell script manually and
+are happy with your results, add it to the <TT>cron</TT>
+<A NAME="bsdhks-CHP-4-ITERM-2205"></A>
+scheduler to run on scheduled days and
+times.</P>
+
+<P class="docText">Remember, how you choose to implement your backups
+isn't important—backing up regularly is.
+Facing the problem of deleted or corrupted data
+isn't a matter of
+"if" but rather a matter of
+"when." This is why good backups
+are essential.</P>
+
+
+<A NAME="bsdhks-CHP-4-SECT-2.5"></A>
+
+<H4 class="docSection2Title">4.2.5 Hacking the Hack</H4>
+
+<P class="docText">Things to consider when modifying the script to suit your own
+purposes:</P>
+
+<UL><LI><P class="docList">Add entries to automatically mount and
+<A NAME="bsdhks-CHP-4-ITERM-2206"></A>
+unmount the share (see  <A class="docLink" HREF="bsdhks-CHP-6-SECT-16.html#bsdhks-CHP-6-SECT-16"><span class="docEmphBold">[Hack #68]</span></A>  for an example).</P></LI><LI><P class="docList">Use your backup utility of choice. You're not
+limited to just <TT>tar</TT>!</P></LI></UL>
+
+<A NAME="bsdhks-CHP-4-SECT-2.6"></A>
+
+<H4 class="docSection2Title">4.2.6 See Also</H4>
+<UL><LI><P class="docList"><TT>man 1 smbutil</TT></P></LI><LI><P class="docList"><TT>man 8 mount_smbfs</TT></P></LI><LI><P class="docList"><TT>man 7 hier</TT></P></LI><LI><P class="docList"><TT>man 1 tar</TT></P></LI><LI><P class="docList"><TT>man 1 gzip</TT></P></LI><LI><P class="docList">The Building and Installing a Custom Kernel section of the <A NAME="bsdhks-CHP-4-ITERM-2207"></A>
+
+<A NAME="bsdhks-CHP-4-ITERM-2208"></A>
+FreeBSD Handbook (<A class="docLink" target="_blank" HREF="http://www.freebsd.org/doc/en_US.ISO8859-1/books/handbook/kernelconfig-building.html">http://www.freebsd.org/doc/en_US.ISO8859-1/books/handbook/kernelconfig-building.html</A>)</P></LI></UL>
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="bsdhks-CHP-4-SECT-1.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="bsdhks-CHP-4-SECT-3.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

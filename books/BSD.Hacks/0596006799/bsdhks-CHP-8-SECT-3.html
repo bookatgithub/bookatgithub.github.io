@@ -1,0 +1,386 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>Hack 78 FreeBSD from Scratch</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="bsdhks-CHP-8-SECT-2.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="bsdhks-CHP-8-SECT-4.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="bsdhks-CHP-8-SECT-3"></A>
+<H3 class="docSection1Title">Hack 78 FreeBSD from Scratch</H3><P class="docText"><IMG BORDER="0" ALIGN="absmiddle" width="14" height="36" SRC="images/0596006799/figs/expert.gif" ALT="figs/expert.gif"> <IMG BORDER="0" ALIGN="absmiddle" width="36" height="36" SRC="images/0596006799/figs/hack78.gif" ALT="figs/hack78.gif"></P>
+
+<P class="docText"><span class="docEmphBold">For those who prefer to wipe their disks clean
+before they upgrade their systems</span>.</P>
+
+<P class="docText">Have you ever upgraded your system with <TT>make
+world</TT>? If you have only one system on your disks, you may
+run into a problem: if the <TT>installworld</TT> fails
+partway through, you may end up with a broken system that might not
+even boot. It's also possible that the
+<TT>installworld</TT> will run smoothly, but the new kernel
+will not boot.</P>
+
+<P class="docText">What if you're like me and believe in the
+"wipe your disks when upgrading
+systems" paradigm? Reformatting ensures there is no
+old cruft left lying around. It also means you have to recompile or
+reinstall all your ports and packages and then redo all your
+carefully crafted configuration tweaks.</P>
+
+<P class="docText"><A NAME="bsdhks-CHP-8-ITERM-3019"></A>
+ <A NAME="bsdhks-CHP-8-ITERM-3020"></A>
+ <A NAME="bsdhks-CHP-8-ITERM-3021"></A>
+FreeBSD From Scratch solves all these
+problems. The strategy is simple: use a running system to install a
+new system under an empty directory tree, mounting new partitions in
+that tree as appropriate. Many config files can copy straight across,
+and <TT>mergemaster</TT> <A NAME="bsdhks-CHP-8-ITERM-3022"></A>
+can take care of those that cannot. You
+can perform arbitrary post-configuration of the new system from
+within the old system, up to the point where you can
+<TT>chroot</TT> to the new system.</P>
+
+<P class="docText">This upgrade has three stages, where each stage either runs a shell
+script or invokes <TT>make</TT>:</P>
+
+<DL class="docList"><br><p><DT><span class="docPubcolor"><I>stage_1.sh</I></span></DT></p>
+<DD>
+<P class="docList">Creates a new bootable system under an empty directory, merges or
+copies as many files as are necessary, and then boots the new system</P>
+</DD>
+<br><p><DT><span class="docPubcolor"><I>stage_2.sh</I></span></DT></p>
+<DD>
+<P class="docList">Installs your desired ports</P>
+</DD>
+<br><p><DT><span class="docPubcolor"><I>stage_3.mk</I></span></DT></p>
+<DD>
+<P class="docList">Does post-configuration for software installed in the previous stage</P>
+</DD>
+</DL>
+
+<P class="docText">From now on, whenever you feel like an update is in order, simply
+toggle the partitions you want to wipe and reinstall.</P>
+
+<P><table border="0" bgcolor="black" cellspacing="0" cellpadding="1" width="90%" align="center"><tr><td><table bgcolor="white" width="100%" border="0" cellspacing="0" cellpadding="6"><tr><td width="60" valign="top"><img src="images/pushpin.gif" width="52" height="51"></td><td valign="top">
+<P class="docText">While compiling the ports during stage two, the system will not be
+available for its usual duties. If you run a production server,
+consider the downtime caused by stage two. If time is an issue,
+consider using precompiled packages instead of ports.</P>
+</td></tr></table></td></tr></table></P><br>
+
+<A NAME="bsdhks-CHP-8-SECT-3.1"></A>
+
+<H4 class="docSection2Title">8.3.1 Stage One: System Installation</H4>
+
+<P class="docText">This hack uses several scripts and configuration files that you can
+download from the original document's site (listed
+in this hack's <A class="docLink" HREF="#bsdhks-CHP-8-SECT-3.4">Section 8.3.4</A> section). Also, if you keep
+your docs up-to-date with <TT>cvsup</TT>, the scripts and
+original document can be found in
+<I>/usr/doc/en_US.ISO8859-1/articles/fbsd-from-scratch</I>.</P>
+
+<P class="docText">The script for stage one is <I>stage_1.sh</I>. When run
+with exactly one argument:</P>
+
+<PRE># <B>./stage_1.sh default</B></PRE><BR>
+
+
+<P class="docText">it will read its configuration from
+<I>stage_1.conf.default</I> and write a log to
+<I>stage_1.log.default</I>.</P>
+
+<P class="docText">You'll need to customize
+<I>stage_1.conf.default</I> to match your idea of the
+perfect system. I have tried to comment all of the sections you
+should adapt. In addition to the customized sections, the
+configuration script must provide four shell functions:</P>
+
+<UL><LI><P class="docList"><TT>create_file_systems</TT></P></LI><LI><P class="docList"><TT>create_etc_fstab</TT></P></LI><LI><P class="docList"><TT>copy_files</TT></P></LI><LI><P class="docList"><TT>all_remaining_customization</TT></P></LI></UL>
+<P class="docText">Before you run <I>stage_1.sh</I>, make sure you have
+completed the usual tasks in preparation for <TT>make
+installworld/installkernel</TT>:</P>
+
+<UL><LI><P class="docList">Configure your kernel config file.</P></LI><LI><P class="docList">Complete <TT>make buildworld</TT>.</P></LI><LI><P class="docList">Complete <TT>make buildkernel
+KERNCONF=</TT><TT><I>whatever</I></TT>.</P></LI></UL>
+<P class="docText">The <I>stage_1.sh</I> script will stop at the first
+command that fails, so you cannot overlook errors. It will also stop
+if you use an unset environment variable, which is probably due to a
+typo.</P>
+
+<P class="docText">Answer <TT>no</TT> or press Enter when
+<TT>mergemaster</TT> asks if whether should delete
+<I>/var/tmp/temproot.stage1</I>. This directory
+contains some files that must be copied to the new system later.</P>
+
+<PRE>*** Comparison complete
+Do you wish to delete what is left of /var/tmp/temproot.stage1? [no] <B>no</B></PRE><BR>
+
+
+<P class="docText">After that, it will list the files it installed:</P>
+
+<PRE>*** You chose the automatic install option for files that did not
+    exist on your system.  The following were installed for you:
+      /newroot/etc/defaults/rc.conf
+      ...
+      /newroot/COPYRIGHT
+
+(END)</PRE><BR>
+
+
+<P class="docText">Type <TT>q</TT> to quit the pager. Then,
+you'll have to deal with
+<I>login.conf</I>:</P>
+
+<PRE>*** You installed a login.conf file, so make sure that you run
+    '/usr/bin/cap_mkdb /newroot/etc/login.conf'
+    to rebuild your login.conf database
+
+    Would you like to run it now? y or n [n]</PRE><BR>
+
+
+<P class="docText">The answer does not matter, since we will run
+<TT>cap_mkdb</TT> in either case.</P>
+
+<P class="docText">You can download the author's
+<I>stage_1.conf.default</I>, which
+you'll need to modify substantially. The comments
+should give you enough information regarding what to change.</P>
+
+<P class="docText">Pay attention to the <TT>newfs</TT> commands. While you
+cannot create new filesystems on mounted partitions, the script will
+happily erase any unmounted partitions. This can be enough to ruin
+your day, so be sure to modify the device names to match your
+scenario.</P>
+
+<P class="docText">Running this script installs a system that, when booted, provides
+inherited users and groups, firewalled Internet connectivity over
+Ethernet and PPP, correct time zone settings and NTP, and more minor
+configurations, such as <I>/etc/ttys</I> and
+<I>/etc/inetd.conf</I>.</P>
+
+<P class="docText">Other areas of configuration will not work until stage two completes.
+For example, we have copied files to configure printing and X11.
+Printing, however, needs applications not found in the base system.
+Similarly, X11 will not run before we have compiled the server,
+libraries, and programs.</P>
+
+
+<A NAME="bsdhks-CHP-8-SECT-3.2"></A>
+
+<H4 class="docSection2Title">8.3.2 Stage Two: Ports Installation</H4>
+
+<P class="docText">It
+<A NAME="bsdhks-CHP-8-ITERM-3023"></A>
+is
+possible to install precompiled packages at this stage instead of
+compiling ports. In this case, <I>stage_2.sh</I> will
+be nothing more than a scripted list of <TT>pkg_add</TT>
+commands.</P>
+
+<P class="docText">I install my favorite ports via the downloadable
+<I>stage_2.sh</I> script. You can run it multiple times
+safely, as it will skip all ports that are already installed. It also
+supports the dry run option (<TT>-n</TT>), which will show
+what would be done. Run it like <I>stage_1.sh</I>, with
+exactly one argument to denote a config file:</P>
+
+<PRE># <B>./stage_2.sh default</B></PRE><BR>
+
+
+<P class="docText">This example will read the list of ports from
+<I>stage_2.conf.default</I>.</P>
+
+<P class="docText">The actual list of ports consists of lines with two or more
+space-separated words: the category and the port, optionally followed
+by an installation command that will compile and install the port. By
+default, this is <TT>make</TT> <TT>install</TT>.
+Most of the time, it suffices to name only the category and port. You
+can fine-tune some ports by specifying <TT>make</TT>
+variables, as found in the port's
+<I>Makefile</I>:</P>
+
+<PRE>www mozilla make WITHOUT_MAILNEWS=yes WITHOUT_CHATZILLA=yes install
+mail procmail make BATCH=yes install</PRE><BR>
+
+
+<P class="docText">In fact, you can specify arbitrary shell commands, so you are not
+restricted to simple <TT>make</TT> invocations:</P>
+
+<PRE>java linux-sun-jdk14 yes | make install
+news inn-stable CONFIGURE_ARGS="--enable-uucp-rnews --enable-setgid-inews" \
+    make install</PRE><BR>
+
+
+<P class="docText">Note that the line for <TT>news/inn-stable</TT> includes an
+example of a one-shot shell variable assignment to
+<TT>CONFIGURE_ARGS</TT>. The port's
+<I>Makefile</I> will use this as an initial value and
+augment some other essential args.</P>
+
+<P class="docText">The difference between specifying a <TT>make</TT> variable
+on the command line (as in the last example) and the following:</P>
+
+<PRE>news inn-stable make CONFIGURE_ARGS="--enable-uucp-rnews \
+    --enable-setgid-inews" install</PRE><BR>
+
+
+<P class="docText">is that the latter will <span class="docEmphasis">override</span> instead of
+<span class="docEmphasis">augment</span>.</P>
+<P><table border="0" bgcolor="black" cellspacing="0" cellpadding="1" width="90%" align="center"><tr><td><table bgcolor="white" width="100%" border="0" cellspacing="0" cellpadding="6"><tr><td width="60" valign="top"><img src="images/screw.gif" width="52" height="50"></td><td valign="top">
+
+
+<P class="docText">Be careful that your ports do not use an interactive install; they
+should not try to read from stdin. If they do, they will read the
+next line or lines from your list of ports and get confused. If
+<I>stage_2.sh</I> mysteriously skips a port or stops
+processing, this is likely the reason.</P>
+</td></tr></table></td></tr></table></P><br>
+
+<P class="docText">Finally, this script will create a log file named
+<I>LOGDIR/category+port</I> for each port it installs.</P>
+
+<P><table border="0" bgcolor="black" cellspacing="0" cellpadding="1" width="90%" align="center"><tr><td><table bgcolor="white" width="100%" border="0" cellspacing="0" cellpadding="6"><tr><td width="60" valign="top"><img src="images/pushpin.gif" width="52" height="51"></td><td valign="top">
+<P class="docText">When you download the <I>stage_2.sh</I> script, you may
+want to modify these variables at the beginning of the script to
+reflect your environment:</P>
+</td></tr></table></td></tr></table></P><br>
+
+<PRE>DBDIR="/var/db/pkg"
+PORTS="/usr/ports"
+LOGDIR="/home/root/setup/ports.log"; mkdir -p \
+    ${LOGDIR}</PRE><BR>
+
+
+
+<A NAME="bsdhks-CHP-8-SECT-3.3"></A>
+
+<H4 class="docSection2Title">8.3.3 Stage Three: Post-Configuration</H4>
+
+<P class="docText">You
+<A NAME="bsdhks-CHP-8-ITERM-3024"></A>
+installed
+your beloved ports during stage two, but some ports require a little
+bit of configuration. This is the job of stage three, the
+post-configuration stage. I have chosen to implement stage three as a
+<I>Makefile</I> because this allows easy selection of
+what you want to configure simply by running:</P>
+
+<PRE># <B>make -f stage_3.mk target</B></PRE><BR>
+
+
+<P class="docText">As with <I>stage_2.sh</I>, make sure you have
+<I>stage_3.mk</I> available after booting the new
+system, either by putting it on a shared partition or by copying it
+somewhere on the new system.</P>
+
+<P class="docText">Automating the installation of a port may prove difficult if it is
+interactive and does not support <TT>make BATCH=YES
+install</TT>. For a few ports, the interaction is nothing more
+than typing <TT>yes</TT> when asked to accept some license.
+If such input is read from the standard input, we simply pipe the
+appropriate answers to the installation command, usually
+<TT>make install</TT>. This is how I dealt with
+<I>java/linux-sun-jdk14</I> in the previous example.</P>
+
+<P class="docText">This strategy, however, does not work for
+<I>editors/staroffice52</I>, which requires that X11 is
+running. The installation procedure involves a fair amount of
+clicking and typing, so it cannot be automated like other ports can.
+However, the following workaround does the trick for me. First, I
+created a <I>staroffice</I> package on the old system
+with:</P>
+
+<PRE># <B>cd /usr/ports/editors/staroffice52</B>
+# <B>make package</B>
+=  ==&gt;  Building package for staroffice-5.2_1
+Creating package /usr/ports/editors/staroffice52/staroffice-5.2_1.tbz
+Registering depends:.
+Creating bzip'd tar ball in
+'/usr/ports/editors/staroffice52/staroffice-5.2_1.tbz'</PRE><BR>
+
+
+<P class="docText">During stage two, I used <TT>pkg_add</TT> to add this
+package:</P>
+
+<PRE># <B>pkg_add /usr/ports/editors/staroffice52/staroffice-5.2_1.tbz</B></PRE><BR>
+
+
+<A NAME="bsdhks-CHP-8-SIDEBAR-1"></A>
+<P><TABLE CELLSPACING="0" WIDTH="90%" BORDER="1" cellpadding="5"><TR><TD>
+<H2 class="docSidebarTitle">Upgrading Configuration Files</H2>
+
+<P class="docText">Be aware of upgrade issues for config files. In general, you do not
+know when and if the format or contents of a config file changes. A
+new group may be added to <I>/etc/group</I>, or
+<I>/etc/passwd</I> may gain another field. Simply
+copying a config file from the old to the new system may be enough
+most of the time, but in these cases it is not. Unfortunately,
+<TT>mergemaster</TT> is available only for base system
+files, not for anything installed by ports. All you can do is be
+alert, especially when the major version number bumps. All actively
+maintained software programs are prime candidates for config file
+scrutiny. To detect such silent changes, I keep a copy of the
+modified config files in the same place where I keep
+<I>stage_3.mk</I> and compare the result with a
+<TT>make</TT> rule. For example, I examine
+Apache's <I>httpd.conf</I> in target
+<TT>config_apache</TT> with:</P>
+
+<PRE># ... automated httpd.conf modifications here ...
+@if ! cmp -s /usr/local/etc/apache2/httpd.conf httpd.conf; then \
+    echo "ATTENTION: the httpd.conf has changed. Please examine if"; \
+    echo "the modifications are still correct. Here is the diff:"; \
+    diff -u /usr/local/etc/apache2/httpd.conf httpd.conf; \
+fi</PRE><BR>
+
+
+<P class="docText">If the <TT>diff</TT> is innocuous, I can make the message
+go away with <TT>cp /usr/local/etc/apache2/httpd.conf
+httpd.conf</TT>. See  <A class="docLink" HREF="bsdhks-CHP-9-SECT-5.html#bsdhks-CHP-9-SECT-5"><span class="docEmphBold">[Hack #92]</span></A>  for more on this strategy.</P>
+</TD></TR></TABLE></P><br>
+
+<P class="docText">The downloadable <I>stage_3.mk</I> will give you an
+idea of how to automate all reconfiguration.</P>
+
+
+<A NAME="bsdhks-CHP-8-SECT-3.4"></A>
+
+<H4 class="docSection2Title">8.3.4 See Also</H4>
+<UL><LI><P class="docList">"FreeBSD From Scratch" (includes links to the <A NAME="bsdhks-CHP-8-ITERM-3025"></A>
+
+<A NAME="bsdhks-CHP-8-ITERM-3026"></A>
+
+<A NAME="bsdhks-CHP-8-ITERM-3027"></A>
+scripts) at <A class="docLink" target="_blank" HREF="http://www.freebsd.org/doc/en_US.ISO8859-1/articles/fbsd-from-scratch/article.html">http://www.freebsd.org/doc/en_US.ISO8859-1/articles/fbsd-from-scratch/article.html</A></P></LI></UL>
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="bsdhks-CHP-8-SECT-2.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="bsdhks-CHP-8-SECT-4.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

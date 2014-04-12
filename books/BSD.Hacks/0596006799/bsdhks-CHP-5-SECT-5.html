@@ -1,0 +1,232 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>Hack 45 Survive Catastrophic Internet Loss</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="bsdhks-CHP-5-SECT-4.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="bsdhks-CHP-5-SECT-6.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="bsdhks-CHP-5-SECT-5"></A>
+<H3 class="docSection1Title">Hack 45 Survive Catastrophic Internet Loss</H3><P class="docText"><IMG BORDER="0" ALIGN="absmiddle" width="14" height="36" SRC="images/0596006799/figs/expert.gif" ALT="figs/expert.gif"> <IMG BORDER="0" ALIGN="absmiddle" width="36" height="36" SRC="images/0596006799/figs/hack45.gif" ALT="figs/hack45.gif"></P>
+
+<P class="docText"><span class="docEmphBold">Set up your network to recover from a full
+Internet loss</span>.</P>
+
+<P class="docText">Someday <A NAME="bsdhks-CHP-5-ITERM-2377"></A>
+ <A NAME="bsdhks-CHP-5-ITERM-2378"></A>
+ <A NAME="bsdhks-CHP-5-ITERM-2379"></A>
+this all too common event may
+happen: while you're away from your network, your
+connection dies. Whether the ISP drops it, the cable gets unplugged
+or the server behind your <A NAME="bsdhks-CHP-5-ITERM-2380"></A>
+NAT box dies, it is gone. You are
+now lost at sea, not knowing what is actually going on back at home.
+You <TT>ping</TT>, <TT>telnet</TT>, and pray to
+the network gods, but nothing seems to work.</P>
+
+<P class="docText">Wouldn't it be better if your network could
+recognize that it has lost that connection and find a way for you to
+get back in touch? The system that I set up did just that. All it
+took was a well-configured OpenBSD firewall with NAT and a short Ruby
+program that uses the Jabber protocol to get my attention.</P>
+
+<A NAME="bsdhks-CHP-5-SECT-5.1"></A>
+
+<H4 class="docSection2Title">5.5.1 Hardware Configuration</H4>
+
+<P class="docText">I use OpenBSD on a 486 to make my network resistant to total
+connectivity failure. The computer has two network cards, one for the
+DSL bridge and the other for the rest of the network. In addition, I
+managed to find a 56k ISA modem.</P>
+
+<P class="docText">Since this computer provides little more than firewall and NAT
+services, it's more than capable of serving a small
+home or business network. The DSL bridge provides the primary
+Internet connection with a static IP. The service through my provider
+is usually quite good, but there have been troubled times. The house
+has only one phone line, which is plugged into the 56k modem in the
+same computer as the DSL line. You could easily make the modem
+computer a different machine entirely, but I found that this 486 is
+quite compact and sufficient for my purposes.</P>
+
+
+<A NAME="bsdhks-CHP-5-SECT-5.2"></A>
+
+<H4 class="docSection2Title">5.5.2 Connectivity Software</H4>
+
+<P class="docText">The current OpenBSD operating system (Version 3.4 as of this writing)
+comes with a wonderful firewall and NAT package, named Packet Filter
+(PF). PF works well on a day-to-day basis moving my packets from the
+network to the Internet. Unfortunately, it does not handle the loss
+of the connection to the ISP. A full discussion for configuring PF is
+beyond the scope of this hack, but you can find what you need from
+the OpenBSD PF FAQ at <A class="docLink" target="_blank" HREF="http://www.openbsd.org/faq/pf/index.html">http://www.openbsd.org/faq/pf/index.html</A>.</P>
+
+<P class="docText">When the unthinkable happens and your network falls off the Internet,
+you may fall back to your trusty 56k modem. The idea is that the
+modem will dial out automatically once your main connection goes
+away. First, though, you need some way to detect that your connection
+is lost. I use a slow <TT>ping</TT>
+<A NAME="bsdhks-CHP-5-ITERM-2381"></A>
+to the router
+on the other end of my DSL connection.</P>
+
+<P class="docText">I run this heartbeat from <TT>cron</TT> instead of using a
+daemon process. It sends three pings at two-second intervals every 10
+minutes—a very conservative test, especially if you are only
+sending to your local gateway. Here is the <TT>cron</TT>
+entry:</P>
+
+<PRE>*/10 * * * * /usr/local/testconnect/testconnect.sh</PRE><BR>
+
+
+<P class="docText">The <I>testconnect.sh</I> script resembles this:</P>
+
+<PRE>#!/bin/sh
+
+# First gather data about your connection
+PINGS=`ping -c 1 -i 2 [your gateway] | wc -l`
+
+# Apply test and execute on result
+if [ -f /tmp/lostconnection.lock ]
+then
+  echo "Lockfile in place"
+else
+  echo "No lockfile"
+  if [ $PINGS -lt 8 ]
+  then
+    echo "Connection lost, commencing dialup"
+    touch /tmp/lostconnection.lock
+    pfctl -d
+    ppp -nat internet
+    ruby /usr/local/testconnect/send_new_ip.rb
+  else
+    echo "All is well"
+  fi
+fi</PRE><BR>
+
+
+<P class="docText">If the gateway is unavailable, then the <TT>ping</TT>s will
+time out and generate a short ping result. By counting the number of
+letters (with <TT>wc -l</TT>) and applying a length test
+(<TT>if [ $PINGS -lt 8]</TT>), the script can tell if the
+<TT>ping</TT>s failed. In the case of failure, the script
+goes through the steps to give you connectivity through alternative
+means and to stop it from doing it every 10 minutes if things go
+really wrong.</P>
+
+<P class="docText">First, it creates a lockfile to ensure future runs of this script do
+not dial out over and over again. Second, it shuts down the current
+NAT interface to make way for the next step. Third, it fires up the
+modem and connects to my emergency ISP using a preconfigured
+<I>ppp.conf</I> profile called
+<TT>internet</TT>. Here, I enabled NAT
+(<TT>-nat</TT>) over PPP so that computers at my house will
+only notice that the service is slow. The Internet connection will
+still function in the same way. Finally, I run a script to alert me
+to the failure.</P>
+
+<P class="docText">You may have noticed one flaw in this setup. Most cheap ISP services
+usually do not give you the same IP address when you dial into them.
+How do you know how to contact your reconnected gateway from the
+outside? Easy: have the computer tell you.</P>
+
+
+<A NAME="bsdhks-CHP-5-SECT-5.3"></A>
+
+<H4 class="docSection2Title">5.5.3 Jabber and Ruby to the Rescue!</H4>
+
+<P class="docText">There are many ways a computer can contact you with its current
+status. I decided to use <A NAME="bsdhks-CHP-5-ITERM-2382"></A>
+Jabber because I spend a fair amount of
+time with a Jabber session running. This script will notify me
+quickly if something untoward happens to my connection at home, such
+as an incident involving the vacuum cleaner.</P>
+
+<P class="docText">I figured that a message from my computer with the current network
+configuration would provide enough information to allow me to log in
+remotely. The most important information is the current IP address of
+the backup PPP connection. I decided to create a Ruby script using
+the Jabber4r module to accomplish this:</P>
+
+<PRE>require 'jabber4r/jabber4r'
+
+now    = `date`.chomp!
+ipdata = `/sbin/ifconfig tun0`
+
+session = Jabber::Session.bind_digest("user@jabberserver/modem", "secret")
+session.new_chat_message("user@jabberserver").
+   set_body("I had to dial up for internet access at #{now}.\n#{ipdata}\n")
+      .send
+
+sleep 5
+session.close</PRE><BR>
+
+
+<P class="docText">The Ruby script grabs the current time and state of the
+<TT>tun0</TT> interface, which contains the current IP
+address assigned by the dial-up ISP. Armed with that IP address, you
+can then <TT>ssh</TT> into your computer and begin to
+diagnose the situation.</P>
+
+<P class="docText">The Jabber4r module lives at <A class="docLink" target="_blank" HREF="http://jabber4r.rubyforge.org/">http://jabber4r.rubyforge.org/</A>. You will also
+need the REXML module from <A class="docLink" target="_blank" HREF="http://www.germane-software.com/software/rexml/">http://www.germane-software.com/software/rexml/</A>.
+Both of these installed without issue on top of the Ruby package that
+shipped with OpenBSD 3.4.</P>
+
+
+<A NAME="bsdhks-CHP-5-SECT-5.4"></A>
+
+<H4 class="docSection2Title">5.5.4 The Last Piece</H4>
+
+<P class="docText">After your connection has been restored, you need to clean up. You
+will need to stop <TT>ppp</TT>, start PF
+again—hopefully with <TT>pfctl</TT>—and remove
+the lockfile that prevents the
+<I>/tmp/testconnect.sh</I> script from dialing out over
+and over. After that, you should be back to normal, at least until
+the next mishap.</P>
+
+
+<A NAME="bsdhks-CHP-5-SECT-5.5"></A>
+
+<H4 class="docSection2Title">5.5.5 See Also</H4>
+<UL><LI><P class="docList">The Jabber web <A NAME="bsdhks-CHP-5-ITERM-2383"></A>
+site (<A class="docLink" target="_blank" HREF="http://www.jabber.org/">http://www.jabber.org/</A>)</P></LI><LI><P class="docList">The Ruby web <A NAME="bsdhks-CHP-5-ITERM-2384"></A>
+
+<A NAME="bsdhks-CHP-5-ITERM-2385"></A>
+
+<A NAME="bsdhks-CHP-5-ITERM-2386"></A>
+site (<A class="docLink" target="_blank" HREF="http://www.ruby-lang.org/en/">http://www.ruby-lang.org/en/</A>)</P></LI></UL>
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="bsdhks-CHP-5-SECT-4.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="bsdhks-CHP-5-SECT-6.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

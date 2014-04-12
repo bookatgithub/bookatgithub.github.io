@@ -1,0 +1,337 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>Hack 65 Secure a Wireless Network Using PF</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="bsdhks-CHP-6-SECT-12.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="bsdhks-CHP-6-SECT-14.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="bsdhks-CHP-6-SECT-13"></A>
+<H3 class="docSection1Title" id="225793-920">Hack 65 Secure a Wireless Network Using PF</H3><P class="docText"><IMG BORDER="0" id="129022115118" ALIGN="absmiddle" width="14" height="36" SRC="images/0596006799/figs/expert.gif" ALT="figs/expert.gif"> <IMG BORDER="0" id="129022115118" ALIGN="absmiddle" width="36" height="36" SRC="images/0596006799/figs/hack65.gif" ALT="figs/hack65.gif"></P>
+
+<P class="docText"><span class="docEmphBold">Protect your private wireless network from
+unauthorized use</span>.</P>
+
+<P class="docText">The <A NAME="bsdhks-CHP-6-ITERM-2796"></A>
+
+<A NAME="bsdhks-CHP-6-ITERM-2797"></A>
+ <A NAME="bsdhks-CHP-6-ITERM-2798"></A>
+ <A NAME="bsdhks-CHP-6-ITERM-2799"></A>
+abundance of 802.11
+wireless networks has raised an important question. How can you
+secure a wireless network so that only recognized systems can use it?</P>
+
+<P class="docText"><A NAME="bsdhks-CHP-6-ITERM-2800"></A>
+ <A NAME="bsdhks-CHP-6-ITERM-2801"></A>
+Wireless Encryption
+Protocol (WEP) and MAC access lists offer some protection against
+unauthorized users; however, they can be difficult to maintain. With
+OpenBSD's PF, we can maintain tables of recognized
+clients and update those tables with a single shell command. Known
+clients can access the Internet; unknown clients will only ever see a
+web page informing them that this is a private network.</P>
+
+<P class="docText">For this hack, we will use <TT>dhcpd</TT>, PF, and Apache.</P>
+
+<A NAME="bsdhks-CHP-6-SECT-13.1"></A>
+
+<H4 class="docSection2Title">6.13.1 DHCP Configuration</H4>
+
+<P class="docText">We'll use a simple <A NAME="bsdhks-CHP-6-ITERM-2802"></A>
+DHCP configuration in
+<I>/etc/dhcpd.conf</I> like this:</P>
+
+<PRE>shared-network GUEST-NET {
+        max-lease-time 300;
+        default-lease-time 120;
+
+        option     domain-name-servers 192.168.0.1;
+        option     routers 192.168.0.1;
+
+   subnet 192.168.0.0 netmask 255.255.255.0 {
+          range 192.168.0.101 192.168.0.254;
+     }
+}</PRE><BR>
+
+
+<P class="docText">In this case, we're using the subnet 192.168.0.0/24.
+Our <A NAME="bsdhks-CHP-6-ITERM-2803"></A>
+firewall and
+<A NAME="bsdhks-CHP-6-ITERM-2804"></A>
+NAT gateway is 192.168.0.1, and
+it's also configured as the DNS server for our
+network.</P>
+
+<P class="docText">We've allocated a range of IP addresses
+(192.168.0.101 to 192.168.0.254) for distribution on a first-come,
+first-served basis to any host that requests an address via DHCP.
+Anybody that connects to our network will be able to request a valid
+IP address in that range. The security will come from our PF
+configuration.</P>
+
+
+<A NAME="bsdhks-CHP-6-SECT-13.2"></A>
+
+<H4 class="docSection2Title">6.13.2 PF Configuration</H4>
+
+<P class="docText">OpenBSD has an excellent FAQ on <A NAME="bsdhks-CHP-6-ITERM-2805"></A>
+
+<A NAME="bsdhks-CHP-6-ITERM-2806"></A>
+PF, along
+with an example of how to write a ruleset for a home or small office
+network. We'll use this example as a template.</P>
+
+<P class="docText">We'll start with the sample PF configuration that
+allows any host on the internal interface (represented by the macro
+<TT>$int_if</TT>) full access to the Internet. Then, we
+will modify the rules in
+<I>/etc/pf.conf</I><A NAME="bsdhks-CHP-6-ITERM-2807"></A>
+ so
+that only <A NAME="bsdhks-CHP-6-ITERM-2808"></A>
+ <A NAME="bsdhks-CHP-6-ITERM-2809"></A>
+ <A NAME="bsdhks-CHP-6-ITERM-2810"></A>
+authorized hosts have access and set up a
+<A NAME="bsdhks-CHP-6-ITERM-2811"></A>
+web server to respond to requests from
+unauthorized hosts. We will also allow unauthorized hosts direct
+access to our DNS server, to simplify our rules and to avoid more
+complex split-horizon DNS configuration.</P>
+
+<P class="docText">First, let's create the table for authorized hosts
+and macros for the web server and the DNS server:</P>
+
+<PRE>auth_server = "127.0.0.1 port 8080"
+dns_server  = "192.168.0.1"
+table &lt;authorized_hosts&gt; { 192.168.0.1, 192.168.0.11 };</PRE><BR>
+
+
+<P class="docText">These lines go near the top of <I>/etc/pf.conf</I>,
+before any queue, NAT, or filter rules.</P>
+
+<P class="docText">We've initialized the table to contain the addresses
+of our NAT gateway and one other host, 192.168.0.11, a statically
+configured box we'd like to have access to as well.
+While PF has a ruleset loaded, we can add a host to the table on the
+fly:</P>
+
+<PRE># <B>pfctl -t authorized_hosts -Tadd 192.168.0.101</B></PRE><BR>
+
+
+<P class="docText">We can also delete a host:</P>
+
+<PRE># <B>pfctl -t authorized_hosts -Tdelete 192.168.0.102</B></PRE><BR>
+
+
+<P class="docText">and list all the authorized hosts:</P>
+
+<PRE># <B>pfctl -t authorized_hosts -Tshow</B></PRE><BR>
+
+
+<P class="docText">Now we need to modify the filter rules so only our authorized hosts
+have access. These rules allow any host on our network to have
+access:</P>
+
+<PRE>pass in  on $int_if from $int_if:network to any             keep state
+pass out on $int_if from any             to $int_if:network keep state</PRE><BR>
+
+
+<P class="docText">We'll change them like this to use our table:</P>
+
+<PRE>pass in  on $int_if from &lt;authorized_hosts&gt; to any keep state
+pass out on $int_if from any to &lt;authorized_hosts&gt; keep state</PRE><BR>
+
+
+<P class="docText">Right after those rules, we'll add the following
+rules to allow unauthorized hosts to access our web server and DNS
+server:</P>
+
+<PRE>pass in  on $int_if proto tcp from !&lt;authorized_hosts&gt; to $auth_server
+pass in  on $int_if proto {tcp, udp} from any to $dns_server port domain \
+    keep state</PRE><BR>
+
+
+<P class="docText">Now any host in the <TT>authorized_hosts</TT> table will
+have full access to the Internet. Any other hosts will only be able
+to lookup names and reach the web server. We'll add
+some simple rules so unauthorized users will see a rejection page if
+they try to go to any web site.</P>
+
+<P class="docText">In the NAT section, we'll add this rule:</P>
+
+<PRE>rdr on $int_if proto tcp from !&lt;authorized_hosts&gt; to any port www -&gt; \
+    $auth_server</PRE><BR>
+
+
+<P class="docText">This rule redirects any unknown host attempting to access a remote
+machine on the <TT>www</TT> port to the web server that
+will return the rejection page. We could install a web server on the
+firewall box or on some separate machine. In my case,
+I'll run Apache on the firewall, listening at
+127.0.0.1 and port 8080, so it won't be confused
+with any other web servers I'm <A NAME="bsdhks-CHP-6-ITERM-2812"></A>
+ <A NAME="bsdhks-CHP-6-ITERM-2813"></A>
+running.</P>
+
+
+<A NAME="bsdhks-CHP-6-SECT-13.3"></A>
+
+<H4 class="docSection2Title">6.13.3 Apache Configuration</H4>
+
+<P class="docText">Apache is installed by default with OpenBSD, so
+we'll reconfigure it to listen on port 8080 of the
+gateway (with IP address 127.0.0.1) and return the same page for
+every URL requested. (Apache is also available in the FreeBSD ports
+collection and NetBSD packages collection.)</P>
+
+<P class="docText">First, we'll enable Apache with the
+<TT>httpd_flags</TT> parameter in
+<I>/etc/rc.conf</I>. Next, we need to edit
+Apache's configuration file,
+<I>/var/www/conf/httpd.conf</I>. Find the
+<TT>Listen</TT> directive and add
+<TT>127.0.0.1:8080</TT>. Next, create a
+<TT>VirtualHost</TT> entry like this:</P>
+
+<PRE>&lt;VirtualHost 127.0.0.1:8080&gt;
+  ServerAdmin none
+  DocumentRoot /var/www/auth
+  ErrorDocument 404 /index.html
+&lt;/VirtualHost&gt;</PRE><BR>
+
+
+<P class="docText">This tells Apache to listen to the appropriate port and IP address.
+For every incoming request, Apache will try to serve a page beneath
+the given directory. Any time it can't find a page,
+it will serve the <I>index.html</I> page instead.</P>
+
+<P class="docText">We don't have either yet, so create the directory
+<I>/var/www/auth</I> and place an
+<I>index.html</I> like this in it:</P>
+
+<PRE>&lt;html&gt;
+  &lt;head&gt;
+    &lt;title&gt;Unauthorized -- This is a private network&lt;/title&gt;
+  &lt;/head&gt;
+  &lt;body&gt;
+    &lt;h1&gt;Unauthorized&lt;/h1&gt;
+    &lt;p&gt;This is a private network and you are not authorized to use 
+        it.&lt;/p&gt;
+  &lt;/body&gt;
+&lt;/html&gt;</PRE><BR>
+
+
+
+<A NAME="bsdhks-CHP-6-SECT-13.4"></A>
+
+<H4 class="docSection2Title">6.13.4 Putting it All Together</H4>
+
+<P class="docText">Start or restart <TT>dhcpd</TT>, <TT>pf</TT>, and
+Apache like this, where <TT><I>[interfaces]</I></TT> is
+the list of interfaces on which you provide DHCP:</P>
+
+<PRE># <B>kill `cat /var/run/dhcpd.pid`; dhcpd -q </B>
+<span class="docEmphBoldItalic">[interfaces]</span>
+
+# <B>pfctl -f /etc/pf.conf</B>
+# <B>apachectl stop &amp;&amp; apachectl start</B></PRE><BR>
+
+
+<P class="docText">Congratulations! When a new host connects to your network, it should
+request an address with DHCP. If so, it will receive an address in
+the range of 192.168.0.101 to 192.168.0.254. If the assigned address
+is not already in the <TT>authorized_hosts</TT> table, any
+time that host attempts to load a web page it will receive your
+<TT>Unauthorized</TT> page. The firewall will silently
+discard any packets destined for any other ports outside of your
+network.</P>
+
+<P class="docText">If you want to allow a new host to use your network, just use
+<TT>pfctl</TT> to add it to the table. To make the change
+permanent, add the address or a range of addresses to the table
+definition in <I>/etc/pf.conf</I>, or even create an
+external file listing allowed addresses. See the PF FAQ section on
+tables for more.</P>
+
+
+<A NAME="bsdhks-CHP-6-SECT-13.5"></A>
+
+<H4 class="docSection2Title">6.13.5 Security Concerns</H4>
+
+<P class="docText">This <A NAME="bsdhks-CHP-6-ITERM-2814"></A>
+technique only controls the
+ability of hosts on your network to route packets through your
+firewall. It will not protect other hosts on the same subnet from
+unauthorized access, so they should have reasonable local firewall
+rules. A wise approach might be to build a firewall with three
+interfaces: one external and two internal. One internal subnet would
+host your regular machines, and the other subnet would allow guest
+access with this technique, separating the subnets with additional PF
+rules.</P>
+
+
+<A NAME="bsdhks-CHP-6-SECT-13.6"></A>
+
+<H4 class="docSection2Title">6.13.6 Hacking the Hack</H4>
+
+<P class="docText">Running the <A NAME="bsdhks-CHP-6-ITERM-2815"></A>
+web server on the firewall is a simple
+approach. However, you can redirect to another host, such as a
+dedicated authentication server. For simplicity, this server should
+not be on the <TT>$int_if:network</TT> subnet; if it is,
+the redirection becomes more complicated. The PF FAQ has a section
+devoted to port forwarding in this manner.</P>
+
+<P class="docText">I used Apache because it is installed by default with OpenBSD and
+because its configuration is trivial in this case. Almost any HTTP
+server will do the <A NAME="bsdhks-CHP-6-ITERM-2816"></A>
+job, <A NAME="bsdhks-CHP-6-ITERM-2817"></A>
+ <A NAME="bsdhks-CHP-6-ITERM-2818"></A>
+ <A NAME="bsdhks-CHP-6-ITERM-2819"></A>
+though.</P>
+
+
+<A NAME="bsdhks-CHP-6-SECT-13.7"></A>
+
+<H4 class="docSection2Title">6.13.7 See Also</H4>
+<UL><LI><P class="docList">OpenBSD's PF FAQ (<A class="docLink" target="_blank" HREF="http://www.openbsd.org/faq/pf/">http://www.openbsd.org/faq/pf/</A>)</P></LI><LI><P class="docList">NoCat.net's <A NAME="bsdhks-CHP-6-ITERM-2820"></A>
+NoCatAuth, authentication software for open <A NAME="bsdhks-CHP-6-ITERM-2821"></A>
+wireless <A NAME="bsdhks-CHP-6-ITERM-2822"></A>
+
+<A NAME="bsdhks-CHP-6-ITERM-2823"></A>
+
+<A NAME="bsdhks-CHP-6-ITERM-2824"></A>
+
+<A NAME="bsdhks-CHP-6-ITERM-2825"></A>
+nodes (<A class="docLink" target="_blank" HREF="http://nocat.net/">http://nocat.net/</A>)</P></LI></UL>
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="bsdhks-CHP-6-SECT-12.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="bsdhks-CHP-6-SECT-14.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

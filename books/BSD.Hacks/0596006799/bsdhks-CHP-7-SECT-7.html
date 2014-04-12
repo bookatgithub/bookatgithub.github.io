@@ -1,0 +1,466 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>Hack 74 Consolidate Web Server Logs</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="bsdhks-CHP-7-SECT-6.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="bsdhks-CHP-7-SECT-8.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="bsdhks-CHP-7-SECT-7"></A>
+<H3 class="docSection1Title" id="225793-994">Hack 74 Consolidate Web Server Logs</H3><P class="docText"><IMG BORDER="0" id="129022115118" ALIGN="absmiddle" width="14" height="36" SRC="images/0596006799/figs/expert.gif" ALT="figs/expert.gif"> <IMG BORDER="0" id="129022115118" ALIGN="absmiddle" width="36" height="36" SRC="images/0596006799/figs/hack74.gif" ALT="figs/hack74.gif"></P>
+
+<P class="docText"><span class="docEmphBold">Automate log processing on a web
+farm</span>.</P>
+
+<P class="docText">As <A NAME="bsdhks-CHP-7-ITERM-2959"></A>
+ <A NAME="bsdhks-CHP-7-ITERM-2960"></A>
+ <A NAME="bsdhks-CHP-7-ITERM-2961"></A>
+the administrator of multiple web
+servers, I ran across a few logging problems. The first was the need
+to collect logs from multiple web servers and move them to one place
+for processing. The second was the need to do a real-time
+<TT>tail</TT> on multiple logs so I could watch for
+specific patterns, clients, and URLs.</P>
+
+<P class="docText">As a result, I wrote a series of Perl scripts collectively known
+<A NAME="bsdhks-CHP-7-ITERM-2962"></A>
+as <TT>logproc</TT>. These
+scripts send the log line information to a single <A NAME="bsdhks-CHP-7-ITERM-2963"></A>
+log host where some other log analysis
+tool can work on them, solving the first problem. They also multicast
+the log data, letting you watch live log information from multiple
+web servers without having to watch individual log files on each
+host. A primary goal is never to lose log information, so these
+scripts are very careful about checking exit codes and such.</P>
+
+<P class="docText">The basic model is to feed logs to a program via a pipe.
+<A NAME="bsdhks-CHP-7-ITERM-2964"></A>
+Apache supports this with its standard
+logging mechanism, and it is the only web server considered in this
+hack. It should be possible to make the system work with other web
+servers—even servers that can only write logs to a
+file—by using a named pipe.</P>
+
+<P class="docText">I've used these scripts on production sites at a few
+different companies, and I've found that they handle
+high loads quite well.</P>
+
+<A NAME="bsdhks-CHP-7-SECT-7.1"></A>
+
+<H4 class="docSection2Title">7.7.1 logproc Described</H4>
+
+<P class="docText">Download <TT>logproc</TT> from <A class="docLink" target="_blank" HREF="http://www.peterson.ath.cx/~jlp/software/logproc.tar.gz">http://www.peterson.ath.cx/~jlp/software/logproc.tar.gz</A>.
+Then, extract it:</P>
+
+<PRE>% <B>gunzip logproc.tar.gz</B>
+% <B>tar xvf logproc.tar</B>
+% <B>ls -F logproc</B>
+./    ../    logserver.bin/    webserver.bin/
+
+% <B>ls -F logserver.bin</B>
+./    apache_rrd*    cleantmp*    logwatch*    mining/
+../   arclogs*       collect*     meter*
+
+% <B>ls -F webserver.bin</B>
+./    ../    batcher*    cleantmp*    copier*</PRE><BR>
+
+
+<P class="docText">As you can see, there are two parts. One runs on each web server and
+the other runs on the log server.</P>
+
+<P class="docText">The logs are fed to a process called
+<TT>batcher</TT><A NAME="bsdhks-CHP-7-ITERM-2965"></A>
+ that runs on the web server and writes
+the log lines to a batch file as they are received. The batch file
+stays small, containing only five minutes' worth of
+logs. Each completed batch file moves off to a holding area. A second
+script on each web server, the <TT>copier</TT><A NAME="bsdhks-CHP-7-ITERM-2966"></A>
+, takes the completed batch files and
+copies them to the centralized <A NAME="bsdhks-CHP-7-ITERM-2967"></A>
+log
+host. It typically runs from <TT>cron</TT>. On the log
+host, the <TT>collect</TT> process, also run from
+<TT>cron</TT>, collects the batches and sorts the log lines
+into the appropriate daily log files.</P>
+
+<P class="docText">The system can also monitor log information in real time. Each
+<TT>batcher</TT> process dumps the log lines as it receives
+them out to a multicast group. Listener processes can retrieve those
+log lines and provide real-time analysis or monitoring. See the
+sample <TT>logwatch</TT> script included with
+<TT>logproc</TT> for details.</P>
+
+
+<A NAME="bsdhks-CHP-7-SECT-7.2"></A>
+
+<H4 class="docSection2Title">7.7.2 Preparing the Web Servers</H4>
+
+<P class="docText">First, create a home directory for the web server user. In this case,
+we'll call the user <TT>www</TT>. Make
+sure that <TT>www</TT>'s home directory in
+<I>/etc/master.passwd</I> points to that same location,
+not to <I>/nonexistent</I>. If necessary, use
+<TT>vipw</TT> to modify the location in the password file.</P>
+
+<PRE># <B>mkdir ~www</B>
+# <B>chown www:www ~www</B></PRE><BR>
+
+
+<P class="docText">Next, log in as the web server user and create a public/private SSH
+keypair:</P>
+
+<PRE># <B>su www</B>
+% <B>ssh-keygen -t dsa</B></PRE><BR>
+
+
+<P class="docText">Create the directories used by the log processing tools, and copy the
+scripts over:</P>
+
+<PRE>% <B>cd ~www</B>
+% <B>mkdir -p bin logs/{work,save}/0 logs/tmp logs/work/1</B>
+
+% <B>cp $srcdir/logproc/webserver.bin/* bin/</B></PRE><BR>
+
+
+<P class="docText">Examine those scripts, and edit the variables listed in <A class="docLink" HREF="#bsdhks-CHP-7-TABLE-1">Table 7-1</A> to reflect your situation.</P>
+
+<A NAME="bsdhks-CHP-7-TABLE-1"></A>
+<P><TABLE CELLSPACING="0" BORDER="1" RULES="all" CELLPADDING="4" WIDTH="100%"><CAPTION><h5 class="docTableTitle">Table 7-1. Variables and values for logproc's web server scripts</h5></CAPTION><COLGROUP><COL><COL><COL></COLGROUP><THEAD><TR><TH class="docTableHeader">
+<P class="docText">Script</P>
+</TH><TH class="docTableHeader">
+<P class="docText">Variable</P>
+</TH><TH class="docTableHeader">
+<P class="docText">Value</P>
+</TH></TR></THEAD><TR><TD class="docTableCell">
+<P class="docText"><TT>batcher</TT></P>
+</TD><TD class="docTableCell">
+<P class="docText"><TT>$loguser</TT></P>
+</TD><TD class="docTableCell">
+<P class="docText">The name of the web server user</P>
+</TD></TR><TR><TD class="docTableCell">&nbsp;</TD><TD class="docTableCell">
+<P class="docText"><TT>$mcast_if</TT></P>
+</TD><TD class="docTableCell">
+<P class="docText">The name of the interface that can reach the log host</P>
+</TD></TR><TR><TD class="docTableCell">&nbsp;</TD><TD class="docTableCell">
+<P class="docText"><TT>$logroot</TT></P>
+</TD><TD class="docTableCell">
+<P class="docText">The home directory of the web server user</P>
+</TD></TR><TR><TD class="docTableCell">
+<P class="docText"><TT>cleantmp</TT></P>
+</TD><TD class="docTableCell">
+<P class="docText"><TT>$logroot</TT></P>
+</TD><TD class="docTableCell">
+<P class="docText">The home directory of the web server user</P>
+</TD></TR><TR><TD class="docTableCell">
+<P class="docText">copier</P>
+</TD><TD class="docTableCell">
+<P class="docText"><TT>$loghost</TT></P>
+</TD><TD class="docTableCell">
+<P class="docText">The name of the host where the logs will collect</P>
+</TD></TR><TR><TD class="docTableCell">&nbsp;</TD><TD class="docTableCell">
+<P class="docText"><TT>$logroot</TT></P>
+</TD><TD class="docTableCell">
+<P class="docText">The home directory of the web server user</P>
+</TD></TR><TR><TD class="docTableCell">&nbsp;</TD><TD class="docTableCell">
+<P class="docText"><TT>$loghost_logroot</TT></P>
+</TD><TD class="docTableCell">
+<P class="docText">The directory on the collector host where the logs will be collected</P>
+</TD></TR><TR><TD class="docTableCell">&nbsp;</TD><TD class="docTableCell">
+<P class="docText">$loghost_loguser</P>
+</TD><TD class="docTableCell">
+<P class="docText">The user on the log host who owns the logs</P>
+</TD></TR><TR><TD class="docTableCell">&nbsp;</TD><TD class="docTableCell">
+<P class="docText">$scp_prog</P>
+</TD><TD class="docTableCell">
+<P class="docText">The full path to the <TT>scp</TT> program, plus any
+additional options</P>
+</TD></TR><TR><TD class="docTableCell">&nbsp;</TD><TD class="docTableCell">
+<P class="docText">$ssh_prog</P>
+</TD><TD class="docTableCell">
+<P class="docText">The full path to <TT>ssh</TT>, plus any options</P>
+</TD></TR></TABLE></P><br>
+
+<P class="docText">Then, make sure you have satisfied all of the dependencies for these
+programs:</P>
+
+<PRE># <B>perl -wc batcher; perl -wc cleantmp; perl -wc copier</B></PRE><BR>
+
+
+<P class="docText">The only dependency you likely won't have is
+<TT>IO::Socket::Multicast</TT>. Install it via the
+<I>/usr/ports/net/p5-IO-Socket-Multicast</I> port on
+FreeBSD systems or from the CPAN site (<A class="docLink" target="_blank" HREF="http://www.cpan.org/">http://www.cpan.org/</A>).</P>
+
+<P class="docText">Next, configure <I>httpd.conf</I> to log to the
+<TT>batcher</TT> in parallel with normal logging. Note that
+the <TT>batcher</TT> command line must include the instance
+(<TT>site</TT>, <TT>virtual</TT>,
+<TT>secure</TT>) and type (<TT>access</TT>,
+<TT>error</TT>, <TT>ssl</TT>) of logging:</P>
+
+<PRE>LogFormat "%h %l %u %t \"%r\" %&gt;s %b \"%{Referer}i\" "%{User-Agent}i\" \
+    \"%{Cookie}i\" %v" full
+CustomLog "|/home/www/bin/batcher site access" full
+ErrorLog  "|/home/www/bin/batcher site error"</PRE><BR>
+
+
+<P class="docText">You can adjust the <TT>LogFormat</TT> directive as
+necessary to log the information you or your log summarization
+software needs.</P>
+
+<P class="docText">Finally, restart Apache and verify that the batchers are creating
+batches:</P>
+
+<PRE># <B>apachectl configtest </B> 
+# <B>apachectl graceful </B>
+# <B>cd $wwwhome/logs/ </B>
+# <B>ls tmp </B>       <I> Should list error log files for each batcher instance</I>
+# <B>ls work/0 </B>    <I> Should list the working batches for each batcher instance</I>
+# <B>ls save/0 </B>    <I> Verify that batches have moved into the save directory after a </I>
+<I>                                   five-minute batch interval</I>
+# <B>ls work/0 </B>    <I> and that new batches are currently being created</I></PRE><BR>
+
+
+
+<A NAME="bsdhks-CHP-7-SECT-7.3"></A>
+
+<H4 class="docSection2Title">7.7.3 Preparing the Log Host</H4>
+
+<P class="docText">Start <A NAME="bsdhks-CHP-7-ITERM-2969"></A>
+by
+creating a <TT>log</TT> user to receive the logs, complete
+with a home directory. Become the <TT>log</TT> user and
+copy the public key from the web server into
+<I>~log/.ssh/authorized_keys2</I>. Then, as the
+<TT>log</TT> user, create the directories the log
+collection tools use:</P>
+
+<PRE># <B>su log</B>
+% <B>cd ~log</B>
+% <B>mkdir -p bin web/{work,save}/{0,1} web/tmp web/{current,archive}</B></PRE><BR>
+
+
+
+<A NAME="bsdhks-CHP-7-SECT-7.4"></A>
+
+<H4 class="docSection2Title">7.7.4 Testing the Configuration</H4>
+
+<P class="docText">From a web server (as the web server's user),
+<TT>ssh</TT> to the log host manually to verify the
+configuration of the <TT>authorized_keys2</TT>:</P>
+
+<PRE># <B>su www</B>
+% <B>ssh loghost -l loguser date</B></PRE><BR>
+
+
+<P><table border="0" bgcolor="black" cellspacing="0" cellpadding="1" width="90%" align="center"><tr><td><table bgcolor="white" width="100%" border="0" cellspacing="0" cellpadding="6"><tr><td width="60" valign="top"><img src="images/pushpin.gif" width="52" height="51"></td><td valign="top">
+<P class="docText">If your command fails, check that the permissions on that file are
+set to <TT>600</TT>.</P>
+</td></tr></table></td></tr></table></P><br>
+
+<P class="docText">Then, run <TT>copier</TT> manually to verify that the log
+files actually make it to the log server. Watch your run output on
+the web server, then check that <I>save/0</I> on the
+log server contains the newly copied logs.</P>
+
+<P class="docText">Once you're satisfied with these manual tests,
+schedule a <TT>cron</TT> job that copies and cleans up log
+files. These jobs should run as the web server user:</P>
+
+<PRE># <B>crontab -e -u www</B>
+
+----------------------------- cut here -----------------------------
+# copy the log files down to the collector host every 15 minutes
+0,15,30,45 * * * * /home/www/bin/copier
+
+# clean the tmp directory once an hour
+0 * * * * /home/www/bin/cleantmp
+----------------------------- cut here -----------------------------</PRE><BR>
+
+
+<P class="docText">Finally, wait until the next <A NAME="bsdhks-CHP-7-ITERM-2970"></A>
+<TT>copier</TT> run and
+verify that the batches appear on the log host.</P>
+
+
+<A NAME="bsdhks-CHP-7-SECT-7.5"></A>
+
+<H4 class="docSection2Title">7.7.5 Configuring Scripts on the Log Host</H4>
+
+<P class="docText">You <A NAME="bsdhks-CHP-7-ITERM-2971"></A>
+should now have several batches
+sitting in <I>save/0</I> in the log tree. Each batch
+contains the log lines collected over the batch interval (by default,
+five minutes) and has a filename indicating the instance
+(<TT>site</TT>, <TT>virtual</TT>,
+<TT>secure</TT>), type (<TT>access</TT>,
+<TT>error</TT>, <TT>ssl</TT>), web server host,
+timestamp indicating when the batch was originally created, and PID
+of the <TT>batcher</TT> process that created each batch.</P>
+
+<P class="docText">Now, install the log processing scripts into
+<I>bin/</I>:</P>
+
+<PRE># <B>cp $srcdir/collector/{arclogs,cleantmp,collect} bin/</B></PRE><BR>
+
+
+<P class="docText">Edit them to have valid paths for their new location and any OS
+dependencies, as shown in <A class="docLink" HREF="#bsdhks-CHP-7-TABLE-2">Table 7-2</A>.</P>
+
+<A NAME="bsdhks-CHP-7-TABLE-2"></A>
+<P><TABLE CELLSPACING="0" BORDER="1" RULES="all" CELLPADDING="4" WIDTH="100%"><CAPTION><h5 class="docTableTitle">Table 7-2. Variables and values for logproc's log host scripts</h5></CAPTION><COLGROUP><COL><COL><COL></COLGROUP><THEAD><TR><TH class="docTableHeader">
+<P class="docText">Script</P>
+</TH><TH class="docTableHeader">
+<P class="docText">Variable</P>
+</TH><TH class="docTableHeader">
+<P class="docText">Value</P>
+</TH></TR></THEAD><TR><TD class="docTableCell">
+<P class="docText"><TT>arclogs</TT></P>
+</TD><TD class="docTableCell">
+<P class="docText"><TT>$logroot</TT></P>
+</TD><TD class="docTableCell">
+<P class="docText">The location of the logs</P>
+</TD></TR><TR><TD class="docTableCell">&nbsp;</TD><TD class="docTableCell">
+<P class="docText"><TT>$gzip_prog</TT></P>
+</TD><TD class="docTableCell">
+<P class="docText">The full path to the <TT>gzip</TT> binary</P>
+</TD></TR><TR><TD class="docTableCell">
+<P class="docText"><TT>cleantmp</TT></P>
+</TD><TD class="docTableCell">
+<P class="docText"><TT>$logroot</TT></P>
+</TD><TD class="docTableCell">
+<P class="docText">The location of the logs</P>
+</TD></TR><TR><TD class="docTableCell">
+<P class="docText"><TT>collect</TT></P>
+</TD><TD class="docTableCell">
+<P class="docText"><TT>$logroot</TT></P>
+</TD><TD class="docTableCell">
+<P class="docText">The location of the logs</P>
+</TD></TR><TR><TD class="docTableCell">&nbsp;</TD><TD class="docTableCell">
+<P class="docText"><TT>$gzip_prog</TT></P>
+</TD><TD class="docTableCell">
+<P class="docText">The full path to the <TT>gzip</TT> binary</P>
+</TD></TR></TABLE></P><br>
+
+<P class="docText">Again, make sure all dependencies are satisfied:</P>
+
+<PRE># <B>perl -wc arclogs; perl -wc cleantmp; perl -wc collect</B></PRE><BR>
+
+
+<P class="docText">If you don't have
+<TT>Time::ParseDate</TT>, then install it from the
+<I>/usr/ports/devel/p5-Time-modules</I> port on FreeBSD
+or from CPAN.</P>
+
+<P class="docText">Run <TT>collect</TT> manually as the log user to verify
+that the log batches get collected and that log data ends up in the
+appropriately dated log file. Once you're satisfied,
+automate these tasks in a <TT>cron</TT> job for the log
+user:</P>
+
+<PRE># <B>crontab -e -u log</B>
+
+----------------------------- cut here -----------------------------
+# run the collector once an hour
+0 * * * * /home/log/bin/collect
+
+# clean the tmp directory once an hour
+0 * * * * /home/log/bin/cleantmp
+----------------------------- cut here -----------------------------</PRE><BR>
+
+
+<P class="docText">Wait until the next <TT>collect</TT> run and verify that
+the batches are properly collected.</P>
+
+<P class="docText">Compare the collected log files with the contents of your old logging
+mechanism's log file on the web servers. Make sure
+every hit makes it into the collected log files for the day. You
+might want to run both logging mechanisms for several days to get a
+good feel that the system is working as expected.</P>
+
+
+<A NAME="bsdhks-CHP-7-SECT-7.6"></A>
+
+<H4 class="docSection2Title">7.7.6 Viewing Live Log Data</H4>
+
+<P class="docText">The <A NAME="bsdhks-CHP-7-ITERM-2973"></A>
+log server programs provide additional
+tools for monitoring and summarizing live log data. On a traditional
+single web server environment, you can always <TT>tail</TT>
+the log file to see what's going on. This is no
+longer easy to do, because the logs are now written in small batches.
+(Of course, if you have multiple web servers, multiple
+<TT>tail</TT> processes would have to run on each web
+server.)</P>
+
+<P class="docText">The <A NAME="bsdhks-CHP-7-ITERM-2974"></A>
+<TT>batcher</TT> process
+helps with this by multicasting the logs out to a multicast group.
+Use the <TT>logwatch</TT> tool on the log server to view
+the live log data:</P>
+
+<PRE>% <B>cd ~log/bin</B>
+% <B>./logwatch</B>
+&lt;lines of log data spew out here&gt;</PRE><BR>
+
+
+<P class="docText">On a high-volume web site, there is likely to be too much data to
+scan manually. <TT>logwatch</TT> accepts arguments to
+specify which type of log data you want to see. You can also specify
+a Perl regular expression to limit the output.</P>
+
+<P class="docText">The <TT>meter</TT> script watches the log data on the
+multicast stream, in real time, and summarizes some information about
+the log data. It also stores information in an RRDTool (<A class="docLink" target="_blank" HREF="http://www.rrdtool.org/">http://www.rrdtool.org/</A>) database.</P>
+
+<P class="docText">The <I>mining</I> directory contains a
+<TT>checklog</TT> script that produces a
+"top ten clients" and
+"top ten vhosts" report.
+Alternatively, you can feed the collected log files to your existing
+web server log processing tools.</P>
+
+
+<A NAME="bsdhks-CHP-7-SECT-7.7"></A>
+
+<H4 class="docSection2Title">7.7.7 See Also</H4>
+<UL><LI><P class="docList"><A NAME="bsdhks-CHP-7-ITERM-2975"></A>
+The <TT>logproc</TT> <A NAME="bsdhks-CHP-7-ITERM-2976"></A>
+web <A NAME="bsdhks-CHP-7-ITERM-2977"></A>
+
+<A NAME="bsdhks-CHP-7-ITERM-2978"></A>
+
+<A NAME="bsdhks-CHP-7-ITERM-2979"></A>
+site (<A class="docLink" target="_blank" HREF="http://www.peterson.ath.cx/~jlp/software/logproc.tar.gz">http://www.peterson.ath.cx/~jlp/software/logproc.tar.gz</A>)</P></LI></UL>
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="bsdhks-CHP-7-SECT-6.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="bsdhks-CHP-7-SECT-8.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

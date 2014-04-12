@@ -1,0 +1,241 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>Hack 81 Create a Package Repository</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="bsdhks-CHP-8-SECT-5.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="bsdhks-CHP-8-SECT-7.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="bsdhks-CHP-8-SECT-6"></A>
+<H3 class="docSection1Title" id="162637-867">Hack 81 Create a Package Repository</H3><P class="docText"><IMG BORDER="0" id="134053078072" ALIGN="absmiddle" width="14" height="36" SRC="images/0596006799/figs/expert.gif" ALT="figs/expert.gif"> <IMG BORDER="0" id="134053078072" ALIGN="absmiddle" width="36" height="36" SRC="images/0596006799/figs/hack81.gif" ALT="figs/hack81.gif"></P>
+
+<P class="docText"><span class="docEmphBold">Combine the advantages of compiling from source
+and installing packages</span>.</P>
+
+<P class="docText">We <A NAME="bsdhks-CHP-8-ITERM-3048"></A>
+ <A NAME="bsdhks-CHP-8-ITERM-3049"></A>
+saw in  <A class="docLink" HREF="bsdhks-CHP-7-SECT-2.html#bsdhks-CHP-7-SECT-2"><span class="docEmphBold">[Hack #69]</span></A>  that compiling applications
+from source, i.e., by making their ports, has several advantages. You
+can tune <I>/etc/make.conf</I> to take advantage of
+your architecture. You can also customize the installation by passing
+various arguments to <TT>make</TT>.</P>
+
+<P class="docText">However, if you're responsible for maintaining
+software on multiple machines, do you always want to install from
+source? If your systems run similar hardware, why not create your own
+customized packages on one machine and make them available to your
+other systems via a package repository?</P>
+
+<P class="docText">Creating your own custom packages allows you to retain all the
+benefits of <TT>make</TT>. Even better, the resulting
+package installs the desired software very quickly. This can be a
+real time-saver when you maintain multiple systems.</P>
+
+<P><table border="0" bgcolor="black" cellspacing="0" cellpadding="1" width="90%" align="center"><tr><td><table bgcolor="white" width="100%" border="0" cellspacing="0" cellpadding="6"><tr><td width="60" valign="top"><img src="images/pushpin.gif" width="52" height="51"></td><td valign="top">
+<P class="docText">The experienced hacker may prefer to use
+<I>/usr/ports/devel/distcc</I> to provide multiple
+builds.</P>
+</td></tr></table></td></tr></table></P><br>
+
+<A NAME="bsdhks-CHP-8-SECT-6.1"></A>
+
+<H4 class="docSection2Title">8.6.1 Creating Custom Packages</H4>
+
+<P class="docText">Pick a machine in your network to contain the package repository, and
+install the ports collection on that system. The rest of your systems
+won't need the ports collection, which saves their
+disk space for other purposes.</P>
+
+<P class="docText">On the system containing the ports collection, create a directory to
+store the packages:</P>
+
+<PRE># <B>mkdir /usr/ports/packages</B></PRE><BR>
+
+
+<P class="docText">Then, decide which packages you'd like to create.
+I'll start with Exim. Before creating the package,
+I'll search through the port's
+<I>Makefile</I> to see if there are any
+<TT>make</TT> options:</P>
+
+<PRE># <B>grep WITH /usr/ports/mail/exim/Makefile</B>
+#WITH_TCP_WRAPPERS=   yes
+#WITH_MYSQL=          yes
+#WITH_SASLAUTHD=      yes
+#WITHOUT_TLS=         yes
+#WITHOUT_PERL=        yes
+#WITHOUT_PAM=         yes
+&lt;snip&gt;</PRE><BR>
+
+
+<P class="docText">This particular port has dozens of tweakables. After a more careful
+read-through of the <I>Makefile</I>,
+I've chosen to use <TT>WITHOUT_IPV6</TT>
+and <TT>WITH_SASLAUTHD</TT>.</P>
+
+<P class="docText">Next, I need to determine if there are any dependencies:</P>
+
+<PRE># <B>grep DEP /usr/ports/mail/exim/Makefile</B>
+LIB_DEPENDS=    iconv.3:${PORTSDIR}/converters/libiconv
+RUN_DEPENDS=    ${LOCALBASE}/sbin/eximon:${PORTSDIR}/mail/exim-monitor
+LIB_DEPENDS+=    db4.0:${PORTSDIR}/databases/db4
+LIB_DEPENDS+=    db41.1:${PORTSDIR}/databases/db41
+LIB_DEPENDS+=    db-4.2.2:${PORTSDIR}/databases/db42
+RUN_DEPENDS+=    ${LOCALBASE}/sbin/saslauthd:${PORTSDIR}/security/
+                  cyrus-sasl2-saslauthd
+RUN_DEPENDS+=    ${LOCALBASE}/sbin/pwcheck:${PORTSDIR}/security/cyrus-sasl
+LIB_DEPENDS+=    pq.3:${PORTSDIR}/${POSTGRESQL_PORT}</PRE><BR>
+
+
+<P class="docText">Yup. Lots of those as well. This means I'll pass an
+extra argument to <TT>make</TT> to ensure the package also
+creates packages for each dependency. Once I know the desired
+<TT>make</TT> arguments, I create the package:</P>
+
+<PRE># <B>cd /usr/ports/mail/exim</B>
+# <B>make package -DWITHOUT_IPV6 -DWITH_SASLAUTHD DEPENDS_TARGET=package</B></PRE><BR>
+
+
+<P class="docText">Notice that I used <TT>make package</TT> rather than the
+usual <TT>make install</TT>. I then included my two
+<TT>make</TT> options. I ended the command with the
+<TT>DEPENDS_TARGET=package</TT> option. (I found this
+argument on a mailing list as the result of a Google search.) If
+you're building <span class="docEmphasis">any</span> package
+that has dependencies, remember to include that option.</P>
+
+<P class="docText"><TT>make package</TT> does two things. First, it creates
+and stores the package in a subdirectory of
+<I>/usr/ports/packages</I>. In this example, that
+subdirectory will be <I>mail</I>. Second, it installs
+the port on the local machine, if necessary. If you
+don't want to keep the application installed on the
+machine acting as the package repository, simply type <TT>make
+deinstall</TT> after creating the package.</P>
+
+
+<A NAME="bsdhks-CHP-8-SECT-6.2"></A>
+
+<H4 class="docSection2Title">8.6.2 Creating the NFS Share</H4>
+
+<P class="docText">Once you've populated
+<I>/usr/ports/packages</I> with the packages required
+by your network, set up an NFS mount to share the package repository.
+The easiest way to do this is <A NAME="bsdhks-CHP-8-ITERM-3050"></A>
+ <A NAME="bsdhks-CHP-8-ITERM-3051"></A>
+with
+<TT>stand/sysinstall</TT>. On the machine holding the
+packages:</P>
+
+<PRE># <B>/stand/sysinstall</B></PRE><BR>
+
+
+<P class="docText">Choose Configure, then Networking, and then NFS server. You should
+see the following message:</P>
+
+<PRE>Operating as an NFS server means that you must first configure an 
+/etc/exports file to indicate which hosts are allowed certain kinds of 
+access to your local file systems. Press [ENTER] now to invoke an editor 
+on /etc/exports</PRE><BR>
+
+
+<P class="docText">Unless you've changed your default editor,
+<I>/etc/exports</I> will open in <TT>vi</TT>.
+The default file contains some example syntax; see <TT>man
+exports</TT> for additional tips.</P>
+
+<P class="docText">I added this line to reflect my network settings:</P>
+
+<PRE>/usr/ports/packages -network 192.168.2.0 -mask 255.255.255.0</PRE><BR>
+
+
+<P class="docText">Once you've saved your changes, initialize and start
+the NFS server:</P>
+
+<PRE># <B>/etc/rc.d/nfsd rcvar</B>
+# <B>/etc/rc.d/nfsd start</B></PRE><BR>
+
+
+<P class="docText">Then, ensure the NFS server is listening for requests:</P>
+
+<PRE># <B>sockstat | grep nfs</B>
+root   nfsd   3973   tcp4*:2049   *:*</PRE><BR>
+
+
+<P class="docText">Next, you'll need to create an NFS client on each
+machine that will use the package repository. This time, in
+<TT>/stand/sysinstall</TT>, choose NFS client instead of
+NFS server. There are no prompts, so just select the box. Once
+you've exited the utility, type:</P>
+
+<PRE># <B>nfsiod -n 4</B></PRE><BR>
+
+
+<P class="docText">This will optimize the performance of the NFS client.</P>
+
+<P class="docText">Then, check to see if you can access your package repository. In my
+example, the machine containing the packages has an IP address of
+192.168.2.12 and the local machine has a mount point called
+<I>/packages</I>:</P>
+
+<PRE># <B>mkdir /packages</B>
+# <B>mount 192.168.2.12:/usr/ports/packages /packages</B>
+# <B>ls /packages</B>
+All    Latest    ipv6            mail    security    sysutils</PRE><BR>
+
+
+<P class="docText">These various subdirectories contain the Exim package and its
+dependencies. To get an idea of which packages are available, use
+<TT>ls /packages/All</TT>.</P>
+
+<P class="docText">It's also a good idea to try a test installation of
+a package:</P>
+
+<PRE># <B>pkg_add /packages/mail/exim-4.30.tbz</B></PRE><BR>
+
+
+<P class="docText">Don't forget to unmount the NFS share when
+you're <A NAME="bsdhks-CHP-8-ITERM-3052"></A>
+ <A NAME="bsdhks-CHP-8-ITERM-3053"></A>
+finished:</P>
+
+<PRE># <B>umount /packages</B></PRE><BR>
+
+
+
+<A NAME="bsdhks-CHP-8-SECT-6.3"></A>
+
+<H4 class="docSection2Title">8.6.3 See Also</H4>
+<UL><LI><P class="docList"><TT>man exports</TT></P></LI><LI><P class="docList"><TT>man nfsiod</TT></P></LI></UL>
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="bsdhks-CHP-8-SECT-5.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="bsdhks-CHP-8-SECT-7.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

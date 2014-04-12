@@ -1,0 +1,268 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>Hack 73 Use the GNU Debugger to Analyze a Buffer Overflow</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="bsdhks-CHP-7-SECT-5.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="bsdhks-CHP-7-SECT-7.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="bsdhks-CHP-7-SECT-6"></A>
+<H3 class="docSection1Title">Hack 73 Use the GNU Debugger to Analyze a Buffer Overflow</H3><P class="docText"><IMG BORDER="0" ALIGN="absmiddle" width="14" height="36" SRC="images/0596006799/figs/expert.gif" ALT="figs/expert.gif"> <IMG BORDER="0" ALIGN="absmiddle" width="36" height="36" SRC="images/0596006799/figs/hack73.gif" ALT="figs/hack73.gif"></P>
+
+<P class="docText"><span class="docEmphBold">You don't have to be a
+programmer to use a debugger</span>.</P>
+
+<P class="docText">As <A NAME="bsdhks-CHP-7-ITERM-2945"></A>
+ <A NAME="bsdhks-CHP-7-ITERM-2946"></A>
+
+<A NAME="bsdhks-CHP-7-ITERM-2947"></A>
+ <A NAME="bsdhks-CHP-7-ITERM-2948"></A>
+an <A NAME="bsdhks-CHP-7-ITERM-2949"></A>
+end user,
+you may not realize that you have the ability to analyze security
+exploits. After all, the organization that distributes your operating
+system of choice or the provider of a given application will deal
+with security issues and make updates available.</P>
+
+<P class="docText">However, keep in mind that Security Officers apply the same tools and
+techniques that end users use for debugging programs. Knowing how to
+analyze a problem will help you to troubleshoot any misbehaving
+process in a Unix environment.</P>
+
+<A NAME="bsdhks-CHP-7-SECT-6.1"></A>
+
+<H4 class="docSection2Title">7.6.1 An Example Exploit</H4>
+
+<P class="docText">Analyzing a malfunctioning process starts with basic information,
+such as error messages and return values. Sometimes those
+aren't enough, though. Some error messages are
+unclear. In the case of security vulnerabilities, there may not be an
+error code or return value, because the program may crash or
+misbehave silently.</P>
+
+<P class="docText">The BSDs provide several tools to analyze a
+program's execution. You can monitor system calls
+with <TT>ktrace</TT> and resources with
+<TT>fstat</TT>. You can run a debugger such as GDB, the GNU
+Debugger, and watch your operating system's internal
+operation.</P>
+
+<P class="docText">In some cases, a program must run in a particular environment, which
+may make it difficult to analyze due to the limitations of some
+tools. For example, a <TT>telnetd</TT><A NAME="bsdhks-CHP-7-ITERM-2950"></A>
+ advisory from 2001 (<A class="docLink" target="_blank" HREF="http://www.cert.org/advisories/CA-2001-21.html">http://www.cert.org/advisories/CA-2001-21.html</A>)
+affected most Unix operating systems. This particular vulnerability
+came to light when a group called TESO released an example exploit
+for it.</P>
+
+<P class="docText">On Unix systems, <TT>telnetd</TT> runs as root, so that
+once the system authenticates the user, the process has the
+privileges required to set the user ID of the login shell to that of
+the user who logged in. This means that a remote entity who can cause
+<TT>telnetd</TT> to misbehave by sending it carefully
+designed input could execute processes as root on your system.</P>
+
+<P class="docText">On most Unix systems, <TT>telnetd</TT> does not run as a
+standalone daemon. Since logins are relatively infrequent (on the
+system timescale compared to thousands of interrupts per second), the
+<TT>inetd</TT> service starts <TT>telnetd</TT> as
+needed.</P>
+
+<P class="docText">This is a simple example of the data stream sufficient to crash
+vulnerable <TT>telnetd</TT>s using <TT>perl</TT>
+and <TT>nc</TT> (netcat):</P>
+
+<PRE>% <B>perl -e 'print "\377\366"x512' |  nc testhost telnet</B></PRE><BR>
+
+
+<P class="docText">This was the example I used to diagnose the problem and test the fix.
+If you run this command against an impervious Telnet daemon,
+you'll see the following output:</P>
+
+<PRE>% <B>perl -e 'print "\377\366"x512' | nc testhost telnet</B>
+
+[Yes]
+
+[Yes]
+
+[Yes]</PRE><BR>
+
+
+<P class="docText">The <TT>[Yes]</TT> message will repeat 512 times because
+the characters you sent, <TT>\377\366</TT>, represent the
+Telnet protocol's "ARE YOU
+THERE" control message, and you asked the question
+<TT>512</TT> times.</P>
+
+<P class="docText">If you run this command against a vulnerable
+<TT>telnetd</TT>, the output can vary. In some cases, your
+connection may close before you get 512 <TT>[Yes]</TT>
+responses because <TT>telnetd</TT> crashed. In other cases,
+you may receive seemingly random output from portions of the
+<TT>telnetd</TT> memory space. These both indicate that the
+program did something it was not supposed to, due to the specific
+input you gave it.</P>
+
+
+<A NAME="bsdhks-CHP-7-SECT-6.2"></A>
+
+<H4 class="docSection2Title">7.6.2 Using the GNU Debugger</H4>
+
+<P class="docText">In <A NAME="bsdhks-CHP-7-ITERM-2951"></A>
+order to fix the problem, we need to
+find out where the executable did something incorrectly. We would
+like to run the program under the control of GDB, but we cannot start
+<TT>telnetd</TT> from the command line the way we usually
+would when debugging most executables. Normally, GDB is invoked in
+one of three ways.</P>
+
+<P class="docText">First, to run a program and debug it, type:</P>
+
+<PRE>% <B>gdb </B>
+<span class="docEmphBoldItalic">programname</span>
+
+GNU gdb 5.3nb1
+Copyright 2002 Free Software Foundation, Inc.
+GDB is free software, covered by the GNU General Public License, and you 
+are welcome to change it and/or distribute copies of it under certain 
+conditions.
+Type "show copying" to see the conditions.
+There is absolutely no warranty for GDB.  Type "show warranty" for details.
+This GDB was configured as "i386--netbsdelf"...(no debugging symbols found)...
+(gdb) <B>run</B></PRE><BR>
+
+
+<P><table border="0" bgcolor="black" cellspacing="0" cellpadding="1" width="90%" align="center"><tr><td><table bgcolor="white" width="100%" border="0" cellspacing="0" cellpadding="6"><tr><td width="60" valign="top"><img src="images/pushpin.gif" width="52" height="51"></td><td valign="top">
+<P class="docText">If this is your first time using <TT>gdb</TT>, type
+<TT>help</TT> at the <TT>(gdb)</TT> prompt. Type
+<TT>quit</TT> when you are finished using the debugger.</P>
+</td></tr></table></td></tr></table></P><br>
+
+<P class="docText">Second, to examine the core file of a program that has already
+crashed, use:</P>
+
+<PRE>% <B>gdb </B>
+<span class="docEmphBoldItalic">programname</span>
+<B> </B>
+<span class="docEmphBoldItalic">programname</span>
+<B>.core</B></PRE><BR>
+
+
+<P class="docText">Third, to examine a program that is already running, type:</P>
+
+<PRE>% <B>gdb </B>
+<span class="docEmphBoldItalic">programname</span>
+<B> </B>
+<span class="docEmphBoldItalic">processid</span></PRE><BR>
+
+
+<P class="docText">In the case of <TT>telnetd</TT>, we cannot use the first
+method, because <TT>inetd</TT> must start
+<TT>telnetd</TT> in order to attach it to a network socket
+and operate properly. We cannot use the second method, because
+processes that run with root privileges do not leave core files,
+since the program's memory image could contain
+sensitive data.</P>
+
+<P class="docText">That leaves the third method. Attaching to a running process is
+problematic because <TT>telnetd</TT> isn't
+running until someone connects. We'll need to modify
+our attack script:</P>
+
+<PRE>% <B>perl -e 'sleep 30; print "\377\366"x512' |  nc testhost telnet</B></PRE><BR>
+
+
+<P class="docText">Now <TT>nc</TT> opens a socket to the testhost,
+<TT>inetd</TT> spawns a <TT>telnetd</TT> in
+response, and <TT>perl</TT> waits for 30 seconds before
+sending the attack string.</P>
+
+<P class="docText">In another terminal, on the testhost, we say:</P>
+
+<PRE>% <B>ps -ax | grep telnetd</B>
+27857 ??  S      0:00.05 telnetd
+27859 pd  S+     0:00.02 grep telnetd
+
+% <B>gdb /usr/libexec/telnetd 27857</B>
+GNU gdb[...]
+Attaching to program `/usr/libexec/telnetd', process 27857</PRE><BR>
+
+
+<P class="docText">From here we can allow <TT>telnetd</TT> to crash and
+observe the exact type of error that caused the crash. If
+we've built <TT>telnetd</TT> with
+debugging information, GDB will even display the line of source code
+the program was executing when it crashed. Now we can use our
+favorite debugging techniques and either insert debugging messages or
+use GDB and set breakpoints and watchpoints to discover at what point
+the program went off course. We can then determine what changes to
+make to correct the error and prevent the exploit.</P>
+
+<P class="docText">If you're not a programmer, you can save the
+information and send it <A NAME="bsdhks-CHP-7-ITERM-2952"></A>
+to <A NAME="bsdhks-CHP-7-ITERM-2953"></A>
+the developers.</P>
+
+
+<A NAME="bsdhks-CHP-7-SECT-6.3"></A>
+
+<H4 class="docSection2Title">7.6.3 Hacking the Hack</H4>
+
+<P class="docText">We were fortunate in this example because we had details of the
+exploit. That made it easy to experiment and try different
+approaches. In many cases, however, you won't know
+the details of an exploit, and you may only know that there is a
+problem because of error messages in your logs.</P>
+
+<P class="docText">You can use <TT>tcpdump</TT> to capture the traffic on the
+relevant port. Once you can correlate the timestamp of the
+log's error message with some of your
+<TT>tcpdump</TT> traffic, you can take the data sent in an
+attack and create a Perl script to resend it. You can then apply the
+techniques already described to analyze and correct the problem.</P>
+
+
+<A NAME="bsdhks-CHP-7-SECT-6.4"></A>
+
+<H4 class="docSection2Title">7.6.4 See Also</H4>
+<UL><LI><P class="docList"><TT>man ktrace</TT></P></LI><LI><P class="docList"><TT>man fstat</TT></P></LI><LI><P class="docList"><TT>man gdb</TT></P></LI><LI><P class="docList">The Netcat web site; see the <I>Read Me</I> file (<A class="docLink" target="_blank" HREF="http://www.atstake.com/research/tools/network_utilities">http://www.atstake.com/research/tools/network_utilities</A>)</P></LI><LI><P class="docList">The "Debugging with GDB" <A NAME="bsdhks-CHP-7-ITERM-2954"></A>
+
+<A NAME="bsdhks-CHP-7-ITERM-2955"></A>
+
+<A NAME="bsdhks-CHP-7-ITERM-2956"></A>
+
+<A NAME="bsdhks-CHP-7-ITERM-2957"></A>
+tutorial <A NAME="bsdhks-CHP-7-ITERM-2958"></A>
+(<A class="docLink" target="_blank" HREF="http://www.delorie.com/gnu/docs/gdb/gdb_toc.html">http://www.delorie.com/gnu/docs/gdb/gdb_toc.html</A>)</P></LI></UL>
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="bsdhks-CHP-7-SECT-5.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="bsdhks-CHP-7-SECT-7.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

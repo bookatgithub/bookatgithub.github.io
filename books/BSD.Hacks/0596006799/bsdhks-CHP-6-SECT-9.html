@@ -1,0 +1,263 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>Hack 61 Sudo Gotchas</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="bsdhks-CHP-6-SECT-8.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="bsdhks-CHP-6-SECT-10.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="bsdhks-CHP-6-SECT-9"></A>
+<H3 class="docSection1Title" id="225793-964">Hack 61 Sudo Gotchas</H3><P class="docText"><IMG BORDER="0" id="129022115118" ALIGN="absmiddle" width="14" height="36" SRC="images/0596006799/figs/expert.gif" ALT="figs/expert.gif"> <IMG BORDER="0" id="129022115118" ALIGN="absmiddle" width="36" height="36" SRC="images/0596006799/figs/hack61.gif" ALT="figs/hack61.gif"></P>
+
+<P class="docText"><span class="docEmphBold">Be aware of these limitations when configuring
+sudo</span>.</P>
+
+<P class="docText"><TT>sudo</TT> is a handy <A NAME="bsdhks-CHP-6-ITERM-2751"></A>
+utility for giving out some, but not all
+root privileges to users of Unix and Unix-like systems.
+<TT>sudo</TT> has some limitations and gotchas, however.</P>
+
+<P><table border="0" bgcolor="black" cellspacing="0" cellpadding="1" width="90%" align="center"><tr><td><table bgcolor="white" width="100%" border="0" cellspacing="0" cellpadding="6"><tr><td width="60" valign="top"><img src="images/pushpin.gif" width="52" height="51"></td><td valign="top">
+<P class="docText">On FreeBSD, build <TT>sudo</TT> from the ports collection
+in <I>/usr/ports/security/sudo</I>.</P>
+</td></tr></table></td></tr></table></P><br>
+
+<A NAME="bsdhks-CHP-6-SECT-9.1"></A>
+
+<H4 class="docSection2Title">6.9.1 Limitations of sudo</H4>
+
+<P class="docText">Tools like <TT>sudo</TT> exist because the standard Unix
+privilege model is monolithic. That is, you are either root, with all
+the privileges and dangers attendant, or you aren't,
+in which case you lack the ability to affect the system in
+significant ways. <TT>sudo</TT> is a workaround of this
+model. As such, there are limits to what it can achieve, and many of
+these limitations show up in interactions with the shell. For
+example:</P>
+
+<PRE>% <B>sudo cd /some/protected/dir</B>
+Password:
+sudo: cd: command not found</PRE><BR>
+
+
+<P class="docText">Because a process cannot affect the environment of its parent,
+<TT>cd</TT> can't be implemented as a
+program external to the shell. The command is therefore built into
+the shell itself. <TT>sudo</TT> can confer privilege only
+on programs, not pieces of programs. So, the only way to
+<TT>cd</TT> to a protected directory using
+<TT>sudo</TT> is to execute the shell itself with sudo:</P>
+
+<PRE>% <B>sudo bash</B>
+# <B>cd /some/protected/dir</B>
+# <B>pwd</B>
+/some/protected/dir</PRE><BR>
+
+
+<P class="docText">A workaround is to write a script like the following:</P>
+
+<PRE>#!/usr/local/bin/bash
+cd /some/protected/dir;/bin/ls</PRE><BR>
+
+
+<P class="docText">If you enable access to this command in <A NAME="bsdhks-CHP-6-ITERM-2752"></A>
+ <A NAME="bsdhks-CHP-6-ITERM-2753"></A>
+<I>/usr/local/etc/sudoers</I>,
+authorized users will be able to <TT>ls</TT> the contents
+of a protected directory. This won't allow you to
+<TT>cd</TT> to a protected directory, but it will allow you
+to do work in one.</P>
+
+<P class="docText">Another possibility is to allow the user to run a restricted shell,
+for example, <TT>bash -r</TT>. This is not a good general
+solution, though, since most such shells are
+<span class="docEmphasis">very</span> restrictive. For example, <TT>bash
+-r</TT> disallows use of <TT>cd</TT>!</P>
+
+<P class="docText">Another interaction between the shell and <TT>sudo</TT>
+involves I/O redirection.</P>
+
+<PRE>% <B>sudo echo "secret stuff"  &gt; /some/protected/dir/secret</B>
+bash: /some/protected/dir/secret: Permission denied</PRE><BR>
+
+
+<P class="docText">The problem here is that the <TT>bash</TT> shell does the
+I/O direction, not the <TT>echo</TT> command. This time
+there is a workaround, however:</P>
+
+<PRE>% <B>echo "secret stuff" | sudo tee -a  /some/protected/dir/secret \</B>
+    <B>&gt; /dev/null</B>
+% <B>sudo cat /some/protected/dir/secret</B>
+secret stuff</PRE><BR>
+
+
+<P class="docText">Here we use <TT>sudo</TT> to run <TT>tee</TT>
+with the <TT>-a</TT> (append) switch, which dumps the I/O
+stream coming from stdin to a file. We throw away the stdout stream
+since we just want the file. Now <TT>sudo</TT> can confer
+privilege on the <span class="docEmphasis">program</span> <TT>tee</TT>,
+and we get the desired result, although it's a bit
+awkward.</P>
+
+<P class="docText">The same problem exists when trying to redirect stdin. In this case,
+we can use the similar, but less unusual, expedient of <TT>sudo
+cat</TT> to get at the data.</P>
+
+<P class="docText">The following interaction is not really a limitation, but more of a
+wart:</P>
+
+<PRE>% <B>sudo cat /some/protected/dir/secret | wc | sudo tee \</B>
+    <B>/some/protected/dir/count &gt; /dev/null</B>
+Password:Password:</PRE><BR>
+
+
+<P class="docText">Here we have no cached credentials, so <TT>sudo</TT>
+prompts us for our password. But since there are two
+<TT>sudo</TT> commands in the pipeline, we get two password
+prompts, one right after the other. When we enter our password and
+press Return, nothing happens—our cursor stays put on the next
+line. We are actually at the second password prompt, but there is no
+indication of this. Entering our password again will get us out of
+the mysteriously hung pipeline.</P>
+
+
+<A NAME="bsdhks-CHP-6-SECT-9.2"></A>
+
+<H4 class="docSection2Title">6.9.2 sudo Configuration Gotchas</H4>
+
+<P class="docText"><TT>sudo</TT> <A NAME="bsdhks-CHP-6-ITERM-2754"></A>
+is <A NAME="bsdhks-CHP-6-ITERM-2755"></A>
+very flexible. The
+<I>/usr/local/etc/sudoers</I> file has rich semantics
+to implement a nearly infinite set of policies that can range from
+very open to very restrictive. Of course, open policies are easier to
+understand and implement than the restrictive ones, because there are
+so many ways to subvert many seemingly restrictive policies.</P>
+
+<P class="docText">The earlier examples of <TT>sudo</TT> limitations assumed
+that all the commands used were authorized for our use in the
+<I>sudoers</I> file. However, both
+<TT>cat</TT> and <TT>tee</TT> are dangerous
+commands that could allow a user to easily take control of a system.
+(Consider <TT>sudo tee /etc/spwd.db &lt;
+myevilspwd.db</TT>.) This underlines the generic risk of
+enabling commands with <TT>sudo</TT>. It is difficult to
+analyze all the possible ways a particular command could be misused
+to subvert a closed security policy. The more commands you enable
+with <TT>sudo</TT>, the harder this task becomes. In
+general, beware of commands that are capable of modifying files, such
+as editors, <TT>dd</TT>, <TT>cat</TT>, and
+<TT>tee</TT>, or those that allow shells to be run from
+within them, such as <TT>emacs</TT> and
+<TT>vi</TT>.</P>
+
+<P><table border="0" bgcolor="black" cellspacing="0" cellpadding="1" width="90%" align="center"><tr><td><table bgcolor="white" width="100%" border="0" cellspacing="0" cellpadding="6"><tr><td width="60" valign="top"><img src="images/pushpin.gif" width="52" height="51"></td><td valign="top">
+<P class="docText"><TT>vim</TT> provides an <TT>rvim</TT> variant
+that disallows shell escapes. This variant is installed to
+<I>/usr/local/bin/rvim</I> when you build the port
+<I>/usr/ports/editors/vim</I>.</P>
+</td></tr></table></td></tr></table></P><br>
+
+<P class="docText">You can try restricting what arguments can be given to dangerous
+commands, but beware of alternate methods for supplying those
+arguments. For example, the following configuration entry recently
+came up on the sudo-users mailing list:</P>
+
+<PRE>Cmnd_Alias      PASSWD   = /usr/bin/passwd, !/usr/bin/passwd root</PRE><BR>
+
+
+<P class="docText">This <A NAME="bsdhks-CHP-6-ITERM-2756"></A>
+works
+great if the user types <TT>passwd root</TT>:</P>
+
+<PRE>% <B>sudo passwd root</B>
+Sorry, user test is not allowed to execute '/usr/bin/passwd root' as root on ****.</PRE><BR>
+
+
+<P class="docText">Consider, though:</P>
+
+<PRE>% <B>sudo passwd -l root</B>
+Changing local password for root
+New Password:</PRE><BR>
+
+
+<P class="docText">Oops! The addition of the <TT>-l</TT> flag causes the
+pattern in the <I>sudoers</I> file not to match the
+equivalent command.</P>
+
+<P class="docText">The moral is: to restrict parameters in <I>sudoers</I>,
+you must disallow <span class="docEmphasis">all permutations</span> of arguments
+and switches that you deem undesirable.</P>
+
+<P class="docText"><TT>man sudoers</TT> warns about another danger:</P>
+
+<PRE>It is generally not effective to "subtract" commands from ALL using the
+'!' operator.  A user can trivially circumvent this by copying the
+desired command to a different name and then executing that.  For exam-
+ple:
+
+    bill        ALL = ALL, !SU, !SHELLS
+
+Doesn't really prevent bill from running the commands listed in SU or
+SHELLS since he can simply copy those commands to a different name, or
+use a shell escape from an editor or other program.  Therefore, these
+kind of restrictions should be considered advisory at best (and rein-
+forced by policy).</PRE><BR>
+
+
+
+<A NAME="bsdhks-CHP-6-SECT-9.3"></A>
+
+<H4 class="docSection2Title">6.9.3 Shell Access with sudo</H4>
+
+<P class="docText">Authorizing <A NAME="bsdhks-CHP-6-ITERM-2757"></A>
+
+<A NAME="bsdhks-CHP-6-ITERM-2758"></A>
+shell access with
+<TT>sudo</TT> obviously opens your security policy to the
+largest possible extent, since any available command can then be run
+in the root-enabled shell. This may be exactly what you want, but you
+also lose <TT>sudo</TT>'s audit trail,
+since subsequent commands issued from the shell are not logged.</P>
+
+<P class="docText">One way to allow shell access to trusted users without losing the
+audit trail is to use sudoscript  <A class="docLink" HREF="bsdhks-CHP-6-SECT-10.html#bsdhks-CHP-6-SECT-10"><span class="docEmphBold">[Hack #62]</span></A> .</P>
+
+
+<A NAME="bsdhks-CHP-6-SECT-9.4"></A>
+
+<H4 class="docSection2Title">6.9.4 See Also</H4>
+<UL><LI><P class="docList"><TT>man sudo</TT></P></LI><LI><P class="docList"><TT>man sudoers</TT></P></LI><LI><P class="docList"><TT>man passwd</TT></P></LI><LI><P class="docList">The <TT>sudo</TT> web site (<A class="docLink" target="_blank" HREF="http://www.courtesan.com/sudo/">http://www.courtesan.com/sudo/</A>)</P></LI><LI><P class="docList">The Sudo-users mailing list <A NAME="bsdhks-CHP-6-ITERM-2759"></A>
+archive (<A class="docLink" target="_blank" HREF="http://www.sudo.ws/pipermail/sudo-users/">http://www.sudo.ws/pipermail/sudo-users/</A>)</P></LI></UL>
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="bsdhks-CHP-6-SECT-8.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="bsdhks-CHP-6-SECT-10.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

@@ -1,0 +1,323 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>Hack 75 Script User Interaction</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="bsdhks-CHP-7-SECT-7.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="bsdhks-CHP-7-SECT-9.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="bsdhks-CHP-7-SECT-8"></A>
+<H3 class="docSection1Title">Hack 75 Script User Interaction</H3><P class="docText"><IMG BORDER="0" id="134053078072" ALIGN="absmiddle" width="14" height="36" SRC="images/0596006799/figs/moderate.gif" ALT="figs/moderate.gif"> <IMG BORDER="0" id="134053078072" ALIGN="absmiddle" width="36" height="36" SRC="images/0596006799/figs/hack75.gif" ALT="figs/hack75.gif"></P>
+
+<P class="docText"><span class="docEmphBold">Use an expect script to help users generate GPG
+keys</span>.</P>
+
+<P class="docText">There <A NAME="bsdhks-CHP-7-ITERM-2980"></A>
+ <A NAME="bsdhks-CHP-7-ITERM-2981"></A>
+ <A NAME="bsdhks-CHP-7-ITERM-2982"></A>
+ <A NAME="bsdhks-CHP-7-ITERM-2983"></A>
+ <A NAME="bsdhks-CHP-7-ITERM-2984"></A>
+are occasions
+when you can take advantage of Unix's flexibility to
+control some other tool or system that is less flexible.
+I've used Unix scripts to update databases on
+user-unfriendly mainframe systems when the alternative was an
+expensive mainframe-programming service contract. You can use the
+same approach in reverse to let the user interact with a tool, but
+with a constrained set of choices.</P>
+
+<P class="docText">The Expect scripting language is ideal for creating such interactive
+scripts. It is available from NetBSD <TT>pkgsrc</TT> as
+<I>pkgsrc/lang/tcl-expect</I> or
+<I>pkgsrc/lang/tk-expect</I>, as well as from the
+FreeBSD ports and OpenBSD packages collections.
+We'll use the command-line version for this example,
+but keep in mind that <TT>expect-tk</TT> allows you to
+provide a GUI frontend to a command-line process if
+you're willing to write a more complex script.</P>
+
+<P class="docText">In this case, we'll script the generation of a GPG
+key. Install GPG from either
+<I>pkgsrc/security/gnupg</I> or the appropriate port or
+package.</P>
+
+<A NAME="bsdhks-CHP-7-SECT-8.1"></A>
+
+<H4 class="docSection2Title">7.8.1 The Key Generation Process</H4>
+
+<P class="docText">During the process of generating a GPG key, the program asks the user
+several questions. We may wish to impose constraints so that a set of
+users ends up with keys with similar parameters. We could train the
+users, but that would not guarantee correct results. Scripting the
+generation makes the process easier and eliminates errors.</P>
+
+<P class="docText">First, let's look at a typical key generation
+session:</P>
+
+<PRE>% <B>gpg --gen-key</B>
+gpg (GnuPG) 1.2.4; Copyright (C) 2003 Free Software Foundation, Inc.
+This program comes with ABSOLUTELY NO WARRANTY.
+This is free software, and you are welcome to redistribute it
+under certain conditions. See the file COPYING for details.
+
+Please select what kind of key you want:
+   (1) DSA and ElGamal (default)
+   (2) DSA (sign only)
+   (4) RSA (sign only)
+Your selection? <B>4</B>
+What keysize do you want? (1024) <B>2048</B>
+Requested keysize is 2048 bits
+Please specify how long the key should be valid.
+         0 = key does not expire
+      &lt;n&gt;  = key expires in n days
+      &lt;n&gt;w = key expires in n weeks
+      &lt;n&gt;m = key expires in n months
+      &lt;n&gt;y = key expires in n years
+Key is valid for? (0) <B>0</B>
+Key does not expire at all
+Is this correct (y/n)? <B>y</B>
+
+You need a User-ID to identify your key; the software constructs the user id
+from Real Name, Comment and Email Address in this form:
+    "Heinrich Heine (Der Dichter) &lt;heinrichh@duesseldorf.de&gt;"
+
+Real name:</PRE><BR>
+
+
+<P class="docText">Let's pause there to consider the elements we can
+constrain.</P>
+
+<P class="docText">You probably want to specify the cryptographic algorithm and key
+length for all users consistently, based on your security and
+interoperability requirements. I'll choose RSA
+signing and encryption keys, but GPG doesn't provide
+a menu option for that. I'll have to create the
+signing key first and then add the encryption subkey.</P>
+
+
+<A NAME="bsdhks-CHP-7-SECT-8.2"></A>
+
+<H4 class="docSection2Title">7.8.2 A Simple Script</H4>
+
+<P class="docText">Here's an <TT>expect</TT> script that
+would duplicate the session shown so far:</P>
+
+<PRE>#!/usr/pkg/bin/expect -f
+
+set timeout -1
+spawn gpg --gen-key
+match_max 100000
+expect "(4) RSA (sign only)"
+expect "Your selection? "
+send "4\r"
+expect "What keysize do you want? (1024) "
+send "2048\r"
+expect "Key is valid for? (0) "
+send -- "0\r"
+expect "Key does not expire at all"
+expect "Is this correct (y/n)? "
+send -- "y\r"
+expect "Real name: "</PRE><BR>
+
+
+<P class="docText">The script begins by <TT>set</TT>ting
+<TT>timeout</TT> to infinite, or <TT>-1</TT>, so
+<TT>expect</TT> will wait forever to match the provided
+input. Then we <TT>spawn</TT> the process that
+we're going to control, <TT>gpg
+--gen-key</TT>. <TT>match_max</TT> sets some buffer
+size constraints in bytes, and the given value is far more than we
+will need.</P>
+
+<P class="docText">After the initial settings, the script simply consists of strings
+that we <TT>expect</TT> from the program and strings that
+we <TT>send</TT> in reply. This means that the script will
+answer all of the questions GPG asks until <TT>Real</TT>
+<TT>name</TT>: , without waiting for the
+user's input.</P>
+
+<P class="docText">Note that in several places we expect things besides the prompt. For
+example, before responding to the <TT>Your selection?</TT>
+prompt, we verify that the version of GPG we have executed still has
+the same meaning for the fourth option, by expecting that the text of
+that menu choice is still <TT>RSA (sign</TT>
+<TT>only)</TT>. If this were a real, production-ready
+script, we should print a warning message and terminate the script if
+the value does not match our expectations, and perhaps include a
+check of the GPG version number. In this simple example, the script
+will hang, and you must break out of it with Ctrl-c.</P>
+
+
+<A NAME="bsdhks-CHP-7-SECT-8.3"></A>
+
+<H4 class="docSection2Title">7.8.3 Adding User Interaction</H4>
+
+<P class="docText">There <A NAME="bsdhks-CHP-7-ITERM-2985"></A>
+ <A NAME="bsdhks-CHP-7-ITERM-2986"></A>
+are several ways of handling the fields
+we do want the user to provide. For the greatest degree of control
+over the user experience, we could use individual
+<TT>expect</TT> commands, but here we will take a simpler
+approach. Here's some more of the script:</P>
+
+<PRE>interact "\r" return
+send "\r"
+expect "Email address: "
+interact "\r" return
+send "\r"
+expect "Comment: "
+interact "\r" return
+send "\r"
+expect "Change (N)ame, (C)omment, (E)mail or (O)kay/(Q)uit? "
+interact "\r" return
+send "\r" 
+expect "Enter passphrase: "
+interact "\r" return
+send "\r"
+expect "Repeat passphrase: "
+interact "\r" return
+send "\r"</PRE><BR>
+
+
+<P class="docText">The <TT>interact</TT> command allows the user to interact
+directly with the spawned program. We place a constraint that the
+user's interaction ends as soon as the user presses
+the Enter key, which sends the carriage return character,
+<TT>\r</TT>. At that point, the <TT>interact</TT>
+command returns and the script resumes. Note that we have to
+<TT>send</TT> the <TT>\r</TT> from the script;
+<TT>expect</TT> intercepted the carriage return and GPG did
+not see it.</P>
+
+
+<A NAME="bsdhks-CHP-7-SECT-8.4"></A>
+
+<H4 class="docSection2Title">7.8.4 Handling Incorrect Input</H4>
+
+<P class="docText">Again, <A NAME="bsdhks-CHP-7-ITERM-2987"></A>
+ <A NAME="bsdhks-CHP-7-ITERM-2988"></A>
+a correct script would have a
+more complex flow of execution and allow for cases where the spawned
+program rejects the user's input with an error
+message. For example, the <TT>Real Name</TT> field must be
+more than five characters long. If a user types less than five
+characters, GPG will prompt him to retype his username. However, the
+<TT>expect</TT> script just shown will not accept the new
+user input, because it is now waiting for the <TT>Email
+address</TT>: prompt.</P>
+
+<P class="docText">Alternatively, we could replace these three lines:</P>
+
+<PRE>interact "\r" return
+send "\r"
+expect "Email address: "</PRE><BR>
+
+
+<P class="docText">with:</P>
+
+<PRE>interact -o "Email address: " return
+send_user "Email address: "</PRE><BR>
+
+
+<P class="docText">Instead of stopping interaction when the user presses
+<TT>return</TT>, we stop interaction when the program
+outputs the <TT>Email address</TT>: prompt.
+That's the difference between
+<TT>interact</TT> and <TT>interact -o</TT>; the
+former stops interaction based on input from the user, and the latter
+on output from the program. This time, we don't need
+to send the carriage return, because the user's
+keypress is passed through to GPG. However, we do need to echo the
+prompt, because <TT>expect</TT> has consumed it. This
+method lets GPG handle the error conditions for us:</P>
+
+<PRE>Real name: abc
+Name must be at least 5 characters long
+Real name: abcde
+Email address:</PRE><BR>
+
+
+
+<A NAME="bsdhks-CHP-7-SECT-8.5"></A>
+
+<H4 class="docSection2Title">7.8.5 Hacking the Hack</H4>
+
+<P class="docText">After GPG receives the information it needs to generate the key, it
+might not be able to find enough high-quality random data from the
+system. The script ought to handle that by spawning a process to
+generate more system activity, such as performing a lot of disk
+activity by running a <TT>find</TT> across the entire disk.</P>
+
+<P class="docText">After generating the signing key, the script could spawn a new
+instance of GPG with the <TT>--edit-key</TT> option, to
+generate the desired RSA encryption key.</P>
+
+<P class="docText">Although the final script may end up executing three processes, the
+whole process is seamless to the user. You can hide even more of the
+guts by using <TT>expect</TT>'s
+<TT>log_user</TT> setting to hide the output of the
+programs at points where the user does not need to see them.</P>
+
+<P class="docText">You can use a script like this in conjunction with any Unix
+command-line program. By combining <TT>expect</TT> with
+<TT>telnet</TT> or <TT>ssh</TT>, you can control
+non-Unix systems, thereby leveraging the flexibility of Unix into a
+non-Unix domain. This even works with programs for which you do not
+have source code, such as control utilities for commercial databases
+or application software.</P>
+
+<P class="docText">In the case of GPG, we do have source code, so we
+<span class="docEmphasis">could</span> modify the program, but writing an
+<TT>expect</TT> script is easier. A carefully designed
+<TT>expect</TT> script may not require changes when a new
+version of GPG is released. Source code changes to GPG would require
+integration with any new version of GPG.</P>
+
+
+<A NAME="bsdhks-CHP-7-SECT-8.6"></A>
+
+<H4 class="docSection2Title">7.8.6 See Also</H4>
+<UL><LI><P class="docList"><TT>man expect</TT></P></LI><LI><P class="docList">The <TT>expect</TT> web site, which includes sample scripts (<A class="docLink" target="_blank" HREF="http://expect.nist.gov/">http://expect.nist.gov/</A>)</P></LI><LI><P class="docList"><span class="docEmphasis">Exploring Expect</span><A NAME="bsdhks-CHP-7-ITERM-2989"></A>
+, by Don <A NAME="bsdhks-CHP-7-ITERM-2990"></A>
+Libes, the author of <A NAME="bsdhks-CHP-7-ITERM-2991"></A>
+
+<A NAME="bsdhks-CHP-7-ITERM-2992"></A>
+
+<A NAME="bsdhks-CHP-7-ITERM-2993"></A>
+
+<A NAME="bsdhks-CHP-7-ITERM-2994"></A>
+
+<A NAME="bsdhks-CHP-7-ITERM-2995"></A>
+<TT>expect</TT> (<A class="docLink" target="_blank" HREF="http://www.oreilly.com/catalog/expect/">http://www.oreilly.com/catalog/expect/</A>)</P></LI></UL>
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="bsdhks-CHP-7-SECT-7.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="bsdhks-CHP-7-SECT-9.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

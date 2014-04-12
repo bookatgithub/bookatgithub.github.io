@@ -1,0 +1,203 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>Hack 40 Automate Data Dumps for PostgreSQL Databases</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="bsdhks-CHP-4-SECT-6.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="bsdhks-CHP-4-SECT-8.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="bsdhks-CHP-4-SECT-7"></A>
+<H3 class="docSection1Title" id="225793-879">Hack 40 Automate Data Dumps for PostgreSQL Databases</H3><P class="docText"><IMG BORDER="0" id="129022115118" ALIGN="absmiddle" width="14" height="36" SRC="images/0596006799/figs/expert.gif" ALT="figs/expert.gif"> <IMG BORDER="0" id="129022115118" ALIGN="absmiddle" width="36" height="36" SRC="images/0596006799/figs/hack40.gif" ALT="figs/hack40.gif"></P>
+
+<P class="docText"><span class="docEmphBold">Building your own backup utility doesn't have to be scary</span>.</P>
+
+<P class="docText"><A NAME="bsdhks-CHP-4-ITERM-2277"></A>
+ <A NAME="bsdhks-CHP-4-ITERM-2278"></A>
+PostgreSQL
+<A NAME="bsdhks-CHP-4-ITERM-2279"></A>
+is
+a robust, open source database server. Like most database servers, it
+provides utilities for creating backups.
+PostgreSQL's primary tools for creating backup files
+are <A NAME="bsdhks-CHP-4-ITERM-2280"></A>
+<TT>pg_dump</TT> and
+<TT>pg_dumpall</TT>. However, if you want to automate your
+database backup processes, these tools have a few limitations:</P>
+
+<UL><LI><P class="docList"><TT>pg_dump</TT> dumps only one database at a time.</P></LI><LI><P class="docList"><TT>pg_dumpall</TT> dumps all of the databases into a
+single file.</P></LI><LI><P class="docList"><TT>pg_dump</TT> and <TT>pg_dumpall</TT> know
+nothing about multiple backups.</P></LI></UL>
+<P class="docText">These aren't criticisms of the backup
+tools—just an observation that customization will require a
+little scripting. Our resulting script will backup multiple systems,
+each to their own backup file.</P>
+
+<A NAME="bsdhks-CHP-4-SECT-7.1"></A>
+
+<H4 class="docSection2Title">4.7.1 Creating the Script</H4>
+
+<P class="docText">This script uses Python and its ability to execute other programs to
+implement the following backup algorithm:</P>
+
+<span style="font-weight:bold"><OL class="docList" TYPE="1"><LI><span style="font-weight:normal"><P class="docList">Change the working directory to a specified database backup directory.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">Rename all backup files ending in <I>.gz</I> so that
+they end in <I>.gz.old</I>. Existing files ending in
+<I>.gz.old</I> will be overwritten.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">Clean up and analyze all PostgreSQL databases using its
+<TT>vacuumdb</TT> command.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">Get a current list of databases from the PostgreSQL server.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">Dump each database, piping the results <A NAME="bsdhks-CHP-4-ITERM-2281"></A>
+through <TT>gzip</TT>, into
+its own compressed file.</P></span></LI></OL></span>
+<P class="docText">Why Python? My choice is one of personal preference; this task is
+achievable in just about any scripting language. However, Python is
+cross-platform and easy to learn, and its scripts are easy to read.</P>
+
+
+<A NAME="bsdhks-CHP-4-SECT-7.2"></A>
+
+<H4 class="docSection2Title">4.7.2 The Code</H4>
+
+<PRE>#!/usr/local/bin/python
+
+# /usr/local/bin/pg2gz.py
+
+# This script lists all PostgreSQL
+# databases and pipes them separately
+# through gzip into .gz files.
+
+# INSTRUCTIONS
+# 1.  Review and edit line 1 to reflect the location
+#     of your python command file.
+# 2.  Redefine the save_dir variable (on line 22) to
+#     your backup directory.
+# 3.  To automate the backup process fully, consider
+#     scheduling the regular execution of this script
+#     using cron.
+
+import os, string
+
+# Redefine this variable to your backup directory.
+# Be sure to include the slash at the end.
+save_dir = '/mnt/backup/databases/'
+
+# Rename all *.gz backup files to *.gz.old.
+curr_files = os.listdir(save_dir)
+for n in curr_files:
+        if n[len(n)-2:] =  = 'gz':
+                os.popen('mv ' + save_dir + n + " " + save_dir + n + '.old')
+        else:
+                pass
+
+# Vacuum all databases
+os.popen('vacuumdb -a -f -z')
+
+# 'psql -l' produces a list of PostgreSQL databases.
+get_list = os.popen('psql -l').readlines( )
+
+# Exclude header and footer lines.
+db_list = get_list[3:-2]
+
+# Extract database names from first element of each row.
+for n in db_list:
+        n_row = string.split(n)
+        n_db = n_row[0]
+
+        # Pipe database dump through gzip
+        # into .gz files for all databases
+        # except template*.
+        if n_db =  = 'template0':
+                pass
+        elif n_db =  = 'template1':
+                pass
+        else:
+                os.popen('pg_dump ' + n_db + ' | gzip -c &gt; ' + save_dir + 
+                          n_db + '.gz')</PRE><BR>
+
+
+
+<A NAME="bsdhks-CHP-4-SECT-7.3"></A>
+
+<H4 class="docSection2Title">4.7.3 Running the Hack</H4>
+
+<P class="docText">The script assumes that you have a working installation of
+PostgreSQL. You'll also need to install Python,
+which is available through the ports collection or as a binary
+package. The Python modules used are installed by default.</P>
+
+<P class="docText">Double-check the location of your Python executable using:</P>
+
+<PRE>% <B>which python</B>
+/usr/local/bin/python</PRE><BR>
+
+
+<P class="docText">and ensure the first line of the script reflects your location.
+Don't forget to make the script executable using
+<TT>chmod +x</TT>.</P>
+
+<P class="docText">On line 22 of the script, redefine the <TT>sav_dir</TT>
+variable to reflect the location of your backup directory. As is, the
+script assumes a backup directory of
+<I>/mnt/backup/databases/</I>.</P>
+
+<P class="docText">You'll probably want to add the script to the
+<TT>pgsql</TT> user's crontab for periodic
+execution. To schedule the script for execution, log in as
+<TT>pgsql</TT> or, as the superuser, <TT>su</TT>
+to <TT>pgsql</TT>. Once you're acting as
+<TT>pgsql</TT>, execute:</P>
+
+<PRE>% <B>crontab -e</B></PRE><BR>
+
+
+<P class="docText">to open the crontab file in the default editor.</P>
+
+<P class="docText">Given the following crontab file,
+<I>/usr/local/bin/pg2gz.py</I> will execute at 4 AM
+every Sunday.</P>
+
+<PRE># <B>more /var/cron/tabs/pgsql</B>
+SHELL=/bin/sh
+PATH=/var/cron/tabs:/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin
+
+#minute    hour    mday    month    wday     command
+0          4       *       *        0        /usr/local/bin/pg2gz.py</PRE><BR>
+
+
+
+<A NAME="bsdhks-CHP-4-SECT-7.4"></A>
+
+<H4 class="docSection2Title">4.7.4 See Also</H4>
+<UL><LI><P class="docList">The PostgreSQL web site (<A class="docLink" target="_blank" HREF="http://www.postgresql.org/">http://www.postgresql.org/</A>)</P></LI><LI><P class="docList">The Python <A NAME="bsdhks-CHP-4-ITERM-2282"></A>
+web <A NAME="bsdhks-CHP-4-ITERM-2283"></A>
+
+<A NAME="bsdhks-CHP-4-ITERM-2284"></A>
+site (<A class="docLink" target="_blank" HREF="http://www.python.org/">http://www.python.org/</A>)</P></LI></UL>
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="bsdhks-CHP-4-SECT-6.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="bsdhks-CHP-4-SECT-8.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

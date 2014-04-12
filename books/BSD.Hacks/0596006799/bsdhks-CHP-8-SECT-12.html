@@ -1,0 +1,327 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>Hack 87 Automate NetBSD Package Builds</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="bsdhks-CHP-8-SECT-11.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="bsdhks-CHP-8-SECT-13.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="bsdhks-CHP-8-SECT-12"></A>
+<H3 class="docSection1Title">Hack 87 Automate NetBSD Package Builds</H3><P class="docText"><IMG BORDER="0" id="134053078072" ALIGN="absmiddle" width="14" height="36" SRC="images/0596006799/figs/expert.gif" ALT="figs/expert.gif"> <IMG BORDER="0" id="134053078072" ALIGN="absmiddle" width="36" height="36" SRC="images/0596006799/figs/hack87.gif" ALT="figs/hack87.gif"></P>
+
+<P class="docText"><span class="docEmphBold">Use a sandbox to build applications that play
+nicely within your network</span>.</P>
+
+<P class="docText">Many <A NAME="bsdhks-CHP-8-ITERM-3094"></A>
+ <A NAME="bsdhks-CHP-8-ITERM-3095"></A>
+ <A NAME="bsdhks-CHP-8-ITERM-3096"></A>
+ <A NAME="bsdhks-CHP-8-ITERM-3097"></A>
+NetBSD
+users are responsible for multiple systems running on different
+architectures. Instead of rebuilding the same package on machine
+after machine, it's often desirable to build
+packages for all of these machines from the most powerful one,
+delivering the appropriate binary packages across the network.
+However, problems can arise when not all machines run the same
+version of NetBSD or when you want different optimizations or build
+settings on each box.</P>
+
+<P class="docText">The solution to this dilemma is simple: create a sandbox with the
+version of NetBSD used in the target machine and build the necessary
+binary packages inside it. This sounds easy, but it can be a very
+tedious and error-prone task. It is even more complex if you want to
+automate periodic package rebuilding. Fortunately,
+that's our final goal in this hack.</P>
+
+<P class="docText">To simplify things, I assume that you have a relatively fast desktop
+machine running NetBSD-current, where you will build binary packages,
+and a server machine running the stable version of NetBSD (1.6.2 at
+the time of this writing).</P>
+
+<A NAME="bsdhks-CHP-8-SECT-12.1"></A>
+
+<H4 class="docSection2Title">8.12.1 Installing pkg_comp</H4>
+
+<P class="docText"><TT>pkg_comp</TT> (also known as <A NAME="bsdhks-CHP-8-ITERM-3098"></A>
+ <A NAME="bsdhks-CHP-8-ITERM-3099"></A>
+Package Compiler) can simplify the
+creation of these sandboxes: it handles any version of NetBSD inside
+a <TT>chroot</TT> jail and automates the build process of
+binary packages inside it. Its only restriction is that both the
+builder and the destination machine share the same architecture.</P>
+
+<P class="docText">Let's begin by installing
+<TT>pkg_comp</TT> on the builder machine (make sure you
+have Version 1.15 or greater):</P>
+
+<PRE># <B>cd /usr/pkgsrc/pkgtools/pkg_comp</B>
+# <B>make install &amp;&amp; make clean</B></PRE><BR>
+
+
+<P class="docText">After installation, spend some time reading <TT>man 8
+pkg_comp</TT> and getting familiar with its structure because
+you will be using it as a reference guide during the configuration.
+Also ensure that your kernel configuration file contains
+<TT>file-system NULLFS</TT>. (See <TT>man 4
+options</TT> for more information.)</P>
+
+
+<A NAME="bsdhks-CHP-8-SECT-12.2"></A>
+
+<H4 class="docSection2Title">8.12.2 Configuration Variables</H4>
+
+<P class="docText">Now you are ready to set up <TT>pkg_comp</TT>. The
+configuration file tells <TT>pkg_comp</TT> how to create
+the sandbox. Type the following commands to create and edit a sample
+configuration file:</P>
+
+<PRE># <B>pkg_comp maketemplate</B>
+# <B>vi /root/pkg_comp/default.conf</B></PRE><BR>
+
+
+<P class="docText">You will notice lots of variable definitions. All you need to do is
+set some values; <TT>pkg_comp</TT> handles everything else.
+For our purposes, you need to know only some of these variables (see
+<A class="docLink" HREF="#bsdhks-CHP-8-TABLE-2">Table 8-2</A>) and change them to suit your system.</P>
+
+<A NAME="bsdhks-CHP-8-TABLE-2"></A>
+<P><TABLE CELLSPACING="0" BORDER="1" RULES="all" CELLPADDING="4" WIDTH="100%"><CAPTION><h5 class="docTableTitle">Table 8-2. pkg_comp variables</h5></CAPTION><COLGROUP><COL><COL></COLGROUP><THEAD><TR><TH class="docTableHeader">
+<P class="docText">Variable</P>
+</TH><TH class="docTableHeader">
+<P class="docText">Usage</P>
+</TH></TR></THEAD><TR><TD class="docTableCell">
+<P class="docText"><TT>DESTDIR</TT><A NAME="bsdhks-CHP-8-ITERM-3100"></A>
+</P>
+</TD><TD class="docTableCell">
+<P class="docText">Gives the location of the sandbox. This needs lots of disk space, as
+it will store a complete NetBSD system. In this example, use
+<span class="docEmphasis">/var/chroot/pkg_comp/default</span>.</P>
+</TD></TR><TR><TD class="docTableCell">
+<P class="docText"><TT>DISTRIBDIR</TT><A NAME="bsdhks-CHP-8-ITERM-3101"></A>
+</P>
+</TD><TD class="docTableCell">
+<P class="docText">The location of NetBSD installation sets, whether downloaded from the
+FTP site or built using <TT>build.sh</TT>.
+<TT>pkg_comp</TT>. The <span class="docEmphasis">/binary/sets</span>
+string will be appended to the value you provide. The resulting
+directory should contain the files listed in the
+<TT>SETS</TT> and <TT>SETS_X11</TT> variables. In
+this example, use
+<span class="docEmphasis">/home/NetBSD/NetBSD-1.6.2/i386</span>.</P>
+</TD></TR><TR><TD class="docTableCell">
+<P class="docText"><TT>NETBSD_RELEASE</TT><A NAME="bsdhks-CHP-8-ITERM-3102"></A>
+</P>
+</TD><TD class="docTableCell">
+<P class="docText">Specifies the version of NetBSD to unpack in the sandbox. This
+version must be compatible with <TT>pkgtools/libkver</TT>.
+If you leave it set to <TT>no</TT>,
+<TT>pkg_comp</TT> assumes the builder system and the
+sandboxed system are the same version. In this example, its value is
+<TT>1.6.2</TT>.</P>
+</TD></TR><TR><TD class="docTableCell">
+<P class="docText"><TT>REAL_SRC</TT><A NAME="bsdhks-CHP-8-ITERM-3103"></A>
+</P>
+</TD><TD class="docTableCell">
+<P class="docText">Provides the location of <TT>pkgsrc</TT> distfiles. In this
+example, use <span class="docEmphasis">/home/NetBSD/distfiles</span>.</P>
+</TD></TR><TR><TD class="docTableCell">
+<P class="docText"><TT>REAL_PACKAGES</TT><A NAME="bsdhks-CHP-8-ITERM-3104"></A>
+</P>
+</TD><TD class="docTableCell">
+<P class="docText">Identifies the destination of binary packages. In this example, use
+<span class="docEmphasis">/home/NetBSD/packages/1.6.2</span>.</P>
+</TD></TR><TR><TD class="docTableCell">
+<P class="docText"><TT>REAL_PKGSRC</TT><A NAME="bsdhks-CHP-8-ITERM-3105"></A>
+</P>
+</TD><TD class="docTableCell">
+<P class="docText">Locates the <TT>pkgsrc</TT> tree in your system. In this
+example, use <span class="docEmphasis">/usr/pkgsrc</span>.</P>
+</TD></TR><TR><TD class="docTableCell">
+<P class="docText"><TT>REAL_DISTFILES</TT><A NAME="bsdhks-CHP-8-ITERM-3106"></A>
+</P>
+</TD><TD class="docTableCell">
+<P class="docText">Gives the location of the NetBSD source tree in your system. In this
+example, use <span class="docEmphasis">/usr/src-1.6</span>. Because we are
+building for 1.6.2 and the builder is running current, this will
+<span class="docEmphasis">not</span> be <span class="docEmphasis">/usr/src</span>.</P>
+</TD></TR><TR><TD class="docTableCell">
+<P class="docText"><TT>SETS</TT><A NAME="bsdhks-CHP-8-ITERM-3107"></A>
+</P>
+</TD><TD class="docTableCell">
+<P class="docText">Lists the NetBSD sets to be extracted inside the sandbox. Do not
+change the default value.</P>
+</TD></TR><TR><TD class="docTableCell">
+<P class="docText"><TT>SETS_X11</TT><A NAME="bsdhks-CHP-8-ITERM-3108"></A>
+</P>
+</TD><TD class="docTableCell">
+<P class="docText">Lists the X11R6 sets to be extracted inside the sandbox. Set this to
+<TT>no</TT> if you do not want to build packages for the X
+Window System, but avoid modifying the default list. In this example,
+set it to <TT>no</TT>, since I assume you do not have the X
+Window System installed on the server.</P>
+</TD></TR><TR><TD class="docTableCell">
+<P class="docText"><TT>REAL_PKGVULNDIR</TT><A NAME="bsdhks-CHP-8-ITERM-3109"></A>
+</P>
+</TD><TD class="docTableCell">
+<P class="docText">The location of the <I>pkg-vulnerabilities</I> file in
+your system. In this example, use
+<span class="docEmphasis">/usr/pkg/share</span>. If you are not using
+<TT>audit-packages</TT>, then set
+<TT>USE_AUDIT_PACKAGES</TT> to <TT>no</TT>. The
+use of <TT>audit-packages</TT> is strongly encouraged
+because it won't install packages that have known
+security problems.</P>
+</TD></TR></TABLE></P><br>
+
+<P class="docText">Now is the time to enable compile-time optimizations for the packages
+you are going to build. As you modify the <TT>CFLAGS</TT>
+and <TT>CXXFLAGS</TT> variables, keep in mind that the
+configuration file is a shell script. Remember to quote your values
+properly.</P>
+
+
+<A NAME="bsdhks-CHP-8-SECT-12.3"></A>
+
+<H4 class="docSection2Title">8.12.3 Initializing and Using the Sandbox</H4>
+
+<P class="docText">After setting your values and creating all of the referenced
+directories, it's time to initialize the sandbox. It
+is as easy as typing:</P>
+
+<PRE># <B>pkg_comp makeroot</B></PRE><BR>
+
+
+<P class="docText">When this command finishes, the sandbox is ready to build packages
+for your server. In this example, the packages will linked against
+1.6.2 libraries using any specified optimizations.</P>
+
+<P class="docText">Suppose you want binary packages for Apache and
+<TT>screen</TT>. Compile them with the following call to
+<TT>pkg_comp</TT>:</P>
+
+<PRE># <B>pkg_comp build www/apache misc/screen</B></PRE><BR>
+
+
+<P class="docText">This will place <I>apache-1.3.29.tgz</I> and
+<I>screen-4.0.2.tgz</I>—as well as their
+dependencies—under
+<I>/home/NetBSD/packages/1.6.2/All</I>.
+They're now suitable for transferring to the
+destination machine. Install them with <TT>pkg_add</TT>.</P>
+
+<P class="docText">If you do not need to build more packages using
+<TT>pkg_comp</TT>, you can safely free the space used by
+the sandbox with the command shown next. Note that this removes only
+the sandbox, not binary packages:</P>
+
+<PRE># <B>pkg_comp removeroot</B></PRE><BR>
+
+
+
+<A NAME="bsdhks-CHP-8-SECT-12.4"></A>
+
+<H4 class="docSection2Title">8.12.4 Automating the Process</H4>
+
+<P class="docText">We can go one step further and configure <TT>pkg_comp</TT>
+to create the sandbox, build a predefined set of packages for your
+server, and remove the sandbox when finished, all automatically. This
+takes only a single command with
+<TT>pkg_comp</TT>'s automatic mode.</P>
+
+<P class="docText">To enable automatic mode, re-edit the configuration file,
+<I>/root/pkg_comp/default.conf</I>, and define the
+<TT>AUTO_PACKAGES</TT> variable. This variable takes the
+list of packages you want to build for your server. In this example:</P>
+
+<PRE>AUTO_PACKAGES="misc/screen www/apache"</PRE><BR>
+
+
+<P class="docText">That's it for the configuration side. To check if
+this works, make sure the sandbox does not exist, and execute
+<TT>pkg_comp</TT>'s automatic mode:</P>
+
+<PRE># <B>pkg_comp removeroot</B>
+# <B>pkg_comp auto</B></PRE><BR>
+
+
+<P class="docText">After a while, you will find binary packages for
+<TT>screen</TT> and Apache in your package repository, just
+as in the earlier example.</P>
+
+<P class="docText">If the list of packages is extensive, the build will take a long
+while, which may not be desirable in some environments (for example,
+in cases when you need to shut down the builder during the night).
+This is not a problem: if you stop the automatic process with Ctrl-c
+at any point, you can resume it later by issuing:</P>
+
+<PRE># <B>pkg_comp auto resume</B></PRE><BR>
+
+
+<P class="docText">To finish the automation, configure a <TT>cron</TT> job to
+rebuild your package set automatically once a week. Edit
+<TT>root</TT>'s <TT>crontab</TT>
+to add the line:</P>
+
+<PRE># <B>crontab -e</B>
+0       3       *       *       *       /usr/pkg/sbin/pkg_comp auto</PRE><BR>
+
+
+
+<A NAME="bsdhks-CHP-8-SECT-12.5"></A>
+
+<H4 class="docSection2Title">8.12.5 Hacking the Hack</H4>
+
+<P class="docText">I've shown the most basic usage of
+<TT>pkg_comp</TT> in this hack. If you found it useful,
+there are many more things to learn, and the manpage is a good
+starting point.</P>
+
+<P class="docText">Here are some other ideas to try:</P>
+
+<UL><LI><P class="docList">Configure a <TT>cron</TT> job to rebuild all the packages
+you need for your own machine, so that you can easily restore them at
+any point <A NAME="bsdhks-CHP-8-ITERM-3110"></A>
+with <TT>pkg_add</TT>.</P></LI><LI><P class="docList">Create two configuration files with different names.</P></LI><LI><P class="docList">Enable GCC 3 with <A NAME="bsdhks-CHP-8-ITERM-3111"></A>
+ <A NAME="bsdhks-CHP-8-ITERM-3112"></A>
+ <A NAME="bsdhks-CHP-8-ITERM-3113"></A>
+ <A NAME="bsdhks-CHP-8-ITERM-3114"></A>
+extensive <A NAME="bsdhks-CHP-8-ITERM-3115"></A>
+ <A NAME="bsdhks-CHP-8-ITERM-3116"></A>
+optimizations.</P></LI></UL>
+
+<A NAME="bsdhks-CHP-8-SECT-12.6"></A>
+
+<H4 class="docSection2Title">8.12.6 See Also</H4>
+<UL><LI><P class="docList"><TT>man pkg_comp</TT></P></LI><LI><P class="docList"><TT>man pkg_add</TT></P></LI></UL>
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="bsdhks-CHP-8-SECT-11.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="bsdhks-CHP-8-SECT-13.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>
