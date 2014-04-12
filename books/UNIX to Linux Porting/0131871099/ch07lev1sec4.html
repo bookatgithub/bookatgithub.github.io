@@ -1,0 +1,131 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Section 7.4.&nbsp; glibc Debugging Support</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=ch07lev1sec3.html><img src="images/prev.gif" width="60" height="17" border="0" align="absmiddle" alt="Previous Page"></a>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=ch07lev1sec5.html><img src="images/next.gif" width="60" height="17" border="0" align="absmiddle" alt="Next Page"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="ch07lev1sec4"></a>
+<H3 id="title-IDAYQ3G3" class="docSection1Title">7.4. <a name="iddle1210"></a>glibc <a name="iddle1412"></a>Debugging Support</h3>
+<p class="docText">The usual way to examine a back trace of a program is to use an external debugger such as GDB. Sometimes, however, it is useful to obtain back-trace information from within a running program for logging or debugging purposes. The GNU <tt>glibc</tt> provides support that enables the developer to produce back-trace <span class="docEmphasis">printouts</span> from within the application.</P>
+<p class="docText"><a class="docLink" href="#ch07ex04">Example 7-4</a> shows how to use backtrace inside a signal handler and outside a signal handler. The API prototypes for back trace are declared in the header file execinfo.h and should be included in the application.</p>
+
+<p class="docText"></p><a name="ch07ex04"></a><h5 id="title-IDAOS3G3" class="docExampleTitle">Example 7-4. Code Listing of sample_backtrace.c</h5><P><table cellspacing="0" width="90%" border="1" cellpadding="5"><TR><TD>
+
+
+
+<pre>1 #include &lt;execinfo.h&gt;
+2 #include &lt;stdio.h&gt;
+3 #include &lt;signal.h&gt;
+4
+5 void handler()
+6 {
+7   int i;
+8   void *trace[128];
+9   int tr_size;
+10   char **strings;
+11
+12   printf("\n########## start <a name="iddle1078"></a>backtrace ##########\n\n");
+13   tr_size = backtrace(trace, sizeof(trace) / sizeof(void *));
+14   strings = backtrace_symbols(trace, tr_size);
+15   printf("Number of elements in backtrace: %d\n", tr_size);
+16   for (i = 0; i &lt; tr_size; i++) {
+17     printf("%s\n", strings[i]);
+18   }
+19   printf("\n########## end backtrace ##########\n");
+20
+21   free(strings);
+22 }
+23
+24 h()
+25 {
+26 #ifdef _handler_
+27   abort();
+28 #else
+29   handler();
+30 #endif
+31 }
+32
+33 void g()
+34 {
+35   h();
+36 }
+37
+38 void foo()
+39 {
+40   g();
+41 }
+42
+43 int main(int argc, char **argv)
+44 {
+45   struct sigaction sigact;
+46
+<a name="d0e78032"></a>47    sigact.sa_sigaction = handler;
+48    sigemptyset(&amp;sigact.sa_mask);
+49    sigact.sa_flags = SA_SIGINFO;
+50    sigaction(SIGSEGV, &amp;sigact, NULL);
+51    sigaction(SIGABRT, &amp;sigact, NULL);
+52
+53    foo();
+54 }
+</pre><br>
+
+</TD></tr></table></p>
+<p class="docText">Compile the code listing <tt>sample_backtrace.c</tt> with the <tt>_handler_</tt> macro defined to simulate an application program that aborts in the middle of its run:</p>
+<div class="docText"><pre>$ gcc sample_backtrace.c -o sample_backtrace -g -rdynamic -D_handler_
+$./sample_backtrace
+
+
+
+########## start backtrace ##########
+
+Number of elements in backtrace: 9
+./main1(handler+0x2d) [0x8048829]
+[0xffffe440]
+/lib/tls/libc.so.6(abort+0x129) [0x40051f79]
+./main1(g+0) [0x80488d2]
+./main1(g+0xb) [0x80488dd]
+./main1(foo+0xb) [0x80488ea]
+./main1(main+0x6a) [0x8048956]
+/lib/tls/libc.so.6(__libc_start_main+0xe0) [0x4003e500]
+./main1 [0x8048761]
+
+########## end backtrace ##########
+Aborted
+</pre></div><br>
+<p class="docText">In the preceding example, back-trace information is produced through the <tt>abort</tt> signal <a name="iddle1490"></a>handler routine called <tt>handler()</tt><a name="d0e78065"></a>. The same method can be implemented for other signals caught by the application.</P>
+<p class="docText">In the following, <a class="docLink" href="#ch07ex04">Example 7-4</a> is compiled without the <tt>_handler_</tt> macro defined. In this example, the <tt>handler()</tt> function is called explicitly by the application to produce a back-trace printout. This method can be used to create back-trace information at certain points of the application for debugging or monitoring reasons.</P>
+<div class="docText"><pre>$ gcc sample_backtrace.c -o sample_backtrace -g -rdynamic
+$ ./sample_backtrace
+
+########## start backtrace ##########
+
+Number of elements in backtrace: 7
+./main1(handler+0x2d) [0x80487f9]
+./main1(h+0xb) [0x80488a2]
+./main1(g+0xb) [0x80488af]
+./main1(foo+0xb) [0x80488bc]
+./main1(main+0x6a) [0x8048928]
+/lib/tls/libc.so.6(__libc_start_main+0xe0) [0x4003e500]
+./main1 [0x8048731]
+
+########## end backtrace ##########
+</pre></div><br>
+<p class="docText">When compiling, notice that the <tt>rdynamic</tt> flag is used. The <tt>rdynamic</tt> flag is passed on to the linker to force inclusion of global symbol tables in the final executable.<a name="d0e78097"></a><a name="d0e78098"></a></p>
+
+</TD></TR></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=ch07lev1sec3.html><img src="images/prev.gif" width="60" height="17" border="0" align="absmiddle" alt="Previous Page"></a>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=ch07lev1sec5.html><img src="images/next.gif" width="60" height="17" border="0" align="absmiddle" alt="Next Page"></a>
+</div></td></tr></table>
+</body></html>

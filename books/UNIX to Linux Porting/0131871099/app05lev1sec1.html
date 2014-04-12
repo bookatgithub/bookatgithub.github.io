@@ -1,0 +1,153 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Section E.1.&nbsp; gprof helper Module for Multithreaded Applications</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=app05.html><img src="images/prev.gif" width="60" height="17" border="0" align="absmiddle" alt="Previous Page"></a>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=app06.html><img src="images/next.gif" width="60" height="17" border="0" align="absmiddle" alt="Next Page"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="app05lev1sec1"></a>
+
+<H3 id="title-IDAWU0MH" class="docSection1Title">E.1. <a name="iddle1482"></a><a name="iddle1484"></a>gprof helper Module for <a name="iddle1860"></a>Multithreaded Applications</h3>
+<p class="docText"><tt>gprof</tt>, when used with multithreaded applications on certain kernels (such as Linux), profiles only the main thread. To work around this situation, we include the <tt>gprof helper</tt> module from <a class="docLink" target="_blank" href="http://sam.zoy.org/writings/programming/gprof.html">http://sam.zoy.org/writings/programming/gprof.html</a>. Basically, <tt>gprof</tt> uses the internal <tt>ITIMER_PROF</tt> timer, which makes the kernel deliver a signal to the application whenever it expires. This module passes this timer data to all spawned threads.</P>
+<p class="docText">To use the module, compile the following:</p>
+<div class="docText"><pre>$ gcc -shared -fPIC gprof-helper.c -o gprof-helper.so -lpthread -ldl
+</pre></div><br>
+<p class="docText">Type the following in the command line:</p>
+<div class="docText"><pre>$ LD_PRELOAD=./gprof-helper.so your_program
+</pre></div><br>
+<p class="docText">You should see something like the following on the screen:</P>
+<div class="docText"><pre>pthreads: using profiling hooks for gprof
+</pre></div><BR>
+<div class="docText"><pre>/* gprof-helper.c -- preload library to profile pthread-enabled programs
+ *
+ * Authors: Sam Hocevar &lt;sam at zoy dot org&gt;
+ *     Daniel J&ouml;nsson &lt;danieljo at fagotten dot org&gt;
+ *
+ * Reprinted with permission from Sam Hocevar.
+ *
+ * Compilation example:
+ * gcc -shared -fPIC gprof-helper.c -o gprof-helper.so -lpthread -ldl
+ *
+ * Usage example:
+ * LD_PRELOAD=./gprof-helper.so your_program
+ */
+
+#define _GNU_SOURCE
+#include &lt;sys/time.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;dlfcn.h&gt;
+#include &lt;pthread.h&gt;
+
+static void * wrapper_routine(void *);
+
+/* Original pthread function */
+static int (*pthread_create_orig)(pthread_t *__restrict,
+                 __const pthread_attr_t *__restrict,
+                 void *(*)(void *),
+                 void *__restrict) = NULL;
+
+/* Library initialization function */
+void wooinit(void) __attribute__((constructor));
+
+void wooinit(void)
+{
+  pthread_create_orig = dlsym(RTLD_NEXT, "pthread_create");
+  fprintf(stderr, "pthreads: using profiling hooks for gprof\n");
+  if(pthread_create_orig == NULL)
+  {
+    char *error = dlerror();
+    if(error == NULL)
+    {
+      error = "pthread_create is NULL";
+    }
+    fprintf(stderr, "%s\n", error);
+    exit(EXIT_FAILURE);
+  }
+}
+/* Our data structure passed to the wrapper */
+typedef struct wrapper_s
+{
+  void * (*start_routine)(void *);
+  void * arg;
+
+  pthread_mutex_t lock;
+  pthread_cond_t wait;
+
+  struct itimerval itimer;
+
+} wrapper_t;
+
+/* The wrapper function in charge for setting the itimer value */
+static void * wrapper_routine(void * data)
+{
+  /* Put user data in thread-local variables */
+  void * (*start_routine)(void *) = ((wrapper_t*)data)-&gt;start_routine;
+  void * arg = ((wrapper_t*)data)-&gt;arg;
+
+  /* Set the profile timer value */
+  setitimer(ITIMER_PROF, &amp;((wrapper_t*)data)-&gt;itimer, NULL);
+
+  /* Tell the calling thread that we don't need its data anymore */
+  pthread_mutex_lock(&amp;((wrapper_t*)data)-&gt;lock);
+
+  pthread_cond_signal(&amp;((wrapper_t*)data)-&gt;wait);
+  pthread_mutex_unlock(&amp;((wrapper_t*)data)-&gt;lock);
+
+  /* Call the real function */
+  return start_routine(arg);
+}
+
+/* Our wrapper function for the real pthread_create() */
+int pthread_create(pthread_t *__restrict thread,
+         __const pthread_attr_t *__restrict attr,
+         void * (*start_routine)(void *),
+         void *__restrict arg)
+{
+  wrapper_t wrapper_data;
+  int i_return;
+
+  /* Initialize the wrapper structure */
+  wrapper_data.start_routine = start_routine;
+  wrapper_data.arg = arg;
+  getitimer(ITIMER_PROF, &amp;wrapper_data.itimer);
+  pthread_cond_init(&amp;wrapper_data.wait, NULL);
+  pthread_mutex_init(&amp;wrapper_data.lock, NULL);
+  pthread_mutex_lock(&amp;wrapper_data.lock);
+
+  /* The real pthread_create call */
+  i_return = pthread_create_orig(thread,
+                  attr,
+                  &amp;wrapper_routine,
+                  &amp;wrapper_data);
+
+  /* If the thread was successfully spawned, wait for the data
+  * to be released */
+  if(i_return == 0)
+  {
+    pthread_cond_wait(&amp;wrapper_data.wait, &amp;wrapper_data.lock);
+  }
+  pthread_mutex_unlock(&amp;wrapper_data.lock);
+  pthread_mutex_destroy(&amp;wrapper_data.lock);
+  pthread_cond_destroy(&amp;wrapper_data.wait);
+
+  return i_return;
+}<a name="d0e127564"></a><a name="d0e127565"></a><a name="d0e127566"></a>
+</pre></div><BR>
+
+<a href="9001536.html"><img src="images/pixel.jpg" alt="" width="1" height="1" border="0"></a></TD></TR></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=app05.html><img src="images/prev.gif" width="60" height="17" border="0" align="absmiddle" alt="Previous Page"></a>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=app06.html><img src="images/next.gif" width="60" height="17" border="0" align="absmiddle" alt="Next Page"></a>
+</div></td></tr></table>
+</body></html>

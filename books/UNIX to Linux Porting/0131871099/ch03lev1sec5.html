@@ -1,0 +1,380 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Section 3.5.&nbsp; Library Versioning</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=ch03lev1sec4.html><img src="images/prev.gif" width="60" height="17" border="0" align="absmiddle" alt="Previous Page"></a>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=ch03lev1sec6.html><img src="images/next.gif" width="60" height="17" border="0" align="absmiddle" alt="Next Page"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><TD valign="top"><a name="ch03lev1sec5"></a>
+
+<H3 id="title-IDAUM44Y" class="docSection1Title">3.5. <a name="iddle1715"></a>Library Versioning<sup class="docFootnote"><a class="docLink" href="#ch03fn8">[8]</a></sup>,<sup class="docFootnote"><a class="docLink" href="#ch03fn9">[9]</a></sup></H3><blockquote><p class="docFootnote"><sup><a name="ch03fn8">[8]</a></sup> Refer to the paper &quot;Library Interface Versioning in Solaris and Linux,&quot; published in the <span class="docEmphasis">Proceedings of the 4th Annual Linux Showcase and Conference</span>, Atlanta, Oct 1014, 2000.</P></blockquote><blockquote><p class="docFootnote"><sup><a name="ch03fn9">[9]</a></sup> Refer to the paper &quot;How to Write Shared Libraries&quot; by Ulrich Drepper, located at <a class="docLink" target="_blank" href="http://people.redhat.com/~drepper">http://people.redhat.com/~drepper</a>.</P></blockquote>
+<p class="docText">Maintaining binary-level compatibility or an <a name="iddle2144"></a><a name="iddle1015"></a>ABI between shared libraries and applications using them is an important requirement<a name="d0e7227"></a>.<a name="d0e7229"></a> An ABI of a shared library is a set of runtime interfaces that an application may depend on; if the ABI evolves in an upward-compatible way from one release to the next, existing applications compiled on a given release will run on all subsequent releases without change. Library versioning is what Linux and other contemporary systems use to achieve binary compatibility.<a name="d0e7231"></a></p>
+<p class="docText">Some of the applications we have ported in the past required library versioning support. Other UNIX platforms also implement library versioning, and each may be different in its own way. Linux provides two different techniques to use for library versioning: external and symbol versioning.</p>
+<a name="ch03lev2sec2"></a>
+<h4 id="title-IDACP44Y" class="docSection2Title">3.5.1. <a name="iddle1332"></a><a name="iddle1716"></a>External Library Versioning</H4>
+<p class="docText">During link time, the linker (<tt>ld</tt>) looks for shared library files that end with .so. Files that end with .so are called linker names because of the way they are used in Linux. When an application that depends on a shared library is built, it is the shared library's <span class="docEmphasis">soname</span> (not the shared library's filename) that is recorded in the application binary as a dependency. It is the library's soname that is used by the runtime linker to locate and load the library depended on by the application. The soname contains only the major number (for example, libfoo.so.1).</P>
+<p class="docText">When a shared library is updated in such a way that it is not compatible with the older one, the new shared library must have a new external versioned name. In other words, the library's soname needs to be changed. Examples of incompatible updates include the removal of a symbol, the removal of an argument from a function, and the update to the function such that the semantic property no longer matches its original specification and the new version is not binary-compatible with the older one. Consider the following example.</P>
+<p class="docText">foo.c and message.c are files used to create the shared library libfoo.so.1.1 with a soname of libfoo.so.1:</P>
+<div class="docText"><pre>/* foo.c v1.1 */
+extern const char *_message1;
+extern const char *_message2;
+
+void foo1()
+{
+      (void) printf(_message1);
+}
+
+void foo2()
+{
+      (void) printf(_message2);
+}
+
+
+/* message.c v1.1 */
+const char *_message1 = "this is string message 1\n";
+const char *_message2 = "this is string message 2\n";
+</pre></div><BR>
+<p class="docText">Generate the shared library with a soname of libfoo.so.1:</p>
+<div class="docText"><pre>$ gcc -fPIC -c foo.c message.c
+$ gcc -shared -Wl,-soname, libfoo.so.1 -o libfoo.so.1.1 foo.o message.o
+</pre></div><BR>
+<p class="docText">The <tt><a name="iddle2521"></a>Wl</tt> flag is used to pass the arguments <tt>soname=libfoo.so.1</tt> to the linker (<tt>ld</tt>), which gives the library a soname of libfoo.so.1.<sup class="docFootnote"><a class="docLink" href="#ch03fn10">[10]</a></sup> The file libfoo.so.1.1 is generated, and then <tt><a name="iddle1672"></a>ldconfig</tt> is run, specifying the library name:<a name="d0e7311"></a><a name="d0e7312"></a></p><blockquote><p class="docFootnote"><sup><a name="ch03fn10">[10]</a></sup> In Linux, use the command <tt>objdump x libfoo.so | grep SONAME</tt> to display the soname.</p></blockquote>
+<div class="docText"><pre>$ /sbin/ldconfig -l libfoo.so.1.1
+$ ls
+lrwxrwxrwx 1 x users 13 2004-12-24 15:16 libfoo.so.1 -&gt; libfoo.so.1.1
+-rwxr-xr-x 1 x users 6539 2004-12-24 15:15 libfoo.so.1.1
+</pre></div><BR>
+<p class="docText">After running <tt>ldconfig</tt>, a file with the same name as the soname is generatedlibfoo.so.1. For applications to be able to use and link to the newly created library, a link to the proper linker name libfoo.so needs to be created:</P>
+<div class="docText"><pre>$ ln -s libfoo.so.1 libfoo.so
+</pre></div><br>
+<p class="docText">The shared library is now ready for use. The following file, main1.c, is used to link with the shared library:</p>
+<div class="docText"><pre>/* main.c */
+main()
+{
+      foo1();
+      foo2();
+}
+
+$ gcc -L. -lfoo main1.c -o main1
+$ ./main
+this is string message 1
+this is string message 2
+</pre></div><br>
+<p class="docText">Using <tt><a name="iddle1673"></a>ldd</tt> to examine the shared library dependencies of main1 shows the following:<a name="d0e7351"></a></p>
+<div class="docText"><pre>$ ldd ./main1
+    <span class="docEmphMark">libfoo.so.1 =&gt; ./libfoo.so.1 (0xb7ffe000)</span>
+    libc.so.6 =&gt; /lib/tls/i586/libc.so.6 (0x00b9c000)
+    /lib/ld-linux.so.2 (0x00b85000)
+</pre></div><BR>
+<p class="docText">As you can see from the output, the <tt>ldd</tt> command confirms that the soname libfoo.so.1 is recorded as a dependency of the executable main1.</p>
+<p class="docText">Let's now assume for a moment that we need to change the internal and interface specifications of one of our library functions, <tt>foo2()</tt>. In this case, we need to create a version 2 of the libfoo.so shared library.</p>
+<p class="docText">In this example, we change <tt>foo2</tt> to print _message3 and take an argument. This represents an internal change to our specification and interface that alters the behavior of the library in a major way.</p>
+<p class="docText">foo.c now looks like the following:</p>
+<div class="docText"><pre>extern const char * _message1;
+extern const char * _message2;
+extern const char * _message3;
+
+void foo1()
+{
+    (void) printf(_message1);
+}
+
+void foo2(int x)
+{
+     int y;
+
+    (void) printf(_message3);    <span class="docEmphStrong">/* change to specification */</span>
+        y = x;
+}
+</pre></div><BR>
+<p class="docText">message.c is updated to look like this:</P>
+<div class="docText"><pre>const char *_message1 = "this is string message 1\n";
+const char *_message2 = "this is string message 2\n";
+const char *_message3 = "this is string message 3\n";
+</pre></div><br>
+<p class="docText">After making changes to the message.c and foo.c files, recompile and then create the shared library with a different soname, as follows:</p>
+<div class="docText"><pre>$ gcc -fPIC -c foo.c message.c
+$ gcc -shared -Wl,-soname, libfoo.so.2 -o libfoo.so.2.1 foo.o message.o
+</pre></div><br>
+<p class="docText">Notice that we incremented the major number of the soname and the resulting library filename. After creating the shared library with the soname of libfoo.so.2, run <tt>ldconfig</tt>, which creates the link to libfoo.so.2. Link libfoo.so.2 to libfoo.so, and it is ready to use:</p>
+<div class="docText"><pre>$ /sbin/ldconfig -l libfoo.so.2.1
+$ ln -s libfoo.so.2 libfoo.so
+</pre></div><br>
+<p class="docText">Compile a program that uses the new libfoo.so, as in the following example:</p>
+<div class="docText"><pre>/* main.c */
+main()
+{
+    foo1();
+    foo2(4);
+}
+</pre></div><br>
+<p class="docText">After compiling a program linked with the new libfoo.so, examine the shared library dependencies and notice the dependency on libfoo.so.2:</p>
+<div class="docText"><pre>$ gcc -L. -lfoo main.c -o main2
+$ ldd main2
+    linux-gate.so.1 =&gt; (0xffffe000)
+    <span class="docEmphMark"><span class="docEmphStrong">libfoo.so.2 =&gt; ./libfoo.so.2 (0x40018000)</span></span>
+    libc.so.6 =&gt; /lib/tls/libc.so.6 (0x4002a000)
+    /lib/ld-linux.so.2 =&gt; /lib/ld-linux.so.2 (0x40000000)
+</pre></div><br>
+<p class="docText">Run the new executable to determine whether it uses the right library:</p>
+<div class="docText"><pre>$ ./main2
+this is string message 1
+this is string message 3
+</pre></div><br>
+<p class="docText">Test the original executable to determine whether it still successfully locates the original versioned library:</p>
+<div class="docText"><pre>$ ./main1
+this is string message 1
+this is string message 2
+</pre></div><br>
+<p class="docText">Notice that the executable main1 from the previous example still runs even though the link to libfoo.so now points to libfoo.so.2. If main1 is executed in an environment in which there is no libfoo.so.1, you get this error:<a name="d0e7466"></a><a name="d0e7467"></a></p>
+<div class="docText"><pre>./main: error while loading shared libraries: libfoo.so.1: cannot open shared
+object file: No such file or directory
+</pre></div><BR>
+
+<a name="ch03lev2sec3"></a>
+<h4 id="title-IDA0Y44Y" class="docSection2Title">3.5.2. <a name="iddle1720"></a><a name="iddle2316"></a>Symbol Versioning</h4>
+<p class="docText">As mentioned earlier, we increment the minor number of a shared library when we make changes to the library that are upward-compatible. This change involves adding some new interfaces while maintaining existing interfaces. However, there is an important issue associated with minor revision change. An application built with a given minor version of a shared library cannot be certain whether it can run with an earlier minor version of the library. This is because the application may have used one or more of the interfaces added to the library at a later minor version, and not present in the earlier one. Symbol versioning is introduced to solve this problem by allowing the shared library to record the information about what has been added in each minor revision.</p>
+<p class="docText">In Linux, the GNU <tt>ld</tt> permits creation of shared libraries with symbol versioning through the linker switch <tt>-version-script</tt> option. This compiler option <tt><a name="iddle2515"></a>Wl,--version-script=mapfile</tt> instructs the linker which symbols to export from the generated shared library<a name="d0e7509"></a>. Each symbol can belong to one of these two classes: global (exported) or local (not exported). Take, for example, the following program, foo.c. It has one function, <tt>foo1</tt>. This file will be used to create version 1.1 of the shared library.</P>
+<p class="docText">Example:</P>
+<div class="docText"><pre><span class="docEmphStrong">$cat foo.c</span>
+/* foo.c v1.1 */
+extern const char *_message1;
+
+void foo1()
+{
+      (void) printf(_message1);
+}
+
+<span class="docEmphStrong">$cat message.c</span>
+/* message.c v1.1 */
+const char *_message1 = "this is string message 1\n";
+</pre></div><BR>
+<p class="docText">A script file named scriptfile<sup class="docFootnote"><a class="docLink" href="#ch03fn11">[11]</a></sup> is created, as shown here:</P><blockquote><p class="docFootnote"><sup><a name="ch03fn11">[11]</a></sup> Refer to the GNU ld manual at <a class="docLink" target="_blank" href="http://www.gnu.org/manual">www.gnu.org/manual</a> (and select the <tt>ld</tt> link). Or go directly to <a class="docLink" target="_blank" href="http://www.gnu.org/software/binutils/manual/ld-2.9.1/ld.html">www.gnu.org/software/binutils/manual/ld-2.9.1/ld.html</a>.</P></blockquote>
+<div class="docText"><pre><span class="docEmphStrong">$cat scriptfile</span>
+LX_1.1 {
+               global:
+               foo1;
+               local:
+                     *;
+};
+</pre></div><br>
+<p class="docText">In the scriptfile example, symbol foo1 is public and is exported as it is under the global stanza. And all other symbols (matched by the *) within version 1.1 of the library will not be exported.<sup class="docFootnote"><a class="docLink" href="#ch03fn12">[12]</a></sup></p><blockquote><p class="docFootnote"><sup><a name="ch03fn12">[12]</a></sup> This can be used to prevent symbols from being exported from the library by default.</p></blockquote>
+<p class="docText">Build the library:</P>
+<div class="docText"><pre>$gcc -o libfoo.so.1 -shared -Wl,--version-script=scriptfile foo.o message.o
+</pre></div><BR>
+<p class="docText">Run objdump to examine the library:</P>
+<div class="docText"><pre>$objdump -x libfoo.so.1 | egrep "foo1|message1"
+00001640 l   O .data 00000004             _message1
+0000049c g   F .text 0000002b             foo1
+</pre></div><BR>
+<p class="docText">Notice that the symbol foo1 is the only global symbol (the symbol _message1 is listed as local). <tt>readelf V</tt> displays the contents of the version sections in the object file:</P>
+<div class="docText"><pre><span class="docEmphStrong">$ readelf -V libfoo.so.1</span>
+
+Version symbols section '.gnu.version' contains 17 entries:
+ Addr: 00000000000002c6 Offset: 0x0002c6 Link: 2 (.dynsym)
+ 000:  0 (*local*)    0 (*local*)    0 (*local*)    0 (*local*)
+ 004:  0 (*local*)    0 (*local*)    0 (*local*)    0 (*local*)
+ 008:  0 (*local*)    0 (*local*)    0 (*local*)    2 (LX_1.1)
+ 00c:  2 (LX_1.1)    3 (GLIBC_2.0)   4 (GLIBC_2.1.3)  0 (*local*)
+ 010:  0 (*local*)
+
+Version definition section '.gnu.version_d' contains 2 entries:
+ Addr: 0x00000000000002e8 Offset: 0x0002e8 Link: 3 (.dynstr)
+ 000000: Rev: 1 Flags: BASE  Index: 1 Cnt: 1 Name: libfoo.so.1
+ 0x001c: Rev: 1 Flags: none Index: 2 Cnt: 1 Name: LX_1.1
+
+Version needs section '.gnu.version_r' contains 1 entries:
+ Addr: 0x0000000000000320 Offset: 0x000320 Link to section: 3 (.dynstr)
+ 000000: Version: 1 File: libc.so.6 Cnt: 2
+ 0x0010:  Name: GLIBC_2.1.3 Flags: none Version: 4
+ 0x0020:  Name: GLIBC_2.0 Flags: none Version: 3
+</pre></div><br>
+<p class="docText">A <span class="docEmphasis">weak</span> version definition can be created by updating local objects without introducing new interfaces. Examples of such changes are bug fixes and performance improvements. From the previous example, let's update the symbol _message1:</P>
+<div class="docText"><pre>$ cat message.c
+/* message.c v1.1 */
+const char *_message1 = "this is an updated string message 1\n";
+</pre></div><br>
+<p class="docText">Our version script file, scriptfile, has to be changed as follows:</p>
+<div class="docText"><pre>$cat scriptfile
+LX_1.1 {
+        global:
+            foo1;
+        local:
+            *;
+};
+LX_1.1.1 { } ;
+</pre></div><BR>
+<p class="docText">Now, rebuild libfoo.so.1:<span class="docEmphStrong"></span></P>
+<div class="docText"><pre>$gcc -fPIC -c foo.c message.c
+$gcc -o libfoo.so.1 -shared -Wl,--version-script=scriptfile foo.o message.o
+</pre></div><br>
+<p class="docText">The command <tt>readelf V libfoo.so.1</tt> displays the following:</p>
+<div class="docText"><pre>$ readelf -V libfoo.so.1
+
+Version symbols section '.gnu.version' contains 18 entries:
+ Addr: 00000000000002e6 Offset: 0x0002e6 Link: 2 (.dynsym)
+ 000:  0 (*local*)    0 (*local*)    0 (*local*)    0 (*local*)
+ 004:  0 (*local*)    0 (*local*)    0 (*local*)    0 (*local*)
+ 008:  0 (*local*)    0 (*local*)    0 (*local*)    3 (LX_1.1.1)
+ 00c:  2 (LX_1.1)    2 (LX_1.1)    4 (GLIBC_2.0)   5 (GLIBC_2.1.3)
+ 010:  0 (*local*)    0 (*local*)
+
+<span class="docEmphMark">Version definition section '.gnu.version_d' contains 3 entries:</span>
+ <span class="docEmphMark">Addr: 0x0000000000000308 Offset: 0x000308 Link: 3 (.dynstr)</span>
+ <span class="docEmphMark">000000: Rev: 1 Flags: BASE  Index: 1 Cnt: 1 Name: libfoo.so.1</span>
+ <span class="docEmphMark">0x001c: Rev: 1 Flags: none Index: 2 Cnt: 1 Name: LX_1.1</span>
+ <span class="docEmphMark">0x0038: Rev: 1 Flags: WEAK  Index: 3 Cnt: 1 Name: LX_1.1.1</span>
+
+Version needs section '.gnu.version_r' contains 1 entries:
+ Addr: 0x0000000000000360 Offset: 0x000360 Link to section: 3 (.dynstr)
+ 000000: Version: 1 File: libc.so.6 Cnt: 2
+ 0x0010:  Name: GLIBC_2.1.3 Flags: none Version: 5
+ 0x0020:  Name: GLIBC_2.0 Flags: none Version: 4
+</pre></div><br>
+<p class="docText">Note that this time the Version definition section displays the weak version (see text box) definition.</p>
+<p class="docText">Next, let's update libfoo.so. 1 by adding a function <tt>foo2</tt>:</P>
+<div class="docText"><pre><span class="docEmphStrong">$cat foo.c</span>
+
+/* foo.c v 1.2 */
+extern const char * _message1;
+extern const char * _message2;
+
+void foo1()
+{
+      (void) printf(_message1);
+}
+
+void foo2()
+{
+      (void) printf(_message2);
+}
+</pre></div><br>
+<p class="docText">Update message.c:</p>
+<div class="docText"><pre><span class="docEmphStrong">$cat message.c</span>
+/* message.c v1.2 */
+const char *_message1 = "this is an updated string message 1\n";
+const char *_message2 = "this is a string message 2\n";
+</pre></div><br>
+<p class="docText">Update the scriptfile:</p>
+<div class="docText"><pre>LX_1.1 {
+        global:
+            foo1;
+        local:
+            *;
+};
+LX_1.1.1 { } ;
+
+LX_1.2 {
+        global:
+            foo2;
+} LX_1.1.1;
+</pre></div><BR>
+<p class="docText">Build the library:</P>
+<div class="docText"><pre>$gcc -fPIC -c foo.c message.c
+$gcc -o libfoo.so.1 -shared -Wl,--version-script=scriptfile foo.o message.o
+</pre></div><br>
+<p class="docText">The command <tt>readelf V libfoo.so.1</tt> displays the following:</p>
+<div class="docText"><pre>Version symbols section '.gnu.version' contains 20 entries:
+ Addr: 0000000000000318 Offset: 0x000318 Link: 2 (.dynsym)
+ 000:  0 (*local*)    0 (*local*)    0 (*local*)    0 (*local*)
+ 004:  0 (*local*)    0 (*local*)    0 (*local*)     0 (*local*)
+ 008:  0 (*local*)    0 (*local*)    0 (*local*)    4 (LX_1.2)
+ 00c:  3 (LX_1.1.1)   2 (LX_1.1)    2 (LX_1.1)     5 (GLIBC_2.0)
+ 010:  6 (GLIBC_2.1.3)  4 (LX_1.2)    0 (*local*)    0 (*local*)
+
+Version definition section '.gnu.version_d' contains 4 entries:
+ Addr: 0x0000000000000340 Offset: 0x000340 Link: 3 (.dynstr)
+ 000000: Rev: 1 Flags: BASE  Index: 1 Cnt: 1 Name: libfoo.so.1
+ 0x001c: Rev: 1 Flags: none Index: 2 Cnt: 1 Name: LX_1.1
+ 0x0038: Rev: 1 Flags: WEAK  Index: 3 Cnt: 1 Name: LX_1.1.1
+ <span class="docEmphMark"><span class="docEmphStrong">0x0054: Rev: 1 Flags: none Index: 4 Cnt: 2 Name: LX_1.2</span></span>
+ <span class="docEmphMark"><span class="docEmphStrong">0x0070: Parent 1: LX_1.1.1</span></span>
+
+Version needs section '.gnu.version_r' contains 1 entries:
+ Addr: 0x00000000000003b8 Offset: 0x0003b8 Link to section: 3 (.dynstr)
+ 000000: Version: 1 File: libc.so.6 Cnt: 2
+ 0x0010:  Name: GLIBC_2.1.3 Flags: none Version: 6
+ 0x0020:  Name: GLIBC_2.0 Flags: none Version: 5
+</pre></div><br>
+<p class="docText">The output shows that the version definition LX_1.2 has a dependency on the version definition LX_1.1.1.</p>
+<p class="docText">Update main.c:</p>
+<div class="docText"><pre>$cat main.c
+/* main.c v1.2 */
+main()
+{
+      foo1();
+      foo2();
+}
+
+$ln -s libfoo.so.1 libfoo.so
+$gcc -o main main.c -L. -lfoo
+</pre></div><br>
+<p class="docText">Examine main using the ldd v command:</p>
+<div class="docText"><pre>$ ldd -v main
+    libfoo.so =&gt; ./libfoo.so (0xb7ffe000)
+    libc.so.6 =&gt; /lib/tls/i586/libc.so.6 (0x00b9c000)
+    /lib/ld-linux.so.2 (0x00b85000)
+
+    Version information:
+    ./main:
+        <span class="docEmphMark"><span class="docEmphStrong">libfoo.so (LX_1.1) =&gt; ./libfoo.so</span></span>
+        <span class="docEmphMark"><span class="docEmphStrong">libfoo.so (LX_1.2) =&gt; ./libfoo.so</span></span>
+        libc.so.6 (GLIBC_2.0) =&gt; /lib/tls/i586/libc.so.6
+    ./libfoo.so:
+        libc.so.6 (GLIBC_2.1.3) =&gt; /lib/tls/i586/libc.so.6
+        libc.so.6 (GLIBC_2.0) =&gt; /lib/tls/i586/libc.so.6
+    /lib/tls/i586/libc.so.6:
+        ld-linux.so.2 (GLIBC_2.1) =&gt; /lib/ld-linux.so.2
+        ld-linux.so.2 (GLIBC_2.3) =&gt; /lib/ld-linux.so.2
+        ld-linux.so.2 (GLIBC_PRIVATE) =&gt; /lib/ld-linux.so.2
+        ld-linux.so.2 (GLIBC_2.0) =&gt; /lib/ld-linux.so.2
+</pre></div><br>
+<p class="docText">Notice that the main executable references both LX_1.1 and LX_1.2 of the versioned library, as shown in the box.</p>
+<p class="docText">If main.c looked liked the following:</p>
+<div class="docText"><pre>main()
+{
+      foo1();
+}
+
+gcc -o main main.c -L. -lfoo
+</pre></div><br>
+<p class="docText">the resulting main executable will still be linked to version 1.2 of libfoo.so but will only show the reference to version 1.1 if examined, because it only needs to resolve symbols from that version of the library:</p>
+<div class="docText"><pre>$ ldd -v main
+    libfoo.so =&gt; ./libfoo.so (0xb7ffe000)
+    libc.so.6 =&gt; /lib/tls/i586/libc.so.6 (0x00b9c000)
+    /lib/ld-linux.so.2 (0x00b85000)
+
+    Version information:
+    ./main:
+        <span class="docEmphMark"><span class="docEmphStrong">libfoo.so (LX_1.1) =&gt; ./libfoo.so</span></span>
+        libc.so.6 (GLIBC_2.0) =&gt; /lib/tls/i586/libc.so.6
+    ./libfoo.so:
+        libc.so.6 (GLIBC_2.1.3) =&gt; /lib/tls/i586/libc.so.6
+        libc.so.6 (GLIBC_2.0) =&gt; /lib/tls/i586/libc.so.6
+    /lib/tls/i586/libc.so.6:
+        ld-linux.so.2 (GLIBC_2.1) =&gt; /lib/ld-linux.so.2
+        ld-linux.so.2 (GLIBC_2.3) =&gt; /lib/ld-linux.so.2
+        ld-linux.so.2 (GLIBC_PRIVATE) =&gt; /lib/ld-linux.so.2
+        ld-linux.so.2 (GLIBC_2.0) =&gt; /lib/ld-linux.so.2
+</pre></div><br>
+<p class="docText">Notice that this time only version LX_1.1 of the versioned library is referenced by the executable.</p>
+<p class="docText">GNU <tt>ld</tt> also lets you bind a symbol to a version in the source file where the symbol is defined rather than in the versioning script. In addition, GNU <tt>ld</tt> allows multiple versions of the same function to appear in a given shared library. For detailed information, refer to the GNU <tt>ld</tt> manual<sup class="docFootnote"><a class="docLink" href="#ch03fn13">[13]</a></sup> and the paper &quot;How to Write Shared Libraries&quot; by Ulrich Drepper.</P><blockquote><p class="docFootnote"><sup><a name="ch03fn13">[13]</a></sup> <a class="docLink" target="_blank" href="http://www.gnu.org/software/binutils/manual/ld-2.9.1/ld.html">www.gnu.org/software/binutils/manual/ld-2.9.1/ld.html</a></p></blockquote>
+<p class="docText">Symbol versioning has been implemented in <tt>glibc</tt> since version 2.1. Symbol versioning is also a part of the Linux Standard Base Specification 1.2 and higher.<a name="d0e7803"></a><a name="d0e7804"></a></p>
+
+
+<a href="9001536.html"><img src="images/pixel.jpg" alt="" width="1" height="1" border="0"></a></TD></TR></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=ch03lev1sec4.html><img src="images/prev.gif" width="60" height="17" border="0" align="absmiddle" alt="Previous Page"></a>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=ch03lev1sec6.html><img src="images/next.gif" width="60" height="17" border="0" align="absmiddle" alt="Next Page"></a>
+</div></td></tr></table>
+</body></html>

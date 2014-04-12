@@ -1,0 +1,803 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Section 6.10.&nbsp; Threads</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=ch06lev1sec9.html><img src="images/prev.gif" width="60" height="17" border="0" align="absmiddle" alt="Previous Page"></a>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=ch06lev1sec11.html><img src="images/next.gif" width="60" height="17" border="0" align="absmiddle" alt="Next Page"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a href="9001536.html"><img src="images/pixel.jpg" alt="" width="1" height="1" border="0"></a><a name="ch06lev1sec10"></a>
+
+<H3 id="title-IDA5AUL3" class="docSection1Title">6.10. <a name="iddle1558"></a>Threads</h3>
+<p class="docText">This section addresses issues that developers might face when migrating multithreaded applications from <a name="iddle2465"></a>HP-UX to Linux. On the Linux side, the material in this section is based on the new implementation of a POSIX thread library (the Native POSIX Thread Library, NPTL for short) developed by Ulrich Drepper.</P>
+<p class="docText">The Linux threading library in all the released versions of Linux prior to 2.6 is known as <span class="docEmphasis"><a name="iddle1708"></a><a name="iddle1765"></a>LinuxThreads.</span> This library has been supported by the GNU C library since <tt>glibc</tt> 2.0 and is largely POSIX-compliant<a name="d0e67438"></a><a name="d0e67439"></a>. Starting in the 2.6 kernel, NPTL was introduced. It provides a significant performance improvement over LinuxThreads. NPTL is also far more compliant with the POSIX specification than the LinuxThreads package was. However, just using the 2.6 kernel does not mean that the NPTL is being used. All modern Linux distributions ship NPTL as the default threads package, and many ship both NPTL and LinuxThreads. However, it is recommended that all new applications to be ported to the Linux 2.6 platform use NPTL as the threading library.</p>
+<p class="docText">Because NPTL is relatively new, it would only be natural for different Linux distributions to support older versions of the LinuxThreads library<sup class="docFootnote"><a class="docLink" href="#ch06fn31">[31]</a></sup> for backward compatibility. To determine which threading library a system uses, execute the <tt>getconf</tt> command (part of the <tt>glibc</tt> package) to examine the <tt>GNU_LIBPTHREAD_VERSION</tt> environment variable, as in the following command example:</p><blockquote><p class="docFootnote"><sup><a name="ch06fn31">[31]</a></sup> LinuxThreads is another library that implements POSIX 1003.1c API specifications.</p></blockquote>
+<div class="docText"><pre>$ getconf GNU_LIBPTHREAD_VERSION
+linuxthreads-0.10             <span class="docEmphStrong">This was returned from an old</span>
+                              <span class="docEmphStrong">Red Hat installation.</span>
+</pre></div><br>
+<p class="docText">If your system uses the NPTL, the command returns the value of NPTL that your system is using, as in the following example:</P>
+<div class="docText"><pre>$ getconf GNU_LIBPTHREAD_VERSION
+NPTL 0.61                     <span class="docEmphStrong">This was returned from
+                              SUSE 9.1 installation.</span>
+
+
+
+$ getconf GNU_LIBPTHREAD_VERSION
+NPTL 2.3.3                    <span class="docEmphStrong">This was returned from
+                              Fedora 2.6.9-1.667
+                              installation.</span>
+</pre></div><BR>
+<p class="docText">To tell which compiler suite the Linux distribution was compiled and linked with, use the following method.<a name="d0e67488"></a><a name="d0e67489"></a></P>
+<p class="docText">To find the <tt>libpthreads</tt> library linked with /bin/ls:</p>
+<div class="docText"><pre>$ ldd /bin/ls | grep libc.so.6
+    libc.so.6 =&gt; /lib/tls/i586/libc.so.6 (0x00b9c000)
+
+$ /lib/tls/i586/libc.so.6
+GNU C Library stable release version 2.3.3, by Roland McGrath et al.
+Copyright (C) 2004 Free Software Foundation, Inc.
+This is free software; see the source for copying conditions.
+There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.
+Compiled by GNU CC version 3.4.2 20041017 (Red Hat 3.4.2-6.fc3).
+Compiled on a Linux 2.4.20 system on 2004-10-27.
+Available extensions:
+    GNU libio by Per Bothner
+    crypt add-on version 2.1 by Michael Glad and others
+    Native POSIX Threads Library by Ulrich Drepper et al
+    The C stubs add-on version 2.1.2.
+    BIND-8.2.3-T5B
+    NIS(YP)/NIS+ NSS modules 0.19 by Thorsten Kukuk
+    Glibc-2.0 compatibility add-on by Cristian Gafton
+    GNU Libidn by Simon Josefsson
+Thread-local storage <a name="iddle1562"></a><a name="iddle2468"></a>support included.
+For bug reporting instructions, please see:
+&lt;http://www.gnu.org/software/libc/bugs.html&gt;.
+</pre></div><BR>
+<p class="docText">As the preceding output shows, the <tt>libc.so.6</tt> is linked with the Native POSIX Threads Library by Ulrich Drepper.</p>
+<a name="ch06lev2sec25"></a>
+<h4 id="title-IDAWGUL3" class="docSection2Title">6.10.1. Threads Support in HP-UX and Linux</h4>
+<p class="docText">HP-UX announced formal support for POSIX 1003.1 threads and discontinued support for new applications written to use DCE threads in version 11 of its HP-UX operating system. Although support for DCE threads has been discontinued, applications written to these standards still exist. Porting these applications to Linux requires them to adhere to the new POSIX 1003.1 standards. <a class="docLink" href="#ch06table15">Table 6-15</a> compares DCE threads and POSIX threads on both HP-UX and Linux.</p>
+
+<p class="docText"></P><a name="ch06table15"></a><P><table cellspacing="0" FRAME="hsides" RULES="groups" cellpadding="5"><caption><h5 class="docTableTitle">Table 6-15. Linux and HP-UX Threads Implementation Comparison</h5></caption><colgroup align="left" span="3"><col width="175"><col width="175"><col width="150"></colgroup><thead><tr><th class="bottomBorder thead" scope="col" align="left" valign="top"><p class="docText">HP-UX DCE</p></th><th class="bottomBorder thead" scope="col" align="left" valign="top"><p class="docText">HP-UX POSIX</P></th><th class="bottomBorder thead" scope="col" align="left" valign="top"><p class="docText">Linux NPTL</p></th></tr></thead><tr><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>atfork</tt></p></td><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_atfork</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_atfork</tt></p>
+</td></tr><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>hp__pthread_equal</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText">None</p></td><TD class="docTableCell" align="left" valign="top"><p class="docText">None</p></td></TR><tr><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread__cancel_thread</tt></p></TD><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_cancel</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_cancel</tt></P></TD></TR><tr><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_attr_create</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_attr_init</tt></p></TD><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_attr_init</tt></p>
+</td></tr><tr><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_attr_delete</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_attr_destroy</tt></P></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_attr_destroy</tt></P>
+</td></tr><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_attr_</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_attr_</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_attr_</tt></p>
+</td></tr><TR><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>getguardsize_np</tt></p></TD><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>getguardsize</tt></P></td><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>getguardsize</tt></p>
+</td></tr><tr><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_attr_</tt></P></TD><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_attr_</tt></P></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_attr_</tt></p>
+</td></TR><TR><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>getinheritsched</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>getinheritsched</tt></P></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>getinheritsched</tt></p>
+</TD></tr><tr><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_attr_getprio</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_attr_</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_attr_</tt></p>
+</td></tr><tr><td class="docTableCell" align="left" valign="top">&nbsp;</td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>getschedparam</tt></P></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>getschedparam</tt></P>
+</td></TR><tr><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_attr_getsched</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_attr_</tt></p></TD><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_attr_</tt></P>
+</td></TR><tr><td class="docTableCell" align="left" valign="top">&nbsp;</td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>getschedpolicy</tt></P></TD><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>getschedpolicy</tt></p>
+</td></tr><TR><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_attr_</tt></p></td><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_attr_</tt></p></td><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_attr_</tt></p>
+</td></tr><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>getstacksize</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>getstacksize</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>getstacksize</tt></p>
+</td></TR><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_attr_</tt></P></td><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_attr_</tt></p></TD><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_attr_</tt></p>
+</td></tr><TR><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>setguardsize_np</tt></P></td><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>setguardsize</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>setguardsize</tt></p>
+</TD></TR><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_attr_</tt></p></td><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_attr_</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_attr_</tt></P>
+</td></tr><TR><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>setinheritsched</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>setinheritsched</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>setinheritsched</tt></p>
+</td></tr><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_attr_setprio</tt></p></TD><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_attr_</tt></p></TD><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_attr_</tt></P>
+</td></TR><tr><td class="docTableCell" align="left" valign="top">&nbsp;</td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>setschedparam</tt></P></TD><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>setschedparam</tt></p>
+</TD></tr><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_attr_setsched</tt></p></TD><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_attr_</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_attr_</tt></p>
+</TD></tr><tr><td class="docTableCell" align="left" valign="top">&nbsp;</TD><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>setschedpolicy</tt></p></TD><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>setschedpolicy</tt></p>
+</td></tr><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_attr_</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_attr_</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_attr_</tt></p>
+</TD></tr><tr><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>setstacksize</tt></p></TD><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>setstacksize</tt></P></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>setstacksize</tt></p>
+</td></TR><TR><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_cancel</tt></p></TD><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_cancel</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthrhead_cancel</tt></P>
+</TD></tr><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_cond_broadcast</tt></p></TD><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_cond_broadcast</tt></p></td><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_cond_broadcast</tt></p>
+</td></TR><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_cond_destroy</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_cond_destroy</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_cond_destroy</tt></p>
+</td></tr><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_cond_init</tt></P></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_cond_init</tt></P></td><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_cond_init</tt></p></TD></tr><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_cond_signal</tt></p></TD><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_cond_signal</tt></P></td><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_cond_signal</tt></p>
+</td></tr><tr><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_cond_signal_</tt></P></td><td class="docTableCell" align="left" valign="top"><p class="docText">None</p></td><TD class="docTableCell" align="left" valign="top"><p class="docText">None</p></td></tr><TR><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>int_np</tt></p></TD><td class="docTableCell" align="left" valign="top">&nbsp;</td><td class="docTableCell" align="left" valign="top">&nbsp;</td></tr><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_cond_timedwait</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_cond_timedwait</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_cond_timedwait</tt></P>
+</td></tr><TR><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_cond_wait</tt></P></td><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_cond_wait</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_cond_wait</tt></p>
+</TD></TR><TR><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_condattr_create</tt></P></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_condattr_init</tt></p></td><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_condattr_init</tt></P>
+</td></tr><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_condattr_</tt></P></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_condattr_</tt></p></TD><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_condattr_</tt></p>
+</TD></tr><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>delete</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>destroy</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>destroy</tt></p>
+</td></tr><tr><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_create</tt></p></td><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_create</tt></p></TD><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_create</tt></P>
+</td></tr><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_ctxcb_hpux</tt></P></TD><TD class="docTableCell" align="left" valign="top"><p class="docText">None</p></TD><td class="docTableCell" align="left" valign="top"><p class="docText">None</p></td></tr><TR><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_delay_np</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>nanosleep</tt></p></TD><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>nanosleep</tt></p>
+</td></TR><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_detach</tt></P></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_detach</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_detach</tt></p>
+</td></tr><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_equal</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_equal</tt></P></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_equal</tt></P>
+</td></TR><tr><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_exit</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_exit</tt></p></TD><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_exit</tt></P>
+</td></TR><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_get_</tt></p></td><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>get_expiration_time</tt></P></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>get_expiration_time</tt></p>
+</td></TR><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>expiration_np</tt></p></TD><td class="docTableCell" align="left" valign="top">&nbsp;</td><TD class="docTableCell" align="left" valign="top">&nbsp;</td></tr><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_getprio</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_getschedparam</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_getschedparam</tt></p>
+</td></tr><TR><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_getscheduler</tt></p></TD><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_getschedparam</tt></P></td><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_getschedparam</tt></p>
+</td></tr><tr><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_getspecific</tt></P></TD><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_getspecific</tt></P></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_getspecific</tt></p>
+</td></TR><TR><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_is_</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText">None</P></td><td class="docTableCell" align="left" valign="top"><p class="docText">None</p></TD></tr><tr><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>multithreaded_np</tt></p></td><td class="docTableCell" align="left" valign="top">&nbsp;</td><td class="docTableCell" align="left" valign="top">&nbsp;</td></tr><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_join</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_join</tt></p></TD><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_join</tt></p>
+</TD></tr><TR><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_keycreate</tt></P></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_key_create</tt></p></td><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_key_create</tt></P>
+</TD></tr><TR><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_lock_<br>global_np</tt></p></td><TD class="docTableCell" align="left" valign="top"><p class="docText">None</P></td><td class="docTableCell" align="left" valign="top"><p class="docText">None</p>
+</td></TR><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_mutex_destroy</tt></p></TD><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_mutex_destroy</tt></p></TD><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_mutex_destroy</tt></p>
+</td></tr><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_mutex_init</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_mutex_init</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_mutex_init</tt></p>
+</TD></tr><tr><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_mutex_lock</tt></p></TD><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_mutex_lock</tt></P></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_mutex_lock</tt></p>
+</td></TR><TR><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_mutex_trylock</tt></p></TD><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_mutex_trylock</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_mutex_trylock</tt></P></TD></tr><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_mutex_unlock</tt></p></TD><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_unlock</tt></p></td><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_unlock</tt></p>
+</td></TR><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_mutexattr_create</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_mutexattr_init</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_mutexattr_init</tt></p>
+</td></tr><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_mutexattr_</tt></P></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_mutexattr_</tt></P></td><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_mutexattr_</tt></p>
+</TD></tr><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>delete</tt></p></TD><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>destroy</tt></P></td><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>destroy</tt></p>
+</td></tr><tr><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_mutexattr_</tt></P></td><td class="docTableCell" align="left" valign="top"><p class="docText">None</p></td><TD class="docTableCell" align="left" valign="top"><p class="docText">None</p></td></tr><TR><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>getkind_np</tt></p></TD><td class="docTableCell" align="left" valign="top">&nbsp;</td><td class="docTableCell" align="left" valign="top">&nbsp;</td></tr><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_mutexattr_</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText">None</p></td><td class="docTableCell" align="left" valign="top"><p class="docText">None</P></td></tr><TR><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>setkind_np</tt></P></td><TD class="docTableCell" align="left" valign="top">&nbsp;</td><td class="docTableCell" align="left" valign="top">&nbsp;</td></tr><TR><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_once</tt></P></td><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_once</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_once</tt></p>
+</TD></TR><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_self</tt></p></td><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_self</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_self</tt></P>
+</td></tr><TR><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_setasynccancel</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_setcanceltype</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_setcanceltype</tt></p>
+</td></tr><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_setcancel</tt></p></TD><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_setcancelstate</tt></p></TD><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_setcancelstate</tt></P>
+</td></TR><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_setprio</tt></p></td><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_setschedparam</tt></P></TD><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_setschedparam</tt></P>
+</td></tr><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_setscheduler</tt></P></TD><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_setschedparam</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_setschedparam</tt></P>
+</td></tr><tr><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_setspecific</tt></p></td><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_setspecific</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_setspecific</tt></p>
+</td></tr><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_signal_to_</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText">None</p></td><TD class="docTableCell" align="left" valign="top"><p class="docText">None</p></td></TR><tr><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>cancel_np</tt></p></TD><td class="docTableCell" align="left" valign="top">&nbsp;</td><td class="docTableCell" align="left" valign="top">&nbsp;</td></TR><TR><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_testcancel</tt></p></TD><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_testcancel</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_testcancel</tt></P>
+</TD></tr><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_yield</tt></p></TD><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>sched_yield</tt></p></td><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>sched_yield</tt></p>
+</td></TR><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>sigprocmask</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_sigmask</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_sigmask</tt></p>
+</td></tr><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>sigwait</tt></P></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>sigwait</tt></P></td><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>sigwait</tt></p>
+</TD></tr></table></p><br>
+<p class="docText">Although HP-UX 11 and Linux both implement the POSIX 1003.1, there are minor differences in platform implementations. <a class="docLink" href="#ch06table16">Tables 6-16</a> and <a class="docLink" href="#ch06table17">6-17</a> show these differences.</p>
+
+<p class="docText"></P><a name="ch06table16"></a><P><table cellspacing="0" FRAME="hsides" RULES="groups" cellpadding="5"><caption><H5 class="docTableTitle">Table 6-16. Pthread API Differences Between HP-UX and Linux</h5></caption><colgroup align="left" span="2"><col width="200"><col width="300"></colgroup><thead><TR><th class="bottomBorder thead" scope="col" align="left" valign="top"><p class="docText">API</p></th><th class="bottomBorder thead" scope="col" align="left" valign="top"><p class="docText">Difference</p></th></tr></thead><tr><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_create</tt></P></td><td class="docTableCell" align="left" valign="top"><p class="docText">If called by more than one thread for the same tid: HP: Behavior is undefined. Linux: Returns an error (EINVAL).</p></td></TR><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_default_stacksize_np</tt></p></TD><td class="docTableCell" align="left" valign="top"><p class="docText">HP extension.</p>
+<p class="docText">Linux: Use <tt>pthread_attr_setstacksize</tt>.</P></td></tr><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_key_create</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText">HP:</p>
+<p class="docText"><tt>_SC_THREAD_KEYS_MAX = 431</tt></p>
+<p class="docText"><tt>_SC_THREAD_DESTRUCTOR_ITERATIONS = 430</tt></p>
+<p class="docText">Linux:</p>
+<p class="docText"><tt>PTHREAD_KEYS_MAX 1024</tt></p>
+<p class="docText"><tt>_POSIX_THREAD_DESTRUCTOR_ITERATIONS 4</tt></p>
+</TD></tr><tr><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>sched_get_priority_max sched_get_priority_min</tt></p></TD><td class="docTableCell" align="left" valign="top"><p class="docText">Linux does not have any equivalence for HP-UX values <tt>SCHED_RR2, SCHED_RTPRIO, SCHED_NOAGE</tt>.</P></td></tr><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>sched_yield</tt></P></TD><TD class="docTableCell" align="left" valign="top"><p class="docText">HP:</p>
+<p class="docText">On error, returns 1 and sets <tt>errno</tt> to <tt>ENOSYS</tt>.</P>
+<p class="docText">Linux:</p>
+<p class="docText">On error, returns 1 and sets <tt>errno</tt> to the appropriate value.</p></td></tr><TR><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_sigmask</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText">HP: If pending unblocked signal, at least one such signal is delivered before the function returns.</p></TD></tr><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>pthread_mutexattr_getspin_np pthread_mutexattr_setspin_np pthread_mutex_getyieldfreq_np pthread_mutex_setyieldfreq_np pthread_attr_getprocessor_np pthread_attr_setprocessor_np</tt></P></td><td class="docTableCell" align="left" valign="top"><p class="docText">HP extensions.</P></td></tr></table></p><br>
+
+<p class="docText"></p><a name="ch06table17"></a><p><table cellspacing="0" FRAME="hsides" RULES="groups" cellpadding="5"><caption><h5 class="docTableTitle">Table 6-17. Default Pthreads Attribute Values for HP-UX and Linux</h5></caption><colgroup align="left" span="3"><col width="100"><col width="200"><col width="200"></colgroup><thead><tr><th class="bottomBorder thead" scope="col" align="left" valign="top"><p class="docText">Attribute</p></th><th class="bottomBorder thead" scope="col" align="left" valign="top"><p class="docText">HP-UX 11i v2</p></th><th class="bottomBorder thead" scope="col" align="left" valign="top"><p class="docText">Linux 2.6</p></th></tr></thead><TR><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>contention scope</tt></p></TD><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>PTHREAD_SCOPE_PROCESS</tt></P></td><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>PTHREAD_SCOPE_SYSTEM</tt></p>
+</td></tr><tr><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>detachstate</tt></P></TD><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>PTHREAD_CREATE_JOINABLE</tt></P></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>PTHREAD_CREATE_JOINABLE</tt></p>
+</td></TR><TR><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>stacksize</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText">256K</P></td><td class="docTableCell" align="left" valign="top"><p class="docText">Depends on Linux installation: Fedora (2.6.91.667): 10MB SUSE 9.1: 2MB</p></TD></tr><tr><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>inheritsched</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>PTHREAD_INHERIT_SCHED</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>PTHREAD_INHERIT_SCHED</tt></p>
+</td></tr><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>schedpolicy</tt></p></td><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>SCHED_TIMESHARE</tt></p></td><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>SCHED_OTHER</tt></p>
+</TD></tr><TR><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>guardsize</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>PAGESIZE</tt> (4K)</P></TD><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>PAGESIZE</tt> (4K)</p></TD></tr><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>processor</tt></p></TD><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>PTHREAD_SPUINHERIT_NP</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText">Not applicable</p></TD></tr><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>binding type</tt></P></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>PTHREAD_BIND_ADVISORY_NP</tt></P></td><td class="docTableCell" align="left" valign="top"><p class="docText">Not applicable</p></td></tr></table></p><br>
+
+<a name="ch06lev2sec26"></a>
+<h4 id="title-IDAUKBIZ" class="docSection2Title">6.10.2. <a name="iddle1561"></a><a name="iddle2018"></a>Differences in <a name="iddle2469"></a>HP-UX DCE and POSIX Threads</h4>
+<p class="docText">Linux and HP-UX version 11.0 provide support for POSIX threads as specified by the POSIX.1003.1 standard. Existing HP-UX applications based on DCE pthreads will need to be ported to adhere to the latest POSIX threads standards. This section shows some of the issues porting engineers face when porting from DCE-based applications to the latest POSIX threads standard.<a name="d0e69378"></a><a name="d0e69379"></a></p>
+<a name="ch06lev3sec6"></a>
+<h5 id="title-IDAPMBIZ" class="docSection3Title">6.10.2.1. <a name="iddle1282"></a>Error Returns</h5>
+<p class="docText">All Linux NPTL pthreads functions return the error number as the return value (they also set the <tt>errno</tt> global variable). In HP-UX DCE pthreads, pthread functions that return on error return a 1 and set the <tt>errno</tt> global variable to the appropriate value. Applications written to the DCE pthreads API must be changed to handle error returns properly.<a name="d0e69398"></a></p>
+<p class="docText">HP-UX DCE pthreads:</P>
+<div class="docText"><pre>{int ret;
+int *per;
+ret = pthread_cond_t ( thread, &amp;per ) ;
+if ( ret== -1 ) printf ( error =%d\n, errno ) ;
+}
+</pre></div><br>
+<p class="docText">POSIX pthreads:</p>
+<div class="docText"><pre>{int ret;
+int *ptr;
+ret = pthread_join ( thread, &amp;ptr ) ;
+if ( ret ) printf ( error =%d\n, ret ) ;
+}
+</pre></div><BR>
+
+<a name="ch06lev3sec7"></a>
+<h5 id="title-IDAEOBIZ" class="docSection3Title">6.10.2.2. <a name="iddle2462"></a>Threading Model</H5>
+<p class="docText">DCE pthreads are implemented as user threads. This means that thread functionalities such as creating, scheduling, context switching, and terminating (and others) are mainly done in user space as opposed to kernel space. There may be some kernel interaction to attach the user threads to one or more kernel threads to run, but most of the thread activities are done within the pthreads library in user space.<a name="d0e69431"></a></p>
+<p class="docText">Contrast this to the POSIX threads library, which may implement a 1:1 or M:N model. In 1:1 mode, major thread functionalities such as thread scheduling and dispatching are done within the kernel, whereas in the M:N mode, these functionalities are done within the context of the pthreads library in user space.</P>
+<p class="docText">Linux only implements the 1:1 threading model as of this writing. There are no plans to support the M:N model in the future.</p>
+
+<a name="ch06lev3sec8"></a>
+<h5 id="title-IDADPBIZ" class="docSection3Title">6.10.2.3. <a name="iddle2206"></a>Sigwait() Function</h5>
+<p class="docText">There is a syntax change in <tt>sigwait()</tt> between DCE pthreads and POSIX threads. The following code snippets show how to port between <tt>sigwait</tt> versions.<a name="d0e69457"></a></p>
+<p class="docText">HP-UX DCE pthreads:</P>
+<div class="docText"><pre>{
+  ret = sigwait(set);
+  if (ret &lt; 0) {
+  ret = errno;
+  } else {
+    *sig = ret;
+  ret = 0;
+  }
+}
+</pre></div><BR>
+<p class="docText">POSIX pthreads:</P>
+<div class="docText"><pre>{
+  ret = sigwait(set, sig);
+}
+</pre></div><br>
+
+<a name="ch06lev3sec9"></a>
+
+<H5 id="title-IDA1QBIZ" class="docSection3Title">6.10.2.4. <a name="iddle1862"></a>Mutex API Differences</h5>
+<p class="docText">DCE pthreads APIs to create and destroy mutex attributes changed in POSIX.1-1996. DCE pthreads used <tt>pthread_mutexattr_create</tt> and <tt>pthread_mutexattr_delete</tt>, whereas POSIX.1-1996 uses <tt>pthread_mutexattr_init</tt> and <tt>prhread_mutexattr_destroy</tt>, respectively.<a name="d0e69503"></a><a name="d0e69504"></a><a name="d0e69505"></a><a name="d0e69506"></a></p>
+<p class="docText">POSIX.1003.1c introduces static initialization of mutexes. The following is an example of static initialization:</p>
+<div class="docText"><pre>static pthread_mutex_t foo_mutex = PTHREAD_MUTEX_INITIALIZER;
+</pre></div><br>
+
+<a name="ch06lev3sec10"></a>
+<H5 id="title-IDAXSBIZ" class="docSection3Title">6.10.2.5. Condition Variable Differences</H5>
+<p class="docText">DCE pthreads APIs to create and destroy condition variable attributes changed in POSIX.1-1996. DCE pthreads used <tt>pthread_condattr_create</tt> and <tt>pthread_condattr_delete</tt>, whereas POSIX.1-1996 uses <tt>pthread_condattr_init</tt> and <tt>prhread_condattr_destroy</tt>, respectively.</p>
+
+<a name="ch06lev3sec11"></a>
+<h5 id="title-IDAMTBIZ" class="docSection3Title">6.10.2.6. Changes in *_r APIs</h5>
+<p class="docText">The POSIX1003.1c standard removed requirements for <tt><a name="iddle1685"></a>libc_r</tt><a name="d0e69552"></a>. Most library functions were made thread-safe without the need to modify the function interface. However, a few functions could not be made such. Read through the GNU <tt>libc</tt> documentation to make sure functions are thread-safe.</p>
+
+
+<a name="ch06lev2sec27"></a>
+<H4 id="title-IDANUBIZ" class="docSection2Title">6.10.3. <a name="iddle1560"></a><a name="iddle2467"></a>Debugging <a name="iddle1212"></a>Linux Threads</h4>
+<p class="docText">One of the most asked questions about multithreaded applications is how to analyze and debug the application using a debugger. On HP-UX v11, the main application debugger is <tt>gdb</tt>. HP-UX developers who must port applications to Linux will find that this makes the transistion to Linux a little easier, because like HP-UX, the main debugger used on Linux is <tt>gdb</tt>. <a class="docLink" href="#ch06ex05">Example 6-5</a> shows a simple multithreaded program, how the program is compiled on a Linux system using <tt>gcc</tt>, and how the program is debugged after it produces a core file in a multithreaded application on Linux.</p>
+<p class="docText">When using <tt>gdb</tt> to debug multithreaded applications, you need to remember only a few thread-specific commands. The other <tt>gdb</tt> commands to get stack traces and other information remain the same. The thread-specific commands for use in <tt>gdb</tt> are as follows:</p>
+<UL><li><p class="docText"><span class="docEmphStrong"><tt>info threads-</tt>.</span> Inquires about existing threads.</p></LI><li><p class="docText"><span class="docEmphStrong"><tt>thread &lt;threadnumber&gt;</tt>.</span> Switches threads.</p></li><li><p class="docText"><span class="docEmphStrong"><tt>thread apply [threadnumber] [all] args-</tt>.</span> Applies a command to a list of threads.</p></li></ul>
+<p class="docText"><a class="docLink" href="#ch06ex05">Example 6-5</a> is a multithreaded program that creates four threads. Each thread has its own function to performthat is, to raise an exception and cause the program to terminate and create a core file. Note that on some Linux systems, a core file is not automatically generated unless the command <tt>ulimit -c &lt;filesize&gt;</tt> is executed from the shell. Only then will it produce a core file in the directory where the executable resides that will be named core.&lt;pid&gt;, where the pid is the process ID of the process that produced the core file.</p>
+<a name="ch06ex05"></a><h5 id="title-IDAMYBIZ" class="docExampleTitle">Example 6-5. Listing of thread_1.c</h5><p><table cellspacing="0" width="90%" border="1" cellpadding="5"><TR><td>
+
+
+
+<pre>
+#include &lt;pthread.h&gt;
+#include &lt;signal.h&gt;
+#include &lt;errno.h&gt;
+#include &lt;sched.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;unistd.h&gt;
+
+#define THREAD_NUM 4
+
+pthread_mutex_t mutex;
+pthread_cond_t cond;
+
+static int thread_in_wait = 0;
+
+void *
+abort_func(void *arg)
+{
+  printf("in abort_func\n");
+  pthread_mutex_lock(&amp;mutex);
+  thread_in_wait++;
+  pthread_cond_wait(&amp;cond, &amp;mutex);
+  thread_in_wait--;
+
+  while (thread_in_wait != 0)
+  {
+    pthread_mutex_unlock(&amp;mutex);
+    sched_yield();
+    pthread_mutex_lock(&amp;mutex);
+  }
+
+  pthread_mutex_unlock(&amp;mutex);
+  raise(SIGABRT);
+}
+
+void *
+segv_func(void *arg)
+{
+  printf("in segv_func\n");
+  pthread_mutex_lock(&amp;mutex);
+  thread_in_wait++;
+  pthread_cond_wait(&amp;cond, &amp;mutex);
+  thread_in_wait--;
+
+  while (thread_in_wait != 0)
+  {
+    pthread_mutex_unlock(&amp;mutex);
+    sched_yield();
+    pthread_mutex_lock(&amp;mutex);
+  }
+
+  pthread_mutex_unlock(&amp;mutex);
+
+  raise(SIGSEGV);
+}
+
+void *
+bus_func(void *arg)
+{
+  printf("in bus_func\n");
+  pthread_mutex_lock(&amp;mutex);
+  thread_in_wait++;
+  pthread_cond_wait(&amp;cond, &amp;mutex);
+  thread_in_wait--;
+
+  while (thread_in_wait != 0)
+  {
+    pthread_mutex_unlock(&amp;mutex);
+    sched_yield();
+    pthread_mutex_lock(&amp;mutex);
+  }
+
+  pthread_mutex_unlock(&amp;mutex);
+
+  raise(SIGBUS);
+}
+
+void *
+fpe_func(void *arg)
+{
+  printf("in fpe_func\n");
+  pthread_mutex_lock(&amp;mutex);
+  thread_in_wait++;
+  pthread_cond_wait(&amp;cond, &amp;mutex);
+  thread_in_wait--;
+
+  while (thread_in_wait != 0)
+  {
+    pthread_mutex_unlock(&amp;mutex);
+    sched_yield();
+    pthread_mutex_lock(&amp;mutex);
+  }
+
+  pthread_mutex_unlock(&amp;mutex);
+
+  raise(SIGFPE);
+}
+
+void *(*func_array[THREAD_NUM])(void *) = {
+            bus_func,
+            segv_func,
+            abort_func,
+            fpe_func
+            };
+int
+main(void)
+{
+  pthread_t tid[THREAD_NUM];
+  int i = 0;
+  int rc = 0;
+  void *(*fp[THREAD_NUM])(void *);
+
+  pthread_cond_init(&amp;cond, NULL);
+  pthread_mutex_init(&amp;mutex, NULL);
+
+  for (i=0; i&lt;THREAD_NUM; i++)
+  {
+    fp[i] = func_array[i];
+  }
+
+  for (i=0; i&lt;THREAD_NUM; i++)
+  {
+    if( (rc = pthread_create(&amp;tid[i], NULL, fp[i], NULL )) != 0)
+    {
+      printf("pthread_create failed: %d\n", errno);
+      exit (1);
+    }
+  }
+
+  pthread_mutex_lock(&amp;mutex);
+  while (thread_in_wait != THREAD_NUM)
+  {
+    pthread_mutex_unlock(&amp;mutex);
+    sched_yield();
+    pthread_mutex_lock(&amp;mutex);
+  }
+
+  pthread_mutex_unlock(&amp;mutex);
+  pthread_cond_broadcast(&amp;cond);
+
+  for (i=0; i&lt;THREAD_NUM; i++)
+  {
+    pthread_join(tid[i], NULL);
+  }
+
+  return (0);
+}
+</pre><br>
+
+</TD></tr></table></P>
+<p class="docText">Compile Linux using <tt>gcc</tt>:</p>
+<div class="docText"><pre>$ gcc thread_1.c -o thread_1 -lpthread -D_REENTRANT -g
+</pre></div><BR>
+<p class="docText">Run the program:</p>
+<div class="docText"><pre>$ ./thread_1
+in bus_func
+in segv_func
+in abort_func
+in fpe_func
+Floating point exception (core dumped)
+</pre></div><br>
+<p class="docText">Analyze the program using <tt>gdb</tt>:</p>
+<div class="docText"><pre>$ gdb thread_1 core.6797        <span class="docEmphBoldItalic">Note that on Linux a core</span>
+                                <span class="docEmphBoldItalic">file is produced with the</span>
+                                <span class="docEmphBoldItalic">process id as the extension.</span>
+
+GNU gdb 6.1
+Copyright 2004 Free Software Foundation, Inc.
+GDB is free software, covered by the GNU General Public License, and you are
+welcome to change it and/or distribute copies of it under certain conditions.
+Type "show copying" to see the conditions.
+There is absolutely no warranty for GDB. Type "show warranty" for details.
+This GDB was configured as "i586-suse-linux"...Using host libthread_db library
+"/lib/tls/libthread_db.so.1".
+Core was generated by './thread_1'.
+Program terminated with signal 8, Arithmetic exception.
+
+warning: current_sos: Can't read pathname for load map: Input/output error
+
+Reading symbols from /lib/tls/libpthread.so.0...done.
+
+Loaded symbols for /lib/tls/libpthread.so.0
+Reading symbols from /lib/tls/libc.so.6...done.
+Loaded symbols for /lib/tls/libc.so.6
+Reading symbols from /lib/ld-linux.so.2...done.
+Loaded symbols for /lib/ld-linux.so.2
+#0 0xffffe410 in ?? ()
+(gdb) info thread             <span class="docEmphBoldItalic">Command to display all</span>
+                              <span class="docEmphBoldItalic">threads in the process</span>
+ 5 process 6797 0xffffe410 in ?? ()
+ 4 process 6798 0xffffe410 in ?? ()
+ 3 process 6799 0xffffe410 in ?? ()
+ 2 process 6800 0xffffe410 in ?? ()
+* 1 process 6801 0xffffe410 in ?? ()   <span class="docEmphBoldItalic">Notice the asterisk in</span>
+                                       <span class="docEmphBoldItalic">front of the thread. This</span>
+                                       <span class="docEmphBoldItalic">denotes that the current</span>
+                                       <span class="docEmphBoldItalic">thread context is thread</span>
+                                       <span class="docEmphBoldItalic">number 1.</span>
+</pre></div><br>
+<p class="docText">The command <tt><a name="iddle1144"></a><a name="iddle1611"></a>info threads</tt> displays a summary of all threads currently in the program<a name="d0e69759"></a><a name="d0e69760"></a>. In the example output, from left to right, they are as follows:<a name="d0e69762"></a></P>
+<div style="font-weight:bold"><ol class="docList" type="1"><LI><div style="font-weight:normal"><p class="docList">The thread number assigned by <tt>gdb</tt></P></div></li><LI><div style="font-weight:normal"><p class="docList">The target systems thread identifier (<tt><a name="iddle2319"></a>systag</tt>, second and third column)<a name="d0e69782"></a></p></div></li><li><div style="font-weight:normal"><p class="docList">The current stack frame summary for the thread</p></div></LI></ol></div>
+<p class="docText">The <a name="iddle1077"></a><a name="iddle1012"></a>asterisk (*) to the left of the <tt>gdb</tt> tHRead number indicates the current thread.<a name="d0e69803"></a><a name="d0e69804"></a></p>
+<p class="docText">On an HP-UX machine, the following appears for the same program.</p>
+<div class="docText"><pre>#0 0xc020c4b0 in kill+0x10 () from /usr/lib/libc.2
+(gdb) info thread
+*  5 system thread 1440101 0xc020c4b0 in kill+0x10 () from /usr/lib/libc.2
+  4 system thread 1440100 0xc020ed60 in sched_yield+0x10 ()
+  from /usr/lib/libc.2
+  3 system thread 1440099 0xc020ed60 in sched_yield+0x10 ()
+  from /usr/lib/libc.2
+  2 system thread 1440098 0xc020ed60 in sched_yield+0x10 ()
+  from /usr/lib/libc.2
+  1 system thread 1440097 0xc020b318 in __kwakeup+0x10 ()
+  from /usr/lib/libc.2
+</pre></div><br>
+<p class="docText">Notice that on HP-UX, <tt>systag</tt> denotes a system thread rather than a process on the Linux system from the output when reading a core file.</p>
+<p class="docText">Continuing with our example:</P>
+<div class="docText"><pre>(gdb) bt                <span class="docEmphBoldItalic">Command to display the
+                        stack traceback of the
+                        current thread.</span>
+#0 0xffffe410 in ?? ()
+#1 0x40952a78 in ?? ()
+#2 0x00000008 in ?? ()
+#3 0x00001a91 in ?? ()
+#4 0x400331a1 in <a name="iddle2094"></a>raise () from /lib/tls/libpthread.so.0
+#5 0x08048997 in fpe_func (arg=0x0) at thread_1.c:98
+#6 0x4002d9dd in start_thread () from /lib/tls/libpthread.so.0
+#7 0x400efffa in clone () from /lib/tls/libc.so.6
+</pre></div><br>
+<p class="docText">At the time of the core dump, the current thread is always the last running thread and would likely have caused the exception. Examining the stack through the <tt>bt</tt> command leads us to the calling function, which was <tt>raise</tt>. <tt>raise</tt> was called from our application in the thread_1.c file and shows the corresponding line number.<a name="d0e69850"></a></p>
+<p class="docText">We continue with the example by switching to other threads and examining their stack traces:</p>
+<div class="docText"><pre>(gdb) thread 2          <span class="docEmphBoldItalic">Command to switch to
+                        thread #2.</span>
+
+[Switching to thread 2 (process 6800)]#0 0xffffe410 in ?? ()
+
+(gdb) bt                 <span class="docEmphBoldItalic">Issue command to display
+                         the stack of thread #2.</span>
+#0 0xffffe410 in ?? ()
+#1 0x40751a78 in ?? ()
+#2 0x00000006 in ?? ()
+#3 0x00001a90 in ?? ()
+#4 0x400331a1 in raise () from /lib/tls/libpthread.so.0
+#5 0x080487cf in abort_func (arg=0x0) at thread_1.c:35
+#6 0x4002d9dd in start_thread () from /lib/tls/libpthread.so.0
+#7 0x400efffa in clone () from /lib/tls/libc.so.6
+
+(gdb) thread 5
+[Switching to thread 5 (process 6797)]#0 0xffffe410 in ?? ()
+(gdb) bt
+#0 0xffffe410 in ?? ()
+#1 0xbffff528 in ?? ()
+#2 0x00001a8e in ?? ()
+#3 0x00000000 in ?? ()
+#4 0x4002df2f in pthread_join () from /lib/tls/libpthread.so.0
+#5 0x08048ad9 in main () at thread_1.c:145
+
+
+(gdb) quit
+</pre></div><BR>
+<p class="docText">In most cases when a multithreaded program dumps a core, the most likely thread to have caused the dump is the current running thread. In some cases, however, when the application hangs, you may need to attach <tt>gdb</tt> to the running program. See <a class="docLink" href="ch07.html#ch07">Chapter 7</a> or refer to the GNU <tt>gdb</tt> manual<sup class="docFootnote"><a class="docLink" href="#ch06fn32">[32]</a></sup> online for information about how to attach to a currently running program.<a name="d0e69887"></a><a name="d0e69888"></a></p><blockquote><p class="docFootnote"><sup><a name="ch06fn32">[32]</a></sup> <a class="docLink" target="_blank" href="http://www.gnu.org/software/gdb/documentation/">www.gnu.org/software/gdb/documentation/</a></p></blockquote>
+
+<a name="ch06lev2sec28"></a>
+<H4 id="title-IDAPC0HZ" class="docSection2Title">6.10.4. <a name="iddle1559"></a><a name="iddle2466"></a>C++ Exceptions and <a name="iddle1213"></a>Linux Threads</h4>
+<p class="docText">Searching the Internet for related topics on C++ exceptions and POSIX threads will yield a variety of opinions regarding how C++ should handle POSIX threads cancellations or vice versa. The fact is that the POSIX thread programming model does not take C++ into account (it is based on C), and the C++ language standard only recently has begun to specify behavior in this area.The sample programs that follow involve simple C++ routines mixed with POSIX threads. Compiling and running these programs in both <a name="iddle1119"></a>HP-UX using <tt>aCC</tt> (B3910B A.03.50) and SUSE 9.1 Linux with <tt>g++</tt> version 3.3.3 yields different results (see <a class="docLink" href="#ch06ex06">Example 6-6</a>).<a name="d0e69943"></a></p>
+<a name="ch06ex06"></a><h5 id="title-IDAGF0HZ" class="docExampleTitle">Example 6-6. Listing of exception_1.cc</h5><p><table cellspacing="0" width="90%" border="1" cellpadding="5"><tr><td>
+
+
+
+<pre>
+
+#include &lt;pthread.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+class FooClass {
+    public:
+    FooClass() {}
+    ~FooClass() {
+        pthread_cancel(pthread_self());
+        pthread_testcancel();
+    }
+};
+
+void* thread_func(void*) {
+    try {
+        FooClass cid;
+        throw 1;
+    }
+
+    catch (int&amp;)
+    {}
+
+    return NULL;
+}
+
+int main() {
+    pthread_t tid;
+
+    pthread_create(&amp;tid, NULL, thread_func, NULL);
+    pthread_join(tid, NULL);
+    return 0;
+}
+</pre><br>
+
+</td></tr></table></p>
+<p class="docText">Compiling and running <tt>exception_1.cc</tt> on Linux yields the following:</p>
+<div class="docText"><pre>$ g++ exception_1.cc -o exception_1 -lpthread -D_REENTRANT
+$ ./exception_1
+Aborted (core dumped)
+</pre></div><br>
+<p class="docText">Compiling and running <tt>exception_1.cc</tt> on HP-UX yields the following:</P>
+<div class="docText"><pre>$ aCC exception_3.cc  -o exception_3 -lpthread -D_REENTRANT -g
+$ ./exception_3
+<span class="docEmphBoldItalic">No core dumped</span>
+</pre></div><br>
+<p class="docText">In this case, the <tt>pthread_cancel</tt> within the destructor of FooClass is considered an exception. <span class="docEmphasis">The C++ Programming Language</span>, 3rd Edition, by Bjarne <a name="iddle2308"></a>Stroustrup (pp<a name="d0e69999"></a>. 373, 378), mentions a rule about exceptions in <a name="iddle1217"></a>destructorsjust don't do it ! Dr<a name="d0e70006"></a>. Stroustrup explains this in the following manner:</p>
+<blockquote><p class="docText">During stack unwinding, the exception-handling mechanism exits a scope containing an object with a destructor. In this case, an exception may not escape from the destructor itself. If it does it is considered a failure in the exception handling mechanism and std::terminate is called.</P>
+</blockquote>
+<p class="docText">Dr. Stroustrup offers a solution to catch the exception in the following code snippet. Unfortunately, this solution did not work in our case:<sup class="docFootnote"><a class="docLink" href="#ch06fn33">[33]</a></sup></p><blockquote><p class="docFootnote"><sup><a name="ch06fn33">[33]</a></sup> Not because the solution is wrong for C++ applications, but because the C++ standard does not take into consideration POSIX threads semantics</P></blockquote>
+<div class="docText"><pre>~FooClass() {
+             try {
+           pthread_cancel(pthread_self());
+           pthread_testcancel();
+              }
+        catch (...)
+              {
+          // do whatever
+    throw;
+    }
+}
+</pre></div><br>
+<p class="docText">One solution to try to close the cancellation hole within destructors is to disable cancellation, as in the following code snippet:</P>
+<div class="docText"><pre>~FooClass() {
+        int oldstate;
+        // Disable cancellation at entry
+        pthread_setcancelstate(PTHREAD_CANCEL_DISABLE,
+                          &amp;oldstate);
+        pthread_cancel(pthread_self());
+        pthread_testcancel();
+        // Enable cancellation before exiting
+        pthread_setcancelstate(PTHREAD_CANCEL_ENABLE,
+                          &amp;oldstate);
+    }
+</pre></div><br>
+<p class="docText">Next, <a class="docLink" href="#ch06ex07">Example 6-7</a> shows a program that involves canceling a thread from another thread.</p>
+<a name="ch06ex07"></a><h5 id="title-IDAPR0HZ" class="docExampleTitle">Example 6-7. Listing of exception_2.cc</h5><P><table cellspacing="0" width="90%" border="1" cellpadding="5"><TR><TD>
+
+
+
+<pre>#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;errno.h&gt;
+#include &lt;string.h&gt;
+#include &lt;pthread.h&gt;
+
+pthread_mutex_t mutex;
+static int instance_count;
+
+class  FooBar
+{
+  public:
+    FooBar();
+    ~FooBar();
+};
+
+FooBar::FooBar()
+{
+  printf("thr#%u: creating FooBar.\n", pthread_self());
+
+  {
+    pthread_mutex_lock(&amp;mutex);
+    ++instance_count;
+    pthread_mutex_unlock(&amp;mutex);
+  }
+}
+
+FooBar::~FooBar()
+{
+  printf("thr#%u: destroying FooBar.\n", pthread_self());
+
+  {
+    pthread_mutex_lock(&amp;mutex);
+    --instance_count;
+    pthread_mutex_unlock(&amp;mutex);
+  }
+}
+
+static void* thread_func(void*)
+{
+  FooBar   f;
+  pthread_t this_thread = pthread_self();
+
+  printf("thread#%u: about to sleep...\n", pthread_self());
+
+  sleep(10);
+  return 0;
+}
+
+int main()
+{
+  pthread_t tid;
+  int rc = 0;
+
+  pthread_mutex_init(&amp;mutex, NULL);
+
+  if ((rc = pthread_create(&amp;tid, NULL, thread_func, NULL)) != 0)
+  {
+    printf("pthread_create() returned %d. %s\n", errno);
+    return 1;
+  }
+
+  printf("Main thread cancelling thr#%u\n", tid);
+
+  if ((rc = pthread_cancel(tid)) != 0)
+  {
+    printf("pthread_cancel() : %s\n", errno);
+  }
+
+  pthread_join(tid, NULL);
+  printf("Main thread join'ed with thr#%u\n", tid);
+
+  pthread_mutex_lock(&amp;mutex);
+  if (instance_count == 0)
+  {
+    printf("OK. instance_count = 0\n");
+  }
+  else
+  {
+    printf("ERROR! instance_count=%d (expected 0)\n",
+                       instance_count);
+  }
+
+  pthread_mutex_unlock(&amp;mutex);
+
+  return (0);
+}
+</pre><br>
+
+</TD></tr></table></p>
+<p class="docText">The program in <a class="docLink" href="#ch06ex07">Example 6-7</a> shows how thread cancellation, even when used outside of destructors, may show different behaviors on different platforms.</p>
+<p class="docText">Compiling and running <tt>exception_2.cc</tt> on Linux yields the following:</p>
+<div class="docText"><pre>$ g++ exception_2.cc -o exception_2 -lpthread -D_REENTRANT
+$ ./exception_2
+thr#1078156208: creating FooBar.
+thread#1078156208: about to sleep...
+Main thread cancelling thr#1078156208
+thr#1078156208: destroying FooBar.
+Main thread join'ed with thr#1078156208
+OK. instance_count = 0
+</pre></div><BR>
+<p class="docText">Compiling and running <tt>exception_2.cc</tt> on HP-UX yields the following:</P>
+<div class="docText"><pre>$ aCC exception_2.cc  -o exception_2 -lpthread -D_REENTRANT -g
+$ ./exception_2
+thr#2: creating FooBar.
+thread#2: about to sleep...
+Main thread cancelling thr#2
+Main thread join'ed with thr#2
+ERROR! foobar_instcount=1 (expected 0)
+</pre></div><br>
+<p class="docText">The program for listing <tt>exception_2.cc</tt> seems to have been handled well on a Linux system but not on HP-UX. So, it seems Linux handles thread cancellation better in some way.</p>
+<p class="docText"><a class="docLink" href="#ch06ex08">Example 6-8</a> involves the simple throwing of exceptions within threads. It also shows how mixing POSIX threads and C++ can yield different results on different platforms.</p>
+
+<p class="docText"></p><a name="ch06ex08"></a><H5 id="title-IDAWT0HZ" class="docExampleTitle">Example 6-8. Listing of exception_3.cc</h5><p><table cellspacing="0" width="90%" border="1" cellpadding="5"><tr><TD>
+
+
+
+<pre>#include &lt;iostream&gt;
+#include &lt;cstdio&gt;
+#include &lt;cstdlib&gt;
+#include &lt;pthread.h&gt;
+#include &lt;unistd.h&gt;
+using namespace std;
+
+void * thread_func(void *);
+
+int main(int argc, char *argv[]) {
+  pthread_t t;
+  int i;
+  int status;
+
+  try
+  {
+    if( pthread_create(&amp;t, NULL,thread_func,(void *)i) != 0) {
+     cerr &lt;&lt; "pthread_create failed" &lt;&lt; endl;
+     return 1;
+    }
+
+    pthread_join(t, NULL);
+    cout &lt;&lt; "end of thread " &lt;&lt; endl;
+  }
+  catch(...)
+  {
+    cout &lt;&lt; "unexpected exception" &lt;&lt; endl;
+  }
+ }
+
+void * thread_func(void *arg) {
+  int i;
+  for (i=0; i&lt;4; i++) {
+    sleep(1);
+    try {
+     cout &lt;&lt; "throwing exception" &lt;&lt; endl;
+     throw "exception";
+    }
+    catch(char *st) {
+     cout &lt;&lt; "thread_func caught" &lt;&lt; st &lt;&lt; endl;
+    }
+  }
+  return 0;
+}
+</pre><br>
+
+</td></TR></table></p>
+<p class="docText">Compiling and running <tt>exception_3.cc</tt> on Linux yields the following:</p>
+<div class="docText"><pre>$ g++ exception_3.cc -o exception_3 -lpthread -D_REENTRANT
+$ ./exception_3
+throwing check
+Aborted (core dumped)
+</pre></div><br>
+<p class="docText">Compiling and running <tt>exception_3.cc</tt> on HP-UX yields the following:</p>
+<div class="docText"><pre>$ aCC exception_3.cc -o exception_3 -lpthread -D_REENTRANT -g
+$ ./exception_3
+throwing check
+Aborted (core dumped)
+</pre></div><br>
+<p class="docText">Changing <tt><a name="iddle2478"></a>thread_func</tt> to throw an integer rather than a char * changes the behavior of the program to complete its run without aborting:<sup class="docFootnote"><a class="docLink" href="#ch06fn34">[34]</a></sup><a name="d0e70153"></a></p><blockquote><p class="docFootnote"><sup><a name="ch06fn34">[34]</a></sup> The sample exception_3.cc compiled and ran fine on AIX 5.3 using an xlC version 6 compiler.</p></blockquote>
+<div class="docText"><pre>void * thread_ func(void *arg) {
+  int i;
+  for (i=0; i&lt;4; i++) {
+    sleep(1);
+    try {
+     cout &lt;&lt; "throwing exception" &lt;&lt; endl;
+     throw 1;
+    }
+    catch(int&amp;) {
+     cout &lt;&lt; "thread_func caught" &lt;&lt; endl;
+    }
+  }
+  return 0;
+}
+</pre></div><br>
+<p class="docText">Another change to make this work was to put a &quot;catchall&quot; catcher:</p>
+<div class="docText"><pre>void * thread_func(void *arg) {
+  int i;
+  for (i=0; i&lt;4; i++) {
+    sleep(1);
+    try {
+     cout &lt;&lt; "throwing exception" &lt;&lt; endl;
+     throw 1;
+    }
+    catch(...) {
+     cout &lt;&lt; "thread_func caught" &lt;&lt; endl;
+    }
+  }
+  return 0;
+}
+</pre></div><br>
+<p class="docText">In the case of a program listing <tt>exception_3.cc</tt>, the problem seems to be that of uncaught exceptions. Again referring to the book <span class="docEmphasis">The C++ Programming Language</span> by Bjarne Stroustrup (p. 381), Dr. Stroustrup explains that if an exception is thrown but not caught, the function <tt>std::terminate</tt> is called. Catching the exception prevents the core dump.<a name="d0e70182"></a></p>
+<p class="docText">The preceeding program examples clearly show that C++ exceptions and POSIX threads do not mix well. The consensus from porting experience<sup class="docFootnote"><a class="docLink" href="#ch06fn35">[35]</a></sup> indicates that there is no well-defined standard for how C++ needs to handle <tt><a name="iddle2046"></a>pthread_cancellations</tt> and exceptions, especially within destructors.<sup class="docFootnote"><a class="docLink" href="#ch06fn36">[36]</a></sup> The one advice for porting engineers is to be aware of these differences and make sure to test error paths and cleanup handlers as thoroughly as the good path during the testing phase of the porting project.<a name="d0e70201"></a><a name="d0e70202"></a><a name="d0e70203"></a></p><blockquote><p class="docFootnote"><sup><a name="ch06fn35">[35]</a></sup> As well as comments from comp.programming.threads newsgroup</p></blockquote><blockquote><p class="docFootnote"><sup><a name="ch06fn36">[36]</a></sup> ANSI C++ does not recommend throwing exceptions in the constructor and destructor of a class whose instances may be defined globally (static-globally).</P></blockquote>
+
+<a name="ch06lev2sec29"></a>
+<h4 id="title-IDAIY0HZ" class="docSection2Title">6.10.5. Linking with <a name="iddle1712"></a><a name="iddle2461"></a>Thread-Safe Libraries</h4>
+<p class="docText">Sometimes nonthreaded software applications may be linked to thread-safe libraries that call routines that start with <tt>pthread_*</tt>. In HP-UX, nonthreaded libraries that fail because of unresolved symbols such as <tt>pthread_*</tt> can be linked to the threads library <tt>libpthreads</tt> or <tt>libcma</tt> to resolve these symbols. However, linking such libraries to an application may result in overhead because of threading logic that accompanies linking of these threaded libraries. To resolve the performance degradation, HP implemented <tt>pthread_*</tt> calls as stubs in the C language library. Therefore, in HP-UX, nonthreaded applications that reference calls with <tt>pthread_*</tt> call the stubs in <tt>libc</tt>, thus avoiding performance overhead associated when <a name="iddle1736"></a>linking with threads libraries.<a name="d0e70250"></a><a name="d0e70251"></a><a name="d0e70252"></a></P>
+<p class="docText">On Linux, nonthreaded applications that link with thread-safe libraries must be linked with the LinuxThreads or Linux NPTL threads library to resolve symbols referenced within the linked libraries.</p>
+
+
+<a href="9001536.html"><img src="images/pixel.jpg" alt="" width="1" height="1" border="0"></a></TD></TR></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=ch06lev1sec9.html><img src="images/prev.gif" width="60" height="17" border="0" align="absmiddle" alt="Previous Page"></a>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=ch06lev1sec11.html><img src="images/next.gif" width="60" height="17" border="0" align="absmiddle" alt="Next Page"></a>
+</div></td></tr></table>
+</body></html>

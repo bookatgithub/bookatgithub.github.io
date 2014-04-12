@@ -1,8 +1,8 @@
 ---
 layout: post
-category : lessons
-tagline: "Supporting tagline"
-tags : [intro, beginner, jekyll, tutorial]
+category : 
+tagline: Mardown Sample
+tags : 
 ---
 {% include JB/setup %}
 

@@ -1,0 +1,243 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Section 3.8.&nbsp; Large Page Support</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=ch03lev1sec7.html><img src="images/prev.gif" width="60" height="17" border="0" align="absmiddle" alt="Previous Page"></a>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=ch03lev1sec9.html><img src="images/next.gif" width="60" height="17" border="0" align="absmiddle" alt="Next Page"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><TD valign="top"><a name="ch03lev1sec8"></a>
+<H3 id="title-IDAFGJM5" class="docSection1Title">3.8. <a name="iddle1664"></a>Large Page Support</H3>
+<p class="docText">Large page usage is primarily intended to provide performance improvements to applications that allocate a lot of memory and frequently access that memory. The performance improvement is mainly due to the reduced number of misses in the <a name="iddle2502"></a>Translation Lookaside Buffer (TLB), a cache of virtual-to-physical translation<a name="d0e8375"></a>. The number of misses can be reduced when the <a name="iddle2480"></a>TLB is able to map a larger virtual memory range<a name="d0e8382"></a>. This is possible due to the multiple page size support provided by most modern architectures. For example, the 32-bit Intel architecture supports 4K and 4MB (2MB in PAE mode) page sizes; Itanium supports multiple page sizes 4K, 8K, 64K, 256K, 1MB, 4MB, 16MB, and 256MB; SUN UltraSPARC supports 8K, 64K, 512K, and 4MB; and the 64-bit PowerPC (ppc64) supports 4K, 64K, 16MB, and 64GB. In this section, we give information for application developers on how to use large page support provided by the Linux kernel.</P>
+<p class="docText">The 2.6 kernel has built-in support for <span class="docEmphasis"><a name="iddle1567"></a>hugetlbpage</span> (a term used by the Linux community for large page)<a name="d0e8394"></a>. With the kernel configured with hugetlbpage support, the output of the command <tt>cat /proc/meminfo</tt> should display an output having the information about hugetlbpage, as follows:</P>
+<div class="docText"><pre>HugePages_Total: 20
+HugePages_Free: 20
+Hugepagesize: 16384 KB
+</pre></div><br>
+<p class="docText">A filesystem of type <span class="docEmphasis"><a name="iddle1566"></a>hugetlbfs</span> should also appear in /proc/filesystems<a name="d0e8415"></a>. Before the user-space application can use hugetlbpage support, huge pages have to be allocated in the kernel by the administrator. /proc/sys/vm/nr_hugepages indicates the current number of configured huge pages in the kernel. To configure ten huge pages in the system, use this command:</p>
+<div class="docText"><pre>echo 10 &gt; /proc/sys/vm/nr_hugepages
+</pre></div><br>
+<p class="docText">The allocation will be successful only if there is enough physically contiguous memory in the system at that moment. The deallocation of huge pages is possible only if there are enough huge pages free that can be transferred back to the regular memory pool. Pages that are used as hugetlb pages are reserved inside the kernel and cannot be used for other purposes.<a name="d0e8427"></a></P>
+<p class="docText">There are two ways for application developers to use the hugetlbpage support:</P>
+<div style="font-weight:bold"><ol class="docList" type="1"><LI><div style="font-weight:normal"><p class="docList">The system V shared memory system call (<tt>shmget, shmat</tt>)</P></div></LI><li><div style="font-weight:normal"><p class="docList">The <tt>mmap</tt> system call</P></div></li></ol></div>
+<p class="docText">It is possible for the same application to use a combination of <tt>mmap</tt> and <tt>shm*</tt>.</p>
+<p class="docText">In the following programming examples, we show how to use these system calls for the hugetlbpage support. These programs originally appeared in /usr/src/linux/Documentation/vm/hugetlbpage.txt.</P>
+<p class="docText">In <a class="docLink" href="#ch03ex02">Example 3-2</a>, the application uses the System V shared memory system calls to request 256MB of memory backed by huge pages. The SHM_HUGETLB flag is used in the shmget system call to inform the kernel that huge pages are requested.</P>
+<a name="ch03ex02"></a><h5 id="title-IDAOTJM5" class="docExampleTitle">Example 3-2. <a name="iddle1666"></a>Using Huge Page Memory via System V Shared Memory Interfaces</h5><p><table cellspacing="0" width="90%" border="1" cellpadding="5"><tr><TD>
+
+
+
+<pre>/*
+ * Example of using huge page memory in a user application using Sys V
+ * shared memory system calls. In this example, the app is requesting
+ * 256MB of memory that is backed by huge pages. The application
+ * uses the flag SHM_HUGETLB in the shmget system call to inform the
+ * kernel that it is requesting huge pages.
+ *
+ * For the ia64 architecture, the Linux kernel reserves Region number 4
+ * for huge pages. That means the addresses starting with 0x800000...
+ * will need to be specified. Specifying a fixed address is not
+ * required on ppc64, i386 or x86_64.
+ *
+ * Note: The default shared memory limit is quite low on many kernels;
+ * you may need to increase it via:
+ *
+ * echo 268435456 &gt; /proc/sys/kernel/shmmax
+ *
+ * This will increase the maximum size per shared memory segment to
+ * 256MB. The other limit that you will hit eventually is shmall which
+ * is the total amount of shared memory in pages. To set it to 16GB on
+ * a system with a 4KB pagesize do:
+ *
+ * echo 4194304 &gt; /proc/sys/kernel/shmall
+*/
+#include &lt;stdlib.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;sys/types.h&gt;
+#include &lt;sys/ipc.h&gt;
+#include &lt;sys/shm.h&gt;
+#include &lt;sys/mman.h&gt;
+
+#ifndef SHM_HUGETLB
+#define SHM_HUGETLB 04000
+#endif
+
+#define LENGTH (256UL*1024*1024)
+
+#define dprintf(x) printf(x)
+
+/* Only ia64 requires this */
+#ifdef __ia64__
+#define ADDR (void *)(0x8000000000000000UL)
+#define SHMAT_FLAGS (SHM_RND)
+#else
+#define ADDR (void *)(0x0UL)
+#define SHMAT_FLAGS (0)
+#endif
+
+int main(void)
+{
+    int shmid;
+    unsigned long i;
+    char *shmaddr;
+    if ((shmid = shmget(2, LENGTH,
+        SHM_HUGETLB | IPC_CREAT | SHM_R | SHM_W)) &lt; 0) {
+        perror("shmget");
+        exit(1);
+    }
+    printf("shmid: 0x%x\n", shmid);
+
+    shmaddr = shmat(shmid, ADDR, SHMAT_FLAGS);
+    if (shmaddr == (char *)-1) {
+        perror("Shared memory attach failure");
+        shmctl(shmid, IPC_RMID, NULL);
+        exit(2);
+    }
+    printf("shmaddr: %p\n", shmaddr);
+<a name="d0e8487"></a>
+    dprintf("Starting the writes:\n");
+    for (i = 0; i &lt; LENGTH; i++) {
+        shmaddr[i] = (char)(i);
+        if (!(i % (1024 * 1024)))
+            dprintf(".");
+    }
+    dprintf("\n");
+
+    dprintf("Starting the Check...");
+    for (i = 0; i &lt; LENGTH; i++)
+        if (shmaddr[i] != (char)i)
+            printf("\nIndex %lu mismatched\n", i);
+    dprintf("Done.\n");
+
+    if (shmdt((const void *)shmaddr) != 0) {
+        perror("Detach failure");
+        shmctl(shmid, IPC_RMID, NULL);
+        exit(3);
+    }
+
+    shmctl(shmid, IPC_RMID, NULL);
+
+    return 0;
+}
+</pre><br>
+
+</td></tr></table></p>
+<p class="docText">For ia86 architecture, the kernel reserves a specific region for huge pages. That means a fixed address in the calling process must be specified. A fixed address is not required for i386, x86_64, or ppc64.</P>
+<p class="docText">You may need to increase the maximum size per shared memory segment to 256MB. This can be done by issuing this command:</P>
+<div class="docText"><pre>echo 268435456 &gt; /proc/sys/kernel/shmmax
+</pre></div><br>
+<p class="docText">The other limit that you need to be concerned about is /proc/sys/kernel/shmall, which is the total amount of shared memory in pages.</p>
+<div class="docText"><pre>mmap system call
+</pre></div><br>
+<p class="docText">In this case, it is required that the system administrator mount a filesystem of type hugetlbfs first. Any files created on this mount point will be backed by huge pages.</p>
+<div class="docText"><pre>mount none /mnt/huge -t hugetlbfs -o uid=1000,gid=100
+</pre></div><br>
+<p class="docText">The preceding command mounts a filesystem of type hugetlbfs on the directory /mnt/huge with the owner and group of the root of the filesystem set to 1000 and 100, respectively. <a class="docLink" href="#ch03ex03">Example 3-3</a> provides an application using the <tt>mmap</tt> system call to request a memory of size 256MB that is backed by huge pages.</p>
+<a name="ch03ex03"></a><h5 id="title-IDAEWJM5" class="docExampleTitle">Example 3-3. <a name="iddle1667"></a><a name="iddle1842"></a>Using Huge Page Memory via the mmap Routine</h5><p><table cellspacing="0" width="90%" border="1" cellpadding="5"><tr><td>
+
+
+<div class="docText"><pre>/*
+ * Example of using huge page memory in a user application using the
+ * mmap system call. Before running this application, make sure that
+ * the administrator has mounted the hugetlbfs filesystem (on some
+ * directory like /mnt) using the command mount -t hugetlbfs nodev
+ * /mnt. In this example, the app is requesting memory of size 256MB
+ * that is backed by huge pages.
+ *
+ * For ia64 architecture, Linux kernel reserves Region number 4 for
+ * huge pages. That means the addresses starting with 0x800000... will
+ * need to be specified. Specifying a fixed address is not required
+ * on ppc64, i386 or x86_64.
+*/
+#include &lt;stdlib.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;sys/mman.h&gt;
+#include &lt;fcntl.h&gt;
+
+#define FILE_NAME "/mnt/hugepagefile"
+#define LENGTH (256UL*1024*1024)
+#define PROTECTION (PROT_READ | PROT_WRITE)
+
+/* Only ia64 requires this */
+#ifdef __ia64__
+#define ADDR (void *)(0x8000000000000000UL)
+#define FLAGS (MAP_SHARED | MAP_FIXED)
+#else
+#define ADDR (void *)(0x0UL)
+#define FLAGS (MAP_SHARED)
+#endif
+
+void check_bytes(char *addr)
+{
+    printf("First hex is %x\n", *((unsigned int *)addr));
+}
+
+void write_bytes(char *addr)
+{
+    unsigned long i;
+
+    for (i = 0; i &lt; LENGTH; i++)
+        *(addr + i) = (char)i;
+}
+
+void read_bytes(char *addr)
+<a name="d0e8557"></a><a name="d0e8558"></a>{
+    unsigned long i;
+
+    check_bytes(addr);
+    for (i = 0; i &lt; LENGTH; i++)
+        if (*(addr + i) != (char)i) {
+            printf("Mismatch at %lu\n", i);
+            break;
+        }
+}
+
+int main(void)
+{
+    void *addr;
+    int fd;
+
+    fd = open(FILE_NAME, O_CREAT | O_RDWR, 0755);
+    if (fd &lt; 0) {
+        perror("Open failed");
+        exit(1);
+    }
+
+    addr = mmap(ADDR, LENGTH, PROTECTION, FLAGS, fd, 0);
+    if (addr == MAP_FAILED) {
+        perror("mmap");
+        unlink(FILE_NAME);
+        exit(1);
+    }
+
+    printf("Returned address is %p\n", addr);
+    check_bytes(addr);
+    write_bytes(addr);
+    read_bytes(addr);
+
+    munmap(addr, LENGTH);
+    close(fd);
+    unlink(FILE_NAME);
+
+    return 0;
+}
+</pre></div><br>
+<p class="docText">Note that read and write system calls are not supported on files residing on a hugetlbfs filesystem. A regular <tt>chown, chgrp</tt>, and <tt>chmod</tt> (with the right permissions) could be used to change the file attributes on hugetlbfs.</p>
+</td></TR></table></p>
+
+</TD></TR></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=ch03lev1sec7.html><img src="images/prev.gif" width="60" height="17" border="0" align="absmiddle" alt="Previous Page"></a>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=ch03lev1sec9.html><img src="images/next.gif" width="60" height="17" border="0" align="absmiddle" alt="Next Page"></a>
+</div></td></tr></table>
+</body></html>

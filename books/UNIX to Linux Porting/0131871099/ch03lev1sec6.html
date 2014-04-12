@@ -1,0 +1,213 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Section 3.6.&nbsp; Dynamic Linker (or Runtime Linker)</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=ch03lev1sec5.html><img src="images/prev.gif" width="60" height="17" border="0" align="absmiddle" alt="Previous Page"></a>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=ch03lev1sec7.html><img src="images/next.gif" width="60" height="17" border="0" align="absmiddle" alt="Next Page"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><TD valign="top"><a href="9001536.html"><img src="images/pixel.jpg" alt="" width="1" height="1" border="0"></a><a name="ch03lev1sec6"></a>
+<H3 id="title-IDAENE4Y" class="docSection1Title">3.6. <a name="iddle1235"></a>Dynamic Linker (or Runtime Linker)</H3>
+<p class="docText">The Linux dynamic linker (/lib/ld.so.1 or /lib64/ld64.so.1) finds and loads the shared libraries needed by a program, prepares the program to run, and then runs it. Linux binaries require dynamic linking unless the <tt>static</tt> option was given to <tt>ld</tt> during compilation.<a name="d0e7825"></a></P>
+<p class="docText">On all modern UNIX operating systems, environment variables can be used to affect the operation of the runtime linker. An example is the environment variable <tt>LIBPATH</tt> on AIX, which alters the search path of the runtime linker. The following environment variables affect the operation of the runtime linker on Linux:</P>
+<ul><li><p class="docText"><span class="docEmphStrong"><tt><a name="iddle1676"></a>LD_LIBRARY_PATH</tt>.</span> A colon-separated list of directories in which to search for libraries at runtime.<a name="d0e7848"></a></p></LI><LI><p class="docText"><span class="docEmphStrong"><tt><a name="iddle1677"></a>LD_PRELOAD</tt>.</span> A whitespace-separated list of additional libraries to be loaded before all others<a name="d0e7863"></a>. This can be used to selectively override functions in other shared libraries.</P></LI><LI><p class="docText"><span class="docEmphStrong"><tt><a name="iddle1674"></a>LD_BIND_NOW</tt>.</span> If set to a nonempty string, causes the dynamic linker to resolve all symbols at program startup instead of deferring function call resolution when they are first referenced<a name="d0e7879"></a>. This is useful when using a debugger.</p></LI><li><p class="docText"><span class="docEmphStrong"><tt><a name="iddle1678"></a>LD_TRACE_LOADED_OBJECTS</tt>.</span> If set to a nonempty string, causes the program to list its dynamic library dependencies, as if run by <tt>ldd</tt>, instead of executing normally.<a name="d0e7898"></a></p></LI></UL>
+<p class="docText">The Linux dynamic linker loads library dependencies breadth first. That is, first the dependencies of the executable are added in the order listed in its dynamic section. Then the dependencies of the first dependency are added in the same fashion.</p>
+<p class="docText">Typing the following from a shell prompt gives more information about the Linux dynamic linker:</p>
+<div class="docText"><pre>$info ld.so
+</pre></div><br>
+<a name="ch03lev2sec4"></a>
+
+<h4 id="title-IDAKSE4Y" class="docSection2Title">3.6.1. <a name="iddle1238"></a><a name="iddle2032"></a>Programming Interface</H4>
+<p class="docText">Linux provides a set of APIs used to dynamically load libraries. The dynamic linking interfaces used by Linux are as follows:<a name="d0e7932"></a><a name="d0e7933"></a></p>
+<ul><li><p class="docText"><span class="docEmphStrong"><tt><a name="iddle1226"></a>dlopen</tt></span> Opens a library and prepares it for use<a name="d0e7949"></a></p></LI><LI><p class="docText"><span class="docEmphStrong"><tt><a name="iddle1228"></a>dlsym</tt></span> Looks up the value of a symbol in the opened library<a name="d0e7963"></a></p></li><li><p class="docText"><span class="docEmphStrong"><tt><a name="iddle1223"></a>dlclose</tt></span> Closes a library<a name="d0e7977"></a></p></li><li><p class="docText"><span class="docEmphStrong"><tt><a name="iddle1225"></a>dlerror</tt></span> Returns a string describing the error from the last call to <tt>dlopen, dlsym</tt>, or <tt>dlclose</tt><a name="d0e7996"></a></p></li></ul>
+<p class="docText">C users need to include the header file dlfcn.h to use these APIs. <tt>Glibc</tt> adds two APIs not specified by POSIX:</p>
+<ul><li><p class="docText"><span class="docEmphStrong"><tt><a name="iddle1222"></a>dladdr</tt></span> Resolves name and file where a symbol is located from a function pointer<a name="d0e8019"></a></p></li><LI><p class="docText"><span class="docEmphStrong"><tt><a name="iddle1229"></a>dlvsym</tt></span> Similar to <tt>dlsym()</tt>, but takes a version string as additional argument<a name="d0e8036"></a></p></li></ul>
+<p class="docText">In Linux, a program that uses dynamic linking is linked with the <tt>libdl.so</tt> library, <tt>-ldl</tt>. The libraries it loads do not need to be linked in during the build process. <a class="docLink" href="#ch03ex01">Example 3-1</a> is a sample program using <tt>dl*</tt> routines in Linux.</P>
+<a name="ch03ex01"></a><H5 id="title-IDAWZE4Y" class="docExampleTitle">Example 3-1. A Sample Program Illustrating How to Use dl* Routines</H5><P><table cellspacing="0" width="90%" border="1" cellpadding="5"><TR><td>
+
+
+<p class="docText"><span class="docEmphStrong">main.c:</span></p>
+<div class="docText"><pre>#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;dlfcn.h&gt;
+#include &lt;errno.h&gt;
+
+typedef void (*FP)(void);
+
+int
+main( int argc, char** argv )
+{
+  void*  handle;
+  void*  handle1;
+  void*  symptr;
+  FP   fp;
+
+/* Load the shared object libdefsym.so containing the
+ * definition of the function - defsym.
+ */
+if ( NULL == ( handle = dlopen( "./libfunc2.so",
+              RTLD_NOW|RTLD_GLOBAL)))
+{
+  perror( dlerror() );
+  exit( 1 );
+}
+
+
+
+/* Load the shared object libcalldefsym.so containing the
+ * definition of the function - calldefsym.
+ */
+if ( NULL == ( handle1 = dlopen( "./libfunc1.so", RTLD_NOW)))
+{
+  perror( dlerror() );
+  exit( 1 );
+}
+
+/* Obtain the address to the function - calldefsym. */
+if ( NULL == ( symptr = dlsym( handle1, "function1" )))
+{
+  if ( 0 == errno )
+  {
+    fprintf( stderr, "Symbol calldefsym not found.
+              Exiting\n");
+    exit( 1 );
+  }
+  perror( dlerror() );
+  exit( 1 );
+}
+
+fp = ( FP )symptr;
+
+/* Call calldefsym which in turn calls defsym
+ * via the address obtained above.
+ */
+fp();
+
+/* Unload the shared library libcalldefsym.so. */
+if ( 0 != ( dlclose( handle1 ) ) )
+{
+  perror( dlerror() );
+  exit( 1 );
+}
+
+/* Unload the shared library libdefsym.so. */
+if ( 0 != ( dlclose( handle ) ) )
+{
+  perror( dlerror() );
+    exit( 1 );
+  }
+  exit( 0 );
+}
+</pre></div><br>
+<p class="docText"><span class="docEmphStrong">function1.c:</span></P>
+<div class="docText"><pre>#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+extern void function2( void );
+
+void
+function1( void )
+{
+    printf( "Calling function2 module function1\n" );
+    function2();
+}
+</pre></div><BR>
+<p class="docText"><span class="docEmphStrong">function2.c:</span></P>
+<div class="docText"><pre>#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+void
+function2()
+{
+    printf( "function2 called.\n" );
+}
+</pre></div><BR>
+<p class="docText"><span class="docEmphStrong">Makefile:</span></P>
+<div class="docText"><pre>CC=gcc
+
+all:  main libfunc1.so libfunc2.so
+
+main:  main.o
+    $(CC) -o main main.o -g -ldl
+
+main.o: main.c
+    $(CC) -c main.c -g
+
+libfunc2.so: function2.o
+    $(CC) -o libfunc2.so -shared -fPIC -Wl,-soname=libfunc2.so.1 function2.o -lc
+
+function2.o: function2.c
+    $(CC) -c function2.c -fPIC
+
+libfunc1.so:    function1.o
+    $(CC) -o libfunc1.so -shared -fPIC -Wl,-soname=libfunc1.so.1 function1.o -lc
+
+
+
+function1.o:  function1.c
+    $(CC) -c function1.c -fPIC
+
+.PHONY: clean
+
+clean:
+    rm *.o *.so main
+</pre></div><br>
+<p class="docText"><span class="docEmphStrong">We can then build the executable:</span></P>
+<div class="docText"><pre>$ <span class="docEmphStrong">make</span>
+gcc -c main.c -g
+gcc -o main main.o -g -ldl
+gcc -c function1.c -fPIC
+gcc -o libfunc1.so -shared -fPIC -Wl,-soname=libfunc1.so.1 function1.o
+-lc
+gcc -c function2.c -fPIC
+gcc -o libfunc2.so -shared -fPIC -Wl,-soname=libfunc2.so.1 function2.o
+-lc
+</pre></div><br>
+<p class="docText"><span class="docEmphStrong">Run the sample program:</span></p>
+<div class="docText"><pre>$ <span class="docEmphStrong">./main</span>
+Calling function2 module function1
+function2 called.
+</pre></div><BR>
+<p class="docText"><span class="docEmphStrong">Using the <tt>ldd</tt> command to inspect the executable gives the following:</span></P>
+<div class="docText"><pre>$ <span class="docEmphStrong">ldd ./main</span>
+    linux-gate.so.1 =&gt; (0xffffe000)
+    libdl.so.2 =&gt; /lib/libdl.so.2 (0x40028000)
+    libc.so.6 =&gt; /lib/tls/libc.so.6 (0x4002b000)
+    /lib/ld-linux.so.2 =&gt; /lib/ld-linux.so.2 (0x40000000)
+</pre></div><br>
+<p class="docText"><span class="docEmphStrong">Notice that the executable main does not reference a <a name="iddle1234"></a>dynamically loaded library.</span><a name="d0e8157"></a></p>
+</td></tr></table></P>
+
+<a name="ch03lev2sec5"></a>
+
+<h4 id="title-IDAG4E4Y" class="docSection2Title">3.6.2. <a name="iddle1669"></a>Lazy Relocation</h4>
+<p class="docText">Lazy relocation or loading is a feature that allows the relocations associated with a symbol to be delayed until the symbol is needed. This is used on different UNIX architectures for calls to functions. This feature can prove useful if an application that is linked to a shared library may have the slightest possibility of not calling the function in the shared library. In this case, the library is only loaded if the function is called by the application; otherwise, the shared library is never loaded, thereby saving system resources. However, by setting the environment variable <tt><a name="iddle1675"></a>LD_BIND_NOW</tt> to a nonempty value, all the relocations are performed at the program startup time<a name="d0e8181"></a>. Lazy relocation can also be disabled for an individual object by adding the <tt><a name="iddle2539"></a>z now</tt> option to the linker command line<a name="d0e8192"></a>. This setting cannot be undone without relinking the shared objects.<a name="d0e8194"></a></p>
+
+<a name="ch03lev2sec6"></a>
+<h4 id="title-IDAKAF4Y" class="docSection2Title">3.6.3. <a name="iddle1236"></a><a name="iddle1612"></a><a name="iddle1614"></a>Initializing and <a name="iddle1353"></a>Finalizing Routine</H4>
+<p class="docText">Sometimes legacy code may include two special functions, <tt>_init</tt> and <a name="iddle1354"></a><tt>_fini</tt>.<a name="d0e8233"></a> The <tt>_init</tt> and <tt>_fini</tt> functions are used to control constructors and destructors when loading and unloading a module,<sup class="docFootnote"><a class="docLink" href="#ch03fn14">[14]</a></sup> respectively. They have the following C prototypes:<a name="d0e8245"></a><a name="d0e8246"></a><a name="d0e8247"></a><a name="d0e8248"></a></P><blockquote><p class="docFootnote"><sup><a name="ch03fn14">[14]</a></sup> Objects in a shared library.</p></blockquote>
+<div class="docText"><pre>void _init(void);
+void _fini(void);
+</pre></div><br>
+<p class="docText">When a library is opened through <tt><a name="iddle1227"></a>dlopen()</tt> or simply as a shared library, the <tt>_init</tt> function is called if it is exported within the same library.<sup class="docFootnote"><a class="docLink" href="#ch03fn15">[15]</a></sup> When the library is closed with <tt><a name="iddle1224"></a>dlclose()</tt> or unloaded because no other applications are using symbols from that library, the routine <tt>_fini</tt> is called just before the library is unloaded<a name="d0e8285"></a><a name="d0e8286"></a>. When using your own <tt>_init</tt> and <tt>_fini</tt> routines, you may need to avoid linking against the system startup files. To do this, use the GCC option <tt>-nostartfiles</tt>.</p><blockquote><p class="docFootnote"><sup><a name="ch03fn15">[15]</a></sup> This is the same as saying the <tt>_init</tt> function is defined as a function within the library.</p></blockquote>
+<p class="docText">However, using these routines or the GCC <tt>-nostartfiles</tt> option is not recommended because it may result in undesired behavior. Instead, libraries should export routines using the <tt>__attribute__((constructor))</tt> and <tt>__attribute__((destructor))</tt> function attributes, as in the following:</p>
+<div class="docText"><pre>void __attribute__ ((constructor)) x_init(void);
+void __attribute__ ((destructor)) x_fini(void);
+</pre></div><br>
+<p class="docText">The constructor routine is called before <tt>dlopen()</tt> returns or when the library is loaded at load time.<sup class="docFootnote"><a class="docLink" href="#ch03fn16">[16]</a></sup> The destructor routine is called before <tt>dlclose()</tt> returns or after <tt>main()</tt> returns or when <tt>exit()</tt> is called if the library is loaded at load time.</p><blockquote><p class="docFootnote"><sup><a name="ch03fn16">[16]</a></sup> Before <tt>main()</tt> is called.</p></blockquote>
+
+
+<a href="9001536.html"><img src="images/pixel.jpg" alt="" width="1" height="1" border="0"></a></TD></TR></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=ch03lev1sec5.html><img src="images/prev.gif" width="60" height="17" border="0" align="absmiddle" alt="Previous Page"></a>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=ch03lev1sec7.html><img src="images/next.gif" width="60" height="17" border="0" align="absmiddle" alt="Next Page"></a>
+</div></td></tr></table>
+</body></html>
