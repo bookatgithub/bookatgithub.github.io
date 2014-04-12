@@ -1,0 +1,82 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>How DB2 Manages Locking</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="ch23.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="ch23lev1sec2.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="ch23lev1sec1"></A><H3 class="docSection1Title" >How DB2 Manages Locking</H3>
+<P class="docText">Anyone accustomed to application programming when access to a database is required understands the potential for concurrency problems. When one application program tries to read data that is in the process of being changed by another, the DBMS must forbid access until the modification is complete to ensure data integrity. Most DBMS products, DB2 included, use a locking mechanism for all data items being changed. Therefore, when one task is updating data on a page, another task cannot access data (read or update) on that same page until the data modification is complete and committed.<A NAME="ch23index01"></A><A NAME="ch23index02"></A></P>
+<P class="docText">When multiple users can access and update the same data at the same time, a locking mechanism is required. This mechanism must be capable of differentiating between stable data and uncertain data. <span class="docEmphasis">Stable data</span> has been successfully committed and is not involved in an update in a current unit of work. <span class="docEmphasis">Uncertain data</span> is currently involved in an operation that could modify its contents. Consider the example in <A class="docLink" HREF="#ch23list01">Listing 23.1</A>.<A NAME="ch23index03"></A><A NAME="ch23index04"></A><A NAME="ch23index05"></A><A NAME="ch23index06"></A><A NAME="ch23index07"></A><A NAME="ch23index08"></A></P>
+<A NAME="ch23list01"></A><H5 class="docExampleTitle">Listing 23.1. A Typical Processing Scenario</H5>
+
+<PRE>
+Program #1                  Timeline    Program #2
+.                           T1          .
+.                                       .
+.                                       .
+.                                       .
+SQL statement               T2          .
+accessing EMPNO '000010'                .
+.                                       .
+.                                       .
+SQL statement               T3          .
+updating '000010'                       .
+.                                       .
+.                                       .
+.                           T4          SQL statement
+                                        accessing EMPNO '000010'
+.                                       .
+.                                       .
+Commit                      T5          .
+.                                       .
+.                                       .
+.                                       .
+.                           T6          SQL statement updating '000010'
+.                                       .
+.                                       .
+.                                       .
+.                           T7          Commit
+</PRE><BR>
+
+<P class="docText">If program #1 updates a piece of data on page 1, you must ensure that program #2 cannot access the data until program #1 commits the unit of work. Otherwise, a loss of integrity could result. Without a locking mechanism, the following sequence of events would be possible:</P>
+<div style="font-weight:bold"><OL class="docList" TYPE="1"><LI><div style="font-weight:normal"><P class="docList">Program #1 retrieves a row from <TT>DSN8810.EMP</TT> for <TT>EMPNO '000010'</TT>.</P></div></LI><LI><div style="font-weight:normal"><P class="docList">Program #1 issues an update statement to change that employee's salary to <TT>55000</TT>.</P></div></LI><LI><div style="font-weight:normal"><P class="docList">Program #2 retrieves the <TT>DSN8810.EMP</TT> row for <TT>EMPNO '000010'</TT>. Because the change was not committed, the old value for the salary, <TT>52750</TT>, is retrieved.</P></div></LI><LI><div style="font-weight:normal"><P class="docList">Program #1 commits the change, causing the salary to be <TT>55000</TT>.</P></div></LI><LI><div style="font-weight:normal"><P class="docList">Program #2 changes a value in a different column and commits the change.</P></div></LI><LI><div style="font-weight:normal"><P class="docList">The value for salary is now back to <TT>52750</TT>, negating the change made by program #1.</P></div></LI></OL></div>
+<P class="docText">The DBMS avoids this situation by using a locking mechanism. DB2 supports locking at four levels, or <span class="docEmphasis">granularities</span>: table space-, table-, page-, and row-level locking. DB2 also provides LOB locking for large objects (BLOBs, CLOBs, and DBCLOBs). More precisely, DB2 locks are enacted on data as shown in <A class="docLink" HREF="#ch23fig01">Figure 23.1</A>.<A NAME="ch23index09"></A><A NAME="ch23index10"></A></P>
+<A NAME="ch23fig01"></A><p><CENTER><H5 class="docFigureTitle">Figure 23.1. The DB2 locking hierarchy.</H5>
+<p class="docText"><IMG BORDER="0"  width="500" height="356" SRC="images/0672326132/graphics/23fig01.gif" ALT="graphics/23fig01.gif"></p></CENTER></p><br>
+<P class="docText">These two charts are hierarchical. Locks can be taken at any level in the locking hierarchy without taking a lock at the lower level. However, locks cannot be taken at the lower levels without a compatible higher-level lock also being taken. For example, you can take a table space lock without taking any other lock, but you cannot take a page lock without first securing a table space-level lock (and a table lock as well if the page is part of a table in a segmented table space).<A NAME="ch23index11"></A><A NAME="ch23index12"></A></P>
+<P class="docText">Additionally, as illustrated in the diagrams in <A class="docLink" HREF="#ch23fig01">Figure 23.1</A>, a page lock does not have to be taken before a row lock is taken. Your locking strategy requires an "either/or" type of choice by table space: either row locking or page locking. An in-depth discussion on the merits of both follows later in this chapter. Both page locks and row locks escalate to a table level and then to a table space level for segmented tables or straight to a table space level for simple or partitioned table spaces. A table or table space cannot have both page locks and row locks held against it at the same time.</P>
+<P class="docText">Many modes of locking are supported by DB2, but they can be divided into two types:</P>
+<UL><LI><P class="docList">Locks to enable the reading of data</P></LI><LI><P class="docList">Locks to enable the updating of data</P></LI></UL>
+<P class="docText">But this overview is quite simplistic; DB2 uses varieties of these two types to indicate the type of locking required. They are covered in more depth later in this chapter.<A NAME="ch23index13"></A><A NAME="ch23index14"></A></P>
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="ch23.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="ch23lev1sec2.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

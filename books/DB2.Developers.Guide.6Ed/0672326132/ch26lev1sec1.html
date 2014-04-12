@@ -1,0 +1,881 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>DB2 Catalog Queries</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="ch26.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="ch26lev1sec2.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="ch26lev1sec1"></A><H3 class="docSection1Title">DB2 Catalog Queries</H3>
+<P class="docText">The first type of statistics for monitoring DB2 database objects is stored in the DB2 Catalog. These statistics are populated when you run the <TT>RUNSTATS</TT> utility and are only as up-to-date as the last time you ran <TT>RUNSTATS</TT>. Additionally, some information in the DB2 Catalog is accurate and useful even if <TT>RUNSTATS</TT> has never been run. Indeed, much useful information about the DB2 objects you are using can be found in the DB2 Catalog. This section documents in several categories to help you monitor DB2 object usage using the DB2 Catalog:<A NAME="ch26index01"></A><A NAME="ch26index02"></A><A NAME="ch26index03"></A></P>
+<UL><LI><P class="docList">Navigational queries, which help you to maneuver through the sea of DB2 objects in your DB2 subsystems</P></LI><LI><P class="docList">Physical analysis queries, which depict the physical state of your application tablespaces and indexes</P></LI><LI><P class="docList">Queries that aid programmers (and other analysts) in identifying the components of DB2 packages and plans</P></LI><LI><P class="docList">Application efficiency queries, which combine DB2 Catalog statistics with the <TT>PLAN_TABLE</TT> output from <TT>EXPLAIN</TT> to identify problem queries quickly</P></LI><LI><P class="docList">Authorization queries, which identify the authority implemented for each type of DB2 security</P></LI><LI><P class="docList">
+<IMG BORDER="0" width="30" height="18" SRC="images/0672326132/graphics/V7_icon.gif" ALT="graphics/V7_icon.gif"> Historical queries, which use the DB2 Catalog <TT>HIST</TT> tables to identify and monitor changing data patterns</P></LI><LI><P class="docList">Partition statistics queries, which aid the analysis of partitioned tablespaces</P></LI></UL>
+<P class="docText">You can implement these queries using SPUFI or QMF. You should set them up to run as a batch job; otherwise, your terminal will be needlessly tied up executing them. You also would be wise to schedule these queries regularly and then save the output on paper, on microfiche, or in a report storage facility with an online query facility.</P>
+<P class="docText">Each category contains several DB2 Catalog queries you can use for performance monitoring. Each query is accompanied by an analysis that highlights problems that can be trapped by reviewing the output results of the query.</P>
+<P class="docText">In implementing this DB2 Catalog monitoring strategy, I have made the following assumptions:</P>
+<UL><LI><P class="docList">All application plans are bound with the <TT>EXPLAIN(YES)</TT> option.</P></LI><LI><P class="docList">Each application has its own <TT>PLAN_TABLE</TT> for the storage of the <TT>EXPLAIN</TT> results.</P></LI><LI><P class="docList">Scheduled production <TT>STOSPACE</TT> and <TT>RUNSTATS</TT> jobs are executed on a regular basis to ensure that the statistical information in the DB2 Catalog is current; otherwise, the queries might provide inaccurate information.</P></LI><LI><P class="docList">Plans are rebound when <TT>RUNSTATS</TT> has been executed so that all access paths are based on current statistical information. If you have not done so, you should have a valid, documented reason. When the access paths for your packages and plans are not based on current DB2 Catalog statistics, tuning SQL using the DB2 Catalog queries presented in this chapter is difficult.</P></LI></UL>
+<P class="docText">Having a report of each <TT>PLAN_TABLE</TT> for each application is also useful. This way, you can check the DB2 Catalog information against the optimizer access path selection information. You can obtain these reports by using the queries shown in <A class="docLink" HREF="ch25.html#ch25">Chapter 25</A> "Using EXPLAIN."<A NAME="ch26index04"></A><A NAME="ch26index05"></A><A NAME="ch26index06"></A></P>
+<A NAME="ch26lev2sec1"></A><H4 class="docSection2Title">Navigational Queries</H4>
+<P class="docText">To perform database and system administration functions for DB2, often you must quickly locate and identify objects and their dependencies. Suppose that a DBA must analyze a poorly performing query. The DBA has the query and a report of the <TT>EXPLAIN</TT> for the query, but no listing of available indexes and candidate columns for creating indexes. Or what if a query accessing a view is performing poorly? An analyst must find the composition of the view and the tables (or views) on which it is based. The navigational queries identified in this section provide object listing capabilities and more.<A NAME="ch26index07"></A><A NAME="ch26index08"></A><A NAME="ch26index09"></A><A NAME="ch26index10"></A></P>
+<P class="docText">The first navigational query provides a listing of the tables in your DB2 subsystem by database, tablespace, and creator:<A NAME="ch26index11"></A><A NAME="ch26index12"></A></P>
+<pre>
+
+</pre><BR><pre>
+SELECT   T.DBNAME, T.TSNAME, T.CREATOR, T.NAME, T.CREATEDTS,
+         T.ALTEREDTS, C.COLNO, C.NAME, C.COLTYPE, C.LENGTH,
+         C.SCALE, C.NULLS, C.DEFAULT, C.COLCARDF,
+         HEX(C.HIGH2KEY) <span class="docEmphStrong">AS HIGH2KEY</span>, HEX(C.LOW2KEY) <span class="docEmphStrong">AS LOW2KEY</span>, C.STATSTIME, C.FLDPROC
+FROM     SYSIBM.SYSCOLUMNS   C,
+         SYSIBM.SYSTABLES    T
+WHERE    T.CREATOR = C.TBCREATOR
+AND      T.NAME = C.TBNAME
+AND      T.TYPE = 'T'
+ORDER BY T.DBNAME, T.TSNAME, T.CREATOR, T.NAME, C.COLNO;
+</pre><BR>
+<P class="docText">This query is good for identifying the composition of your DB2 tables, down to the data type and length of the columns. The <TT>STATSTIME</TT> column will show the last time <TT>RUNSTATS</TT> was run, thereby giving you a clue as to the accuracy of the <TT>HIGH2KEY</TT> and <TT>LOW2KEY</TT> values reports.</P>
+<A NAME="ch26note01"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<table width="90%" border="0" cellspacing="0" cellpadding="1"><tr><td width="60" valign="top"><IMG BORDER="0" ALIGN="LEFT" width="30" height="18" SRC="images/0672326132/graphics/V8_icon.gif" ALT="graphics/V8_icon.gif"></td><td valign="top"><P class="docText"> For DB2 V8, you can add the <TT>T.SECURITY_LABEL</TT> column to this query to report on the multi-level security information for tables and MQTs.</P></td></tr></table><br></div><br>
+<P class="docText">If you want to also report on the number of rows in each table, you can use another short query that lists tables and their cardinality:<A NAME="ch26index13"></A><A NAME="ch26index14"></A><A NAME="ch26index15"></A></P>
+<pre>
+
+</pre><BR><pre>
+SELECT   CREATOR, NAME, CARDF, NPAGES, STATSTIME
+FROM     SYSIBM.SYSTABLES
+WHERE    TYPE IN ('T', 'X')
+ORDER BY CREATOR, NAME;
+</pre><BR>
+<P class="docText">This query will list all normal tables and auxiliary tables. The <TT>CARDF</TT> column shows the total number of rows in the table or the total number of LOBs in an auxiliary table. The <TT>NPAGES</TT> column shows the total number of pages that hold rows for this table.<A NAME="ch26index16"></A><A NAME="ch26index17"></A></P>
+<A NAME="ch26note02"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<table width="90%" border="0" cellspacing="0" cellpadding="1"><tr><td width="60" valign="top"><IMG BORDER="0" ALIGN="LEFT" width="30" height="18" SRC="images/0672326132/graphics/V8_icon.gif" ALT="graphics/V8_icon.gif"></td><td valign="top"><P class="docText"> For DB2 Version 8, you can add the <TT>VERSION</TT> column to this query to report on the version of the rows in the table. Recall from <A class="docLink" HREF="ch07.html#ch07">Chapter 7</A>, "Database Change Management and Schema Evolution," that when online schema changes are made, DB2 can create new versions of the database objects being changed.</P></td></tr></table><br></div><br>
+<table width="90%" border="0" cellspacing="0" cellpadding="1"><tr><td width="60" valign="top"><IMG BORDER="0" width="30" height="18" SRC="images/0672326132/graphics/V8_icon.gif" ALT="graphics/V8_icon.gif"></td><td valign="top"><P class="docText"> If you use materialized query tables, you will want to run the following query to monitor information about your MQTs:<A NAME="ch26index18"></A><A NAME="ch26index19"></A><A NAME="ch26index20"></A></P></td></tr></table><br>
+<pre>
+
+</pre><BR><pre>
+SELECT   CREATOR, NAME, CARDF, NPAGESF, 
+         NUM_DEP_MQTS, STATSTIME
+FROM     SYSIBM.SYSTABLES
+WHERE    TYPE = 'M'
+ORDER BY CREATOR, NAME;
+</pre><BR>
+<P class="docText">Another useful navigational query presents an index listing:<A NAME="ch26index21"></A><A NAME="ch26index22"></A></P>
+<pre>
+
+</pre><BR><pre>
+SELECT   T.DBNAME, T.TSNAME, T.CREATOR, T.NAME, I.CREATOR,
+         I.NAME, I.INDEXTYPE, I.UNIQUERULE, I.CLUSTERING,
+         I.CLUSTERRATIOF*100, I.CREATEDTS, I.ALTEREDTS, 
+         I.PIECESIZE, K.COLSEQ, K.COLNAME, K.ORDERING
+FROM     SYSIBM.SYSKEYS      K,
+         SYSIBM.SYSTABLES    T,
+         SYSIBM.SYSINDEXES   I
+WHERE    (I.TBCREATOR = T.CREATOR   AND  I.TBNAME = T.NAME)
+AND      (K.IXCREATOR = I.CREATOR   AND  K.IXNAME = I.NAME)
+ORDER BY 1, 2, 3, 4, 5, 6, 14;
+</pre><BR>
+<P class="docText">This query lists all indexes in your DB2 subsystem by database, tablespace, table creator, and table. It is similar to the table listing query and can be used to identify the columns that make up each index.<A NAME="ch26index23"></A><A NAME="ch26index24"></A></P>
+<A NAME="ch26note03"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<table width="90%" border="0" cellspacing="0" cellpadding="1"><tr><td width="60" valign="top"><IMG BORDER="0" ALIGN="LEFT" width="30" height="18" SRC="images/0672326132/graphics/V8_icon.gif" ALT="graphics/V8_icon.gif"></td><td valign="top"><P class="docText"> For DB2 Version 8, you should add the following columns to this query: <TT>I.PADDED</TT> (for variable length keys, indicates whether the index is padded or not), <TT>I.AVGKEYLEN</TT> (average length of the keys in the index), <TT>I.VERSION</TT>, <TT>I.OLDEST_VERSION</TT>, and <TT>I.CURRENT_VERSION</TT> (for information on the data row format version for this index).</P></td></tr></table><br></div><br>
+<P class="docText">By viewing the output from these two queries, you can ascertain the hierarchy of DB2 objects (indexes in tables in tablespaces in databases). Additionally, these queries report the time the table or index was initially created and the time each was last altered. This information can be useful in an emergency situation when you need to determine what has been changed.</P>
+<P class="docText">The output from these queries is superb for navigation. The DBA can easily get lost in a flood of production objects. By periodically running these queries and saving the output, a DBA can have a current profile of the environment in each DB2 subsystem that must be monitored.</P>
+<P class="docText">Large installations might have thousands of tables and indexes, making the reports generated by these queries unwieldy. If these queries produce too much information to be easily digested for one report, consider adding a <TT>WHERE</TT> clause to query only the objects you're interested in at the time. For example, add the following clause to report on information contained in specific databases only:<A NAME="ch26index25"></A><A NAME="ch26index26"></A></P>
+<pre>
+
+</pre><BR><pre>
+WHERE T.DBNAME IN ('DATABAS1', 'DATABAS2', DATABAS9')
+</pre><BR>
+<P class="docText">Eliminating the sample databases (<TT>DSN8D61A</TT>, <TT>DSN8D61P</TT>), the DB2 Catalog database (<TT>DSNDB06</TT>), the RTS database (<TT>DSNRTSDB</TT>), and any extraneous databases (such as QMF and databases for third-party products) is usually desirable. However, doing so is optional; you may want to monitor everything known to DB2.<A NAME="ch26index27"></A><A NAME="ch26index28"></A></P>
+<P class="docText">Although the primary purpose of these two queries is navigation, they also can aid in problem determination and performance tuning. For example, note the following query:</P>
+<pre>
+
+</pre><BR><pre>
+SELECT   A.COL1, A.COL2, B.COL3
+FROM     TABLE1 A, 
+         TABLE2 B
+WHERE    A.COL1 = B.COL4;
+</pre><BR>
+<P class="docText">If this query is not performing properly, you would want to know the column types and lengths for <TT>COL1</TT> in <TT>TABLE1</TT> and <TT>COL4</TT> in <TT>TABLE2</TT>. The type and length for both columns should be the same. If they are not, you can deduce that DB2 is performing a data conversion to make the comparison, which affects performance. (Of course, DB2 V8 mitigates this type of performance problem somewhat by performing conversions within data type families in Stage 1; all previous DB2 versions performed such conversion in Stage 2.)<A NAME="ch26index29"></A><A NAME="ch26index30"></A></P>
+<P class="docText">If the data type and length are the same, you would want to see what indexes (if any) are defined on these columns and then analyze the <TT>EXPLAIN</TT> output. Other significant data might be the uniqueness of each index, the cluster ratio for the index (these items influence the optimizer's choice of access path), data conversion due to online schema change versioning, and the number of tables in a tablespace (can cause performance degradation for non-segmented tablespaces). You can obtain all this information from these reports.</P>
+<P class="docText">You also will need a list of user-defined distinct types (UDTs). UDTs can be used in tables and it will be helpful to know how each UDT is defined as you peruse the table and column listing. To obtain a list of UDTs defined to DB2 issue the following query:<A NAME="ch26index31"></A><A NAME="ch26index32"></A><A NAME="ch26index33"></A><A NAME="ch26index34"></A></P>
+<pre>
+
+</pre><BR><pre>
+SELECT   SCHEMA, NAME, METATYPE, SOURCESCHEMA, SOURCETYPEID, LENGTH, 
+         SCALE, SUBTYPE, ENCODING_SCHEME, CREATEDTS, CREATEDBY
+FROM     SYSIBM.SYSDATATYPES
+ORDER BY SCHEMA, NAME; 
+</pre><BR>
+<P class="docText">The output from this query shows all user-defined distinct types, along with the base data type from which the UDT was sourced. If you need to find all of the UDTs sourced from a base data type, you might want to change the <TT>ORDER BY</TT> clause as follows:</P>
+<pre>
+
+</pre><BR><pre>
+ORDER BY SOURCESCHEMA, SOURCETYPEID; 
+</pre><BR>
+<P class="docText">You might also need to examine a listing of the objects used to support your LOB columns. The following query can be used to report on the LOB columns, auxiliary tables, and LOB tablespaces used in your DB2 subsystem:<A NAME="ch26index35"></A><A NAME="ch26index36"></A><A NAME="ch26index37"></A><A NAME="ch26index38"></A><A NAME="ch26index39"></A></P>
+<pre>
+
+</pre><BR><pre>
+SELECT   T.DBNAME, T.TSNAME, T.CREATOR, T.NAME, 
+         A.AUXTBOWNER, A.AUXTBNAME, A.COLNAME, S.LOG
+FROM     SYSIBM.SYSTABLESPACE  S,
+         SYSIBM.SYSTABLES      T,
+         SYSIBM.SYSAUXRELS     A
+WHERE    T.DBNAME = S.DBNAME
+AND      T.TSNAME = S.NAME
+AND      S.TYPE = 'O'
+AND      A.TBNAME = T.NAME
+AND      A.TBOWNER = T.CREATOR
+ORDER BY T.DBNAME, T.TSNAME, T.CREATOR, T.NAME, 
+         A.AUXTBOWNER, A.AUXTBNAME;
+</pre><BR>
+<P class="docText">The <TT>LOG</TT> column pertains specifically to LOB tablespaces. Examine this column to determine which LOB columns are logged and which are not.<A NAME="ch26index40"></A><A NAME="ch26index41"></A></P>
+<P class="docText">Another useful navigational report is the view listing query:<A NAME="ch26index42"></A><A NAME="ch26index43"></A></P>
+<pre>
+
+</pre><BR><pre>
+SELECT   CREATOR, NAME, SEQNO, CHECK, TEXT
+FROM     SYSIBM.SYSVIEWS
+ORDER BY CREATOR, NAME, SEQNO;
+</pre><BR>
+<P class="docText">The output from this query identifies all views known to DB2 along with the SQL text used to create the view. This information is useful when you're monitoring how SQL performs when it accesses DB2 views.</P>
+<A NAME="ch26note04"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<P class="docText">This report may have multiple rows per view.</P></div><br>
+<P class="docText">Monitoring the aliases and synonyms defined for DB2 tables also is desirable. The next query provides a listing of all aliases known to the DB2 subsystem:<A NAME="ch26index44"></A><A NAME="ch26index45"></A></P>
+<pre>
+
+</pre><BR><pre>
+SELECT   CREATOR, NAME, TBCREATOR, TBNAME, CREATEDBY
+FROM     SYSIBM.SYSTABLES
+WHERE    TYPE = 'A'
+ORDER BY CREATOR, NAME;
+</pre><BR>
+<P class="docText">This one provides a listing of all synonyms:<A NAME="ch26index46"></A><A NAME="ch26index47"></A></P>
+<pre>
+
+</pre><BR><pre>
+SELECT   CREATOR, NAME, TBCREATOR, TBNAME, CREATEDBY
+FROM     SYSIBM.SYSSYNONYMS
+ORDER BY CREATOR, NAME;
+</pre><BR>
+<P class="docText">By scanning the names returned by the table, view, alias, and synonym listing queries, you can reference the complete repository of objects that can be specified in the <TT>FROM</TT> clause of SQL <TT>SELECT</TT> statements. One additional table-related query reports on the temporary tables defined to DB2:<A NAME="ch26index48"></A><A NAME="ch26index49"></A><A NAME="ch26index50"></A></P>
+<pre>
+
+</pre><BR><pre>
+SELECT   CREATOR, NAME, CREATEDBY
+FROM     SYSIBM.SYSTABLES
+WHERE    TYPE = 'G'
+ORDER BY CREATOR, NAME;
+</pre><BR>
+<P class="docText">Temporary tables are used to house temporary results in application programs that are required only for the life of the program but can benefit from being accessed using SQL.</P>
+<P class="docText">When referential integrity is implemented for a DB2 application, DBAs, programmers, and analysts must have quick access to the referential constraints defined for the tables of the application. This information is usually in the form of a logical data model depicting the relationships between the tables. However, this information is not sufficient because physical design decisions could have overridden the logical model. Although these design decisions should be documented, having ready access to the physical implementation of the referential integrity defined to your system is wise. This query provides a listing of referential constraints by dependent table:<A NAME="ch26index51"></A><A NAME="ch26index52"></A><A NAME="ch26index53"></A><A NAME="ch26index54"></A></P>
+<pre>
+
+</pre><BR><pre>
+SELECT   F.CREATOR, F.TBNAME, R.REFTBCREATOR, R.REFTBNAME,
+         F.RELNAME, R.DELETERULE, F.COLSEQ, F.COLNAME
+FROM     SYSIBM.SYSFOREIGNKEYS    F,
+         SYSIBM.SYSRELS           R
+WHERE    F.CREATOR = R.CREATOR
+AND      F.TBNAME = R.TBNAME
+AND      F.RELNAME = R.RELNAME
+ORDER BY F.CREATOR, F.TBNAME, R.REFTBCREATOR, R.REFTBNAME;
+</pre><BR>
+<P class="docText">This one provides a listing of all referential constraints by parent table:<A NAME="ch26index55"></A><A NAME="ch26index56"></A><A NAME="ch26index57"></A><A NAME="ch26index58"></A></P>
+<pre>
+
+</pre><BR><pre>
+SELECT   R.REFTBCREATOR, R.REFTBNAME, F.CREATOR, F.TBNAME,
+         F.RELNAME, R.DELETERULE, F.COLSEQ, F.COLNAME
+FROM     SYSIBM.SYSFOREIGNKEYS    F,
+         SYSIBM.SYSRELS           R
+WHERE    F.CREATOR = R.CREATOR
+AND      F.TBNAME = R.TBNAME
+AND      F.RELNAME = R.RELNAME
+ORDER BY R.REFTBCREATOR, R.REFTBNAME, F.CREATOR, F.TBNAME;
+</pre><BR>
+<P class="docText">These two queries provide the same information in two useful formats: the first by dependent (or child) table and the second by parent table. For a refresher on these referential integrity terms, refer to <A class="docLink" HREF="#ch26fig01">Figure 26.1</A>.<A NAME="ch26index59"></A><A NAME="ch26index60"></A></P>
+<A NAME="ch26fig01"></A><p><CENTER><H5 class="docFigureTitle">Figure 26.1. Referential integrity terms.</H5>
+<p class="docText"><IMG BORDER="0" width="300" height="343" SRC="images/0672326132/graphics/26fig01.gif" ALT="graphics/26fig01.gif"></p></CENTER></p><br>
+<P class="docText">The output from both of these referential integrity queries is useful when you're searching for relationships between tables—both forward from the parent table and backward from the dependent table. This query returns all the information that defines each referential constraint, including the following:</P>
+<UL><LI><P class="docList">The creator and name of the parent and dependent tables that make up the referential constraint</P></LI><LI><P class="docList">The constraint name</P></LI><LI><P class="docList">The <TT>DELETE RULE</TT> for each referential constraint</P></LI><LI><P class="docList">The columns that make up the foreign key</P></LI></UL>
+<P class="docText">This information is useful for programmers and analysts writing data modification programs. The referential constraints affect both the functions that modify data in tables participating in referential constraints and the <TT>SQLCODE</TT>s returned to the program. DBAs need this information, with the index listing data described previously, to ensure that adequate indexes are defined for all foreign keys.</P>
+<P class="docText">Knowing all the check constraints used in the DB2 subsystem is also useful. The following query displays all the check constraints and lists the columns to which each check constraint applies:<A NAME="ch26index61"></A><A NAME="ch26index62"></A></P>
+<pre>
+
+</pre><BR><pre>
+SELECT   TBOWNER, TBNAME, CHECKNAME, COLNAME
+FROM     SYSIBM.SYSCHECKDEP
+ORDER BY TBOWNER, TBNAME, CHECKNAME;
+</pre><BR>
+<P class="docText">To find the actual text of each check constraint, you can issue the following SQL:</P>
+<pre>
+
+</pre><BR><pre>
+SELECT   TBOWNER, TBNAME, CHECKNAME, TIMESTAMP,
+         CHECKCONDITION
+FROM     SYSIBM.SYSCHECKS
+ORDER BY TBOWNER, TBNAME, CHECKNAME;
+</pre><BR>
+<P class="docText">You can also implement data integrity constraints using triggers. Triggers are assigned to specific tables such that when data changes in the table the trigger code is executed. The following query can help you to find the triggers on a table:<A NAME="ch26index63"></A><A NAME="ch26index64"></A><A NAME="ch26index65"></A></P>
+<pre>
+
+</pre><BR><pre>
+SELECT    TBOWNER, TBNAME, SCHEMA, NAME, 
+          TRIGTIME, TRIGEVENT, GRANULARITY, CREATEDTS
+FROM      SYSIBM.SYSTRIGGERS
+WHERE     SEQNO = 1
+ORDER BY  TBOWNER, TBNAME, SCHEMA, NAME;
+</pre><BR>
+<P class="docText">The following query can help you to find the table if you know the trigger:</P>
+<pre>
+
+</pre><BR><pre>
+SELECT    SCHEMA, NAME, TBOWNER, TBNAME,
+          TRIGTIME, TRIGEVENT, GRANULARITY, CREATEDTS
+FROM      SYSIBM.SYSTRIGGERS
+WHERE     SEQNO = 1
+ORDER BY  SCHEMA, NAME, TBOWNER, TBNAME;
+</pre><BR>
+<P class="docText">The previous two queries do not return the actual text of the trigger because it can be very long. The column used to store the trigger code, <TT>TEXT</TT>, is defined as <TT>VARCHAR(6000</TT>) for V8 or <TT>VARCHAR(3460)</TT> for V7 and previous versions. Additionally, multiple rows can be required to store very long triggers. That is why the <TT>SEQNO</TT> column is used to retrieve only one row per trigger instance. If you want to retrieve the trigger text, use the following query:<A NAME="ch26index66"></A><A NAME="ch26index67"></A><A NAME="ch26index68"></A><A NAME="ch26index69"></A><A NAME="ch26index70"></A></P>
+<pre>
+
+</pre><BR><pre>
+SELECT    SCHEMA, NAME, SEQNO, TBOWNER, TBNAME
+          TRIGTIME, TRIGEVENT, GRANULARITY, TEXT
+FROM      SYSIBM.SYSTRIGGERS
+ORDER BY  SCHEMA, NAME, SEQNO;
+</pre><BR>
+<P class="docText">Queries to obtain stored procedure and UDF information are presented later in this chapter.</P>
+<table width="90%" border="0" cellspacing="0" cellpadding="1"><tr><td width="60" valign="top"><IMG BORDER="0" width="30" height="18" SRC="images/0672326132/graphics/V8_icon.gif" ALT="graphics/V8_icon.gif"></td><td valign="top"><P class="docText"> If you use <TT>SEQUENCE</TT> objects (new to DB2 V8), the following query can be used to produce a list of available <TT>SEQUENCE</TT>s:<A NAME="ch26index71"></A><A NAME="ch26index72"></A><A NAME="ch26index73"></A></P></td></tr></table><br>
+<pre>
+
+</pre><BR><pre>
+SELECT    SCHEMA, OWNER, NAME, SEQTYPE, CREATEDBY, START, INCREMENT, 
+          MINVALUE, MAXVALUE, CYCLE, DATATYPEID, SOURCETYPEID, PRECISION,
+          CACHE, ORDER, MAXASSIGNEDVAL, CREATEDTS, ALTEREDTS
+FROM      SYSIBM.SYSSEQUENCES
+ORDER BY  NAME, SCHEMA;
+</pre><BR>
+<A NAME="ch26note05"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<P class="docText">Sequences used by <TT>IDENTITY</TT> columns are listed in the results of this query, too. If the value of <TT>SEQTYPE</TT> is <TT>'S'</TT> it applies to a <TT>SEQUENCE</TT> object, but if the value is <TT>'I'</TT> it applies to an <TT>IDENTITY</TT> column. For more information on sequences and identity columns, refer to <A class="docLink" HREF="ch05.html#ch05">Chapter 5</A>, "Data Definition Guidelines."</P></div><br>
+<P class="docText">You also might find it useful to have a list of tables that use <TT>IDENTITY</TT> columns. The following query produces such a report in order by table name:<A NAME="ch26index74"></A><A NAME="ch26index75"></A><A NAME="ch26index76"></A></P>
+<pre>
+
+</pre><BR><pre>
+SELECT   DNAME, DCREATOR, DCOLUMN, DTYPE,
+         BSCHEMA, BNAME
+FROM     SYSIBM.SYSSEQUENCESDEP
+WHERE    DTYPE = 'I'
+ORDER BY DNAME, DCREATOR;
+</pre><BR>
+<P class="docText">Finally, here is the <TT>STOGROUP</TT> listing query:<A NAME="ch26index77"></A><A NAME="ch26index78"></A><A NAME="ch26index79"></A></P>
+<pre>
+
+</pre><BR><pre>
+SELECT   A.NAME, A.VCATNAME,  A.SPACE,
+         A.STATSTIME, A.CREATEDBY, B.VOLID
+FROM     SYSIBM.SYSSTOGROUP  A,
+         SYSIBM.SYSVOLUMES   B
+WHERE    A.NAME = B.SGNAME
+ORDER BY A.NAME;
+</pre><BR>
+<P class="docText">This query shows each storage group defined to your DB2 subsystem, along with pertinent information about the <TT>STOGROUP</TT>, such as</P>
+<UL><LI><P class="docList">The associated <TT>VCAT</TT>, used as the high-level qualifier for all data sets created for objects assigned to this storage group</P></LI><LI><P class="docList">The total space used by objects assigned to this <TT>STOGROUP</TT></P></LI><LI><P class="docList">The authorization ID of the storage group creator</P></LI><LI><P class="docList">The IDs of the DASD volumes assigned to the <TT>STOGROUP</TT> or <TT>*</TT> if SMS is being used</P></LI></UL>
+<P class="docText">Of course, the <TT>STOSPACE</TT> utility must have been run in order for this query to be useful. If <TT>STATSTIME</TT> is <TT>'0001-01-01-00.00.00.000000'</TT> then the <TT>STOSPACE</TT> utility has never been run.</P>
+<P class="docText">Use caution in reviewing the output from this query because the volumes are not returned in the order in which they were specified when the storage group was created. DB2 does not provide the capability of retrieving the order of the volumes in the <TT>STOGROUP</TT>.</P>
+<P class="docText">Navigational monitoring is only one level of DB2 performance monitoring using the DB2 Catalog. The next level delves deeper into the physical characteristics of DB2 objects.<A NAME="ch26index80"></A><A NAME="ch26index81"></A></P>
+<A NAME="ch26lev2sec2"></A><H4 class="docSection2Title">Physical Analysis Queries</H4>
+<P class="docText">Sometimes you must trace a performance problem in a DB2 query to the physical level. Most physical characteristics are specified when DB2 objects are defined and can be modified by SQL <TT>ALTER</TT> statements. Statistics about other physical characteristics that reflect the state of the data in the physical objects are accumulated by <TT>RUNSTATS</TT>. This section concentrates on tablespaces and indexes because these objects require a physical data set.<A NAME="ch26index82"></A><A NAME="ch26index83"></A></P>
+<P class="docText">You have many options for creating any DB2 object. If poor choices are made, performance can suffer. You will find an analysis of the proper DDL choices in <A class="docLink" HREF="ch05.html#ch05">Chapter 5</A>. You can use the physical statistics queries that follow to monitor these options.</P>
+<P class="docText">The physical tablespace statistics query provides a listing of all tablespaces in each database and lists the physical definitions and aggregate statistics detail for each tablespace:<A NAME="ch26index84"></A><A NAME="ch26index85"></A><A NAME="ch26index86"></A><A NAME="ch26index87"></A></P>
+<pre>
+
+</pre><BR><pre>
+SELECT   T.DBNAME, T.NAME, T.STATUS, T.IMPLICIT, T.LOCKMAX, T.LOCKRULE,
+         T.BPOOL, T.ERASERULE, T.CLOSERULE, T.PARTITIONS, T.TYPE,
+         T.SEGSIZE, T.DSSIZE, T.NTABLES, T.NACTIVEF, T.PGSIZE,
+         T.MAXROWS, T.ENCODING_SCHEME, P.CARDF, P.FARINDREF, 
+         P.NEARINDREF, P.PERCACTIVE, P.PERCDROP, P.COMPRESS, P.PAGESAVE, 
+         P.FREEPAGE, P.PCTFREE, P.STORNAME, P.VCATNAME, P.STATSTIME, 
+         P.PARTITION, P.GBPCACHE, P.EXTENTS, P.DSNUM
+FROM     SYSIBM.SYSTABLESPACE   T,
+         SYSIBM.SYSTABLEPART    P
+WHERE    T.NAME = P.TSNAME
+AND      T.DBNAME = P.DBNAME
+ORDER BY T.DBNAME, T.NAME, P.PARTITION;
+</pre><BR>
+<A NAME="ch26note06"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<table width="90%" border="0" cellspacing="0" cellpadding="1"><tr><td width="60" valign="top"><IMG BORDER="0" ALIGN="LEFT" width="30" height="18" SRC="images/0672326132/graphics/V8_icon.gif" ALT="graphics/V8_icon.gif"></td><td valign="top"><P class="docText"> For DB2 Version 8, you should add the following columns to this query: <TT>T.SPACEF</TT> (DASD storage), <TT>T.AVGROWLEN</TT> (average length of the rows in the tablespace), <TT>P.CREATEDTS</TT> (time the partition was created), <TT>P.AVGROWLEN</TT> (average length of the rows in the partition), <TT>T.OLDEST_VERSION</TT> and <TT>T.CURRENT_VERSION</TT> (version information).</P></td></tr></table><br>
+<P class="docText">You will also need to add information about the logical partitioning due to online schema changes (<TT>P.LOGICAL_PART</TT> and <TT>P.LIMITKEY_INTERNAL</TT>).</P></div><br>
+<P class="docText">Having reported on physical tablespace statistics, the next step is to analyze physical index statistics. The physical index statistics query provides a report of all indexes grouped by owner, along with the physical definitions and aggregate statistics supporting each index:<A NAME="ch26index88"></A><A NAME="ch26index89"></A><A NAME="ch26index90"></A><A NAME="ch26index91"></A></P>
+<pre>
+
+</pre><BR><pre>
+SELECT   I.CREATOR, I.NAME, I.INDEXTYPE, I.UNIQUERULE, I.CLUSTERING,
+         I.CLUSTERED, I.CLUSTERRATIOF*100, P.PQTY, P.SECQTYI, 
+         I.FIRSTKEYCARDF, I.FULLKEYCARDF, I.NLEAF, I.NLEVELS, 
+         I.PGSIZE, I.ERASERULE, I.CLOSERULE, I.SPACEF,
+         P.CARDF, P.FAROFFPOSF, P.LEAFDIST, P.NEAROFFPOSF, P.FREEPAGE, 
+         P.PCTFREE, P.STORNAME, P.VCATNAME, P.STATSTIME, P.PARTITION, 
+         P.LEAFFAR, P.LEAFNEAR, P.PSEUDO_DEL_ENTRIES
+FROM     SYSIBM.SYSINDEXES    I,
+         SYSIBM.SYSINDEXPART  P
+WHERE    I.NAME = P.IXNAME
+AND      I.CREATOR = P.IXCREATOR
+ORDER BY I.CREATOR, I.NAME, P.PARTITION;
+</pre><BR>
+<table width="90%" border="0" cellspacing="0" cellpadding="1"><tr><td width="60" valign="top"><IMG BORDER="0" width="30" height="18" SRC="images/0672326132/graphics/V8_icon.gif" ALT="graphics/V8_icon.gif"></td><td valign="top"><P class="docText"> Keep in mind that <TT>SYSIBM.SYSINDEXPART</TT> contains one row for each non-partitioned index, and one row per partition for each partitioning index and data-partitioned secondary index (DPSI).<A NAME="ch26index92"></A><A NAME="ch26index93"></A></P></td></tr></table><br>
+<A NAME="ch26note07"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<table width="90%" border="0" cellspacing="0" cellpadding="1"><tr><td width="60" valign="top"><IMG BORDER="0" ALIGN="LEFT" width="30" height="18" SRC="images/0672326132/graphics/V8_icon.gif" ALT="graphics/V8_icon.gif"></td><td valign="top"><P class="docText"> For DB2 Version 8, you should add the following columns to this query: <TT>I.PADDED</TT> (for variable-length keys, indicates whether the index is padded or not), <TT>I.AVGKEYLEN</TT> (average length of the keys in the index), <TT>I.VERSION</TT>, <TT>I.OLDEST_VERSION</TT>, and <TT>I.CURRENT_VERSION</TT> (for information on the data row format version for this index).</P></td></tr></table><br></div><br>
+<P class="docText">These reports are invaluable tools for diagnosing performance problems when they happen. Frequently, you also can use them to catch problems before they occur.</P>
+<P class="docText">Review each tablespace and index to determine the <TT>CLOSE RULE</TT> for it. Objects accessed infrequently or only once per day do not need to remain open. Although pseudo-closing reduces the impact of implicit, behind-the-scenes data set opening and closing, choosing the proper <TT>CLOSE RULE</TT> is important. Most tablespaces and indexes should use <TT>CLOSE YES</TT> to take advantage of DB2's improved data set <TT>OPEN</TT> and <TT>CLOSE</TT> management techniques.</P>
+<P class="docText">The physical analysis queries are also useful in determining the frequency of reorganization. Monitor the following information:<A NAME="ch26index94"></A><A NAME="ch26index95"></A></P>
+<P><TABLE CELLSPACING="0" FRAME="void" RULES="none" CELLPADDING="5"><COLGROUP><COL width="198"><COL width="352"></COLGROUP><THEAD></THEAD><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>PERCDROP</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>PAGESAVE</TT></P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>NEAROFFPOSF</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>FAROFFPOSF</TT></P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>NEARINDREF</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>FARINDREF</TT></P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>LEAFDIST</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>CLUSTERRATIOF</TT></P></TD></TR></TABLE></P><br>
+<A NAME="ch26note08"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<P class="docText"><TT>NEAROFFPOSF</TT>, <TT>FAROFFPOSF</TT>, and <TT>CLUSTERRATIOF</TT> apply to clustering indexes only.</P></div><br>
+<P class="docText">The <TT>PERCDROP</TT> column for tablespaces indicates the percentage of space occupied by rows from dropped tables. Non-segmented tablespaces cannot reclaim this space until they are reorganized.<A NAME="ch26index96"></A><A NAME="ch26index97"></A></P>
+<P class="docText">The <TT>PAGESAVE</TT> column for tablespaces indicates the percentage of pages saved (per partition) by using ESA compression.<A NAME="ch26index98"></A><A NAME="ch26index99"></A></P>
+<P class="docText">Both the tablespace and index queries display the <TT>STATSTIME</TT> column. It is crucial because <TT>STATSTIME</TT> provides a timestamp indicating when <TT>RUNSTATS</TT> was run to produce the statistical information being reported.<A NAME="ch26index100"></A><A NAME="ch26index101"></A></P>
+<P class="docText">Far-off and near-off pages indicate the degree of tablespace or index disorganization. For non-segmented tablespaces, a page is <span class="docEmphasis">near off</span> if the difference between the page and the next one is between 2 and 15 pages inclusive. For segmented tablespaces, a page is considered near off the present page if the difference between the two pages is between 2 and the <TT>SEGSIZE</TT>x2. A page is <span class="docEmphasis">far off</span> if the difference is 16 or greater. <TT>NEAROFFPOSF</TT> for an index indicates the number of times a different near-off page must be accessed when accessing all the tablespace rows in indexed order. The definition of <TT>FAROFFPOSF</TT> is the same except that far-off page is substituted for near-off page.<A NAME="ch26index102"></A><A NAME="ch26index103"></A><A NAME="ch26index104"></A><A NAME="ch26index105"></A></P>
+<A NAME="ch26note09"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<P class="docText">For segmented tablespaces only: After a <TT>REORG</TT>, the <TT>NEAROFFPOSF</TT> can be greater than 0 if there are multiple space map pages.</P></div><br>
+<P class="docText"><TT>NEAROFFPOSF</TT> and <TT>FAROFFPOSF</TT> are measures to gauge the organization of the data in the underlying table. It assumes that the index in question is the clustering index. Given that assumption, the values indicate how many of the rows in the table are ill-placed. If the index is not the clustering index, <TT>FAROFFPOSF</TT> and <TT>NEAROFFPOSF</TT> are not useful as indicators of data organization.<A NAME="ch26index106"></A><A NAME="ch26index107"></A><A NAME="ch26index108"></A><A NAME="ch26index109"></A></P>
+<P class="docText">The <TT>NEARINDREF</TT> and <TT>FARINDREF</TT> columns for a tablespace indicate the number of rows that have been relocated either near (2 to 15 pages) or far away (16 or more pages) from their original location. This relocation can occur as the result of updates to variable length rows (that is, rows with <TT>VARCHAR</TT> columns, tables with <TT>EDITPROC</TT>s, or compressed rows).<A NAME="ch26index110"></A><A NAME="ch26index111"></A><A NAME="ch26index112"></A><A NAME="ch26index113"></A><A NAME="ch26index114"></A><A NAME="ch26index115"></A></P>
+<P class="docText"><TT>LEAFDIST</TT> helps determine the relative efficiency of each index. <TT>LEAFDIST</TT> indicates the average number of pages between successive index leaf pages. The more intervening pages, the less efficient the index will be.<A NAME="ch26index116"></A><A NAME="ch26index117"></A></P>
+<P class="docText">Finally, you can use <TT>CLUSTERRATIOF</TT> to determine the overall condition of the index as it corresponds to the physical order of the tablespace data. The more clustered an index is, the greater its conformance to the order of the rows as they are physically aligned in the tablespace. A cluster ratio of 100% indicates that the index and the tablespace ordering matches exactly. As the cluster ratio diminishes, access that uses the index becomes less efficient.<A NAME="ch26index118"></A><A NAME="ch26index119"></A></P>
+<A NAME="ch26note10"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<P class="docText"><TT>CLUSTERRATIOF</TT> for partitioned indexes can be found in <TT>SYSIBM.SYSINDEXSTATS</TT>. This <TT>CLUSTERRATIOF</TT> is at the partition level and can help to determine if only a subset of the partitions needs to be reorganized.</P></div><br>
+<P class="docText"><A class="docLink" HREF="#ch26table01">Table 26.1</A> is a guide to using this information to determine how frequently tablespaces and indexes should be reorganized. A + indicates that you should <TT>REORG</TT> more frequently as the value in that column gets larger. A – indicates that you should <TT>REORG</TT> more frequently as the value gets smaller. As the number of + or – increases, the need to <TT>REORG</TT> becomes more urgent. For example, as <TT>PERCDROP</TT> gets larger, the need to <TT>REORG</TT> is very urgent, as indicated by five plus signs. For <TT>CLUSTERRATIOF</TT>, as the value gets smaller, the need to <TT>REORG</TT> increases.<A NAME="ch26index120"></A><A NAME="ch26index121"></A><A NAME="ch26index122"></A></P>
+<A NAME="ch26table01"></A><P><TABLE CELLSPACING="0" FRAME="hsides" RULES="groups" CELLPADDING="5"><CAPTION><h5 class="docTableTitle">Table 26.1. Reorganization Indicators</h5></CAPTION><COLGROUP><COL width="170.5"><COL width="137.5"><COL width="242"></COLGROUP><THEAD><TR><TH class="bottomBorder thead" align="left" valign="top"><P class="docText"><span class="docEmphStrong">Column</span></P></TH><TH class="bottomBorder thead" align="left" valign="top"><P class="docText"><span class="docEmphStrong">Object</span></P></TH><TH class="bottomBorder thead" align="left" valign="top"><P class="docText"><span class="docEmphStrong">Impact</span></P></TH></TR></THEAD><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>PERCDROP</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Tablespace</P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">+++++</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>NEAROFFPOSF</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Tablespace</P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">+</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>FAROFFPOSF</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Tablespace</P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">++++</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>NEARINDREF</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Index</P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">+</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>FARINDREF</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Index</P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">++++</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>LEAFDIST</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Index</P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">+++</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>CLUSTERRATIOF</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Index</P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">– – – – –</P></TD></TR></TABLE></P><br>
+<P class="docText">You also can use the physical analysis queries to learn at a glance the physical characteristics of your tablespaces and indexes. For example, these queries return the following:<A NAME="ch26index123"></A><A NAME="ch26index124"></A><A NAME="ch26index125"></A><A NAME="ch26index126"></A></P>
+<UL><LI><P class="docList">Tablespace and index information about partitioning, page size, erase rule, close rule, cardinality, and storage group or VCAT specification</P></LI><LI><P class="docList">Information about tablespace lock rules, segment size, and whether the tablespace was created implicitly (without explicit DDL)</P></LI><LI><P class="docList">Index-specific statistics such as uniqueness and clustering information</P></LI></UL>
+<P class="docText">Analyzing the tablespace and index space usage also is useful. By monitoring <TT>PERCACTIVE</TT>, <TT>FREEPAGE</TT>, and <TT>PCTFREE</TT> and using a data set allocation report or a <TT>LISTCAT</TT> output, you can review and modify space utilization. Generally, when <TT>PERCACTIVE</TT> is low, you should redefine the tablespace or index with a smaller <TT>PRIQTY</TT>, a smaller <TT>SECQTY</TT>, or both. Free space can be changed as well. In any event, you must monitor these reports with the data set statistics. Also remember that changes to space characteristics do not take effect unless the tablespace being altered is reorganized and the index is reorganized or recovered.</P>
+<P class="docText">Following are notes on using <TT>LISTCAT</TT> with DB2 data sets. <TT>LISTCAT</TT> reads the ICF catalog and displays pertinent values for data sets. The values returned by <TT>LISTCAT</TT> are generally useful for determining the overall status of a data set. However, when the data set is a VSAM data set used by DB2 for tablespaces or indexes, only some fields in the ICF catalog are accurate. They are as follows:<A NAME="ch26index127"></A><A NAME="ch26index128"></A></P>
+<BLOCKQUOTE><P><P class="docList">High used RBA</P></P><P><P class="docList">Number of extents</P></P><P><P class="docList">High allocated RBA</P></P><P><P class="docList">Size of each extent</P></P><P><P class="docList">DFP indicators</P></P><P><P class="docList">Volumes for each extent</P></P></BLOCKQUOTE>
+<A NAME="ch26note11"></A><div class="docNote"><p class="docNoteTitle">CAUTION</p>
+
+<P class="docText">If the <TT>PREFORMAT</TT> option is used, the high used RBA value can be misleading.</P></div><br>
+<P class="docText">You can analyze DB2 tablespace and index DASD use further with the following queries. You can monitor tablespace DASD use by analyzing the results of this query:<A NAME="ch26index129"></A><A NAME="ch26index130"></A><A NAME="ch26index131"></A><A NAME="ch26index132"></A><A NAME="ch26index133"></A></P>
+<pre>
+
+</pre><BR><pre>
+SELECT   T.DBNAME, T.NAME, T.PARTITIONS, T.NTABLES, T.NACTIVEF, T.SPACE,
+         P.PARTITION, P.PQTY, P.SECQTYI, P.STORTYPE, P.STORNAME, P.VCATNAME,
+         (CASE NACTIVEF WHEN 0 THEN 0 
+          ELSE (100*T.NACTIVEF*T.PGSIZE)/T.SPACE END) AS SPACEUSED
+FROM     SYSIBM.SYSTABLESPACE   T,
+         SYSIBM.SYSTABLEPART    P
+WHERE    T.DBNAME = P.DBNAME
+AND      T.NAME = P.TSNAME
+ORDER BY 1, 2, 3, 4, 5, 6, 7, 8;
+</pre><BR>
+<A NAME="ch26note12"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<P class="docText">For partitioned tablespaces, consider joining to the <TT>SYSIBM.SYSTABSTATS</TT> table to get the statistics by partition.</P></div><br>
+<A NAME="ch26note13"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<table width="90%" border="0" cellspacing="0" cellpadding="1"><tr><td width="60" valign="top"><IMG BORDER="0" ALIGN="LEFT" width="30" height="18" SRC="images/0672326132/graphics/V8_icon.gif" ALT="graphics/V8_icon.gif"></td><td valign="top"><P class="docText"> For DB2 Version 8, you should add <TT>P.LOGICAL_PART</TT> column to show the logical partition number (in addition to the <TT>PARTITION</TT> column, which shows the physical partition number).</P></td></tr></table><br></div><br>
+<P class="docText">You can monitor index disk storage usage by analyzing the results of the following query:<A NAME="ch26index134"></A><A NAME="ch26index135"></A><A NAME="ch26index136"></A><A NAME="ch26index137"></A></P>
+<pre>
+
+</pre><BR><pre>
+SELECT   I.CREATOR, I.NAME, I.INDEXTYPE, I.INDEXSPACE, I.SPACE, I.PGSIZE, 
+         P.PARTITION, P.PQTY, P.SECQTYI, P.STORTYPE, P.STORNAME, P.VCATNAME
+FROM     SYSIBM.SYSINDEXES    I,
+         SYSIBM.SYSINDEXPART  P
+WHERE    I.NAME = P.IXNAME
+AND      I.CREATOR = P.IXCREATOR
+ORDER BY 1, 2, 3, 4, 5, 6, 7;
+</pre><BR>
+<P class="docText">These queries return information about only the particular object's DASD space use. The index DASD use query simply repeats the information from the previous physical index statistics query, presenting only DASD space use information. The tablespace DASD query adds a calculation column:<A NAME="ch26index138"></A><A NAME="ch26index139"></A></P>
+<pre>
+
+</pre><BR><pre>
+[(100*T.NACTIVEF*T.PGSIZE)/T.SPACE]
+</pre><BR>
+<A NAME="ch26note14"></A><div class="docNote"><p class="docNoteTitle">CAUTION</p>
+
+<P class="docText">Several factors can cause the previous queries to be inaccurate. The <TT>SPACE</TT> values are only collected for <TT>STOGROUP</TT>-defined objects that have not been archived by SMS. Furthermore, if the <TT>PREFORMAT</TT> option is used, the space information might be misleading.<A NAME="ch26index140"></A><A NAME="ch26index141"></A></P>
+<P class="docText">The <TT>CASE</TT> expression is used to eliminate the possibility of dividing by zero. The <TT>SPACE</TT> column in <TT>SYSIBM.SYSTABLESPACE</TT> can be zero if the <TT>STOSPACE</TT> utility has not been run or if the tablespace was not defined using <TT>STOGROUP</TT>s.<A NAME="ch26index142"></A><A NAME="ch26index143"></A></P></div><br>
+<P class="docText">This calculation shows the percentage of the tablespace being utilized. This number should be monitored to determine a tablespace's DASD requirements. If this number remains below 75% for an extended time, and little growth is expected, decrease the space and reorganize the tablespace, or use <TT>DSN1COPY</TT> to migrate rows to a smaller data set. If the number is 100% or close to it, and growth is expected, increase the space and reorganize.</P>
+<P class="docText">The final physical statistics query presented here is the column value occurrence query:</P>
+<pre>
+
+</pre><BR><pre>
+SELECT   T.DBNAME, T.TSNAME, D.TBOWNER, D.TBNAME,
+         D.NAME, D.FREQUENCYF, D.COLVALUE, D.STATSTIME
+FROM     SYSIBM.SYSCOLDIST   D,
+         SYSIBM.SYSTABLES    T
+WHERE    D.TBOWNER = T.CREATOR
+AND      D.TBNAME = T.NAME
+AND      D.TYPE = 'F'
+ORDER BY T.DBNAME, T.TSNAME, D.TBOWNER, D.TBNAME, D.NAME;
+</pre><BR>
+<P class="docText">Because DB2 enables non-uniform distribution statistics (NUDS) to be collected for groups of multiple columns, the information in the <TT>NAME</TT> column is the first column in the grouping of columns in the "key." Also, <TT>FREQUENCY</TT> changed to <TT>FREQUENCYF</TT> (an integer column changed to a floating-point column).</P>
+<A NAME="ch26note15"></A><div class="docNote"><p class="docNoteTitle">CAUTION</p>
+
+<P class="docText">Prior to DB2 V3, NUDS were stored in <TT>SYSFIELDS</TT> instead of <TT>SYSCOLDIST</TT>. If <TT>SYSIBM.SYSFIELDS</TT> was never purged after migrating to later versions of DB2, old NUDS still may be stored in <TT>SYSFIELDS</TT>, but not used. These artifacts can be misleading if misconstrued to be current.</P></div><br>
+<P class="docText">These queries display the non-uniform distribution statistics stored in the DB2 Catalog for specific columns of each table. The output is arranged in order by database, tablespace, table creator, and table name. The output includes as many as 10 of the most frequently occurring values for table columns that are the first column of the index key.</P>
+<P class="docText">The data shows the column value along with the percentage of times (multiplied by 100) it occurs for that column. This information is useful for tuning dynamic SQL queries. DB2 can choose a different access path for the same SQL statement when predicates contain literals for columns with distribution statistics. The optimizer uses this occurrence information to calculate filter factors. The higher the number of occurrences, the fewer rows the optimizer assumes it can filter out. Column values that appear in this report therefore could require SQL tuning.</P>
+<P class="docText">After this level of performance analysis has been exhausted, you must broaden the scope of your tuning effort. Doing so involves analyzing SQL statements in application programs and possibly building new indexes or changing SQL in application queries.<A NAME="ch26index144"></A><A NAME="ch26index145"></A></P>
+<A NAME="ch26lev2sec3"></A><H4 class="docSection2Title">Partition Statistics Queries</H4>
+<P class="docText">Partition-level statistics are accumulated by <TT>RUNSTATS</TT> to enable the optimizer to make query parallelism decisions. <TT>SYSIBM.SYSCOLDISTSTATS</TT> contains partition-level, non-uniform distribution statistics. <TT>RUNSTATS</TT> collects values for the key columns of each partitioned index. You can use the following query in conjunction with the column value occurrence query presented earlier:<A NAME="ch26index146"></A><A NAME="ch26index147"></A><A NAME="ch26index148"></A></P>
+<pre>
+
+</pre><BR><pre>
+SELECT   T.DBNAME, T.TSNAME, D.PARTITION, D.TBOWNER,
+         D.TBNAME, D.NAME, D.FREQUENCYF, D.COLVALUE, D.STATSTIME
+FROM     SYSIBM.SYSCOLDISTSTATS   D,
+         SYSIBM.SYSTABLES         T
+WHERE    D.TBOWNER = T.CREATOR
+AND      D.TBNAME = T.NAME
+AND      D.TYPE = 'F'
+ORDER BY T.DBNAME, T.TSNAME, D.PARTITION,
+         D.TBOWNER, D.TBNAME, D.NAME;
+</pre><BR>
+<P class="docText">The information in the <TT>NAME</TT> column is the first column in the grouping of columns in the "key."</P>
+<P class="docText">Be sure to label the results of the queries in this section as partition-level statistics so that they are not confused with the equivalent non-partitioned reports discussed in previous sections.</P>
+<P class="docText">The results of the queries in the previous section depicted all tablespaces and indexes, whether partitioned or not. Additional statistics are maintained at the partition level for partitioned tablespaces and indexes. Partition-level physical statistics queries can be issued to retrieve these statistics.</P>
+<P class="docText">The following query provides a report of partitioned tablespaces only, by database, listing the partition-level statistics for each tablespace partition:</P>
+<pre>
+
+</pre><BR><pre>
+SELECT   DBNAME, TSNAME, OWNER, NAME, PARTITION, NACTIVE, 
+         CARDF, PCTPAGES, PCTROWCOMP, STATSTIME
+FROM     SYSIBM.SYSTABSTATS
+ORDER BY DBNAME, TSNAME, NAME, PARTITION;
+</pre><BR>
+<P class="docText">You can issue a partition-level physical index statistics query to retrieve partition statistics for partitioning indexes and DPSIs. The following query provides a report of partitioned indexes only, listing the partition-level statistics for each partition:</P>
+<pre>
+
+</pre><BR><pre>
+SELECT   OWNER, NAME, PARTITION, CLUSTERRATIOF, FIRSTKEYCARDF,
+         FULLKEYCARDF, NLEAF, NLEVELS, KEYCOUNTF, STATSTIME
+FROM     SYSIBM.SYSINDEXSTATS
+ORDER BY OWNER, NAME, PARTITION;
+</pre><BR>
+<P class="docText">You can analyze the results of the tablespace and index partition-level statistics reports to help you determine whether query parallelism could enhance performance of queries accessing these partitioned tablespaces.<A NAME="ch26index149"></A><A NAME="ch26index150"></A><A NAME="ch26index151"></A></P>
+<A NAME="ch26lev2sec4"></A><H4 class="docSection2Title">Programmer's Aid Queries</H4>
+<P class="docText">Often, you must determine which plans and packages are in a DB2 subsystem. The following programmer's aid queries help you keep this information accurate. Plans can contain DBRMs, packages, or both. The following query lists the plans that contain DBRMs and the DBRMs they contain:<A NAME="ch26index152"></A><A NAME="ch26index153"></A></P>
+<pre>
+
+</pre><BR><pre>
+SELECT   P.NAME, P.CREATOR, P.BOUNDBY, P.BOUNDTS, P.ISOLATION,
+         P.VALID, P.OPERATIVE, P.ACQUIRE, P.RELEASE, P.EXPLAN,
+         P.GROUP_MEMBER, P.DYNAMICRULES, P.REOPTVAR, P.KEEPDYNAMIC,
+         P.OPTHINT, D.NAME, D.PDSNAME, D.HOSTLANG, D.PRECOMPTS
+FROM     SYSIBM.SYSPLAN P,
+         SYSIBM.SYSDBRM D
+WHERE    P.NAME = D.PLNAME
+ORDER BY P.NAME, D.NAME, D.PRECOMPTS; 
+</pre><BR>
+<P class="docText">The next programmer's aid query lists all plans that contain packages and the packages they contain. Remember that packages are composed of a single DBRM.</P>
+<pre>
+
+</pre><BR><pre>
+SELECT   P.NAME, P.CREATOR, P.BOUNDBY, P.BOUNDTS, P.ISOLATION, 
+         P.VALID, P.OPERATIVE, P.ACQUIRE, P.RELEASE, P.EXPLAN, 
+         P.GROUP_MEMBER, P.DYNAMICRULES, P.REOPTVAR, P.KEEPDYNAMIC,
+         P.OPTHINT, K.LOCATION, K.COLLID, K.NAME, K.TIMESTAMP
+FROM     SYSIBM.SYSPLAN      P,
+         SYSIBM.SYSPACKLIST  K
+WHERE    P.NAME = K.PLANNAME
+ORDER BY P.NAME, K.LOCATION, K.COLLID, K.NAME, K.TIMESTAMP;
+</pre><BR>
+<P class="docText">You can use the following query to track the DBRM libraries and packages. It details DBRM information for all packages. Although the DBRM name and the package name are equivalent, and a one-to-one correlation exists between packages and DBRMs, monitoring the DBRM information for each package is useful.</P>
+<pre>
+
+</pre><BR><pre>
+SELECT   COLLID, NAME, CREATOR, QUALIFIER, TIMESTAMP,
+         BINDTIME, ISOLATION, VALID, OPERATIVE, RELEASE,
+         EXPLAIN, PCTIMESTAMP, PDSNAME, VERSION,
+         GROUP_MEMBER, DEFERPREPARE, DYNAMICRULES, REOPTVAR, KEEPDYNAMIC
+FROM     SYSIBM.SYSPACKAGE
+ORDER BY COLLID, NAME, VERSION;
+</pre><BR>
+<P class="docText">You can use the output from these three queries to track the composition and disposition of all DB2 plans and packages. For example, you can determine whether a plan or package is valid and operative. Invalid and inoperative plans require rebinding (and possible program changes) before execution. You can check on the parameters used to bind the plan or package, such as the isolation level specified (for example, <TT>CS</TT> versus <TT>RR</TT> versus <TT>UR</TT>) or whether reoptimization is available for dynamic SQL (<TT>REOPTVARS</TT>). The <TT>OPTHINT</TT> column identifies those plans using an optimization hint as input to the bind process. These queries should be used to monitor your bind parameters to ensure that they are specified as outlined in <A class="docLink" HREF="ch13.html#ch13">Chapter 13</A>, "Program Preparation." Finally, you can trace <TT>-818 SQLCODE</TT>s by checking <TT>PRECOMPTS</TT> against the date and time stored for the appropriate program load module.<A NAME="ch26index154"></A><A NAME="ch26index155"></A></P>
+<P class="docText">Another query that may be useful is to determine which plan and packages have SQL statements that use explicit, statement-level dirty reads (isolation <TT>UR</TT>). You can use the following queries to find these plans and packages. Use this query to find plans containing SQL using the <TT>WITH 'UR'</TT> clause:</P>
+<pre>
+
+</pre><BR><pre>
+SELECT   DISTINCT S.PLNAME
+FROM     SYSIBM.SYSPLAN     P,
+         SYSIBM.SYSSTMT     S
+WHERE    P.NAME = S.PLNAME
+AND      S.ISOLATION = 'U'
+ORDER BY S.PLNAME;
+</pre><BR>
+<P class="docText">Use this query to find packages containing SQL using the <TT>WITH 'UR'</TT> clause:</P>
+<pre>
+
+</pre><BR><pre>
+SELECT   DISTINCT P.COLLID, P.NAME, P.VERSION
+FROM     SYSIBM.SYSPACKAGE  P,
+         SYSIBM.SYSPACKSTMT S
+WHERE    P.LOCATION = S.LOCATION
+AND      P.COLLID = S.COLLID
+AND      P.NAME = S.NAME
+AND      P.VERSION = S.VERSION
+AND      S.ISOLATION = 'U'
+ORDER BY P.COLLID, P.NAME, P.VERSION;
+</pre><BR>
+<P class="docText">Three other queries are useful as programmer's aids. The plan dependency query follows:<A NAME="ch26index156"></A></P>
+<pre>
+
+</pre><BR><pre>
+SELECT   D.DNAME, P.CREATOR, P.QUALIFIER, P.VALID, P.ISOLATION,
+         P.ACQUIRE, P.RELEASE, P.EXPLAN, P.PLSIZE, D.BCREATOR,
+         D.BNAME, D.BTYPE
+FROM     SYSIBM.SYSPLANDEP   D,
+         SYSIBM.SYSPLAN      P
+WHERE    P.NAME = D.DNAME
+ORDER BY D.DNAME, D.BTYPE, D.BCREATOR, D.BNAME;
+</pre><BR>
+<P class="docText">Likewise, the package dependency query can be quite useful:<A NAME="ch26index157"></A></P>
+<pre>
+
+</pre><BR><pre>
+SELECT   P.COLLID, D.DNAME, P.CONTOKEN, P.CREATOR,
+         P.QUALIFIER, P.VALID, P.ISOLATION, P.RELEASE,
+         P.EXPLAIN, P.PKSIZE, D.BQUALIFIER, D.BNAME, D.BTYPE
+FROM     SYSIBM.SYSPACKDEP   D,
+         SYSIBM.SYSPACKAGE   P
+WHERE    P.NAME = D.DNAME
+AND      P.COLLID = D.DCOLLID
+AND      P.CONTOKEN = D.DCONTOKEN
+ORDER BY P.COLLID, D.DNAME, P.CONTOKEN, D.BTYPE, D.BQUALIFIER,
+         D.BNAME;
+</pre><BR>
+<P class="docText">These queries detail the DB2 objects used by every DB2 plan and package. When database changes are needed, you can analyze the output from these queries to determine which packages and plans might be affected by structural changes.<A NAME="ch26index158"></A><A NAME="ch26index159"></A></P>
+<P class="docText">Finally, programmers may need to know what stored procedures and user-defined functions are available and how they are defined. This query can be used to gather information about DB2 stored procedures:</P>
+<pre>
+
+</pre><BR><pre>
+SELECT   SCHEMA, NAME, LANGUAGE, PROGRAM_TYPE, SPECIFICNAME,
+         COLLID, PARAMETER_STYLE, ASUTIME, SQL_DATA_ACCESS, 
+         DBINFO, COMMIT_ON_RETURN, STAYRESIDENT, RUNOPTS,
+         PARM_COUNT, EXTERNAL_ACTION, RESULT_SETS, WLM_ENVIRONMENT, 
+         WLM_ENV_FOR_NESTED, EXTERNAL_SECURITY
+FROM     SYSIBM.SYSROUTINES
+WHERE    ROUTINETYPE = 'P'
+ORDER BY SCHEMA, NAME;
+</pre><BR>
+<P class="docText">For user-defined function information, execute the following query:</P>
+<pre>
+
+</pre><BR><pre>
+SELECT   SCHEMA, NAME, LANGUAGE, SPECIFICNAME, FUNCTION_TYPE, ORIGIN,
+         SOURCESCHEMA, SOURCESPECIFIC, DETERMINISTIC, NULL_CALL,
+         CAST_FUNCTION, SCRATCHPAD, SCRATCHPAD_LENGTH, FINAL_CALL,
+         PARALLEL, PROGRAM_TYPE, COLLID, PARAMETER_STYLE, SQL_DATA_ACCESS, 
+         DBINFO, STAYRESIDENT, RUNOPTS, PARM_COUNT, EXTERNAL_ACTION, 
+         WLM_ENVIRONMENT, WLM_ENV_FOR_NESTED, EXTERNAL_SECURITY,
+         ASUTIME, IOS_PER_INVOC, INSTS_PER_INVOC, INITIAL_IOS, INITIAL_INSTS,
+         CARDINALITY, RESULT_COLS
+FROM     SYSIBM.SYSROUTINES
+WHERE    ROUTINETYPE = 'F'
+ORDER BY SCHEMA, NAME;
+</pre><BR>
+<P class="docText">The next section takes this form of DB2 performance monitoring to the next level, incorporating DB2 Catalog monitoring with <TT>EXPLAIN</TT>.<A NAME="ch26index160"></A><A NAME="ch26index161"></A></P>
+<A NAME="ch26lev2sec5"></A><H4 class="docSection2Title">Application Efficiency Queries</H4>
+<P class="docText">The application efficiency queries combine the best of <TT>EXPLAIN</TT> monitoring with the best of DB2 Catalog monitoring. The reports produced by these queries show many potential performance problems. By combining the DB2 Catalog information with the output from <TT>EXPLAIN</TT>, you can identify a series of "problem queries."<A NAME="ch26index162"></A><A NAME="ch26index163"></A></P>
+<P class="docText">These problem queries are grouped into two categories: tablespace scans and index scans. DB2 scans data sets to satisfy queries using tablespace scans and index scans. A tablespace scan reads every page in the tablespace and does not use an index. An index scan might or might not read every index subpage.</P>
+<P class="docText">The tablespace scan query follows:<A NAME="ch26index164"></A></P>
+<pre>
+
+</pre><BR><pre>
+SELECT   E.APPLNAME, E.PROGNAME, E.QUERYNO, E.TNAME,
+         T.NPAGES, E.TIMESTAMP, S.SEQNO, S.TEXT
+FROM     <span class="docEmphasis">ownerid</span>.PLAN_TABLE  E,
+         SYSIBM.SYSTABLES    T,
+         SYSIBM.SYSSTMT      S
+WHERE    ACCESSTYPE = 'R'
+AND      (T.NPAGESF &gt; 50 OR T.NPAGESF &lt; 0)
+AND      T.NAME = E.TNAME
+AND      T.CREATOR = E.CREATOR
+AND      S.NAME = E.PROGNAME
+AND      S.PLNAME = E.APPLNAME
+AND      S.STMTNO = E.QUERYNO
+ORDER BY E.APPLNAME, E.PROGNAME, E.TIMESTAMP DESC,
+         E.QUERYNO, S.SEQNO;
+</pre><BR>
+<P class="docText">The following is the index scan query:<A NAME="ch26index165"></A></P>
+<pre>
+
+</pre><BR><pre>
+SELECT   E.APPLNAME, E.PROGNAME, E.QUERYNO, I.NAME, I.NLEAF,
+         I.COLCOUNT, E.MATCHCOLS, E.INDEXONLY, E.TIMESTAMP,
+         S.SEQNO, S.TEXT
+FROM     <span class="docEmphasis">ownerid</span>.PLAN_TABLE  E,
+         SYSIBM.SYSINDEXES   I,
+         SYSIBM.SYSSTMT      S
+WHERE    E.ACCESSTYPE = 'I'
+AND      I.NLEAF &gt; 100
+AND      E.MATCHCOLS &lt; I.COLCOUNT
+AND      I.NAME = E.ACCESSNAME
+AND      I.CREATOR = E.ACCESSCREATOR
+AND      S.NAME = E.PROGNAME
+AND      S.PLNAME = E.APPLNAME
+AND      S.STMTNO = E.QUERYNO
+ORDER BY E.APPLNAME, E.PROGNAME, E.TIMESTAMP DESC,
+         E.QUERYNO, S.SEQNO;
+</pre><BR>
+<P class="docText">Because these queries usually take a long time to run, they should not be executed in parallel with heavy production DB2 processing or during the online DB2 transaction window. To ensure that the scan queries operate efficiently, make sure that the <TT>PLAN_TABLE</TT> used in each query does not contain extraneous data. Strive to maintain only the most recent <TT>EXPLAIN</TT> data from production <TT>BIND</TT> jobs in the table. Also, keep <TT>EXPLAIN</TT> information only for plans that must be monitored. Executing <TT>RUNSTATS</TT> on your <TT>PLAN_TABLES</TT> also can increase the performance of these queries.</P>
+<P class="docText">The tablespace scan report lists queries that scan more than 50 pages and queries that access tables without current <TT>RUNSTATS</TT> information. If <TT>NPAGES</TT> is <TT>-1</TT> for any table, <TT>RUNSTATS</TT> has not been run. A <TT>RUNSTATS</TT> job should be executed as soon as possible, followed by a rebind of any plan that uses this table. Everything else on this report should be monitored closely. For tables just over the 50-page threshold, the effect on performance is uncertain. As the number of scanned pages increases, so does the potential for performance problems.</P>
+<P class="docText">The 50-page cutoff is arbitrary; you might want to redefine it as you gauge the usefulness of the information returned. If you monitor only large tables, you might want to increase this number to 100 (or larger). This number varies according to your shop's definition of a "large table." If you have a small buffer pool (fewer than 1,000 buffers), you might want to reduce this number.<A NAME="ch26index166"></A><A NAME="ch26index167"></A></P>
+<P class="docText">For tables with 20 or more pages, try to create indexes to satisfy the predicates of each query. Keep in mind, though, that creating an index for every predicate is not always possible. There is a trade-off between read efficiency and update efficiency as the number of indexes on a particular table increases.</P>
+<P class="docText">The index scan query reports on all SQL statements that scan more than 100 index leaf pages on which a match on the columns in the query is not a complete match on all index columns. As the number of matching columns increases, performance problems decrease. The worst case is zero matching columns, but even this number might be acceptable for an index-only scan.</P>
+<P class="docText">You might need to modify the 100-page cutoff value for the index scan query too. You might want to use the same number as the one chosen for the tablespace scan report (or some other value that works well in your environment).</P>
+<P class="docText">Although every query listed in these reports is not necessarily a problem query, you should closely monitor each one. Corrective actions for poorly performing queries are outlined in <A class="docLink" HREF="part05.html#part05">Part V</A>, "DB2 Performance Tuning."<A NAME="ch26index168"></A><A NAME="ch26index169"></A></P>
+<A NAME="ch26lev2sec6"></A><H4 class="docSection2Title">Historical Queries</H4>
+<table width="90%" border="0" cellspacing="0" cellpadding="1"><tr><td width="60" valign="top"><IMG BORDER="0" width="30" height="18" SRC="images/0672326132/graphics/V7_icon.gif" ALT="graphics/V7_icon.gif"></td><td valign="top"><P class="docText"> DB2 V7 introduced nine new tables containing historical statistics to the DB2 Catalog. Historical statistics are accumulated by <TT>RUNSTATS</TT> when the <TT>HISTORY</TT> parameter is specified. The DB2 Catalog tables that contain historical statistics are as follows:<A NAME="ch26index170"></A><A NAME="ch26index171"></A></P></td></tr></table><br>
+<P><TABLE CELLSPACING="0" FRAME="void" RULES="none" CELLPADDING="5"><COLGROUP><COL width="275"><COL width="275"></COLGROUP><THEAD></THEAD><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>SYSIBM.SYSCOLDIST_HIST</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>SYSIBM.SYSCOLUMNS_HIST</TT></P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>SYSIBM.SYSINDEXES_HIST</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>SYSIBM.SYSINDEXPART_HIST</TT></P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>SYSIBM.SYSINDEXSTATS_HIST</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>SYSIBM.SYSLOBSTATS_HIST</TT></P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>SYSIBM.SYSTABLEPART_HIST</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>SYSIBM.SYSTABSTATS_HIST</TT></P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>SYSIBM.SYSTABLES_HIST</TT></P></TD><TD class="docTableCell" align="left" valign="top">&nbsp;</TD></TR></TABLE></P><br>
+<P class="docText">You can use these history tables to identify trends, patterns, and issues by comparing old statistics to current statistics. For example, run the following query to identify tablespace partitions that have grown in extents between <TT>RUNSTATS</TT> executions:</P>
+<pre>
+
+</pre><BR><pre>
+SELECT   P.DBNAME, P.TSNAME, P.PARTITION, P.PQTY, P.SECQTYI,
+         P.NEARINDREF, P.FARINDREF, P.PERCACTIVE, P.PERCDROP,
+         P.PAGESAVE, P.SPACEF, P.EXTENTS, P.STATSTIME
+FROM     SYSIBM.SYSTABLEPART      P,
+         SYSIBM.SYSTABLEPART_HIST H
+WHERE    P.EXTENTS &gt; H.EXTENTS
+AND      P.DBNAME = H.DBNAME
+AND      P.TSNAME = H.TSNAME
+AND      P.PARTITION = H.PARTITION
+AND      H.STATSTIME = (SELECT MAX(STATSTIME) 
+                        FROM SYSIBM.SYSTABLEPART_HIST H2
+                        WHERE H2.DBNAME = P.DBNAME
+                        AND   H2.TSNAME = P.TSNAME
+                        AND   H2.PARTITION = P.PARTITION
+                       )
+ORDER BY P.DBNAME, P.TSNAME, P.PARTITION;
+</pre><BR>
+<P class="docText">This query joins the history table to the current table for tablespace partition statistics. The subselect is to make sure that we retrieve only the last historical statistic. That is the maximum <TT>STATSTIME</TT> from <TT>SYSIBM.SYSTABLEPART_HIST</TT>, because there can be multiple historical rows in the history tables.</P>
+<P class="docText">You can create similar queries for any of the historical tables, checking on changes to any of the statistics (not just <TT>EXTENTS</TT>).</P>
+<P class="docText">Another interesting historical query you can use is a simple listing of the statistics over time. In this case we will look at index statistics using <TT>SYSIBM.SYSINDEXES_HIST</TT>:</P>
+<pre>
+
+</pre><BR><pre>
+SELECT   TBCREATOR, TBNAME, CREATOR, NAME, STATSTIME, 
+         CLUSTERING, CLUSTERRATIOF, NLEAF, NLEVELS, 
+         FIRSTKEYCARDF, FULLKEYCARDF, SPACEF, AVGKEYLEN
+FROM     SYSIBM.SYSINDEXES_HIST
+ORDER BY TBCREATOR, TBNAME, CREATOR, NAME, STATSTIME DESC;
+</pre><BR>
+<P class="docText">This query will produce a report of historical statistics for each index in order by the table and index names, and in chronological order from oldest to most recent statistic row. You can examine this report to analyze the number of levels for the index over time, whether or not clustering has changed, and cardinality information over time. Similar reports can be generated for each of the historical statistics tables in the DB2 Catalog.<A NAME="ch26index172"></A><A NAME="ch26index173"></A></P>
+<A NAME="ch26lev2sec7"></A><H4 class="docSection2Title">Authorization Queries</H4>
+<P class="docText">You can implement five types of security in DB2: database security, plan and package security, system-level authorization, security on tables and views, and resource privileges:<A NAME="ch26index174"></A><A NAME="ch26index175"></A></P>
+<P><TABLE CELLSPACING="0" FRAME="void" RULES="none" CELLPADDING="5"><COLGROUP><COL width="148.5"><COL width="401.5"></COLGROUP><THEAD></THEAD><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><span class="docEmphasis">Database security</span></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Controls database-level privileges. Anyone holding a database privilege can perform actions on all dependent database objects.<A NAME="ch26index176"></A><A NAME="ch26index177"></A></P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><span class="docEmphasis">Plan and package</span></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Dictates whether users can copy security packages and bind or execute plans and packages.<A NAME="ch26index178"></A><A NAME="ch26index179"></A><A NAME="ch26index180"></A><A NAME="ch26index181"></A></P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><span class="docEmphasis">System-level</span></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Indicates systemwide authority, <span class="docEmphasis">authorization</span> such as global authority to create new objects, authority to trace, and the capability to hold specific systemwide authorities, such as <TT>SYSADM</TT>, <TT>SYSCTRL</TT>, and <TT>SYSOPR</TT>.</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><span class="docEmphasis">Security on tables</span></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Indicates whether the data in the tables and views can be accessed or updated. This authorization is granted at the table, view, or column level.<A NAME="ch26index182"></A><A NAME="ch26index183"></A></P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><span class="docEmphasis">Resource privileges</span></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Indicates whether users can use DB2 resources such as buffer pools, tablespaces, and storage groups.<A NAME="ch26index184"></A><A NAME="ch26index185"></A></P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><span class="docEmphasis">Routine privileges</span></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Indicates whether users can execute stored routines, such as stored procedures and user-defined functions.</P></TD></TR></TABLE></P><br>
+<P class="docText">You can execute the following queries to ascertain the authority granted for each of these types of security. Note that two forms of each query are provided; the authorization information can be returned either in DB2 object (or DB2 resource) order or by the user who possesses the authority.</P>
+<A NAME="ch26list01"></A><H5 class="docExampleTitle">Example . Database authority query:</H5>
+
+<PRE>
+<A NAME="ch26index186"></A>SELECT   NAME, GRANTEE, GRANTOR, GRANTEDTS, GRANTEETYPE,
+         CREATETABAUTH, CREATETSAUTH, DBADMAUTH,
+         DBCTRLAUTH, DBMAINTAUTH, DISPLAYDBAUTH,
+         DROPAUTH, IMAGCOPYAUTH, LOADAUTH, REORGAUTH,
+         RECOVERDBAUTH, REPAIRAUTH, STARTDBAUTH,
+         STATSAUTH, STOPAUTH, AUTHHOWGOT
+FROM     SYSIBM.SYSDBAUTH
+ORDER BY NAME, GRANTEE, GRANTOR;
+</PRE><BR>
+
+<A NAME="ch26list02"></A><H5 class="docExampleTitle">Example . Table authority query:</H5>
+
+<PRE>
+<A NAME="ch26index187"></A>SELECT   TCREATOR, TTNAME, SCREATOR, STNAME, GRANTEE, GRANTOR,
+         GRANTEETYPE, UPDATECOLS, ALTERAUTH, DELETEAUTH, GRANTEDTS,
+         INDEXAUTH, INSERTAUTH, SELECTAUTH, UPDATEAUTH,
+         REFCOLS, REFERENCESAUTH, AUTHHOWGOT
+FROM     SYSIBM.SYSTABAUTH
+ORDER BY TCREATOR, TTNAME, GRANTEE, GRANTOR;
+</PRE><BR>
+
+<A NAME="ch26list03"></A><H5 class="docExampleTitle">Example . Column authority query:</H5>
+
+<PRE>
+<A NAME="ch26index188"></A>SELECT   CREATOR, TNAME, COLNAME, PRIVILEGE, GRANTEE, GRANTOR,
+         GRANTEETYPE, TIMESTAMP, GRANTEDTS
+FROM     SYSIBM.SYSCOLAUTH
+ORDER BY CREATOR, TNAME, COLNAME, GRANTEE;
+</PRE><BR>
+
+<A NAME="ch26list04"></A><H5 class="docExampleTitle">Example . Resource authority query:</H5>
+
+<PRE>
+<A NAME="ch26index189"></A>SELECT   QUALIFIER, NAME, OBTYPE, GRANTEE, GRANTOR,
+         GRANTEDTS, USEAUTH, AUTHHOWGOT
+FROM     SYSIBM.SYSRESAUTH
+ORDER BY GRANTEE, QUALIFIER, NAME, GRANTOR;
+</PRE><BR>
+
+<A NAME="ch26list05"></A><H5 class="docExampleTitle">Example . Routine authority query:</H5>
+
+<PRE>
+<A NAME="ch26index190"></A>SELECT   SCHEMA, SPECIFICNAME, ROUTINETYPE, 
+         GRANTEE, GRANTEETYPE, EXECUTEAUTH, 
+         GRANTEDTS, AUTHHOWGOT
+FROM     SYSIBM.SYSROUTINEAUTH
+ORDER BY GRANTEE, SCHEMA, SPECIFICNAME, GRANTOR;
+</PRE><BR>
+
+<A NAME="ch26list06"></A><H5 class="docExampleTitle">Example . User authority query:</H5>
+
+<PRE>
+<A NAME="ch26index191"></A>SELECT   GRANTEE, GRANTOR, GRANTEDTS, ALTERBPAUTH,
+         BINDADDAUTH, BSDSAUTH, CREATETMTABAUTH,
+         CREATEDBAAUTH, CREATEDBCAUTH, CREATESGAUTH,
+         CREATEALIASAUTH, DISPLAYAUTH, RECOVERAUTH,
+         STOPALLAUTH, STOSPACEAUTH, SYSADMAUTH, SYSCTRLAUTH,
+         SYSOPRAUTH, BINDAGENTAUTH, ARCHIVEAUTH,
+         TRACEAUTH, MON1AUTH, MON2AUTH, AUTHHOWGOT
+FROM     SYSIBM.SYSUSERAUTH
+ORDER BY GRANTEE, GRANTOR;
+</PRE><BR>
+
+<A NAME="ch26list07"></A><H5 class="docExampleTitle">Example . Plan authority query:</H5>
+
+<PRE>
+<A NAME="ch26index192"></A>SELECT   NAME, GRANTEE, GRANTOR, GRANTEDTS,
+         GRANTEETYPE,BINDAUTH, EXECUTEAUTH, AUTHHOWGOT
+FROM     SYSIBM.SYSPLANAUTH
+ORDER BY NAME, GRANTEE, GRANTOR;<A NAME="ch26index193"></A><A NAME="ch26index194"></A>
+</PRE><BR>
+
+<A NAME="ch26list08"></A><H5 class="docExampleTitle">Example . Package authority query:</H5>
+
+<PRE>
+<A NAME="ch26index195"></A>SELECT   COLLID, NAME, GRANTEE, GRANTOR, CONTOKEN,
+         TIMESTAMP, GRANTEETYPE, AUTHHOWGOT,
+         BINDAUTH, COPYAUTH, EXECUTEAUTH
+FROM     SYSIBM.SYSPACKAUTH
+ORDER BY COLLID, NAME, GRANTEE, GRANTOR;
+</PRE><BR>
+
+<A NAME="ch26list09"></A><H5 class="docExampleTitle">Example . Sequence authority query:</H5>
+
+<PRE>
+<A NAME="ch26index196"></A></PRE><BR>
+
+<IMG BORDER="0" width="30" height="18" SRC="images/0672326132/graphics/V8_icon.gif" ALT="graphics/V8_icon.gif">
+
+<PRE>
+SELECT   SCHEMA, NAME, GRANTEE, COLLID, CONTOKEN, GRANTOR, 
+         GRANTEDTS, GRANTEETYPE, AUTHHOWGOT, 
+         ALTERAUTH, USEAUTH, EXECUTEAUTH
+FROM     SYSIBM.SYSSEQUENCEAUTH
+ORDER BY SCHEMA, NAME, GRANTEE, GRANTOR;
+</PRE><BR>
+
+<P class="docText">Security is not often associated with performance monitoring, but it can help you determine the following items. If certain types of authority are granted to many users, and security checking becomes inefficient, you might want to grant the authority to <TT>PUBLIC</TT>. This way, you can reduce the number of entries in the DB2 Catalog, thereby reducing the strain on the DB2 subsystem. Don't grant <TT>PUBLIC</TT> access, however, if audit regulations or data sensitivity is an issue.</P>
+<P class="docText">In addition, monitoring who can access data can help you determine the potential effect on workload. As the number of users who can access a piece of data increases, the potential for workload and capacity problems increases.<A NAME="ch26index197"></A><A NAME="ch26index198"></A></P>
+<A NAME="ch26lev2sec8"></A><H4 class="docSection2Title">DB2 Catalog Query Guidelines</H4>
+<P class="docText">Heed the following advice when implementing DB2 Catalog queries to obtain information about your DB2 environment.</P>
+<A NAME="ch26lev4sec1"></A><H5 class="docSection3Title">Use Queries As a Starting Point</H5>
+<P class="docText">The queries in this chapter are only suggestions. If you want to change the sort order or alter the columns being queried, you can use the queries in this chapter as templates. For example, to determine the table authority granted to users, you can modify the sort order of the table authority query, as shown in the following SQL statement:<A NAME="ch26index199"></A></P>
+<pre>
+
+</pre><BR><pre>
+SELECT   TCREATOR, TTNAME, SCREATOR, STNAME, GRANTEE, GRANTOR,
+         GRANTEETYPE, UPDATECOLS, ALTERAUTH, DELETEAUTH, GRANTEDTS,
+         INDEXAUTH, INSERTAUTH, SELECTAUTH, UPDATEAUTH,
+         REFCOLS, REFERENCESAUTH, AUTHHOWGOT
+FROM     SYSIBM.SYSTABAUTH
+ORDER BY GRANTEE, TCREATOR, TTNAME, GRANTOR;
+</pre><BR>
+<P class="docText">The reports in this chapter are suggestions that have worked well for me. Changing them to suit your needs is easy because of the ad hoc nature of SQL.</P>
+<A NAME="ch26lev4sec2"></A><H5 class="docSection3Title">Use QMF to Create Formatted Reports</H5>
+<P class="docText">The queries in this chapter were developed using QMF. You can run them weekly using a batch QMF job. Using the batch job is easier than submitting the queries weekly from QMF or through SPUFI. Simply build batch QMF JCL, incorporate all these queries and forms into a proc, and then run the proc.<A NAME="ch26index200"></A><A NAME="ch26index201"></A><A NAME="ch26index202"></A><A NAME="ch26index203"></A></P>
+<P class="docText">You can create QMF forms for each query to present the output in a pleasing format. You can change control breaks, different headings for columns, and the spacing between columns. A sample QMF form for the table listing query is presented in <A class="docLink" HREF="#ch26list10">Listing 26.1</A>. To create a form for any of the queries in this chapter in QMF, simply type and execute the query. Press F9 to display the form panel and then modify the form.</P>
+<A NAME="ch26list10"></A><H5 class="docExampleTitle">Listing 26.1. Sample QMF Form for the Table Listing Query</H5><A NAME="ch26index204"></A>
+
+<PRE>
+FORM.COLUMNS
+Total Width of Report Columns: 216
+NUM  COLUMN HEADING USAGE     INDENT    WIDTH     EDIT      SEQ
+1   _DATABASE       BREAK1    1         8         C         1
+2    TABLE_SPACE    BREAK2    1         8         C         2
+3    TABLE_CREATOR  BREAK3    1         8         C         3
+4    _TABLE         BREAK3    1         18        C         4
+5    CREATEDTS                1         26        TSI       5
+6    ALTEREDTS                1         26        TSI       6
+7    COL_NO                   1         3         L         7
+8    COLUMN_NAME              1         18        C         8
+9    COLUMN_TYPE              1         8         C         9
+10   COLUMN_LENGTH            1         6         L         10
+11   SCALE                    1         6         L         11
+12   NU_LL                    1         2         C         12
+13   DF_LT                    1         2         C         13
+14   COL_CARD                 1         8         L         14
+15   HIGH2_KEY                1         8         C         15
+16   LOW2_KEY                 1         8         C         16
+17   STATSTIME                1         26        TSI       17
+18   FLD_PROC                 1         4         C         18
+</PRE><BR>
+
+<P class="docText">The table listing query is presented again to help you visualize how the QMF form helps to display the query results:</P>
+<pre>
+
+</pre><BR><pre>
+SELECT   T.DBNAME, T.TSNAME, T.CREATOR, T.NAME, T.CREATEDTS, T.ALTEREDTS, 
+         C.COLNO, C.NAME, C.COLTYPE, C.LENGTH, C.SCALE, C.NULLS, 
+         C.DEFAULT, C.COLCARDF, HEX(C.HIGH2KEY) AS HIGH2KEY, 
+         HEX(C.LOW2KEY) AS LOW2KEY, C.STATSTIME, C.FLDPROC
+FROM     SYSIBM.SYSCOLUMNS   C,
+         SYSIBM.SYSTABLES    T
+WHERE    T.CREATOR = C.TBCREATOR
+AND      T.NAME = C.TBNAME
+AND      T.TYPE = 'T'
+ORDER BY T.DBNAME, T.TSNAME, T.CREATOR, T.NAME, C.COLNO;<A NAME="ch26index205"></A><A NAME="ch26index206"></A><A NAME="ch26index207"></A><A NAME="ch26index208"></A>
+</pre><BR>
+<A NAME="ch26lev4sec3"></A><H5 class="docSection3Title">Become Familiar with the Data in the DB2 Catalog</H5>
+<P class="docText">You can produce many reports from the DB2 Catalog to aid in performance monitoring. This chapter details some of them. As you become more familiar with the DB2 Catalog and the needs of your application, you can formulate additional queries geared to the needs of your organization.<A NAME="ch26index209"></A></P>
+<P class="docText">A complete listing and description of the DB2 Catalog tables and columns can be found in the IBM SQL Reference manual (SC26-9944 for Version 7; SC18-7426 for Version 8).</P>
+<A NAME="ch26lev4sec4"></A><H5 class="docSection3Title">Use the <TT>DECIMAL</TT> Function for Readability</H5>
+<P class="docText">When retrieving floating point data, such as the columns that end with the letter F, use the <TT>DECIMAL</TT> function to display the results as a decimal number. For example,<A NAME="ch26index210"></A></P>
+<pre>
+
+</pre><BR><pre>
+SELECT ... DECIMAL(NACTIVEF) ...
+</pre><BR>
+<P class="docText">This will produce more readable query results. Without the <TT>DECIMAL</TT> function, the results will be displayed as an exponential expression, such as 2.013 * 10<SUP>12</SUP>.</P>
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="ch26.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="ch26lev1sec2.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

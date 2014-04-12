@@ -1,0 +1,208 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>Batch Programming Guidelines</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="ch11lev1sec7.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="ch11lev1sec9.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="ch11lev1sec8"></A><H3 class="docSection1Title">Batch Programming Guidelines</H3>
+<P class="docText">When coding batch DB2 programs the following tips and tricks can be used to create effective and useful applications.</P>
+<A NAME="ch11lev4sec68"></A><H4 class="docSection2Title">Favor Clustered Access</H4>
+<P class="docText">Whenever sequential access to table data is needed, process the table rows in clustered sequence. This reduces I/O cost because pages need not be re-read if the data is processed by the clustering sequence.<A NAME="ch11index550"></A><A NAME="ch11index551"></A><A NAME="ch11index552"></A></P>
+<A NAME="ch11lev4sec69"></A><H4 class="docSection2Title">Increase Parallel Processing</H4>
+<P class="docText">The architecture of IBM mainframes is such that multiple engines are available for processing. A batch program executing in a single, standard batch job can be processed by only a single engine. To maximize performance of CPU-bound programs, increase the parallelism of the program in one of two ways:<A NAME="ch11index553"></A><A NAME="ch11index554"></A><A NAME="ch11index555"></A></P>
+<UL><LI><p class="docText">
+<span class="docEmphasis">Program Cloning</span>— 
+Clone the program and stratify the data access. Stratifying data access refers to dividing data access into logical subsets that can be processed independently.<A NAME="ch11index556"></A><A NAME="ch11index557"></A></p></LI><LI><p class="docText">
+<span class="docEmphasis">Query Parallelism</span>— 
+Utilize partitioned table spaces and bind the application program specifying <TT>DEGREE(ANY)</TT> to indicate that DB2 should try to use query I/O, CPU, and Sysplex parallelism.<A NAME="ch11index558"></A><A NAME="ch11index559"></A></p></LI></UL>
+<P class="docText">Using the first method, you, as the application developer, must physically create multiple clone programs. Each program clone must be functionally identical but will process a different subset of the data. For example, you could split a program that reads <TT>DSN8810.EMP</TT> to process employees into a series of programs that perform the same function, but each processes only a single department. The data can be stratified based on any consistent grouping of data that is comprehensive (all data to be processed is included) and non-overlapping (data in one subset does not occur in a different subset). For example, you can accomplish data stratification based on the following:</P>
+<UL><LI><P class="docList">Unique key ranges</P></LI><LI><P class="docList">Table space partitions</P></LI><LI><P class="docList">Functional groupings (for example, departments or companies)</P></LI></UL>
+<P class="docText">Ensure that the data is stratified both programmatically and in the structure of the database. For example, if you're stratifying using partitioned table spaces, ensure that each job operates only on data from a single partition. If data from multiple partitions can be accessed in concurrent jobs, timeout and deadlock problems might occur. Refer to <A class="docLink" HREF="ch05.html#ch05">Chapter 5</A> for DDL recommendations for increasing concurrency.</P>
+<P class="docText">Also note that concurrency problems can still occur. When data from one subset physically coexists with data from another subset, lockout and timeout can take place. DB2 locks at the page level (<span class="docEmphasis">usually</span>). If data is stratified at any level other than the table space partition level, data from one subset can coexist on the same table space page as data from another subset.</P>
+<P class="docText">Using the second method, DB2's inherent query parallelism feature, you can develop a single program. DB2 determines whether parallelism is of benefit. If you specify <TT>DEGREE(ANY)</TT>, DB2 formulates the appropriate degree of parallelism for each query in the program. The primary benefits accrued from allowing DB2 to specify parallelism are as follow:</P>
+<UL><LI><P class="docList">The avoidance of code duplication. Only one program is required. DB2 itself handles the parallel query execution.</P></LI><LI><P class="docList">The ability of DB2 to determine the appropriate number of parallel engines per query (not per program).</P></LI><LI><P class="docList">The ability of DB2 to change the degree of parallelism on the fly. If the resources are not available to process parallel queries, DB2 can automatically "turn off" parallelism at runtime.</P></LI><LI><P class="docList">The ability of DB2 to enable Sysplex parallelism. With data sharing, when capacity requirements increase you can add extra engines. The cost to add additional engines is minimal and DB2 will automatically take advantage of additional engines.</P></LI><LI><P class="docList">Finally, if the nature of the data changes such that a change to the degree of parallelism is warranted, all that is required is a new bind. DB2 automatically formulates the degree of parallelism at bind time.<A NAME="ch11index560"></A><A NAME="ch11index561"></A><A NAME="ch11index562"></A></P></LI></UL>
+<P class="docText">However, potential problems arise when you're using query parallelism instead of program cloning:</P>
+<UL><LI><P class="docList">DB2 controls the number of parallel engines. The developer can exert no control. When program cloning is used, the number of parallel jobs is fixed and unchanging.</P></LI><LI><P class="docList">One program can contain multiple queries, each with a different degree. Although this can be considered a benefit, it can also be confusing to novice programmers.</P></LI><LI><P class="docList">DB2 I/O, CPU, and Sysplex parallelism are for read-only SQL. Updates, inserts, and deletes cannot be performed in parallel yet.</P></LI><LI><P class="docList">DB2 can "turn off" parallelism at runtime. Once again, though, this can be considered a benefit because DB2 is smart enough to disengage parallelism because of an overexerted system.</P></LI></UL>
+<P class="docText">Both methods of achieving parallelism are viable for DB2 V6 and later releases (for CPU parallelism, V4 is required; for Sysplex parallelism V5 is required). Whenever possible, favor DB2 parallelism over program cloning, because it is simpler to implement and modify.<A NAME="ch11index563"></A><A NAME="ch11index564"></A><A NAME="ch11index565"></A></P>
+<A NAME="ch11lev4sec70"></A><H4 class="docSection2Title">Use <TT>LOCK TABLE</TT> with Caution</H4>
+<P class="docText">As a general rule, use the <TT>LOCK TABLE</TT> command with caution. Discuss the implications of this command with your DBA staff before deciding to use it.<A NAME="ch11index566"></A><A NAME="ch11index567"></A><A NAME="ch11index568"></A><A NAME="ch11index569"></A></P>
+<P class="docText">Issuing a <TT>LOCK TABLE</TT> statement locks all tables in the table space containing the table specified. It holds all locks until <TT>COMMIT</TT> or <TT>DEALLOCATION</TT>. This statement reduces concurrent access to all tables in the table space affected by the command.</P>
+<P class="docText">The preceding rule notwithstanding, <TT>LOCK TABLE</TT> can significantly improve an application program's processing time. If a significant number of page locks are taken during program execution, the addition of <TT>LOCK TABLE</TT> eliminates page locks, replacing them with table (or table space) locks. It thereby enhances performance by eliminating the overhead associated with page locks.</P>
+<P class="docText">Balance the issuing of the <TT>LOCK TABLE</TT> command with the need for concurrent data access, the locking strategies in the DDL of the table spaces, and the plans being run.</P>
+<A NAME="ch11note16"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<P class="docText">You can use <TT>LOCK TABLE</TT> to explicitly limit concurrent access. For example, issuing a <TT>LOCK TABLE</TT> statement in a batch program can prevent online transactions from entering data before the batch cycle has completed.</P></div><br>
+<A NAME="ch11lev4sec71"></A><H4 class="docSection2Title">Parameterize Lock Strategies</H4>
+<P class="docText">If a batch window exists wherein concurrent access is not required, but a high degree of concurrency is required after the batch window, consider coding batch programs with dynamic lock-switching capabilities. For example, if the batch window extends from 2:00 a.m. to 6:00 a.m., and a batch DB2 update program must run during that time, make the locking parameter-driven or system-clock-driven.<A NAME="ch11index570"></A><A NAME="ch11index571"></A><A NAME="ch11index572"></A></P>
+<P class="docText">The program can read the system clock and determine whether it can complete before online processing begins at 6:00 a.m. This decision should be based on the average elapsed time required for the program to execute. If possible, the program should issue the <TT>LOCK TABLE</TT> statement. If this is not possible, the program should use the normal locking strategy as assigned by the table space DDL. A flexible locking strategy increases performance and reduces the program's impact on the online world.</P>
+<P class="docText">An alternative method is to let the program accept a parameter to control locking granularity. For example, the value <TT>TABLE</TT> or <TT>NORMAL</TT> can be passed as a parameter. If <TT>TABLE</TT> is specified as a parameter, the program issues <TT>LOCK TABLE</TT> statements. Otherwise, normal locking ensues. If <TT>NORMAL</TT> is specified, normal locking requires manual intervention and is not as easily implemented as the system time method.</P>
+<A NAME="ch11lev4sec72"></A><H4 class="docSection2Title">Periodically <TT>COMMIT</TT> Work in Batch Modification Programs</H4>
+<P class="docText">Favor issuing <TT>COMMIT</TT>s in all DB2 programs where data is modified (<TT>INSERT</TT>, <TT>UPDATE</TT>, and <TT>DELETE</TT>). A <TT>COMMIT</TT> externalizes all modifications that occurred in the program since the beginning of the program or the last <TT>COMMIT</TT>. Failing to code <TT>COMMIT</TT>s in a DB2 data modification program is sometimes referred to as "Bachelor Programming Syndrome"—that is, fear of committing.<A NAME="ch11index573"></A><A NAME="ch11index574"></A><A NAME="ch11index575"></A><A NAME="ch11index576"></A></P>
+<A NAME="ch11note17"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<P class="docText"><TT>COMMIT</TT> does not flush data from the DB2 buffer pool and physically apply the data to the table. It does, however, ensure that all modifications have been physically applied to the DB2 log, thereby ensuring data integrity and recoverability.</P></div><br>
+<P class="docText">One important factor affecting the need for a <TT>COMMIT</TT> strategy is the amount of elapsed time required for the program to complete. The greater the amount of time needed, the more you should consider using <TT>COMMIT</TT>s (to reduce rollback time and reprocessing time in the event of program failure). You can safely assume, however, that the elapsed time increases as the number of modifications increases.</P>
+<P class="docText">Issuing <TT>COMMIT</TT>s in an application program is important for three reasons. First, if the program fails, all the modifications are backed out to the last <TT>COMMIT</TT> point. This process could take twice the time it took to perform the modifications in the first place—especially if you are near the end of a program with no <TT>COMMIT</TT>s that performed hundreds or thousands of modification operations.</P>
+<P class="docText">Second, if you resubmit a failing program that issues no <TT>COMMIT</TT>s, the program redoes work unnecessarily.</P>
+<P class="docText">Third, programs bound using the repeatable read page locking strategy or the <TT>RELEASE(COMMIT)</TT> table space locking strategy hold their respective page and table space locks until a <TT>COMMIT</TT> is issued. If no <TT>COMMIT</TT>s are issued during the program, locks are not released until the auto-<TT>COMMIT</TT> when the program completes, thereby negatively affecting concurrent access. This can cause lock timeouts and lock escalation.</P>
+<P class="docText">Given these considerations for <TT>COMMIT</TT> processing, the following situations should compel you to code <TT>COMMIT</TT> logic in your batch programs:</P>
+<UL><LI><P class="docList">The modification program must run in a small batch processing window</P></LI><LI><P class="docList">Concurrent batch or online access must occur during the time the batch program is running</P></LI></UL>
+<A NAME="ch11note18"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<P class="docText">If the concurrent batch or online access uses <TT>ISOLATION(UR)</TT>, <TT>COMMIT</TT> processing is irrelevant. However, most processing requires accurate data and as such does not use <TT>ISOLATION(UR)</TT>.</P></div><br>
+<P class="docText">In some rare circumstances, you might be able to avoid issuing <TT>COMMIT</TT>s in your batch DB2 programs. When modification programs without <TT>COMMIT</TT>s fail, you can generally restart them from the beginning because database changes have not been committed. Additionally, <TT>COMMIT</TT>s require resources. By reducing or eliminating <TT>COMMIT</TT>s, you might conceivably be able to enhance performance (albeit at the expense of concurrency due to additional locks being held for a greater duration).</P>
+<P class="docText">Before you decide to avoid <TT>COMMIT</TT> processing, remember that all cataloged sequential files must be deleted, any updated VSAM files must be restored, and any IMS modifications must be backed out before restarting the failing program. If the outlined situations change, you might need to retrofit your batch programs with <TT>COMMIT</TT> processing—a potentially painful process.</P>
+<P class="docText">I recommend that you plan to issue <TT>COMMIT</TT>s in every batch program. You can structure the logic so that the <TT>COMMIT</TT> processing is contingent on a parameter passed to the program. This approach enables an analyst to turn off <TT>COMMIT</TT> processing but ensures that all batch programs are prepared if <TT>COMMIT</TT> processing is required in the future.<A NAME="ch11index577"></A><A NAME="ch11index578"></A><A NAME="ch11index579"></A><A NAME="ch11index580"></A></P>
+<A NAME="ch11lev4sec73"></A><H4 class="docSection2Title">Use Elapsed Time to Schedule <TT>COMMIT</TT>s</H4>
+<P class="docText">Base the frequency of <TT>COMMIT</TT>s on the information in <A class="docLink" HREF="#ch11table08">Table 11.8</A> or on the elapsed time since the last <TT>COMMIT</TT>. Doing so provides a more consistent <TT>COMMIT</TT> frequency. If you insist on basing <TT>COMMIT</TT> processing on the number of rows processed instead of the elapsed time, consider estimating the elapsed time required to process a given number of rows and then correlate this time to <A class="docLink" HREF="#ch11table08">Table 11.8</A> to determine the optimal <TT>COMMIT</TT> frequency.<A NAME="ch11index581"></A><A NAME="ch11index582"></A><A NAME="ch11index583"></A><A NAME="ch11index584"></A><A NAME="ch11index585"></A></P>
+<A NAME="ch11table08"></A><P><TABLE CELLSPACING="0" FRAME="hsides" RULES="rows" CELLPADDING="4"><CAPTION><h5 class="docTableTitle">Table 11.8. Recommendations for <TT>COMMIT</TT> Frequency</h5></CAPTION><COLGROUP><COL width="253"><COL width="297"></COLGROUP><THEAD><TR><TH class="thead" align="left" valign="top"><P class="docText"><span class="docEmphStrong">Application Requirement</span></P></TH><TH class="thead" align="left" valign="top"><P class="docText"><TT>COMMIT</TT> <span class="docEmphStrong">Recommendations</span></P></TH></TR></THEAD><TR><TD class="docTableCell" align="left" valign="top"><P class="docText">No concurrent access required and unlimited time for reprocessing in the event of an abend</P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Code program for <TT>COMMIT</TT>s, but consider processing without <TT>COMMIT</TT>s (using a parameter)</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText">No concurrency required but limited reprocessing time available</P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>COMMIT</TT> in batch approximately every 15 minutes</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText">Limited batch concurrency required; no concurrent online activity</P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>COMMIT</TT> in batch every 1 to 5 minutes (more frequently to increase concurrency)</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText">Online concurrency required</P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>COMMIT</TT> in batch every 5 to 15 seconds</P></TD></TR></TABLE></P><br>
+<A NAME="ch11lev4sec74"></A><H4 class="docSection2Title">Modify As Close As Possible to the <TT>COMMIT</TT></H4>
+<P class="docText">You can reduce the amount of time that locks are held and thereby minimize lock timeouts by issuing <TT>INSERT</TT>, <TT>UPDATE</TT>, and <TT>DELETE</TT> statements as close as possible to your <TT>COMMIT</TT> statements. By limiting the lines of code that must be executed in between your data modification statements and your <TT>COMMIT</TT> statements, you can optimize DB2 locking. The quicker modified data is committed to the database (or rolled back), the shorter the amount of time that data will need to be locked out from other users.<A NAME="ch11index586"></A><A NAME="ch11index587"></A><A NAME="ch11index588"></A><A NAME="ch11index589"></A><A NAME="ch11index590"></A><A NAME="ch11index591"></A></P>
+<P class="docText">Of course, programmers might balk at implementing this suggestion. Moving data modification code might not fall in line with the aesthetics of programming. However, from a data integrity perspective, all that matters is that the appropriate <TT>INSERT</TT>, <TT>UPDATE</TT>, and <TT>DELETE</TT> statements fall within the appropriate units of work. So, keep in mind that moving your data modification statements closer to the <TT>COMMIT</TT> statement can improve application performance.</P>
+<A NAME="ch11lev4sec75"></A><H4 class="docSection2Title">Sequence Modification Statements Within the Unit of Work</H4>
+<P class="docText">You can minimize the number of deadlocks that occur by coding all data modification statements (issuing <TT>INSERT</TT>, <TT>UPDATE</TT>, and <TT>DELETE</TT> statements) within each unit of work in a prespecified sequence. For example, code modifications in alphabetical order by table name. Doing so reduces the chance of deadlocks, because the order of the modification statements will be the same from program to program.<A NAME="ch11index592"></A><A NAME="ch11index593"></A><A NAME="ch11index594"></A></P>
+<A NAME="ch11lev4sec76"></A><H4 class="docSection2Title">Choose Meaningful Units of Work</H4>
+<P class="docText">A <span class="docEmphasis">unit of work</span> is a portion of processing that achieves data integrity, is logically complete, and creates a point of recovery. Units of work are defined by the scope of the <TT>COMMIT</TT>s issued by your program. (All data modification that occurs between <TT>COMMIT</TT>s is considered to be in a unit of work.) Use care in choosing units of work for programs that issue <TT>INSERT</TT>, <TT>UPDATE</TT>, or <TT>DELETE</TT> statements.<A NAME="ch11index595"></A><A NAME="ch11index596"></A><A NAME="ch11index597"></A></P>
+<P class="docText">Choosing a unit of work that provides data integrity is of paramount importance for programs that issue <TT>COMMIT</TT>s. For example, consider an application program that modifies the project start and end dates in tables <TT>DSN8810.PROJACT</TT> and <TT>DSN8810.EMPPROJACT</TT>. The start and end <TT>DSN8810.PROJACT</TT> columns are</P>
+<P><TABLE CELLSPACING="0" FRAME="void" RULES="none" CELLPADDING="5"><COLGROUP><COL width="115.5"><COL width="434.5"></COLGROUP><THEAD></THEAD><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>ACSTDATE</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Estimated start date for the activity recorded in this row of the project activity table<A NAME="ch11index598"></A><A NAME="ch11index599"></A></P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>ACENDATE</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Estimated end date for the activity recorded in this row of the project activity table<A NAME="ch11index600"></A><A NAME="ch11index601"></A></P></TD></TR></TABLE></P><br>
+<P class="docText">The columns for <TT>DSN8810.EMPPROJACT</TT> are</P>
+<P><TABLE CELLSPACING="0" FRAME="void" RULES="none" CELLPADDING="5"><COLGROUP><COL width="115.5"><COL width="434.5"></COLGROUP><THEAD></THEAD><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>EMSTDATE</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Estimated start date when the employee will begin work on the activity recorded in this row of the employee project<A NAME="ch11index602"></A><A NAME="ch11index603"></A></P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>EMENDATE</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Estimated end date when the employee will have completed the activity recorded in this row of the employee project activity<A NAME="ch11index604"></A><A NAME="ch11index605"></A></P></TD></TR></TABLE></P><br>
+<P class="docText">The start and end dates in these two tables are logically related. A given activity for a project begins on a specified date and ends on a specified date. A given employee is assigned to work on each activity and is assigned also a start date and an end date for the activity.</P>
+<P class="docText">Many employees can work on a single activity, but each employee can start and end his or her involvement with that activity at different times. The only stipulation is that the employees must begin and end their involvement within the start and end dates for that activity. Therein lies the relationship that ties these four columns together.</P>
+<P class="docText">The unit of work for the program should be composed of the modifications to both tables. In other words, the program should not commit the changes to one table without committing the changes to the other table at the same time. If it does commit the changes to one but not the other, the implicit relationship between the dates in the two tables can be destroyed.</P>
+<P class="docText">Consider the following situation. A project has a start date of 2002-12-01 and an end date of 2004-03-31. This information is recorded in the <TT>DSN8810.PROJACT</TT> table. Employees are assigned to work on activities in this project with start and end dates in the stated range. These dates are recorded in the <TT>DSN8810.EMPPROJACT</TT> table.</P>
+<P class="docText">Later, you must modify the end date of the project to 2004-01-31. This new end date is earlier than the previous end date. Consider the status of the data if the program updates the end date in the <TT>DSN8810.PROJACT</TT> table, commits the changes, and then abends. The data in the <TT>DSN8810.EMPPROJACT</TT> table has not been updated, so the end dates are not synchronized. An employee can still be assigned an activity with the old end date. For this reason, you should be sure to group related updates in the same unit of work.<A NAME="ch11index606"></A><A NAME="ch11index607"></A><A NAME="ch11index608"></A></P>
+<A NAME="ch11lev4sec77"></A><p><table width="90%" border="0" cellspacing="0" cellpadding="1"><tr><td width="60" valign="top"><IMG BORDER="0" width="30" height="18" SRC="images/0672326132/graphics/V7_icon.gif" ALT="graphics/V7_icon.gif"></td><td valign="top"><H4 class="docSection2Title">Consider Using External <TT>SAVEPOINT</TT>s</H4></td></tr></table></p>
+
+<P class="docText">As of DB2 V7, you can set a <TT>SAVEPOINT</TT> within a transaction—without committing your work. You can think of a <TT>SAVEPOINT</TT> as a sub-UOW (unit of work) "stability" point. After the <TT>SAVEPOINT</TT> is set, you can use application logic to undo any data modifications and database schema changes that were made since the application set the <TT>SAVEPOINT</TT>. Using a <TT>SAVEPOINT</TT> can be more efficient, because you will not need to include contingency and what-if logic in your application code.<A NAME="ch11index609"></A><A NAME="ch11index610"></A><A NAME="ch11index611"></A><A NAME="ch11index612"></A></P>
+<P class="docText">Remember, issuing a <TT>SAVEPOINT</TT> does not <TT>COMMIT</TT> work to DB2. It is simply a mechanism for registering milestones within a transaction or program. Let's learn by example. Consider the following pseudo-code:</P>
+<pre>
+
+</pre><BR><pre>
+SAVEPOINT POINTX ON ROLLBACK RETAIN CURSORS;
+...
+<span class="docEmphasis">Subsequent processing</span>
+...
+ROLLBACK TO SAVEPOINT POINTX;
+</pre><BR>
+<P class="docText">The <TT>ROLLBACK</TT> will cause any data or schema changes made in the "subsequent processing" to be undone.</P>
+<P class="docText">You can code multiple <TT>SAVEPOINT</TT>s within a UOW, and you can <TT>ROLLBACK</TT> to any <TT>SAVEPOINT</TT> (as long as you do not reuse the <TT>SAVEPOINT</TT> name). The <TT>UNIQUE</TT> keyword can be specified to ensure that the <TT>SAVEPOINT</TT> name is not reused within the unit of recovery.</P>
+<P class="docText">There are two clauses that can be specified to further define the nature of the <TT>SAVEPOINT</TT> when a <TT>ROLLBACK</TT> is issued:</P>
+<P><TABLE CELLSPACING="0" FRAME="void" RULES="none" CELLPADDING="5"><COLGROUP><COL width="137.5"><COL width="412.5"></COLGROUP><THEAD></THEAD><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>RETAIN CURSORS</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Any cursors opened after the <TT>SAVEPOINT</TT> is set are not tracked and will not be closed when rolling back to that <TT>SAVEPOINT</TT>.<A NAME="ch11index613"></A><A NAME="ch11index614"></A></P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>RETAIN LOCKS</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Any locks acquired after the <TT>SAVEPOINT</TT> is set are not tracked and will not be released when rolling back to the <TT>SAVEPOINT</TT>.<A NAME="ch11index615"></A><A NAME="ch11index616"></A></P></TD></TR></TABLE></P><br>
+<P class="docText">Even if <TT>RETAIN CURSORS</TT> is specified, some of the cursors might not be useable. For example, if the <TT>ROLLBACK</TT> removes a row (that is, rolls back an <TT>INSERT</TT>) upon which the cursor was positioned, DB2 will raise an error.<A NAME="ch11index617"></A><A NAME="ch11index618"></A><A NAME="ch11index619"></A><A NAME="ch11index620"></A></P>
+<A NAME="ch11note19"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<P class="docText"><TT>SAVEPOINT</TT>s can be very useful for stored procedures that need to maintain sub-UOW stability points.</P></div><br>
+<A NAME="ch11lev4sec78"></A><H4 class="docSection2Title">Make Programs Restartable</H4>
+<P class="docText">In time-critical applications, DB2 batch programs that modify table data should be restartable if a system error occurs. To make a batch program restartable, you first create a DB2 table to control the checkpoint and restart processing for all DB2 update programs. A checkpoint is data written by an application program during its execution that identifies the status and extent of processing. This checkpoint is usually accomplished by storing the primary key of the table row being processed. The program must update the primary key as it processes before each <TT>COMMIT</TT> point. During restart processing, the primary key information is read, enabling the program to continue from where it left off.<A NAME="ch11index621"></A><A NAME="ch11index622"></A><A NAME="ch11index623"></A></P>
+<P class="docText">The following DDL illustrates a DB2 table (and an associated index) that can be used to support checkpoint and restart processing:</P>
+<pre>
+
+</pre><BR><pre>
+CREATE TABLE CHKPT_RSTRT
+    (PROGRAM_NAME       CHAR(8)       NOT NULL,
+     ITERATION          CHAR(4)       NOT NULL,
+     COMMIT_FREQUENCY   SMALLINT      NOT NULL,
+     NO_OF_COMMITS      SMALLINT      NOT NULL WITH DEFAULT,
+     CHECKPOINT_TIME    TIMESTAMP     NOT NULL WITH DEFAULT,
+     CHECKPOINT_AREA    CHAR(254)     NOT NULL WITH DEFAULT.
+
+     PRIMARY KEY (PROGRAM_NAME, ITERATION)
+    )
+IN DATABASE.TBSPACE
+;
+CREATE UNIQUE INDEX XCHKPRST
+    (PROGRAM_NAME, ITERATION)
+     CLUSTER
+     <span class="docEmphasis">other parameters</span>
+;
+</pre><BR>
+<P class="docText">When a batch program is restarted after an abend, it can continue where it left off if it follows certain steps. This is true because a checkpoint row was written indicating the last committed update, the time that the employee was processed, and the key of the processed employee table (<TT>ACTNO</TT>).</P>
+<P class="docText">The following steps show you the coding necessary to make a program restartable:</P>
+<A NAME="ch11pr01"></A>
+
+
+
+
+
+
+
+
+<div style="font-weight:bold"><OL class="docList" START="1"><LI value="1"><div style="font-weight:normal">Declare two cursors to <TT>SELECT</TT> rows to be updated in the <TT>PROJACT</TT> table. Code an <TT>ORDER BY</TT> for the columns of the unique index (<TT>PROJNO</TT>, <TT>ACTNO</TT>, and <TT>ACSTDATE</TT>). The first cursor should select the rows you want. It is used the first time the request is processed. For example,<BR><BR>
+<pre>
+
+</pre><BR><pre>
+EXEC SQL DECLARE CSR1
+    SELECT   PROJNO, ACTNO, ACSTDATE,
+             ACSTAFF, ACENDATE
+    FROM     PROJACT
+    ORDER BY PROJNO, ACTNO, ACSTDATE
+END-EXEC.
+</pre><BR>
+This statement reflects the needs of your application. The second cursor is for use after issuing <TT>COMMIT</TT>s and for restart processing. It must reposition the cursor at the row following the last row processed. You can reposition the cursor by using <TT>WHERE</TT> clauses that reflect the <TT>ORDER BY</TT> on the primary key (or the unique column combination). For example,<BR><BR>
+<pre>
+
+</pre><BR><pre>
+EXEC SQL DECLARE CSR2
+    SELECT   PROJNO, ACTNO, ACSTDATE,
+             ACSTAFF, ACENDATE
+    FROM     PROJACT
+    WHERE    ((PROJNO = :CHKPT-PROJNO
+    AND        ACTNO = :CHKPT-ACTNO
+    AND        ACSTDATE &gt; :CHKPT-ACSTDATE)
+    OR        (PROJNO = :CHKPT-PROJNO
+    AND        ACTNO &gt; :CHKPT-ACTNO)
+    OR        (PROJNO &gt; :CHKPT-PROJNO))
+    AND      PROJNO &gt;= :CHKPT-PROJNO
+    ORDER BY PROJNO, ACTNO, ACSTDATE
+END-EXEC.
+</pre><BR>
+This cursor begins processing at a point other than the beginning of the <TT>ORDER BY</TT> list. Although, technically you can use only the second cursor by coding low values for the host variables the first time through, doing so is not recommended. The first cursor usually provides better performance than the second, especially when the second cursor is artificially constrained by bogus host variable values. However, if you can determine (using <TT>EXPLAIN</TT> or other performance monitoring techniques) that the first cursor provides no appreciable performance gain over the second, use only one cursor.<A NAME="ch11index624"></A><A NAME="ch11index625"></A><A NAME="ch11index626"></A><BR><BR></div></LI><LI value="2"><div style="font-weight:normal"><TT>SELECT</TT> the row from the <TT>CHKPT-RESTRT</TT> table for the program and iteration being processed. You can hard-code the program name into the program. Or, if the program can run parallel with itself, it should be able to accept as parameter-driven input an iteration token, used for identifying a particular batch run of the program.<BR><BR></div></LI><LI value="3"><div style="font-weight:normal">If it is the first time through and <TT>CHECKPOINT_AREA</TT> contains data, the program is restarted. Move the appropriate values from the <TT>CHECKPOINT_AREA</TT> to the host variables used in the second cursor and <TT>OPEN</TT> it. If it is the first time through and the program is not restarted, <TT>OPEN</TT> the first <TT>PROJACT</TT> cursor.<BR><BR></div></LI><LI value="4"><div style="font-weight:normal"><TT>FETCH</TT> a row from the opened cursor.<BR><BR></div></LI><LI value="5"><div style="font-weight:normal">If the <TT>FETCH</TT> is successful, increment a <TT>WORKING-STORAGE</TT> variable that counts successful fetches.<BR><BR></div></LI><LI value="6"><div style="font-weight:normal">Perform the <TT>UPDATE</TT> for the <TT>PROJACT</TT> row that was fetched.<BR><BR></div></LI><LI value="7"><div style="font-weight:normal">If the fetch counter is equal to <TT>COMMIT_FREQUENCY</TT>, perform a commit paragraph. This paragraph should increment and update <TT>NO_OF_COMMITS</TT> and the <TT>CHECKPOINT_AREA</TT> column with the <TT>PROJNO</TT>, <TT>ACTNO</TT>, and <TT>ACSTDATE</TT> of the <TT>PROJACT</TT> row retrieved, and set <TT>CHECKPOINT_TIME</TT> to the current timestamp. It should then issue a <TT>COMMIT</TT> and reset the fetch counter to zero.<BR><BR></div></LI><LI value="8"><div style="font-weight:normal">After a <TT>COMMIT</TT>, cursors are closed unless you specified the <TT>WITH HOLD</TT> option. If the <TT>WITH HOLD</TT> option is not used, the cursor must change after the first <TT>COMMIT</TT> is executed (unless only the second cursor shown previously is used). Remember, the first time through, the program can use the <TT>C1</TT> cursor above; subsequently, it should always use <TT>C2</TT>.<BR><BR></div></LI><LI value="9"><div style="font-weight:normal">When update processing is complete, reset the values of the columns in the <TT>CHKPT_RSTRT</TT> table to their original default values.<BR><BR>
+If the <TT>CHKPT_RSTRT</TT> row for the program is reread after each <TT>COMMIT</TT>, you can modify the <TT>COMMIT_FREQUENCY</TT> column on the fly. If you determine that too few or too many checkpoints have been taken, based on the state of the data and the time elapsed and remaining, he or she can update the <TT>COMMIT_FREQUENCY</TT> (using QMF, SPUFI, or some other means) for that program only. Doing so dynamically changes the frequency at which the program <TT>COMMIT</TT>s.<BR><BR>
+Incurring the extra read usually causes little performance degradation because the page containing the row usually remains in the bufferpool because of its frequent access rate.<BR><BR></div></LI></OL></div>
+<P class="docText">Following these nine steps enables you to restart your programs after a program failure. During processing, the <TT>CHKPT_RSTRT</TT> table is continually updated with current processing information. If the program abends, all updates—including updates to the <TT>CHKPT_RSTRT</TT> table—are rolled back to the last successful checkpoint. This way, the <TT>CHKPT_RSTRT</TT> table is synchronized with the updates made to the table. You can then restart the update program after you determine and correct the cause of the abend.</P>
+<P class="docText">On restart, the <TT>CHKPT_RSTRT</TT> table is read, and the <TT>CHECKPOINT_AREA</TT> information is placed into a cursor that repositions the program to the data where the last update occurred.<A NAME="ch11index627"></A><A NAME="ch11index628"></A><A NAME="ch11index629"></A></P>
+<A NAME="ch11lev4sec79"></A><H4 class="docSection2Title">Additional Notes on Restartability</H4>
+<P class="docText">If a restartable program uses the <TT>WITH HOLD</TT> option to prohibit cursor closing at <TT>COMMIT</TT> time, it can avoid the need to reposition the cursor constantly, thereby enabling more efficient processing. To be restartable, however, the program still requires a repositioning cursor so that it can bypass the work already completed.<A NAME="ch11index630"></A><A NAME="ch11index631"></A><A NAME="ch11index632"></A></P>
+<P class="docText">When you specify the <TT>WITH HOLD</TT> option, the repositioning cursor is used only when the program is restarted, not during normal processing. Additional code and parameters are required to signal the program when to use the repositioning cursors.</P>
+<P class="docText">Restartable programs using sequential input files can reposition the input files using one of two methods. The first way is to count the records read and place the counter in the <TT>CHKPT_RSTRT</TT> table. On restart, the table is read and multiple reads are issued (number of reads equals <TT>READ_COUNTER</TT>). Alternatively, for input files sorted by the checkpoint key, the program can use the information in the <TT>CHECKPOINT_AREA</TT> to read to the appropriate record.</P>
+<P class="docText">Restartable programs writing sequential output files must handle each output file separately. Most sequential output files can have their disposition modified to <TT>MOD</TT> in the <TT>JCL</TT>, allowing the restarted program to continue writing to them. For the following types of output files, however, you must delete or modify output file records before restarting:</P>
+<UL><LI><P class="docList">Headers for report files with control break processing</P></LI><LI><P class="docList">Output files with different record types</P></LI><LI><P class="docList">Any output file requiring specialized application processing<A NAME="ch11index633"></A><A NAME="ch11index634"></A><A NAME="ch11index635"></A></P></LI></UL>
+<A NAME="ch11note20"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<P class="docText">If you have a budget for ISV tools, one of the best investments is a checkpoint/restart tool. Such tools provide the ability to resume the processing of failed or interrupted batch applications from the most recent checkpoint rather than from the beginning of the job step. Many also enable you to control the checkpoint frequency outside the application. They save a lot of coding and are not typically very expensive. Examples of such tools include BMC Software's Application Restart Control and Softbase Systems' Database Rely.</P></div><br>
+<A NAME="ch11lev4sec80"></A><H4 class="docSection2Title">Hold Cursors Rather Than Reposition</H4>
+<P class="docText">You also can use the concept of cursor repositioning for programs not coded to be restartable. If <TT>COMMIT</TT>s are coded in a program that updates data using cursors, you have two options for repositioning cursors. You can use the <TT>WITH HOLD</TT> option of the cursor, or you can code two cursors, an initial cursor and a repositioning cursor, as shown in the previous example.<A NAME="ch11index636"></A><A NAME="ch11index637"></A><A NAME="ch11index638"></A><A NAME="ch11index639"></A></P>
+<P class="docText">The best solution is to code the <TT>WITH HOLD</TT> clause for each cursor that needs to be accessed after a <TT>COMMIT</TT>. <TT>WITH HOLD</TT> prohibits the closing of the cursor by the <TT>COMMIT</TT> statement and maintains the position of the cursor.</P>
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="ch11lev1sec7.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="ch11lev1sec9.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

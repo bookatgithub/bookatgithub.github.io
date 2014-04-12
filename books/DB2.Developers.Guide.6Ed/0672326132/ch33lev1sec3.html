@@ -1,0 +1,473 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>The REORG Utility</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="ch33lev1sec2.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="ch34.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="ch33lev1sec3"></A><H3 class="docSection1Title">The <TT>REORG</TT> Utility</H3>
+<P class="docText">The <TT>REORG</TT> utility can be used to reorganize DB2 table spaces and indexes, thereby improving the efficiency of access to those objects. Reorganization is required periodically to ensure that the data is situated in an optimal fashion for subsequent access. Reorganization reclusters data, resets free space to the amount specified in the <TT>CREATE</TT> DDL, and deletes and redefines the underlying VSAM data sets for <TT>STOGROUP</TT>-defined objects.<A NAME="ch33index340"></A><A NAME="ch33index341"></A><A NAME="ch33index342"></A></P>
+<P class="docText">There are three types of reorganizations supported by the DB2 <TT>REORG</TT> utility:<A NAME="ch33index343"></A><A NAME="ch33index344"></A><A NAME="ch33index345"></A><A NAME="ch33index346"></A></P>
+<UL><LI><P class="docList">When <TT>REORG</TT> is run on an index, DB2 reorganizes the index space to improve access performance and reclaim fragmented space.</P></LI><LI><P class="docList">When <TT>REORG</TT> is run on a regular (non-LOB) table space, DB2 reorganizes the data into clustering sequence by the clustering index, reclaims fragmented space, and optimizes the organization of the data in the table space.</P></LI><LI><P class="docList">When <TT>REORG</TT> is run on a LOB table space, DB2 removes embedded free space and tries to make LOB pages contiguous. The primary benefit of reorganizing a LOB table space is to enhance prefetch effectiveness.</P></LI></UL>
+<P class="docText">Proper planning and scheduling of the <TT>REORG</TT> utility is a complex subject. Many factors influence the requirements for executing the <TT>REORG</TT> utility. The following topics highlight the necessary decisions for implementing an efficient <TT>REORG</TT> policy in your DB2 environment.<A NAME="ch33index347"></A><A NAME="ch33index348"></A><A NAME="ch33index349"></A></P>
+<A NAME="ch33lev2sec14"></A><H4 class="docSection2Title">Recommended Reorganization Standards</H4>
+<P class="docText">You should develop rigorous standards for the <TT>REORG</TT> utility because it is one of the most significant aids in achieving optimal DB2 performance. The standard will influence the input to the <TT>REORG</TT> utility, the <TT>REORG</TT> job streams, and the rerun and restart procedures for <TT>REORG</TT> utilities.<A NAME="ch33index350"></A><A NAME="ch33index351"></A><A NAME="ch33index352"></A></P>
+<P class="docText">As with the <TT>LOAD</TT> utility, there are two philosophies for implementing the <TT>REORG</TT> utility. Individual databases, table spaces, and applications can mix and match philosophies. One philosophy, however, should be chosen for every non-read-only table space and index in every DB2 application. Failure to follow a standard reorganization philosophy and schedule will result in poorly performing DB2 applications. The <TT>REORG</TT> philosophy must be recorded and maintained for each table space and index created.</P>
+<P class="docText">The philosophies presented here strike a balance between programmer productivity, ease of use and comprehension by operations and control staff, and the effective use of DB2 resources.</P>
+<A NAME="ch33lev2sec15"></A><H4 class="docSection2Title">Reorganization Philosophies</H4>
+<P class="docText">Two <TT>REORG</TT> philosophies can be adopted by DB2-based application systems. The first, which is generally the recommended philosophy, is more time consuming to implement but easier to support. It requires that sufficient DASD be reserved to catalog the <TT>REORG</TT> work data sets if the <TT>REORG</TT> job abends.<A NAME="ch33index353"></A><A NAME="ch33index354"></A><A NAME="ch33index355"></A></P>
+<P class="docText">The three work data sets for the <TT>REORG</TT> job are allocated for the <TT>SYSREC</TT>, <TT>SYSUT1</TT>, and <TT>SORTOUT DDNAME</TT>s with <TT>DISP=(MOD,DELETE,CATLG)</TT>. This specification enables the data sets to be allocated as new for the initial running of the <TT>REORG</TT> job. If the job abends, however, it will catalog the data sets for use in a possible restart. After the step completes successfully, the data sets are deleted. The space for these data sets must be planned and available before the <TT>REORG</TT> job is executed.</P>
+<P class="docText">The sample <TT>REORG JCL</TT> in <A class="docLink" HREF="#ch33list04">Listing 33.4</A> follows this philosophy. By creating your <TT>REORG</TT> job according to this philosophy, you can restart an abending <TT>REORG</TT> job with little effort after the cause of the abend has been corrected. You simply specify one of the <TT>RESTART</TT> options in the <TT>UTPROC</TT> parameter for <TT>DSNUTILB</TT>.<A NAME="ch33index356"></A><A NAME="ch33index357"></A><A NAME="ch33index358"></A><A NAME="ch33index359"></A><A NAME="ch33index360"></A></P>
+<A NAME="ch33list04"></A><H5 class="docExampleTitle">Listing 33.4. <TT>REORG</TT> JCL (Restartable)</H5>
+
+<PRE>
+//DB2JOBU  JOB (UTILITY),'DB2 REORG',MSGCLASS=X,CLASS=X,
+//          NOTIFY=USER
+//*
+//****************************************************************
+//*
+//*            DB2 REORG UTILITY (RESTARTABLE)
+//*
+//****************************************************************
+//*
+//UTIL EXEC DSNUPROC,SYSTEM=DSN,UID='REORGTS',UTPROC="
+//*
+//*  UTILITY WORK DATASETS
+//*
+//DSNUPROC.SORTWK01 DDUNIT=SYSDA,SPACE=(CYL,(2,1))
+//DSNUPROC.SORTWK02 DDUNIT=SYSDA,SPACE=(CYL,(2,1))
+//DSNUPROC.SORTOUT DD DSN=CAT.SORTOUT,DISP=(MOD,DELETE,CATLG),
+//        UNIT=SYSDA,SPACE=(CYL,(2,1))
+//DSNUPROC.SYSUT1 DD DSN=CAT.SYSUT1,DISP=(MOD,DELETE,CATLG),
+//        UNIT=SYSDA,SPACE=(CYL,(2,1)),DCB=BUFNO=20
+//DSNUPROC.SYSREC DD DSN=OUTPUT.DATASETD,DISP=(MOD,CATLG,CATLG),
+          UNIT=SYSDA,SPACE=(CYL,(15,5)),DCB=BUFNO=20
+//DSNUPROC.SYSPRINT DD SYSOUT=*
+//DSNUPROC.UTPRINT DD SYSOUT=*
+//*
+//*  UTILITY INPUT CONTROL STATEMENTS
+//*       The REORG statement reorganizes the second partition
+//*       of DSN8D81A.DSN8S81E.
+//*
+//DSNUPROC.SYSIN    DD  *
+    REORG TABLESPACE DSN8D81A.DSN8S81E PART 2
+/*
+//
+</PRE><BR>
+
+<P class="docText">The second philosophy is easier to implement but more difficult to support. No additional DASD is required because all <TT>REORG</TT> work data sets are defined as temporary. Therefore, upon abnormal completion, all interim work data sets are lost. See <A class="docLink" HREF="#ch33list05">Listing 33.5</A> for sample JCL.<A NAME="ch33index361"></A><A NAME="ch33index362"></A><A NAME="ch33index363"></A><A NAME="ch33index364"></A></P>
+<A NAME="ch33list05"></A><H5 class="docExampleTitle">Listing 33.5. <TT>REORG</TT> JCL (Nonrestartable)</H5>
+
+<PRE>
+//DB2JOBU  JOB (UTILITY),'DB2 REORG',MSGCLASS=X,CLASS=X,
+//          NOTIFY=USER,REGION=0M
+//*
+//****************************************************************
+//*
+//*            DB2 REORG UTILITY (NON-RESTARTABLE)
+//*
+//****************************************************************
+//*
+//UTIL EXEC DSNUPROC,SYSTEM=DSN,UID='REORGTS',UTPROC="
+//*
+//*  UTILITY WORK DATASETS
+//*
+//DSNUPROC.SORTWK01 DDUNIT=SYSDA,SPACE=(CYL,(2,1))
+//DSNUPROC.SORTWK02 DDUNIT=SYSDA,SPACE=(CYL,(2,1))
+//DSNUPROC.SORTOUT DD DSN=&amp;&amp;SORTOUT,
+//        UNIT=SYSDA,SPACE=(CYL,(2,1))
+//DSNUPROC.SYSUT1 DD DSN=&amp;&amp;SYSUT1,
+//        UNIT=SYSDA,SPACE=(CYL,(2,1)),DCB=BUFNO=20
+//DSNUPROC.SYSREC DD DSN=&amp;&amp;SYSREC,
+//        UNIT=SYSDA,SPACE=(CYL,(15,5)),DCB=BUFNO=20
+//DSNUPROC.SYSPRINT DD SYSOUT=*
+//DSNUPROC.UTPRINT DD SYSOUT=*
+//*
+//*  UTILITY INPUT CONTROL STATEMENTS
+//*    1. The first REORG statement reorganizes the
+//*       named table space.
+//*    2. The second REORG statement reorganizes the
+//*       named index.
+//*
+//DSNUPROC.SYSIN    DD  *
+REORG TABLESPACE DSN8D81A.DSN8S81D
+REORG INDEX (DSN8810.XACT1)
+/*
+//
+</PRE><BR>
+
+<P class="docText">To restart this <TT>REORG</TT> job, you must determine in which phase the job failed. If it failed in any phase other than the <TT>UTILINIT</TT> phase or <TT>UNLOAD</TT> phase, you must restore the table space being reorganized to a previous point. You can do this by running either the <TT>RECOVER TOCOPY</TT> utility or a simple <TT>RECOVER</TT> (if the <TT>LOG NO</TT> option of the <TT>REORG</TT> utility was specified).</P>
+<P class="docText">After restoring the table space (and possibly its associated indexes), you must correct the cause of the abend, terminate the utility, and rerun the job. As you can see, this method is significantly more difficult to restart.</P>
+<P class="docText">Try to use the first philosophy rather than the second. The first reorganization philosophy makes recovery from errors as smooth and painless as possible.<A NAME="ch33index365"></A><A NAME="ch33index366"></A><A NAME="ch33index367"></A></P>
+<A NAME="ch33lev2sec16"></A><H4 class="docSection2Title">Reorganization Frequency</H4>
+<P class="docText">The frequency of reorganization is different for every DB2 application. Sometimes the reorganization frequency is different for table spaces and indexes in the same application because different data requires different reorganization schedules. These schedules depend on the following factors:<A NAME="ch33index368"></A><A NAME="ch33index369"></A><A NAME="ch33index370"></A><A NAME="ch33index371"></A></P>
+<UL><LI><P class="docList">Frequency of modification activity (insertions, updates, and deletions)</P></LI><LI><P class="docList">Application transaction volume</P></LI><LI><P class="docList">Amount of free space allocated when the table space or index was created</P></LI></UL>
+<P class="docText">The scheduling of reorganizations should be determined by the DBA, taking into account the input of the application development team as well as end-user requirements. The following information must be obtained for each DB2 table to determine the proper scheduling of table space and index reorganizations:</P>
+<UL><LI><P class="docList">The data availability requirement to enable effective <TT>REORG</TT> scheduling.</P></LI><LI><P class="docList">The insertion and deletion frequency for each table and table space.</P></LI><LI><P class="docList">The number of rows per table.</P></LI><LI><P class="docList">An indication of uneven distribution of data values in a table.</P></LI><LI><P class="docList">The frequency and volume of updates to critical columns in that table. (<span class="docEmphasis">Critical columns</span> are defined as columns in the clustering index, columns containing variable data, any column used in SQL predicates, or any column that is sorted or grouped.)<A NAME="ch33index372"></A><A NAME="ch33index373"></A></P></LI></UL>
+<P class="docText">Most of this information can be obtained from the DB2 Catalog if the application already exists. For new application table spaces and indexes, this information must be based on application specifications, user requirements, and estimates culled from any existing non-DB2 systems.<A NAME="ch33index374"></A><A NAME="ch33index375"></A><A NAME="ch33index376"></A><A NAME="ch33index377"></A></P>
+<A NAME="ch33lev3sec3"></A><H5 class="docSection3Title">Letting <TT>REORG</TT> Decide When to Reorganize</H5>
+<P class="docText">You can use the <TT>OFFPOSLIMIT</TT>, <TT>INDREFLIMIT</TT>, and <TT>LEAFDISTLIMIT</TT> options of the <TT>REORG</TT> utility to determine whether a reorganization will be useful. <TT>OFFPOSLIMIT</TT> and <TT>INDREFLIMIT</TT> apply to table space reorganization; <TT>LEAFDISTLIMIT</TT> applies to index reorganization.<A NAME="ch33index378"></A><A NAME="ch33index379"></A><A NAME="ch33index380"></A></P>
+<P class="docText">The <TT>OFFPOSLIMIT</TT> parameter uses the <TT>NEAROFFPOSF</TT>, <TT>FAROFFPOSF</TT>, and <TT>CARDF</TT> statistics from <TT>SYSIBM.SYSINDEXPART</TT> to gauge the potential effectiveness of a <TT>REORG</TT>. To use <TT>OFFPOSLIMIT</TT>, specify the clause with an integer value for the <TT>REORG</TT>. For the specified partitions, the value will be compared to the result of the following calculation:<A NAME="ch33index381"></A><A NAME="ch33index382"></A></P>
+<pre>
+
+</pre><BR><pre>
+(NEAROFFPOSF + FAROFFPOSF) ? 100 / CARDF
+</pre><BR>
+<P class="docText">If any calculated value exceeds the <TT>OFFPOSLIMIT</TT> value, <TT>REORG</TT> is performed. The default value for <TT>OFFPOSLIMIT</TT> is 10.</P>
+<P class="docText">The <TT>INDREFLIMIT</TT> parameter uses the <TT>NEARINDREF</TT>, <TT>FARINIDREF</TT>, and <TT>CARDF</TT> statistics from <TT>SYSIBM.SYSINDEXPART</TT> to gauge the potential effectiveness of a <TT>REORG</TT>. To use <TT>INDREFLIMIT</TT>, specify the clause with an integer value for the <TT>REORG</TT>. For the specified partitions, the value will be compared to the result of the following calculation:<A NAME="ch33index383"></A><A NAME="ch33index384"></A></P>
+<pre>
+
+</pre><BR><pre>
+(NEARINDREF + FARINDREF) ? 100 / CARDF
+</pre><BR>
+<P class="docText">If any calculated value exceeds the <TT>INDREFLIMIT</TT> value, <TT>REORG</TT> is performed. The default value for <TT>INDREFLIMIT</TT> is 10.</P>
+<A NAME="ch33note24"></A><div class="docNote"><p class="docNoteTitle">CAUTION</p>
+
+<P class="docText"><TT>OFFPOSLIMIT</TT> and <TT>INDREFLIMIT</TT> cannot be used for LOB table spaces. The parameters can be specified for any other type of table space.</P></div><br>
+<P class="docText">You can use the <TT>LEAFDISTLIMIT</TT> option to allow <TT>REORG</TT> to determine whether reorganizing an index is recommended. To use <TT>LEAFDISTLIMIT</TT>, specify the clause with an integer value for the <TT>REORG</TT>. For the specified index, the value will be compared to the <TT>LEAFDIST</TT> value in <TT>SYSIBM.SYSINDEXPART</TT>. If any <TT>LEAFDIST</TT> exceeds the value specified for <TT>LEAFDISTLIMIT</TT>, <TT>REORG</TT> is performed. The default value for <TT>LEAFDISTLIMIT</TT> is 200.<A NAME="ch33index385"></A><A NAME="ch33index386"></A></P>
+<P class="docText">If the <TT>REPORTONLY</TT> keyword is specified, a report is generated indicating whether the <TT>REORG</TT> should be performed or not. The actual <TT>REORG</TT> will not be performed. You can use the <TT>REORG</TT> utility in conjunction with <TT>REPORTONLY</TT> and the <TT>INDREFLIMIT</TT> and <TT>OFFPOSLIMIT</TT> keywords for table spaces or the <TT>LEAFDISTLIMIT</TT> keyword for indexes, to produce reorganization reports. Further information on determining the frequency of reorganization is provided in <A class="docLink" HREF="part04.html#part04">Part IV</A>, "DB2 Performance Monitoring," and <A class="docLink" HREF="part05.html#part05">Part V</A>, "DB2 Performance Tuning."<A NAME="ch33index387"></A><A NAME="ch33index388"></A><A NAME="ch33index389"></A><A NAME="ch33index390"></A><A NAME="ch33index391"></A></P>
+<A NAME="ch33lev2sec17"></A><H4 class="docSection2Title">Reorganization Job Stream</H4>
+<P class="docText">The total reorganization schedule should include a <TT>RUNSTATS</TT> job or step (or use of in-line statistics), two <TT>COPY</TT> jobs or steps for each table space being reorganized, and a <TT>REBIND</TT> job or step for all plans using tables in any of the table spaces being reorganized.<A NAME="ch33index392"></A><A NAME="ch33index393"></A><A NAME="ch33index394"></A><A NAME="ch33index395"></A><A NAME="ch33index396"></A></P>
+<P class="docText">The <TT>RUNSTATS</TT> job is required to record the current table space and index statistics to the DB2 Catalog. This provides the DB2 optimizer with current data to use in determining optimal access paths. Of course, supplying the <TT>STATISTICS</TT> parameter to the <TT>REORG</TT> job would cause statistics to be collected during the <TT>REORG</TT>, and therefore a separate <TT>RUNSTATS</TT> step would not be needed.<A NAME="ch33index397"></A><A NAME="ch33index398"></A></P>
+<P class="docText">An image copy should always be taken immediately before any table space <TT>REORG</TT> is run. This ensures that the data is recoverable, because the <TT>REORG</TT> utility alters the physical positioning of application data. The second <TT>COPY</TT> job is required after the <TT>REORG</TT> if it was performed with the <TT>LOG NO</TT> option.</P>
+<P class="docText">The second <TT>COPY</TT> job or step can be eliminated if an inline <TT>COPY</TT> is performed during the <TT>REORG</TT>. Similar to the inline <TT>COPY</TT> feature of <TT>LOAD</TT>, a <TT>SHRLEVEL REFERENCE</TT> full image copy can be performed as a part of the <TT>REORG</TT>. To create an inline copy, use the <TT>COPYDDN</TT> and <TT>RECOVERYDDN</TT> keywords. You can specify up to two primary and two secondary copies. When a <TT>REORG</TT> job runs with the <TT>LOG NO</TT> option, DB2 turns on the copy pending flag for each table space specified in the <TT>REORG</TT> (unless inline copy is used). The <TT>LOG NO</TT> parameter tells DB2 not to log the changes. This minimizes the performance impact of the reorganization on the DB2 system and enables your <TT>REORG</TT> job to finish faster.<A NAME="ch33index399"></A><A NAME="ch33index400"></A></P>
+<P class="docText">When the <TT>LOG NO</TT> parameter is specified, you <span class="docEmphasis">must</span> take an image copy of the table space after the <TT>REORG</TT> has completed and before it can be updated. It is good practice to back up your table spaces after a reorganization anyway. A <TT>REBIND</TT> job for all production plans should be included to enable DB2 to create new access paths based on the current statistics provided by the <TT>RUNSTATS</TT> job.<A NAME="ch33index401"></A><A NAME="ch33index402"></A></P>
+<P class="docText">If all the table spaces for an application are being reorganized, each utility should be in a separate job—one <TT>REORG</TT> job, one <TT>RUNSTATS</TT> job, one <TT>COPY</TT> job, and one <TT>REBIND</TT> job. These common jobs can be used independently of the <TT>REORG</TT> job. If isolated table spaces in an application are being reorganized, it might be acceptable to perform the <TT>REORG</TT>, <TT>RUNSTATS</TT>, <TT>COPY</TT>, and <TT>REBIND</TT> as separate steps in a single job. Follow your shop guidelines for job creation standards.<A NAME="ch33index403"></A><A NAME="ch33index404"></A><A NAME="ch33index405"></A><A NAME="ch33index406"></A><A NAME="ch33index407"></A></P>
+<A NAME="ch33lev2sec18"></A><H4 class="docSection2Title">Estimating <TT>REORG</TT> Work Data Set Sizes</H4>
+<P class="docText">The <TT>REORG</TT> utility requires the use of work data sets to reorganize table spaces and indexes. The following formulas help you estimate the sizes for these work data sets. More complex and precise calculations are in the <span class="docEmphasis">DB2 Utility Guide and Reference</span> manual, but these formulas should produce comparable results.<A NAME="ch33index408"></A><A NAME="ch33index409"></A><A NAME="ch33index410"></A><A NAME="ch33index411"></A><A NAME="ch33index412"></A></P>
+<pre>
+
+</pre><BR><pre>
+SYSREC = (number of pages in table space) x 4096 x 1.10
+</pre><BR>
+<A NAME="ch33note25"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<P class="docText">If the table space being reorganized uses 32K pages, multiply the <TT>SYSREC</TT> number by <TT>8</TT>. The total number of pages used by a table space can be retrieved from either the <TT>VSAM LISTCAT</TT> command or the DB2 Catalog, as specified in the <TT>NACTIVE</TT> column of <TT>SYSIBM.SYSTABLESPACE</TT>. If you use the DB2 Catalog method, ensure that the statistics are current by running the <TT>RUNSTATS</TT> utility (discussed in <A class="docLink" HREF="ch34.html#ch34">Chapter 34</A>, "Catalog Manipulation Utilities").</P>
+<P class="docText">An additional 10 percent of space is specified because of the expansion of variable columns and the reformatting performed by the <TT>REORG UNLOAD</TT> phase.</P></div><br>
+<pre>
+
+</pre><BR><pre><A NAME="PLID5"></A><div class="v1"></div>
+SORTOUT = (size of the largest index key + 12) x (largest number of rows to be loaded to a
+<IMG BORDER="0" width="14" height="9" ALIGN="left" SRC="images/ccc.gif" ALT="graphics/ccc.gif"> single table) x (total number of nonclustering indexes defined for each table) x 1.2
+</pre><BR>
+<A NAME="ch33note26"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<P class="docText">If any number in the <TT>SORTOUT</TT> calculation is 0, substitute 1. The multiplier 1.2 is factored into the calculation to provide a "fudge factor." If you are absolutely sure of your numbers, the calculation can be made more precise by eliminating the additional multiplication of 1.2.</P></div><br>
+<pre>
+
+</pre><BR><pre><A NAME="PLID6"></A><div class="v1"></div>
+SYSUT1 = (size of the largest index key + 12) x (largest number of rows to be loaded to a
+<IMG BORDER="0" width="14" height="9" ALIGN="left" SRC="images/ccc.gif" ALT="graphics/ccc.gif"> single table) x (total number of nonclustering indexes defined for each table) x 1.2<A NAME="ch33index413"></A><A NAME="ch33index414"></A><A NAME="ch33index415"></A><A NAME="ch33index416"></A><A NAME="ch33index417"></A>
+</pre><BR>
+<A NAME="ch33note27"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<P class="docText">If any number in the <TT>SYSUT1</TT> calculation is 0, substitute 1. The multiplier 1.2 is factored into the calculation to provide a "fudge factor." If you are absolutely sure of your numbers, the calculation can be made more precise by eliminating the additional multiplication of 1.2.</P></div><br>
+<pre>
+
+</pre><BR><pre>
+SORTWKxx = (size of SYSUT1) x 2
+</pre><BR>
+<A NAME="ch33note28"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<P class="docText">If any number in the <TT>SORTWK</TT><span class="docEmphasis"><TT>xx</TT></span> calculation is 0, substitute 1.</P></div><br>
+<P class="docText">After calculating the estimated size in bytes for each work data set, convert the number into cylinders, rounding up to the next whole cylinder. Allocating work data sets in cylinder increments enhances the utility's performance.<A NAME="ch33index418"></A><A NAME="ch33index419"></A><A NAME="ch33index420"></A><A NAME="ch33index421"></A><A NAME="ch33index422"></A></P>
+<A NAME="ch33lev2sec19"></A><H4 class="docSection2Title"><TT>REORG INDEX</TT> Phases</H4>
+<P class="docText">The <TT>REORG</TT> utility consists of the following six phases when run for an index:<A NAME="ch33index423"></A><A NAME="ch33index424"></A><A NAME="ch33index425"></A><A NAME="ch33index426"></A></P>
+<P><TABLE CELLSPACING="0" FRAME="void" RULES="none" CELLPADDING="5"><COLGROUP><COL width="148.5"><COL width="401.5"></COLGROUP><THEAD></THEAD><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>UTILINIT</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Sets up and initializes the <TT>REORG</TT> utility.</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>UNLOAD</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Unloads the index and writes the keys to a sequential data set (<TT>SYSREC</TT>).</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>BUILD</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Builds indexes and updates index statistics.</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>LOG</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Only for <TT>SHRLEVEL CHANGE</TT>; processes the log iteratively to append changes.</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>SWITCH</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Switches access to shadow copy of index space or partition being reorganized (online <TT>REORG</TT>) with <TT>SHRLEVEL REFERENCE</TT> or <TT>CHANGE</TT>.</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>UTILTERM</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Performs the final utility cleanup.<A NAME="ch33index427"></A><A NAME="ch33index428"></A><A NAME="ch33index429"></A><A NAME="ch33index430"></A></P></TD></TR></TABLE></P><br>
+<A NAME="ch33lev2sec20"></A><H4 class="docSection2Title"><TT>REORG TABLESPACE</TT> Phases</H4>
+<P class="docText">The <TT>REORG</TT> utility consists of ten phases when run on a table space:<A NAME="ch33index431"></A><A NAME="ch33index432"></A><A NAME="ch33index433"></A><A NAME="ch33index434"></A></P>
+<P><TABLE CELLSPACING="0" FRAME="void" RULES="none" CELLPADDING="5"><COLGROUP><COL width="148.5"><COL width="401.5"></COLGROUP><THEAD></THEAD><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>UTILINIT</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Sets up and initializes the <TT>REORG</TT> utility.</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>UNLOAD</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Unloads the data into a sequential data set (<TT>SYSREC</TT>) unless <TT>NOSYSREC</TT> is specified, in which case the data is just passed to the <TT>RELOAD</TT> phase. If a clustering index exists and either <TT>SORTDATA</TT> or <TT>SHRLEVEL CHANGE</TT> is specified, the data is sorted. The compression dictionary is rebuilt in this step for <TT>COMPRESS YES</TT> table spaces.<A NAME="ch33index435"></A><A NAME="ch33index436"></A><A NAME="ch33index437"></A><A NAME="ch33index438"></A><A NAME="ch33index439"></A></P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>RELOAD</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Reads the records passed from the <TT>UNLOAD</TT> phase or from the sequential data set created in the <TT>UNLOAD</TT> phase, loads them to the table space, and extracts index keys (<TT>SYSUT1</TT>). Creates a full image copy if <TT>COPYDDN</TT>, <TT>RECOVERYDDN</TT>, <TT>SHRLEVEL REFERENCE</TT>, or <TT>SHRLEVEL CHANGE</TT> are specified. If <TT>SORTKEYS</TT> is specified, the index keys are sorted by a subtask.</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>SORT</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Sorts the key entries before updating indexes, if any exist. <TT>SYSUT1</TT> is the input to the sort, and <TT>SORTOUT</TT> is the output of the sort. This phase can be skipped if there is only one key per table, if the data is reloaded in key order, or if the data is reloaded grouped by table. If <TT>SORTKEYS</TT> is used, passes sorted keys in memory to the <TT>BUILD</TT> phase</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>BUILD</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Updates any indexes to reflect the new location of records and updates index statistics.</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>SORTBLD</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">When parallel index build is specified (<TT>SORTKEYS</TT>), the <TT>SORT</TT> and <TT>BUILD</TT> phases are performed in the <TT>SORTBLD</TT> phase instead.</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>LOG</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Only for <TT>SHRLEVEL CHANGE:</TT> processes the log iteratively to append changes to the image copies.</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>SWITCH</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Switches access to a shadow copy of the table space or partition being reorganized (online <TT>REORG</TT>) with <TT>SHRLEVEL REFERENCE</TT> or <TT>CHANGE</TT>.</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>BUILD2</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Corrects nonpartitioning indexes when reorganizing a partition using <TT>SHRLEVEL REFERENCE</TT> or <TT>CHANGE</TT>.</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>UTILTERM</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Performs the final utility cleanup.<A NAME="ch33index440"></A><A NAME="ch33index441"></A><A NAME="ch33index442"></A><A NAME="ch33index443"></A></P></TD></TR></TABLE></P><br>
+<A NAME="ch33note29"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<table width="90%" border="0" cellspacing="0" cellpadding="1"><tr><td width="60" valign="top"><IMG BORDER="0" ALIGN="LEFT" width="30" height="18" SRC="images/0672326132/graphics/V7_icon.gif" ALT="graphics/V7_icon.gif"></td><td valign="top"><P class="docText"> As of DB2 V7, <TT>REORG</TT> can perform <TT>BUILD2</TT> processing in parallel. The maximum number of parallel tasks is controlled by the <TT>SRPRMMUP</TT> parameter (DSNZPARM).</P></td></tr></table><br></div><br>
+<A NAME="ch33lev2sec21"></A><H4 class="docSection2Title"><TT>REORG TABLESPACE</TT> Phases for LOB Table Spaces</H4>
+<P class="docText">The <TT>REORG</TT> utility consists only of three phases when run against a LOB table space:<A NAME="ch33index444"></A><A NAME="ch33index445"></A><A NAME="ch33index446"></A><A NAME="ch33index447"></A><A NAME="ch33index448"></A></P>
+<P><TABLE CELLSPACING="0" FRAME="void" RULES="none" CELLPADDING="5"><COLGROUP><COL width="143"><COL width="407"></COLGROUP><THEAD></THEAD><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>UTILINIT</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Sets up and initializes the <TT>REORG</TT> utility.</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>REORGLOB</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Rebuilds the LOB table space in place; no LOBs are unloaded or reloaded. The LOB table space is placed in a <TT>RECOVER</TT> pending state when processing begins and is removed from this state when the <TT>REORGLOB</TT> phase completes. So, if the <TT>REORGLOB</TT> phase fails, the LOB table space will be in a <TT>RECOVER</TT> pending state.</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>UTILTERM</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Performs the final utility cleanup.</P></TD></TR></TABLE></P><br>
+<A NAME="ch33lev2sec22"></A><H4 class="docSection2Title"><TT>REORG</TT> Rerun/Restart Procedures</H4>
+<P class="docText">The <TT>REORG</TT> restart procedure depends on the phase that was running when the failure occurred. There are two ways to determine the phase in which the failure occurred.<A NAME="ch33index449"></A><A NAME="ch33index450"></A><A NAME="ch33index451"></A><A NAME="ch33index452"></A></P>
+<P class="docText">The first method is to issue the <TT>DISPLAY UTILITY</TT> command to determine which utilities are currently active, stopped, or terminating in the DB2 system. The format of the command is</P>
+<pre>
+
+</pre><BR><pre>
+-DISPLAY UTILITY(*)
+</pre><BR>
+<P class="docText">The second way to determine the abending phase is to view the <TT>SYSPRINT DD</TT> statement of the <TT>REORG</TT> step. This method is not as desirable as the first, but it is the only method you can use when the DB2 system is down. At the completion of each phase, DB2 prints a line stating that the phase has finished. You can assume that the phase immediately following the last phase reported complete in the <TT>SYSPRINT DD</TT> statement is the phase that was executing when the abend occurred.</P>
+<P class="docText">After determining the phase of the <TT>REORG</TT> utility at the time of the abend, follow the steps outlined here to restart or rerun the reorganization. In the following procedures, it is assumed that your <TT>REORG</TT> processing is restartable.</P>
+<P class="docText">If the abend occurred in the <TT>UTILINIT</TT> phase<A NAME="ch33index453"></A><A NAME="ch33index454"></A></P>
+<A NAME="ch33pr10"></A>
+
+
+<div style="font-weight:bold"><OL class="docList" START="1"><LI value="1"><div style="font-weight:normal">Determine the cause of the abend. An abend in this step is usually caused by another utility executing with the same UID or a utility that is incompatible with another utility currently executing.<BR><BR></div></LI><LI value="2"><div style="font-weight:normal">Resolve the cause of the abend. An abend in this phase is probably due to improper job scheduling. Issue the <TT>DISPLAY UTILITY</TT> command to determine which utilities are currently in process for the DB2 system. Resolve the scheduling problem by allowing conflicting utilities to complete before proceeding to step 3.<BR><BR></div></LI><LI value="3"><div style="font-weight:normal">Restart the job at the <TT>REORG</TT> step.<BR><BR></div></LI></OL></div>
+<P class="docText">If the abend occurred in the <TT>UNLOAD</TT> phase<A NAME="ch33index455"></A><A NAME="ch33index456"></A></P>
+<A NAME="ch33pr11"></A>
+
+
+<div style="font-weight:bold"><OL class="docList" START="1"><LI value="1"><div style="font-weight:normal">Determine the cause of the abend. An abend in this step is usually caused by insufficient space allocated to the <TT>SYSREC DD</TT> statement.<BR><BR></div></LI><LI value="2"><div style="font-weight:normal">Resolve the cause of the abend. If the problem is an out-of-space abend (<TT>B37</TT>) on the <TT>SYSREC DD</TT> statement, the data set associated with that <TT>DD</TT> statement will have been cataloged. Allocate a new data set with additional space, copy the <TT>SYSREC</TT> data set to the new data set, delete the original <TT>SYSREC</TT> data set, and rename the new data set to the same name as the original <TT>SYSREC</TT> data set.<BR><BR></div></LI><LI value="3"><div style="font-weight:normal">Restart the job at the <TT>REORG</TT> step with a temporary change to alter the <TT>UTPROC</TT> parameter to <TT>RESTART</TT>. This restarts the utility at the point of the last commit.<BR><BR></div></LI></OL></div>
+<P class="docText">If the abend occurred in the <TT>RELOAD</TT> phase<A NAME="ch33index457"></A><A NAME="ch33index458"></A></P>
+<A NAME="ch33pr12"></A>
+
+
+<div style="font-weight:bold"><OL class="docList" START="1"><LI value="1"><div style="font-weight:normal">Determine the cause of the abend. An abend in this phase is usually a Resource Unavailable abend due to another user allocating the table space or the VSAM data set associated with the table space running out of space. Note the <TT>SHRLEVEL</TT> specified for the <TT>REORG</TT>.<BR><BR>
+When an abend occurs in this phase, the table space will be in recover pending and copy pending status. Associated indexes will be in recover pending status.<BR><BR></div></LI><LI value="2"><div style="font-weight:normal">Resolve the cause of the abend.<BR><BR>
+<div style="font-weight:bold"><OL class="docList" TYPE="a"><LI><div style="font-weight:normal"><P class="docList">If the problem is timeout due to another job or user accessing the table space to be reloaded, determine the conflicting job or user access and wait for it to complete processing before proceeding to step 3.</P></div></LI><LI><div style="font-weight:normal"><P class="docList">If the problem is an out-of-space abend on the VSAM data set containing the table space being reloaded, contact the DBA or DASD support unit. This situation can be corrected by adding another volume to the <TT>STOGROUP</TT> being used; by using IDCAMS to redefine the VSAM data set, move the VSAM data set, or both; or by altering the primary space allocation quantity for the index, the secondary space allocation quantity for the index, or both.</P></div></LI></OL></div></div></LI><LI value="3"><div style="font-weight:normal"><BR><BR>
+<div style="font-weight:bold"><OL class="docList" TYPE="a"><LI><div style="font-weight:normal"><P class="docList">If the abend was not due to an error in the data set for the <TT>SYSREC DD</TT> statement, restart the job at the <TT>REORG</TT> step with a temporary change to alter the <TT>UTPROC</TT> parameter to <TT>RESTART</TT>.</P></div></LI><LI><div style="font-weight:normal"><P class="docList">If the abend was caused by an error in the data set for the <TT>SYSREC DD</TT> statement, first terminate the utility by issuing the <TT>-TERM UTILITY(</TT><span class="docEmphasis"><TT>UID</TT></span><TT>)</TT> command. Then recover the table space by executing the Recover table space utility. Next, re-create a temporary copy of the control cards used as input to the <TT>REORG</TT> step. Omit the control cards for all utilities executed in the step before the abend. This bypasses the work accomplished before the abend. The first card in the new data set should be the utility that was executing at the time of the abend. Finally, restart the job at the <TT>REORG</TT> step using the modified control cards.</P><P class="docList">For <TT>SHRLEVEL NONE</TT>, the table space and indexes are left in recovery pending status. Once the table space is recovered, the <TT>REORG</TT> job can be rerun. For <TT>SHRLEVEL REFERENCE</TT> or <TT>CHANGE</TT>, the data records are reloaded into shadow copies so the original objects are not impacted. The job can be rerun after the utility is terminated.<A NAME="ch33index459"></A><A NAME="ch33index460"></A><A NAME="ch33index461"></A><A NAME="ch33index462"></A></P></div></LI></OL></div></div></LI></OL></div>
+<P class="docText">If the abend occurred in the <TT>SORT</TT> phase<A NAME="ch33index463"></A><A NAME="ch33index464"></A></P>
+<A NAME="ch33pr13"></A>
+
+
+<div style="font-weight:bold"><OL class="docList" START="1"><LI value="1"><div style="font-weight:normal">Determine the cause of the abend. The predominant causes are insufficient sort work space or insufficient space allocations for the <TT>SORTOUT DD</TT> statement.<BR><BR>
+When an abend occurs in this phase, the table space will be in copy pending status. Associated indexes will be in recover pending status.<BR><BR></div></LI><LI value="2"><div style="font-weight:normal">Resolve the cause of the abend. If the problem is insufficient space on either the sort work or <TT>SORTOUT DD</TT> statements, simply increase the allocations and proceed to step 3.<BR><BR></div></LI><LI value="3"><div style="font-weight:normal">Restart the job at the <TT>REORG</TT> step with a temporary change to alter the <TT>UTPROC</TT> parameter to <TT>RESTART(PHASE)</TT>.<BR><BR></div></LI></OL></div>
+<P class="docText">If the abend occurred in the <TT>BUILD</TT> phase<A NAME="ch33index465"></A><A NAME="ch33index466"></A></P>
+<A NAME="ch33pr14"></A>
+
+
+<div style="font-weight:bold"><OL class="docList" START="1"><LI value="1"><div style="font-weight:normal">Determine the cause for the abend. An abend in this step is usually the result of the VSAM data set associated with the index space running out of space.<BR><BR>
+When an abend occurs in this phase, the table space will be in copy pending status.<BR><BR></div></LI><LI value="2"><div style="font-weight:normal">Resolve the cause of the abend. If the problem is an out-of-space abend on the VSAM data set containing the index space being reloaded, contact the DBA or DASD support unit. This situation can be corrected by adding another volume to the <TT>STOGROUP</TT> being used—by using IDCAMS to redefine the VSAM data set, move the VSAM data set, or both—or by altering the primary space allocation quantity for the index, the secondary space allocation quantity for the index, or both.<BR><BR></div></LI><LI value="3"><div style="font-weight:normal">Restart the job at the <TT>REORG</TT> step with a temporary change to alter the <TT>UTPROC</TT> parameter to <TT>RESTART(PHASE)</TT>.<BR><BR></div></LI></OL></div>
+<P class="docText">For abends in the <TT>SORT</TT>, <TT>BUILD</TT>, or <TT>LOG</TT> phases, the <TT>SHRLEVEL</TT> option can impact the response:</P>
+<div style="font-weight:bold"><OL class="docList" TYPE="1"><LI><div style="font-weight:normal"><P class="docList">For <TT>SHRLEVEL NONE</TT>, indexes that were not built will be in recovery pending status. Run <TT>REORG</TT> with the <TT>SORTDATA</TT> option or <TT>REBUILD INDEX</TT> to rebuild these indexes.</P><P class="docList">For <TT>SHRLEVEL REFERENCE</TT> or <TT>CHANGE</TT>, the records are reloaded into shadow objects, so the original objects have not been affected by <TT>REORG</TT>. The job can be rerun.</P></div></LI></OL></div>
+<P class="docText">If the abend occurred in the <TT>SWITCH</TT> phase<A NAME="ch33index467"></A><A NAME="ch33index468"></A></P>
+<div style="font-weight:bold"><OL class="docList" TYPE="1"><LI><div style="font-weight:normal"><P class="docList">All data sets that were renamed to their shadow counterparts are renamed back. This leaves the objects in their original state. The job can be rerun. If there is a problem in renaming to the original data sets, the objects are placed in recovery pending status. The table space can then be recovered using the image copy created by <TT>REORG</TT>. The indexes must also be recovered.</P></div></LI></OL></div>
+<P class="docText">If the abend occurred in the <TT>BUILD2</TT> phase<A NAME="ch33index469"></A><A NAME="ch33index470"></A></P>
+<div style="font-weight:bold"><OL class="docList" TYPE="1"><LI><div style="font-weight:normal"><P class="docList">The logical partition is left in recovery pending status. Run <TT>REBUILD INDEX</TT> for the NPI logical partition to complete the <TT>REORG</TT>.</P></div></LI></OL></div>
+<P class="docText">If the abend occurred in the <TT>UTILTERM</TT> phase<A NAME="ch33index471"></A><A NAME="ch33index472"></A></P>
+<A NAME="ch33pr15"></A>
+
+
+<div style="font-weight:bold"><OL class="docList" START="1"><LI value="1"><div style="font-weight:normal">An abend in this phase is unlikely because all the work required for the reorganization has been completed. A problem at this phase means that DB2 cannot terminate the utility.<BR><BR>
+The table space will be in copy pending status.<BR><BR></div></LI><LI value="2"><div style="font-weight:normal">Terminate the DB2 utility by issuing the <TT>TERM UTILITY</TT> command. The format of the command is<BR><BR>
+<pre>
+
+</pre><BR><pre>
+-TERM UTILITY(<span class="docEmphasis">UID</span>)
+</pre><BR>
+where <span class="docEmphasis"><TT>UID</TT></span> is obtained from the <TT>-DISPLAY UTILITY (*)</TT> command.<BR><BR></div></LI><LI value="3"><div style="font-weight:normal">If data sets associated with the <TT>SYSREC</TT>, <TT>SYSUT1</TT>, and <TT>SORTOUT DD</TT> statements were cataloged as a result of the abend, uncatalog them and force the job to complete.<A NAME="ch33index473"></A><A NAME="ch33index474"></A><A NAME="ch33index475"></A><A NAME="ch33index476"></A><BR><BR></div></LI></OL></div>
+<A NAME="ch33note30"></A><div class="docNote"><p class="docNoteTitle">CAUTION</p>
+
+<P class="docText">You cannot restart a <TT>REORG</TT> on a LOB table space if it is in the <TT>REORGLOB</TT> phase. Be sure to take a full image <TT>COPY</TT> of the LOB table space before executing <TT>REORG</TT> if the LOB table space was defined specifying <TT>LOG NO</TT>. Failure to do so will place the recoverability of the LOB table space in jeopardy. Any LOB table space defined with <TT>LOG NO</TT>, will be in <TT>COPY</TT> pending status after <TT>REORG</TT> finishes.</P></div><br>
+<A NAME="ch33lev2sec23"></A><H4 class="docSection2Title">Gathering Inline Statistics During the <TT>REORG</TT></H4>
+<P class="docText">You can generate statistics during the execution of the <TT>REORG</TT> utility. This is referred to as inline <TT>RUNSTATS</TT>. Up-to-date statistics will be generated during the <TT>REORG</TT> instead of requiring an additional <TT>RUNSTATS</TT> step.<A NAME="ch33index477"></A><A NAME="ch33index478"></A><A NAME="ch33index479"></A><A NAME="ch33index480"></A><A NAME="ch33index481"></A></P>
+<P class="docText">To generate inline <TT>RUNSTATS</TT>, use the <TT>STATISTICS</TT> keyword. You can gather table space statistics, index statistics, or both. By generating statistics during the <TT>REORG</TT>, you can accomplish two tasks with one I/O (reorganization and statistics collection) and also avoid the need to schedule an additional <TT>RUNSTATS</TT> step after the <TT>REORG</TT>.</P>
+<A NAME="ch33lev2sec24"></A><H4 class="docSection2Title"><TT>REORG</TT> and the <TT>SHRLEVEL</TT> Parameter</H4>
+<P class="docText">Similar to the functionality of <TT>SHRLEVEL</TT> in other DB2 utilities, the <TT>SHRLEVEL</TT> parameter controls the level of concurrent data access permitted during a <TT>REORG</TT>. There are three <TT>SHRLEVEL</TT> options for <TT>REORG</TT>: <TT>NONE</TT>, <TT>REFERENCE</TT>, and <TT>CHANGE</TT>.<A NAME="ch33index482"></A><A NAME="ch33index483"></A><A NAME="ch33index484"></A><A NAME="ch33index485"></A><A NAME="ch33index486"></A></P>
+<P class="docText"><TT>SHRLEVEL NONE</TT> indicates that concurrent data reading is permitted while data is being unloaded, but no access is permitted during the <TT>RELOAD</TT> phase and subsequent phases. This is the default and is the manner in which <TT>REORG</TT> is executed for all versions of DB2 prior to V5.</P>
+<P class="docText"><TT>SHRLEVEL REFERENCE</TT> indicates that concurrent read access is permitted during both the <TT>UNLOAD</TT> and <TT>RELOAD</TT> phases of the <TT>REORG</TT>.</P>
+<P class="docText"><TT>SHRLEVEL CHANGE</TT> indicates concurrent read and write access is available throughout most of the reorganization.</P>
+<P class="docText">Both <TT>SHRLEVEL REFERENCE</TT> and <TT>SHRLEVEL CHANGE</TT> require a shadow copy of the object being reorganized.</P>
+<A NAME="ch33lev2sec25"></A><H4 class="docSection2Title">Using <TT>SHRLEVEL CHANGE</TT> to Achieve Online Reorganization</H4>
+<P class="docText">Data availability can be greatly enhanced through the use of <TT>SHRLEVEL CHANGE</TT> when reorganizing table spaces. This option, known as Online <TT>REORG</TT> or Concurrent <TT>REORG</TT>, allows full read and write access to the data during most phases of the <TT>REORG</TT> utility. This is achieved by duplicating the data that is to be reorganized (refer to <A class="docLink" HREF="#ch33fig01">Figure 33.1</A>). Online <TT>REORG</TT> takes the following steps:<A NAME="ch33index487"></A><A NAME="ch33index488"></A><A NAME="ch33index489"></A><A NAME="ch33index490"></A><A NAME="ch33index491"></A><A NAME="ch33index492"></A></P>
+<A NAME="ch33pr16"></A>
+
+
+
+
+<div style="font-weight:bold"><OL class="docList" START="1"><LI value="1"><div style="font-weight:normal">Data is unloaded from the table space, partition, or index during which read and write access is available.<BR><BR></div></LI><LI value="2"><div style="font-weight:normal">Data is reloaded into a shadow copy of the data store being reorganized. Read and write access is still available to the original table space, partition, or index.<BR><BR></div></LI><LI value="3"><div style="font-weight:normal">The log entries recording the changes made to the original data set while the shadow reload was occurring are applied to the shadow. Read and usually write access is still available to the original table space, partition, or index. This step is performed iteratively based upon the conditions specified in <TT>MAXRO</TT>, <TT>DEADLINE</TT>, <TT>DELAY</TT>, and <TT>LONGLOG</TT>.<BR><BR></div></LI><LI value="4"><div style="font-weight:normal">The original and the copy are swapped so that future access is to the newly reorganized version of the data. Data is unavailable until the swap is accomplished.<BR><BR></div></LI><LI value="5"><div style="font-weight:normal">Read and write access to the data is enabled again.<BR><BR></div></LI></OL></div>
+<A NAME="ch33fig01"></A><p><CENTER><H5 class="docFigureTitle">Figure 33.1. Concurrent <TT>REORG</TT> processing.</H5>
+<p class="docText"><IMG BORDER="0" width="500" height="351" SRC="images/0672326132/graphics/33fig01.gif" ALT="graphics/33fig01.gif"></p></CENTER></p><br>
+<table width="90%" border="0" cellspacing="0" cellpadding="1"><tr><td width="60" valign="top"><IMG BORDER="0" width="30" height="18" SRC="images/0672326132/graphics/V7_icon.gif" ALT="graphics/V7_icon.gif"></td><td valign="top"><P class="docText"> As of DB2 V7, IBM provides a fast switch option for shadow data sets during an online <TT>REORG</TT>. The normal process is to swap the data sets by renaming them. But fast switch simply changes which data set DB2 looks at, with no renaming required. The shadow copy that was reorganized is just recorded by DB2 as now being the proper data set to be used. Recall from <A class="docLink" HREF="ch05.html#ch05">Chapter 5</A> the naming convention that is used for all DB2 data sets:</P></td></tr></table><br>
+<pre>
+
+</pre><BR><pre>
+vcat.DSNDBx.dddddddd.ssssssss.y0001.znnn
+</pre><BR>
+<P class="docText">The <span class="docEmphasis">y0001</span> component is used with fast switch. DB2 will switch back-and-forth between using <TT>i0001</TT> and <TT>j0001</TT> for this component of the data set name. The first time your <TT>REORG</TT> with fast switch enabled, when the <TT>REORG</TT> completes the <TT>j0001</TT> data sets will be in use—and the <TT>i0001</TT> data sets will be deleted. The next time you run an online <TT>REORG</TT> the same thing is done, but then with <TT>J</TT> data sets becoming <TT>I</TT> data sets again. Alternating between <TT>I</TT> and <TT>J</TT> continues every time you reorganize.</P>
+<P class="docText">Set <TT>SPRMURNM=1</TT> in <TT>DSNZPARM</TT> to enable fast switch for all online <TT>REORG</TT>s. The <TT>IPREFIX</TT> column of <TT>SYSIBM.SYSTABLEPART</TT> and <TT>SYSIBM.SYSINDEXPART</TT> can be queried to determine whether the current active data set uses <TT>I</TT> or <TT>J</TT>.<A NAME="ch33index493"></A><A NAME="ch33index494"></A><A NAME="ch33index495"></A><A NAME="ch33index496"></A><A NAME="ch33index497"></A><A NAME="ch33index498"></A></P>
+<A NAME="ch33lev3sec4"></A><H5 class="docSection3Title">Online <TT>REORG</TT> Drawbacks</H5>
+<P class="docText">Online <TT>REORG</TT> should not be used all of the time because there are drawbacks to its use. First and foremost, is the need to have excess disk space to store the shadow copy. The shadow copy typically consumes at least as much space as the object being reorganized. More space may be required because <TT>REORG</TT> reclaims free space.<A NAME="ch33index499"></A><A NAME="ch33index500"></A><A NAME="ch33index501"></A><A NAME="ch33index502"></A></P>
+<P class="docText">Because of the need to apply changes from the log, online <TT>REORG</TT> is most effectively used when transaction throughput is low and most transactions are of short duration. Furthermore, avoid scheduling <TT>REORG</TT> with <TT>SHRLEVEL CHANGE</TT> when low-tolerance applications are executing.</P>
+<P class="docText">Third-party online reorganization products are available that offer better concurrency during higher volume transaction processing.</P>
+<A NAME="ch33lev3sec5"></A><H5 class="docSection3Title">The Mapping Table</H5>
+<P class="docText">A mapping table must be specified whenever a <TT>SHRLEVEL CHANGE</TT> reorganization is run. The mapping table is used by <TT>REORG</TT> to map between the RIDs of records in the original copy and the like RIDs in the shadow copy. The mapping table must use the following definition as a template:<A NAME="ch33index503"></A><A NAME="ch33index504"></A><A NAME="ch33index505"></A><A NAME="ch33index506"></A><A NAME="ch33index507"></A></P>
+<pre>
+
+</pre><BR><pre>
+CREATE TABLE <span class="docEmphasis">table-name</span>
+   (TYPE         CHAR(1) NOT NULL,
+    SOURCE_RID   CHAR(5) NOT NULL,
+    TARGET_XRID  CHAR(9) NOT NULL,
+    LRSN         CHAR(6) NOT NULL
+   );
+</pre><BR>
+<P class="docText">Additionally, an index must be created for the mapping table using the following template:</P>
+<pre>
+
+</pre><BR><pre>
+CREATE TYPE 2 UNIQUE INDEX <span class="docEmphasis">index-name</span>
+   ON TABLE <span class="docEmphasis">table-name</span>
+   (SOURCE_RID ASC,
+    TYPE,
+    TARGET_XRID,
+    LRSN
+   );
+</pre><BR>
+<P class="docText">Be careful when assigning the mapping objects to buffer pools. Do not assign these objects to <TT>BP0</TT> or other sensitive buffer pools. For example, do not place mapping objects in the same buffer pool as the objects being reorganized.</P>
+<P class="docText">Additionally, when running an online <TT>REORG</TT> when application traffic is high, be sure to adjust the output log buffer (<TT>OUTBUF</TT>) to be large enough to contain the changes.</P>
+<P class="docText">Create the table in a segmented table space explicitly set aside for the use of the mapping table. Multiple mapping tables can be created in the segmented table space if concurrent online <TT>REORG</TT>s are required to be run. One mapping table is required per online <TT>REORG</TT> execution. Although a single mapping table can be reused for multiple <TT>REORG</TT>s, they cannot be concurrent <TT>REORG</TT>s. Consider specifying <TT>LOCKSIZE TABLE</TT> for the table space containing the mapping table because concurrent tasks will not access the mapping table.</P>
+<P class="docText">Any name can be used for the mapping table as long as it conforms to the DB2 restrictions on table names. It is wise to create a naming standard to identify mapping tables as such. For example, you may want to name all mapping tables beginning with a prefix of <TT>MAP_</TT>.<A NAME="ch33index508"></A><A NAME="ch33index509"></A><A NAME="ch33index510"></A><A NAME="ch33index511"></A><A NAME="ch33index512"></A></P>
+<A NAME="ch33note31"></A><div class="docNote"><p class="docNoteTitle">CAUTION</p>
+
+<P class="docText">Explicit creation of shadow copy data sets is required only if the object being reorganized uses user-defined VSAM data sets instead of <TT>STOGROUP</TT>s. This is yet another reason to use <TT>STOGROUP</TT>s instead of user-defined VSAM.</P></div><br>
+<A NAME="ch33lev3sec6"></A><H5 class="docSection3Title">Online <TT>REORG</TT> Options</H5>
+<P class="docText">There are several additional options that can be used in conjunction with online <TT>REORG</TT>. These options are briefly discussed in this section.<A NAME="ch33index513"></A><A NAME="ch33index514"></A><A NAME="ch33index515"></A><A NAME="ch33index516"></A><A NAME="ch33index517"></A></P>
+<A NAME="ch33lev4sec34"></A><H5 class="docSection4Title"><TT>MAXRO</TT></H5>
+<P class="docText">The <TT>MAXRO</TT> option is an integer that specifies the amount of time for the last iteration of log processing for the online <TT>REORG</TT>. DB2 continues to iteratively apply log records until it determines that the next iteration will take less than the indicated <TT>MAXRO</TT> value. Of course, the actual execution time for the last iteration may actually exceed the <TT>MAXRO</TT> value.<A NAME="ch33index518"></A><A NAME="ch33index519"></A><A NAME="ch33index520"></A><A NAME="ch33index521"></A><A NAME="ch33index522"></A><A NAME="ch33index523"></A></P>
+<P class="docText">Specifying a small positive <TT>MAXRO</TT> value reduces the length of the period of read-only access, but it might increase the elapsed time for <TT>REORG</TT> to complete. If you specify a huge positive value, the second iteration of log processing is probably the last iteration.</P>
+<A NAME="ch33note32"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<P class="docText">The <TT>ALTER UTILITY</TT> command can be used to change the value of <TT>MAXRO</TT> during the execution of an online <TT>REORG</TT>.</P></div><br>
+<P class="docText">The <TT>MAXRO</TT> parameter can also be set to <TT>DEFER</TT> an integer value. The <TT>DEFER</TT> option indicates that log processing iterations can continue indefinitely. If <TT>DEFER</TT> is specified, the online <TT>REORG</TT> will not start the final log processing iteration until the <TT>MAXRO</TT> value is modified using the <TT>ALTER UTIL</TT> command.</P>
+<P class="docText">When <TT>DEFER</TT> is specified and DB2 determines that the time for the current iteration and the estimated time for the next iteration are both less than five seconds, DB2 will send a message to the console (<TT>DSNU362I</TT>) indicating that a pause will be inserted before the next log iteration. When running an online <TT>REORG</TT> specifying <TT>DEFER</TT>, the operator should scan for <TT>DSNU362I</TT> messages to determine when to issue an <TT>ALTER UTIL</TT> command to change the <TT>MAXRO</TT> value.</P>
+<P class="docText">The <TT>DEFER</TT> parameter should always be used in conjunction with <TT>LONGLOG CONTINUE</TT>.<A NAME="ch33index524"></A><A NAME="ch33index525"></A><A NAME="ch33index526"></A><A NAME="ch33index527"></A><A NAME="ch33index528"></A><A NAME="ch33index529"></A></P>
+<A NAME="ch33lev4sec35"></A><H5 class="docSection4Title"><TT>LONGLOG</TT></H5>
+<P class="docText">The <TT>LONGLOG</TT> parameter designates how DB2 will react if the number of records that the next log processing iteration is not lower than the number that the previous iterations processed. If this occurs, the <TT>REORG</TT> log processing may never catch up to the write activity of the concurrently executing transactions and programs.<A NAME="ch33index530"></A><A NAME="ch33index531"></A><A NAME="ch33index532"></A><A NAME="ch33index533"></A><A NAME="ch33index534"></A><A NAME="ch33index535"></A></P>
+<P class="docText">If <TT>LONGLOG CONTINUE</TT> is specified, DB2 will continue processing the <TT>REORG</TT> until the time on the <TT>JOB</TT> statement expires. When <TT>MAXRO DEFER</TT> is used in conjunction with <TT>LONGLOG CONTINUE</TT>, the online <TT>REORG</TT> continues with read/write access still permitted to the original table space, partition, or index. When the switch to the shadow copy is required, an operator or DBA must issue the <TT>ALTER UTIL</TT> command with a large integer <TT>MAXRO</TT> value. <TT>CONTINUE</TT> is the default <TT>LONGLOG</TT> value.</P>
+<P class="docText">If <TT>LONGLOG TERM</TT> is specified, DB2 terminates reorganization after the delay specified by the <A class="docLink" HREF="#ch33lev4sec36">DELAY</A> parameter (discussed in the next section).</P>
+<P class="docText">If <TT>LONGLOG DRAIN</TT> is specified, DB2 drains the write claim class after the delay specified by the <TT>DELAY</TT> parameter, thereby forcing the final log processing iteration to happen.</P>
+<A NAME="ch33lev4sec36"></A><H5 class="docSection4Title"><TT>DELAY</TT></H5>
+<P class="docText">The <TT>DELAY</TT> parameter is used in conjunction with the <TT>LONGLOG</TT> parameter. It indicates the minimum amount of time before the <TT>TERM</TT> or <TT>DRAIN</TT> activity is performed.<A NAME="ch33index536"></A><A NAME="ch33index537"></A><A NAME="ch33index538"></A><A NAME="ch33index539"></A><A NAME="ch33index540"></A><A NAME="ch33index541"></A></P>
+<A NAME="ch33lev4sec37"></A><H5 class="docSection4Title"><TT>DEADLINE</TT></H5>
+<P class="docText">The <TT>DEADLINE</TT> parameter provides a mechanism for shutting off an online <TT>REORG</TT>. If DB2 determines that the switch phase will not finish by the deadline, DB2 terminates the <TT>REORG</TT>.<A NAME="ch33index542"></A><A NAME="ch33index543"></A><A NAME="ch33index544"></A><A NAME="ch33index545"></A><A NAME="ch33index546"></A><A NAME="ch33index547"></A></P>
+<P class="docText">If <TT>DEADLINE NONE</TT> is specified, there is no deadline and the <TT>REORG</TT> can continue indefinitely. This is the default option.</P>
+<P class="docText">If <TT>DEADLINE </TT><span class="docEmphasis"><TT>timestamp</TT></span> is specified, the <TT>REORG</TT> must finish before the specified date and time deadline. This indicates that the switch phase of the log processing must be finished by the timestamp provided.</P>
+<A NAME="ch33note33"></A><div class="docNote"><p class="docNoteTitle">CAUTION</p>
+
+<P class="docText">The timestamp provided to the <TT>DEADLINE</TT> parameter must be in the future. The <TT>REORG</TT> will not commence if the date/time combination has already passed.</P></div><br>
+<A NAME="ch33lev2sec26"></A><H4 class="docSection2Title"><TT>REORG TABLESPACE</TT> Locking Considerations</H4>
+<P class="docText">The <TT>REORG TABLESPACE</TT> utility, regardless of the execution options specified, can run concurrently with the following utilities (each accessing the same object):<A NAME="ch33index548"></A><A NAME="ch33index549"></A><A NAME="ch33index550"></A><A NAME="ch33index551"></A><A NAME="ch33index552"></A><A NAME="ch33index553"></A></P>
+<UL><LI><P class="docList"><TT>DIAGNOSE</TT></P></LI><LI><P class="docList"><TT>REPORT</TT></P></LI></UL>
+<P class="docText">When <TT>REORG TABLESPACE</TT> is run specifying <TT>SHRLEVEL NONE</TT> and <TT>UNLOAD ONLY</TT>, the following additional utilities can be run concurrently:</P>
+<UL><LI><P class="docList"><TT>CHECK INDEX</TT></P></LI><LI><P class="docList"><TT>COPY</TT></P></LI><LI><P class="docList"><TT>QUIESCE</TT></P></LI><LI><P class="docList"><TT>REBUILD INDEX</TT> (only when a clustering index does not exist)</P></LI><LI><P class="docList"><TT>REORG INDEX</TT> (only when a clustering index does not exist)</P></LI><LI><P class="docList"><TT>REORG SHRLEVEL NONE UNLOAD ONLY</TT></P></LI><LI><P class="docList"><TT>REPAIR DUMP</TT> or <TT>VERIFY</TT></P></LI><LI><P class="docList"><TT>REPAIR LOCATE INDEX PAGE REPLACE</TT> (only when a clustering index does not exist)</P></LI><LI><P class="docList"><TT>RUNSTATS</TT></P></LI><LI><P class="docList"><TT>STOSPACE</TT></P></LI></UL>
+<P class="docText">The <TT>REORG TABLESPACE</TT> utility when run specifying <TT>UNLOAD ONLY</TT> will drain all write claim classes for the table space or partition being reorganized. Additionally, if a clustering index exists, the <TT>REORG</TT> utility will drain all write claim classes for the index or partition.</P>
+<A NAME="ch33lev3sec7"></A><H5 class="docSection3Title"><TT>REORG TABLESPACE SHRLEVEL NONE</TT></H5>
+<P class="docText">When <TT>REORG TABLESPACE SHRLEVEL NONE</TT> is executed with the <TT>UNLOAD CONTINUE</TT> or <TT>UNLOAD PAUSE</TT> options, the following locking activity occurs:<A NAME="ch33index554"></A><A NAME="ch33index555"></A><A NAME="ch33index556"></A><A NAME="ch33index557"></A><A NAME="ch33index558"></A><A NAME="ch33index559"></A><A NAME="ch33index560"></A></P>
+<UL><LI><P class="docList">Write claim classes are drained for the table space or table space partition and the associated index or index partition during the <TT>UNLOAD</TT> phase.</P></LI><LI><P class="docList">All claim classes are drained for the table space or table space partition and the associated index or index partition during the <TT>RELOAD</TT> phase.</P></LI><LI><P class="docList">Write claim classes are drained for the logical partition of a nonpartitioned type 2 index during the <TT>RELOAD</TT> phase.</P></LI><LI><P class="docList">For a <TT>REORG</TT> of a single partition, all claim classes are drained for the logical partition of a non partitioned type 2 index during the <TT>RELOAD</TT> phase.</P></LI></UL>
+<A NAME="ch33lev3sec8"></A><H5 class="docSection3Title"><TT>REORG TABLESPACE SHRLEVEL REFERENCE</TT></H5>
+<P class="docText">When <TT>REORG TABLESPACE SHRLEVEL REFERENCE</TT> is executed with the <TT>UNLOAD CONTINUE</TT> or <TT>UNLOAD PAUSE</TT> options, the following locking activity occurs:</P>
+<UL><LI><P class="docList">Write claim classes are drained for the table space or table space partition and the associated partitioning index and non-partitioned index during the <TT>UNLOAD</TT> phase.<A NAME="ch33index561"></A><A NAME="ch33index562"></A><A NAME="ch33index563"></A><A NAME="ch33index564"></A><A NAME="ch33index565"></A><A NAME="ch33index566"></A><A NAME="ch33index567"></A></P></LI><LI><P class="docList">All claim classes are drained for the table space or table space partition and the associated partitioning index and non-partitioned type 1 indexes during the <TT>SWITCH</TT> phase.</P></LI><LI><P class="docList">Write claim classes are drained for the logical partition of a non-partitioned type 2 index during the <TT>SWITCH</TT> phase.</P></LI><LI><P class="docList">Write claim classes are drained for the table space or table space partition and the associated partitioning index and non-partitioned type 1 indexes during the <TT>UNLOAD</TT> phase.</P></LI><LI><P class="docList">All claim classes are drained for the logical partition of a non-partitioned type 2 index during the <TT>UNLOAD</TT> phase.</P></LI><LI><P class="docList">All claim classes are drained for the table space or table space partition and the associated partitioning index and nonpartitioned type 1 indexes during the <TT>SWITCH</TT> phase of a single partition <TT>REORG</TT>.</P></LI><LI><P class="docList">For a <TT>REORG</TT> of a single partition, the repeatable read class is drained for non-partitioned type 2 index during the <TT>SWITCH</TT> phase.</P></LI></UL>
+<A NAME="ch33lev3sec9"></A><H5 class="docSection3Title"><TT>REORG TABLESPACE SHRLEVEL CHANGE</TT></H5>
+<P class="docText">When <TT>REORG TABLESPACE SHRLEVEL CHANGE</TT> is executed with the <TT>UNLOAD CONTINUE</TT> or <TT>UNLOAD PAUSE</TT> options, the following locking activity occurs:<A NAME="ch33index568"></A><A NAME="ch33index569"></A><A NAME="ch33index570"></A><A NAME="ch33index571"></A><A NAME="ch33index572"></A><A NAME="ch33index573"></A><A NAME="ch33index574"></A></P>
+<UL><LI><P class="docList">The read claim class is claimed for the table space and associated indexes during the <TT>UNLOAD</TT> phase.</P></LI><LI><P class="docList">The write claim class is drained for the table space and associated indexes during the <TT>LOG</TT> phase.</P></LI><LI><P class="docList">All claim classes are drained for the table space and associated indexes during the <TT>SWITCH</TT> phase.</P></LI></UL>
+<A NAME="ch33lev2sec27"></A><H4 class="docSection2Title"><TT>REORG INDEX</TT> Locking Considerations</H4>
+<P class="docText">The <TT>REORG INDEX</TT> utility is compatible with the following utilities:<A NAME="ch33index575"></A><A NAME="ch33index576"></A><A NAME="ch33index577"></A><A NAME="ch33index578"></A><A NAME="ch33index579"></A><A NAME="ch33index580"></A><A NAME="ch33index581"></A></P>
+<UL><LI><P class="docList"><TT>CHECK LOB</TT></P></LI><LI><P class="docList"><TT>COPY TABLESPACE</TT></P></LI><LI><P class="docList"><TT>DIAGNOSE</TT></P></LI><LI><P class="docList"><TT>MERGECOPY</TT></P></LI><LI><P class="docList"><TT>MODIFY</TT></P></LI><LI><P class="docList"><TT>RECOVER TABLESPACE</TT> (no options)</P></LI><LI><P class="docList"><TT>RECOVER TABLESPACE ERROR RANGE</TT></P></LI><LI><P class="docList"><TT>REORG SHRLEVEL NONE UNLOAD ONLY</TT> or <TT>UNLOAD EXTERNAL</TT> (only when a clustering index does not exist)</P></LI><LI><P class="docList"><TT>REPAIR LOCATE RID</TT> (<TT>DUMP</TT>, <TT>VERIFY</TT>, or <TT>REPLACE</TT>)</P></LI><LI><P class="docList"><TT>REPAIR LOCATE TABLESPACE PAGE REPLACE</TT></P></LI><LI><P class="docList"><TT>REPORT</TT></P></LI><LI><P class="docList"><TT>RUNSTATS TABLESPACE</TT></P></LI><LI><P class="docList"><TT>STOSPACE</TT></P></LI></UL>
+<A NAME="ch33lev3sec10"></A><H5 class="docSection3Title"><TT>SHRLEVEL NONE</TT></H5>
+<P class="docText">When <TT>REORG INDEX SHRLEVEL NONE</TT> is executed, the write claim class is drained for the index or index partition during the <TT>UNLOAD</TT> phase and all claim classes are drained during both the <TT>SORT</TT> and <TT>BUILD</TT> phase. Remember, the <TT>SORT</TT> phase can be skipped.<A NAME="ch33index582"></A><A NAME="ch33index583"></A><A NAME="ch33index584"></A><A NAME="ch33index585"></A><A NAME="ch33index586"></A><A NAME="ch33index587"></A><A NAME="ch33index588"></A></P>
+<A NAME="ch33lev3sec11"></A><H5 class="docSection3Title"><TT>SHRLEVEL REFERENCE</TT></H5>
+<P class="docText">When <TT>REORG INDEX SHRLEVEL REFERENCE</TT> is executed, the write claim class is drained for the index or index partition during the <TT>UNLOAD</TT> phase—all claim classes are drained during the <TT>SWITCH</TT> phase.<A NAME="ch33index589"></A><A NAME="ch33index590"></A><A NAME="ch33index591"></A><A NAME="ch33index592"></A><A NAME="ch33index593"></A><A NAME="ch33index594"></A><A NAME="ch33index595"></A></P>
+<A NAME="ch33lev3sec12"></A><H5 class="docSection3Title"><TT>SHRLEVEL CHANGE</TT></H5>
+<P class="docText">When <TT>REORG INDEX SHRLEVEL CHANGE</TT> is executed, the read claim class is claimed for the index or index partition during the <TT>UNLOAD</TT> phase. Additionally, the write claim class is drained during the last iteration of the log processing—all claim classes are drained during both the <TT>SWITCH</TT> phase.<A NAME="ch33index596"></A><A NAME="ch33index597"></A><A NAME="ch33index598"></A><A NAME="ch33index599"></A><A NAME="ch33index600"></A><A NAME="ch33index601"></A><A NAME="ch33index602"></A></P>
+<A NAME="ch33lev2sec28"></A><H4 class="docSection2Title"><TT>REORG</TT> Guidelines</H4>
+<P class="docText">By adhering to the following guidelines, you will ensure efficient and effective reorganization of DB2 table spaces.</P>
+<A NAME="ch33lev4sec38"></A><H5 class="docSection3Title">Ensure That Adequate Recovery Is Available</H5>
+<P class="docText">Take an image copy of every table space to be reorganized before executing the <TT>REORG</TT> utility. All image copies taken before the reorganization are marked as invalid for current point-in-time recovery by the <TT>REORG</TT> utility. These image copies can be used only with the <TT>TORBA</TT> or <TT>TOCOPY</TT> options of the <TT>RECOVER</TT> utility.<A NAME="ch33index603"></A><A NAME="ch33index604"></A><A NAME="ch33index605"></A><A NAME="ch33index606"></A></P>
+<P class="docText">Take an image copy of every table space reorganized after using the <TT>LOG NO</TT> option of the <TT>REORG</TT> utility. All table spaces reorganized with the <TT>LOG NO</TT> option are placed into copy pending status.</P>
+<A NAME="ch33lev4sec39"></A><H5 class="docSection3Title">Analyze Clustering Before Reorganizing</H5>
+<P class="docText">Consider the <TT>CLUSTER RATIO</TT> of a table space before reorganizing. If the table space to be reorganized is not clustered, specify the <TT>SORTDATA</TT> parameter. The <TT>SORTDATA</TT> option causes the data to be unloaded according to its physical sequence in the table space. The data is then sorted in sequence by the clustering index columns.<A NAME="ch33index607"></A><A NAME="ch33index608"></A><A NAME="ch33index609"></A><A NAME="ch33index610"></A></P>
+<P class="docText">If the <TT>SORTDATA</TT> parameter is not specified, the table space data is unloaded using the clustering index, which is highly efficient when the table space is clustered. If the table space is not clustered, however, unloading by the clustering index causes <TT>REORG</TT> to scan the table space data in an inefficient manner. Refer to <A class="docLink" HREF="ch26.html#ch26">Chapter 26</A>, "DB2 Object Monitoring Using the DB2 Catalog and RTS," for DB2 Catalog queries to obtain cluster ratio.</P>
+<P class="docText">DB2 does not consider a default clustering index to be clustering for the purposes of unloading for a <TT>REORG</TT>. Only an explicitly created clustering index, if available, will be used.</P>
+<P class="docText">If the cluster ratio for a table space is less than 90%, consider using the <TT>SORTDATA</TT> option. When data is less than 90% clustered, unloading physically and sorting is usually more efficient than scanning data. Furthermore, the DBA statistics <TT>NEAROFFPOS</TT> and <TT>FAROFFPOS</TT> can be used to judge whether to use the <TT>SORTDATA</TT> option.</P>
+<P class="docText">Monitor the results of the <TT>REORG</TT> utility with and without the <TT>SORTDATA</TT> option, however, to gauge its effectiveness with different application table spaces.</P>
+<A NAME="ch33note34"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<P class="docText">Use of the <TT>SORTDATA</TT> option can increase the sort work requirements of the <TT>REORG</TT> utility, especially for tables with long rows and few indexes.</P></div><br>
+<A NAME="ch33lev4sec40"></A><H5 class="docSection3Title">Rebalance Partitions Using <TT>REORG</TT></H5>
+
+<P class="docText">As of DB2 V8, you can rebalance table space partitions using the new <TT>REBALANCE</TT> parameter. Specifying this parameter causes DB2 to rebalance the data such that it is evenly distributed across the partitions. More details on this options can be found in <A class="docLink" HREF="ch07.html#ch07">Chapter 7</A>, "Database Change Management and Schema Evolution."<A NAME="ch33index611"></A><A NAME="ch33index612"></A><A NAME="ch33index613"></A><A NAME="ch33index614"></A></P>
+<A NAME="ch33lev4sec41"></A><H5 class="docSection3Title">Follow General Reorganization Rules</H5>
+<P class="docText">One rule of thumb for smaller indexes is to reorganize the number of levels is greater than four. For indexes on larger tables four (or more) levels may be completely normal. Other indicators that signify a <TT>REORG INDEX</TT> is needed are when the <TT>LEAFDIST</TT> value is large or <TT>PSEUDO_DEL_ENTRIES</TT> has grown.<A NAME="ch33index615"></A><A NAME="ch33index616"></A><A NAME="ch33index617"></A></P>
+<P class="docText">Reorganize table spaces when the <TT>CLUSTER RATIO</TT> drops below 95% or when <TT>FARINDREF</TT> is large. Reorganizing a large table space as soon as the <TT>CLUSTER RATIO</TT> is not 100% could produce significant performance gains.</P>
+<A NAME="ch33lev4sec42"></A><H5 class="docSection3Title">Consider Using <TT>SORTKEYS</TT></H5>
+<P class="docText"><TT>REORG</TT> provides a <TT>SORTKEYS</TT> parameter similar to the <TT>SORTKEYS</TT> parameter of <TT>LOAD</TT>. When more than multiple indexes exist and need to be created, consider using the <TT>SORTKEYS</TT> keyword. When <TT>SORTKEYS</TT> is specified, index keys are sorted in parallel with the <TT>RELOAD</TT> and <TT>BUILD</TT> phases, thereby improving performance.<A NAME="ch33index618"></A><A NAME="ch33index619"></A><A NAME="ch33index620"></A><A NAME="ch33index621"></A><A NAME="ch33index622"></A></P>
+<P class="docText">An estimate of the number of keys to be sorted can be supplied. To estimate the number of keys to sort, use the following calculation:</P>
+<pre>
+
+</pre><BR><pre>
+Number of Keys = (Total number of rows in the table) x
+                 [(number of indexes on the table) +
+                  (number of foreign keys)]
+</pre><BR>
+<A NAME="ch33lev4sec43"></A><H5 class="docSection3Title">Consider Using <TT>NOSYSREC</TT></H5>
+<P class="docText">The <TT>NOSYSREC</TT> option can be used so that the <TT>REORG</TT> process does not require unload data set. This can enhance performance because intermediate disk I/O is eliminated. To use the <TT>NOSYSREC</TT> option, neither the <TT>UNLOAD PAUSE</TT> nor the <TT>UNLOAD ONLY</TT> options can be used. Furthermore, you must specify <TT>SORTDATA</TT>, and <TT>SHRLEVEL REFERENCE</TT> or <TT>SHRLEVEL CHANGE</TT>.<A NAME="ch33index623"></A><A NAME="ch33index624"></A><A NAME="ch33index625"></A><A NAME="ch33index626"></A><A NAME="ch33index627"></A></P>
+<P class="docText">However, the <TT>NOSYSREC</TT> option affects the restartability of the <TT>REORG</TT> utility. For a <TT>SHRLEVEL REFERENCE</TT> table space <TT>REORG</TT>, if an error occurs during the <TT>RELOAD</TT> phase, you must restart at the <TT>UNLOAD</TT> phase, effectively unloading all of the data again. This is so because the previously unloaded data has not been saved to disk. Likewise, for a <TT>REORG TABLESPACE SHRLEVEL NONE</TT>, if an error occurs during the <TT>RELOAD</TT> phase, a <TT>RECOVER TABLESPACE</TT> is required. Therefore, it is wise to create an image copy prior to running <TT>REORG SHRLEVEL NONE</TT> with the <TT>NOSYSREC</TT> option.</P>
+<A NAME="ch33lev4sec44"></A><H5 class="docSection3Title">Consider Specifying <TT>REUSE</TT></H5>
+<P class="docText">When the <TT>REUSE</TT> option is used in conjunction with <TT>SHRLEVEL NONE</TT>, the <TT>REORG</TT> utility will logically reset and reuse <TT>STOGROUP</TT>-managed data sets without deleting and redefining them. If <TT>REUSE</TT> is not specified, the underlying data sets will be deleted and redefined as part of the <TT>REORG</TT> process. By eliminating the delete and redefine step, you can enhance the overall performance of the reorganization because less work needs to be done. However, if a data set is in multiple extents, the extents will not be released if you specify the <TT>REUSE</TT> parameter.<A NAME="ch33index628"></A><A NAME="ch33index629"></A><A NAME="ch33index630"></A><A NAME="ch33index631"></A></P>
+<P class="docText">Keep in mind that the extents will not be released if you use the <TT>REUSE</TT> parameter to <TT>REORG</TT> an object whose data set has multiple extents. Furthermore, if you are reorganizing to increase the primary or secondary storage, using <TT>REUSE</TT> causes DB2 to not apply any <TT>PRIQTY</TT> or <TT>SECQTY</TT> changes.</P>
+<A NAME="ch33note35"></A><div class="docNote"><p class="docNoteTitle">CAUTION</p>
+
+<P class="docText">The <TT>REUSE</TT> option is not applicable with a <TT>SHRLEVEL REFERENCE</TT> or <TT>SHRLEVEL CHANGE REORG</TT>.</P></div><br>
+<A NAME="ch33lev4sec45"></A><H5 class="docSection3Title">Use <TT>SCOPE PENDING</TT> to Reorganize Changed Table Spaces</H5>
+
+<P class="docText">Specify <TT>SCOPE PENDING</TT> to reorganize only those table spaces or partitions that are in a <TT>REORG</TT>-pending status. Typically, the scope for a <TT>REORG TABLESPACE</TT> job should be set to <TT>SCOPE ALL</TT> to reorganize all specified table spaces. However, you might want to reorganize specified table spaces or partitions only if they are in a <TT>REORG</TT>-pending status (<TT>REORP</TT> or <TT>AREO*</TT>). Recall from <A class="docLink" HREF="ch07.html#ch07">Chapter 7</A> that these states can be set when online schema changes are implemented.<A NAME="ch33index632"></A><A NAME="ch33index633"></A><A NAME="ch33index634"></A><A NAME="ch33index635"></A></P>
+<A NAME="ch33note36"></A><div class="docNote"><p class="docNoteTitle">CAUTION</p>
+
+<P class="docText">If you are reorganizing a partition range using <TT>SCOPE PENDING</TT>, be sure that a partition adjacent to the specified range is not also in a <TT>REORG</TT>-pending status. If this is the case, the utility will fail.</P></div><br>
+<A NAME="ch33lev4sec46"></A><H5 class="docSection3Title">Buffer <TT>REORG</TT> Work Data Sets</H5>
+<P class="docText">Ensure that adequate buffering is specified for the work data set by explicitly coding a larger <TT>BUFNO</TT> parameter in the <TT>REORG</TT> utility JCL for the <TT>SYSUT1</TT> and <TT>SYSREC DD</TT> statements. The <TT>BUFNO</TT> parameter creates read and write buffers in main storage for the data set, thereby enhancing the utility's performance. A <TT>BUFNO</TT> of approximately 20 is recommended for medium-sized table spaces, and a <TT>BUFNO</TT> between 50 and 100 is recommended for larger table spaces. However, ensure that sufficient memory (real or expanded) is available before increasing the <TT>BUFNO</TT> specification for your <TT>REORG</TT> work data sets.<A NAME="ch33index636"></A><A NAME="ch33index637"></A><A NAME="ch33index638"></A><A NAME="ch33index639"></A><A NAME="ch33index640"></A><A NAME="ch33index641"></A></P>
+<A NAME="ch33lev4sec47"></A><H5 class="docSection3Title">Specify <TT>KEEPDICTIONARY</TT> for Performance</H5>
+<P class="docText">The <TT>REORG</TT> utility will rebuild the compression dictionary for table spaces defined with the <TT>COMPRESS YES</TT> parameter. Specifying the <TT>KEEPDICTIONARY</TT> parameter causes the <TT>REORG</TT> utility to bypass dictionary rebuilding.<A NAME="ch33index642"></A><A NAME="ch33index643"></A><A NAME="ch33index644"></A><A NAME="ch33index645"></A><A NAME="ch33index646"></A><A NAME="ch33index647"></A></P>
+<P class="docText">This can improve the overall performance of the <TT>REORG</TT> utility because the CPU cycles used to build the dictionary can be avoided. However, as the compression ratio deteriorates, the <TT>LRECL</TT> of the <TT>SYSREC</TT> data set will get longer. Do not utilize the <TT>KEEPDICTIONARY</TT> option if the type of data in the table has changed significantly since the last time the dictionary was built. Remember, the dictionary is built at <TT>LOAD</TT> or <TT>REORG</TT> time only. If the type of data being stored has changed significantly, allowing the <TT>REORG</TT> utility to rebuild the compression dictionary will provide for more optimal data compression.</P>
+<A NAME="ch33lev4sec48"></A><H5 class="docSection3Title">Be Aware of <TT>VARCHAR</TT> Overhead</H5>
+<P class="docText">The <TT>REORG</TT> utility unloads <TT>VARCHAR</TT> columns by padding them with spaces to their maximum length. This reduces the efficiency of reorganizing.<A NAME="ch33index648"></A><A NAME="ch33index649"></A><A NAME="ch33index650"></A><A NAME="ch33index651"></A><A NAME="ch33index652"></A></P>
+<A NAME="ch33lev4sec49"></A><H5 class="docSection3Title">Be Aware of <TT>VSAM DELETE</TT> and <TT>DEFINE</TT> Activity</H5>
+<P class="docText">The underlying VSAM data sets for <TT>STOGROUP</TT>-defined table spaces and indexes are deleted and defined by the <TT>REORG</TT> utility. If the table space or index data set has been user-defined, the corresponding VSAM data set is not deleted.<A NAME="ch33index653"></A><A NAME="ch33index654"></A><A NAME="ch33index655"></A><A NAME="ch33index656"></A><A NAME="ch33index657"></A></P>
+<A NAME="ch33lev4sec50"></A><H5 class="docSection3Title">Consider Concurrently Reorganizing Partitions</H5>
+<P class="docText">It is possible to execute the <TT>REORG</TT> utility concurrently on separate partitions of a single partitioned table space. By reorganizing partitions concurrently, the overall elapsed time to complete the <TT>REORG</TT> should be substantially lower than a single <TT>REORG</TT> of the entire partitioned table space. However, the overall CPU usage will probably increase. This is usually a satisfactory trade-off however, as elapsed time impacts overall data availability.<A NAME="ch33index658"></A><A NAME="ch33index659"></A><A NAME="ch33index660"></A><A NAME="ch33index661"></A></P>
+<A NAME="ch33lev4sec51"></A><H5 class="docSection3Title">Use <TT>REORG</TT> to Move <TT>STOGROUP</TT>-Defined Data Sets</H5>
+<P class="docText">The <TT>REORG</TT> utility can be used to reallocate and move <TT>STOGROUP</TT>-defined data sets. By altering <TT>STOGROUP</TT>, <TT>PRIQTY</TT>, or <TT>SECQTY</TT> and then reorganizing the table space or index, data set level modification can be implemented. The <TT>REUSE</TT> option must <span class="docEmphasis">not</span> be specified to ensure that underlying data sets are deleted and redefined.<A NAME="ch33index662"></A><A NAME="ch33index663"></A><A NAME="ch33index664"></A><A NAME="ch33index665"></A><A NAME="ch33index666"></A></P>
+<A NAME="ch33lev4sec52"></A><H5 class="docSection3Title">Use <TT>REORG</TT> to Archive Data</H5>
+<P class="docText">The <TT>REORG</TT> utility can be used to delete data from a table in the table space and archive it to a data set. To archive rows during a <TT>REORG</TT>, use the <TT>DISCARD</TT> option and the <TT>DISCARDDN</TT> to indicate a data set to hold the discarded data. The criteria for discarding is specified using the <TT>FROM TABLE</TT> and <TT>WHEN</TT> clause.<A NAME="ch33index667"></A><A NAME="ch33index668"></A><A NAME="ch33index669"></A><A NAME="ch33index670"></A><A NAME="ch33index671"></A></P>
+<P class="docText">The table space being reorganized can contain more than one table. You can use the <TT>FROM TABLE</TT> clause to indicate which tables are to be processed for discards. Multiple tables can be specified. The table cannot be a DB2 Catalog table.</P>
+<P class="docText">The <TT>WHEN</TT> clause is used to define the specific criteria for discarding. A selection condition can be coded in the <TT>WHEN</TT> clause indicating which records in the table space are to be discarded. If the <TT>WHEN</TT> clause is not coded, no records are discarded.</P>
+<P class="docText">The <TT>WHEN</TT> clause is basically an SQL predicate used to specify particular data. It specifies a condition that is true, false, or unknown for the row. When the condition evaluates to true, the row is discarded. For example,</P>
+<pre>
+
+</pre><BR><pre>
+REORG TABLESPACE (DSN8D81A.DSN8S81P)
+     DISCARD DISCARDDN ARCHDD
+     FROM TABLE DSN8810.ACT
+     WHEN ACTNO &lt; 100
+</pre><BR>
+<P class="docText">This <TT>REORG</TT> statement indicates that any row of <TT>DSN8810.ACT</TT> that contains an <TT>ACTNO</TT> value less than 100 will be removed from the table and placed in the data set specified by <TT>ARCHDD</TT>.</P>
+<A NAME="ch33note37"></A><div class="docNote"><p class="docNoteTitle">CAUTION</p>
+
+<P class="docText">Specifying <TT>DISCARD</TT> potentially can cause a performance degradation for the <TT>REORG</TT> process. When archiving data using <TT>DISCARD</TT>, keep in mind that rows are decompressed (if compression is enabled) and any edit routines are decoded. If you specify a <TT>DISCARDDN</TT> data set, any field procedures on the rows will be decoded, and <TT>SMALLINT</TT>, <TT>INTEGER</TT>, <TT>FLOAT</TT>, <TT>DECIMAL</TT>, <TT>DATE</TT>, <TT>TIME</TT>, and <TT>TIMESTAMP</TT> columns will be converted to external format.</P>
+<P class="docText">When not using <TT>DISCARD</TT>, <TT>REORG</TT> will bypass all edit routines, field procedures, and validation procedures.</P></div><br>
+<P class="docText">When running a <TT>REORG</TT> with the <TT>DISCARD</TT> option on a table involved in a referential constraint, you must run <TT>CHECK DATA</TT> against any objects placed in a <TT>CHECK</TT> pending state as a result of the data being archived.<A NAME="ch33index672"></A><A NAME="ch33index673"></A><A NAME="ch33index674"></A><A NAME="ch33index675"></A><A NAME="ch33index676"></A></P>
+<A NAME="ch33lev4sec53"></A><H5 class="docSection3Title">Collect Inline <TT>RUNSTATS</TT> Using the <TT>STATISTICS</TT> Option</H5>
+<P class="docText">Collecting statistics during the execution of the <TT>REORG</TT> utility, referred to as inline <TT>RUNSTATS</TT>, is preferable to running a subsequent <TT>RUNSTATS</TT> after every <TT>REORG</TT>. By specifying the <TT>STATISTICS</TT> keyword, up-to-date statistics will be generated during the <TT>REORG</TT>.<A NAME="ch33index677"></A><A NAME="ch33index678"></A><A NAME="ch33index679"></A><A NAME="ch33index680"></A><A NAME="ch33index681"></A></P>
+<A NAME="ch33lev4sec54"></A><H5 class="docSection3Title">Consider Reorganizing Indexes More Frequently Than Table Spaces</H5>
+<P class="docText">The cost of reorganizing an index is small compared to the cost of reorganizing a table space. Sometimes, simply executing <TT>REORG INDEX</TT> on a table space's indexes can enhance system performance. Reorganizing an index will not impact clustering, but it will do the following:<A NAME="ch33index682"></A><A NAME="ch33index683"></A><A NAME="ch33index684"></A><A NAME="ch33index685"></A></P>
+<UL><LI><P class="docList">Possibly impact the number of index levels.</P></LI><LI><P class="docList">Reorganize and optimize the index page layout, removing inefficiencies introduced due to page splits.</P></LI><LI><P class="docList">Reset the <TT>LEAFDIST</TT> value to 0 (or close to 0).</P></LI><LI><P class="docList">Reset <TT>PSEUDO_DEL_ENTRIES</TT> to 0.</P></LI><LI><P class="docList">Reduce or eliminate data set extents.</P></LI><LI><P class="docList">Apply any new <TT>PRIQTY</TT>, <TT>SECQTY</TT>, or <TT>STOGROUP</TT> assignments.</P></LI><LI><P class="docList">Reset free space.</P></LI></UL>
+<P class="docText">Additionally, reorganizing indexes using <TT>SHRLEVEL CHANGE</TT> is simpler than reorganizing table spaces online because <TT>REORG INDEX SHRLEVEL CHANGE</TT> does not use a mapping table. This makes reorganizing indexes with concurrent data access easier to administer and maintain.<A NAME="ch33index686"></A><A NAME="ch33index687"></A><A NAME="ch33index688"></A><A NAME="ch33index689"></A></P>
+<A NAME="ch33lev4sec55"></A><H5 class="docSection3Title">Consider Design Changes to Reduce <TT>REORG</TT> Frequency</H5>
+<P class="docText">You can reduce the frequency of <TT>REORG</TT> by adding more free space (<TT>PCTFREE</TT>, <TT>FREEPAGE</TT>), updating in place to preformatted tables (all possible rows), avoiding <TT>VARCHAR</TT>, and reorganizing indexes more frequently.<A NAME="ch33index690"></A><A NAME="ch33index691"></A><A NAME="ch33index692"></A><A NAME="ch33index693"></A></P>
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="ch33lev1sec2.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="ch34.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

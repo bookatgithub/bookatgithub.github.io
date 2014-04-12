@@ -1,0 +1,93 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>Distributed Database Design Issues</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="ch44lev1sec4.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="ch44lev1sec6.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="ch44lev1sec5"></A><H3 class="docSection1Title">Distributed Database Design Issues</H3>
+<P class="docText">When you're designing databases in a distributed environment, follow the standard database design rules of thumb provided in <A class="docLink" HREF="ch05.html#ch05">Chapter 5</A>, "Data Definition Guidelines." However, you might need to take a more rigorous approach regarding denormalization. For more information, refer to the exhaustive discussion of denormalization in <A class="docLink" HREF="ch05.html#ch05">Chapter 5</A>.</P>
+<P class="docText">Denormalization can be a useful technique in a distributed environment. In the following sections, I discuss several methods of distributed denormalization. Along the way, I make references to the denormalization types already discussed to clarify the distributed denormalization concepts.</P>
+<A NAME="ch44lev2sec7"></A><H4 class="docSection2Title">Fragmentation</H4>
+<P class="docText"><span class="docEmphasis">Fragmentation</span> is a specialized form of distributed denormalization that resembles split tables. To implement fragmentation, a table must be separated into separate parts, or fragments. Each fragment is then stored at a different location. Fragmentation can enhance performance because each fragment can be stored at the location that accesses it most frequently.<A NAME="ch44index167"></A><A NAME="ch44index168"></A><A NAME="ch44index169"></A></P>
+<P class="docText">As with split tables, fragmentation avoids data duplication. Each fragment must contain a logical subset of the data.</P>
+<P class="docText">Multiple fragments can be created from a single source table. The methodology used to determine where and how to split the table depends on the data access needs of the distributed applications that must access the data.</P>
+<P class="docText">Two types of fragmentation can be implemented: horizontal and vertical. <span class="docEmphasis">Horizontal fragmentation</span> splits the data by rows, whereas <span class="docEmphasis">vertical fragmentation</span> splits the data by columns. Tables are horizontally fragmented using ranges of values to create distinct fragments. Tables can be vertically fragmented by assigning specific columns to specific fragments.<A NAME="ch44index170"></A><A NAME="ch44index171"></A><A NAME="ch44index172"></A><A NAME="ch44index173"></A></P>
+<P class="docText">Vertical fragmentation requires a certain amount of data duplication because the key column(s) must be stored at each site to defragment the data. Without the redundant key stored at each location, joining the tables back together so that the data returned is the unfragmented, original data would be impossible.<A NAME="ch44index174"></A><A NAME="ch44index175"></A><A NAME="ch44index176"></A></P>
+<A NAME="ch44lev4sec16"></A><H5 class="docSection3Title">Ensure Lossless Joins and Unions</H5>
+<P class="docText">You must take care to ensure that fragmentation is accomplished such that defragmenting the tables does not result in additional data or a loss of data.<A NAME="ch44index177"></A><A NAME="ch44index178"></A><A NAME="ch44index179"></A></P>
+<P class="docText">For horizontal fragmentation, rows must be wholly contained within one, and only one, fragment. In other words, the result of selecting all rows from every fragment and combining them together using <TT>UNION ALL</TT> must provide the same result as a <TT>SELECT</TT> of all rows from the original, unfragmented table:</P>
+<pre>
+
+</pre><BR><pre>
+SELECT   *
+FROM     FRAGMENT1
+UNION ALL
+SELECT   *
+FROM     FRAGMENT2
+UNION ALL
+SELECT   *
+FROM     FRAGMENT<span class="docEmphasis">n</span>;
+</pre><BR>
+<P class="docText">Of course, this statement cannot be successfully executed until DB2 supports distributed request capability.</P>
+<P class="docText">For vertical fragmentation, only the key columns can be duplicated in multiple fragments. The key columns must reside in every fragment. Even when no data is actually associated with a particular key for a particular fragment, a row must be stored in the fragment for that key to facilitate defragmentation. Nulls (or default values) can be used to indicate that the other columns contain no valid data for the particular key at that particular location.</P>
+<P class="docText">Simply stated, the result of joining all fragments together should provide the same result as selecting from the original, unfragmented table:</P>
+<pre>
+
+</pre><BR><pre>
+SELECT   F1.KEY, F1.COL1, F2.COL2, Fn.COLn
+FROM     FRAGMENT1  F1,
+         FRAGMENT2  F2,
+         FRAGMENTn  Fn
+WHERE    F1.KEY = F2.KEY
+AND      F2.KEY = Fn.KEY;
+</pre><BR>
+<P class="docText">If certain keys are not included, an outer join must be used. Until such time, because DB2 provides native outer join support, always propagating keys across locations is wise.<A NAME="ch44index180"></A><A NAME="ch44index181"></A><A NAME="ch44index182"></A></P>
+<A NAME="ch44lev2sec8"></A><H4 class="docSection2Title">Replication</H4>
+<P class="docText">Another type of distributed denormalization is <span class="docEmphasis">replication</span>. In its implementation, it is similar to mirror tables.<A NAME="ch44index183"></A><A NAME="ch44index184"></A><A NAME="ch44index185"></A></P>
+<P class="docText">When data is replicated, redundant data is stored at multiple distributed locations. Because replication causes copies of the data to be stored across the network, performance can be enhanced (because distributed access is eliminated or reduced).</P>
+<P class="docText">Replication can be implemented simply by copying entire tables to multiple locations. Alternatively, replicated data can be a subset of the rows and/or columns. The general rule of thumb is to copy only what is needed to each remote location.</P>
+<P class="docText">Furthermore, each replica should contain accurate, up-to-date information. Whenever possible, you should update all replicated copies at the same time. This way, you can eliminate the administrative burden of having to know the state of each replica. Additionally, replication transparency is ensured when the data is accurate at each location.</P>
+<P class="docText">To achieve optimal performance, you should always read from the closest replica. A replica may not exist at every location. By always reading from the closest replica (which supports the current requirements), you can enhance performance by reducing the communication path.</P>
+<P class="docText">You can tune replicas independently of one another. Different clustering strategies, different indexes, and different table space parameters might be appropriate at different locations.</P>
+<P class="docText">Finally, do not create more replicas than are required. The more replicas, the more complicated the process of updating them.<A NAME="ch44index186"></A><A NAME="ch44index187"></A><A NAME="ch44index188"></A></P>
+<A NAME="ch44lev2sec9"></A><H4 class="docSection2Title">Snapshots</H4>
+<P class="docText">Similar to mirror tables, <span class="docEmphasis">snapshot tables</span> are read-only copies of tables. Snapshot tables also are similar to replicas, but the data currency requirements for each snapshot table can differ. Data in snapshot tables usually represents a "point in time" and is not accurate up to the second.<A NAME="ch44index189"></A><A NAME="ch44index190"></A><A NAME="ch44index191"></A><A NAME="ch44index192"></A></P>
+<P class="docText">Decision-support applications typically use snapshot tables. Snapshots are most useful for optimizing performance when data does not have to be entirely accurate.</P>
+<P class="docText">As with the other types of distributed denormalization, snapshots tend to optimize performance when they are stored at the location that accesses them most frequently.</P>
+<P class="docText">You can create multiple snapshot tables—each representing a different "point in time." The number of snapshots required depends on the nature of the data and the needs of the applications that must access them.</P>
+<P class="docText">To achieve optimal performance, always read from the closest snapshot. A snapshot may not exist at every location. By always reading from the closest replica (which supports the current requirements), you can enhance performance by reducing the communication path.</P>
+<P class="docText">Be sure to send all updates to the <span class="docEmphasis">system of record,</span> which is the master table (or tables) that always contains accurate, up-to-date information. Application updates should never be made to snapshots, only to the system of record. The snapshot tables need to be refreshed periodically with data from the system of record. You should develop a reliable, systematic method of refreshing snapshot data.<A NAME="ch44index193"></A><A NAME="ch44index194"></A></P>
+<P class="docText">By their very nature, snapshot tables do not contain up-to-the-second information. Ad hoc users, programmers, and anyone else requiring access to snapshot tables need to be informed of the following:</P>
+<UL><LI><P class="docList">The data is not current; for current data, the system of record should be accessed.</P></LI><LI><P class="docList">The date and time for which the data is accurate.</P></LI><LI><P class="docList">The next scheduled refresh date and time.<A NAME="ch44index195"></A><A NAME="ch44index196"></A><A NAME="ch44index197"></A><A NAME="ch44index198"></A></P></LI></UL>
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="ch44lev1sec4.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="ch44lev1sec6.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

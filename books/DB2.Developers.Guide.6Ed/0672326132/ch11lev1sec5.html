@@ -1,0 +1,149 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>Embedded SELECT and Cursor Coding Guidelines</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="ch11lev1sec4.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="ch11lev1sec6.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="ch11lev1sec5"></A><H3 class="docSection1Title">Embedded <TT>SELECT</TT> and Cursor Coding Guidelines</H3>
+<P class="docText">Ensure efficient and accurate embedded SQL by following the subsequent guidelines.</P>
+<A NAME="ch11lev4sec24"></A><H4 class="docSection2Title">Use Singleton <TT>SELECT</TT>s to Reduce Overhead</H4>
+<P class="docText">Whenever possible, try to use singleton <TT>SELECT</TT>s rather than cursors because the definition and processing of cursors adds overhead to a DB2 application program. However, be sure that the singleton <TT>SELECT</TT> returns only one row. You can ensure that only a single row is to be returned in several ways:<A NAME="ch11index367"></A><A NAME="ch11index368"></A><A NAME="ch11index369"></A><A NAME="ch11index370"></A><A NAME="ch11index371"></A><A NAME="ch11index372"></A></P>
+<UL><LI><P class="docList">Selecting data only by the primary key column(s)</P></LI><LI><P class="docList">Selecting data only by columns defined in a unique index</P></LI><LI><P class="docList">Using the <TT>FETCH FIRST 1 ROW ONLY</TT> clause on the singleton <TT>SELECT</TT> statement</P></LI></UL>
+<P class="docText">If the program requires a <TT>SELECT</TT> statement that returns more than one row, you must use cursors. In other words, a singleton <TT>SELECT</TT> cannot be used to return more than one row.</P>
+<A NAME="ch11lev4sec25"></A><H4 class="docSection2Title">Code SQL for Efficient Existence Checking</H4>
+<P class="docText">There are times when a program just needs to know that some given data exists and does not need to actually retrieve and use that data. For these situations, you will need to develop the most efficient SQL possible that just checks whether the specific data exists. But what is the best way to accomplish an existence check?<A NAME="ch11index373"></A><A NAME="ch11index374"></A><A NAME="ch11index375"></A><A NAME="ch11index376"></A></P>
+<P class="docText">Prior to DB2 V7, the best way to check for existence is to use a correlated query against the <TT>SYSIBM.SYSDUMMY1</TT> table. For example, to check for the existence of an employee with the last name of Jones in the <TT>EMP</TT> table, the SQL would look like this:</P>
+<pre>
+
+</pre><BR><pre>
+SELECT 1
+FROM   SYSIBM.SYSDUMMY1 A
+WHERE  EXISTS (SELECT 1
+               FROM   EMP B
+               WHERE  LASTNAME = 'JONES'
+               AND A.IBMREQD = A.IBMREQD);
+</pre><BR>
+<P class="docText">First, notice that we just <TT>SELECT</TT> the constant <TT>1</TT>. Because the data does not need to be returned to the program, the SQL statement need not specify any columns in the <TT>SELECT</TT>-list. We simply check the <TT>SQLCODE</TT>. If the <TT>SQLCODE</TT> is zero, data exists; if not, the data does not exist.</P>
+<P class="docText">Next, notice that we use the <TT>EXISTS</TT> predicate in the correlated subquery. This is an efficient formulation because <TT>EXISTS</TT> causes DB2 to stop processing as soon as one row is found that matches the <TT>WHERE</TT> clause in the subquery. This is fine, because all we want to know is that at least one row exists that matches the predicate(s). If you do not use a correlated query with <TT>EXISTS</TT>, but instead simply issued the <TT>SELECT</TT> statement, performance can suffer as DB2 scans to find subsequent occurrences of the data—which might be many, especially for a common name such as Jones.</P>
+<table width="90%" border="0" cellspacing="0" cellpadding="1"><tr><td width="60" valign="top"><IMG BORDER="0" width="30" height="18" SRC="images/0672326132/graphics/V7_icon.gif" ALT="graphics/V7_icon.gif"></td><td valign="top"><P class="docText"> Which brings us to DB2 V7. In this version, there is a new clause called <TT>FETCH FIRST </TT><span class="docEmphasis"><TT>n</TT></span> <TT>ROWS ONLY</TT>. This solves our problem for existence checking and can become a new standard once you move to DB2 V7. Recoding the previous example using this new clause becomes</P></td></tr></table><br>
+<pre>
+
+</pre><BR><pre>
+SELECT 1
+FROM   EMP B
+WHERE  LASTNAME = 'JONES'
+FETCH FIRST 1 ROW ONLY;
+</pre><BR>
+<P class="docText">We still do not need to specify columns in the <TT>SELECT</TT>-list, but we no longer need the correlated query. DB2 will stop after one row has been checked, which is the desired result.<A NAME="ch11index377"></A><A NAME="ch11index378"></A><A NAME="ch11index379"></A><A NAME="ch11index380"></A></P>
+<A NAME="ch11note13"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<P class="docText">You might still choose to use the correlated subquery approach even after DB2 V7. This is particularly so when the next operation requires you to request data from DB2. If you can combine this next work into the subquery formulation, then it can be more efficient because you will not be going back and forth between the program and the DB2 engine in between existence checks.</P></div><br>
+<A NAME="ch11lev4sec26"></A><H4 class="docSection2Title">Consider Cursor-Free Browsing</H4>
+<P class="docText">When a program needs to browse through the rows of a table based on a single column where a unique index exists, consider avoiding a cursor in favor of the following two SQL statements:<A NAME="ch11index381"></A><A NAME="ch11index382"></A></P>
+<pre>
+
+</pre><BR><pre>
+SELECT VALUE(MIN(SALARY),0)
+INTO   :NEW-SAL-HVAR
+FROM   EMP
+WHERE  SALARY &gt; :OLD-SAL-HVAR
+
+SELECT EMPNO, LASTNAME, SALARY, BONUS
+INTO   :HV-EMPNO, :HV-LASTNAME, :HV-SALARY, :HV-BONUS
+FROM   EMP
+WHERE  SALARY = :NEW-SAL-HVAR
+</pre><BR>
+<P class="docText">The first time through the program, the host variable <TT>OLD-SAL-HVAR</TT> should be set to a value just lower than the lowest value that needs to be retrieved. By looping through the preceding two SQL statements, the program can avoid a cursor and browse the table rows until no more rows exist or the highest value is obtained. This technique can outperform a cursor in some situations.</P>
+<A NAME="ch11lev4sec27"></A><H4 class="docSection2Title">Declare As Many Cursors As Needed</H4>
+<P class="docText">You can declare and open more than one cursor in any given program at any time. No limit is placed on the number of cursors permitted per application program.<A NAME="ch11index383"></A><A NAME="ch11index384"></A></P>
+<A NAME="ch11lev4sec28"></A><H4 class="docSection2Title">Avoid Using Certain Cursors for Data Modification</H4>
+<P class="docText">You cannot use a cursor for updates or deletes if the <TT>DECLARE CURSOR</TT> statement includes any of the following:<A NAME="ch11index385"></A><A NAME="ch11index386"></A><A NAME="ch11index387"></A></P>
+<BLOCKQUOTE><P><P class="docList"><TT>UNION</TT> clause</P></P><P><P class="docList"><TT>DISTINCT</TT> clause</P></P><P><P class="docList"><TT>GROUP BY</TT> clause</P></P><P><P class="docList"><TT>ORDER BY</TT> clause</P></P><P><P class="docList">Joins</P></P><P><P class="docList">Subqueries</P></P><P><P class="docList">Correlated subqueries</P></P><P><P class="docList">Tables in read-only mode, <TT>ACCESS(RO)</TT></P></P><P><P class="docList">Tables in utility mode, <TT>ACCESS(UT)</TT></P></P><P><P class="docList">Read-only views</P></P></BLOCKQUOTE>
+<A NAME="ch11lev4sec29"></A><H4 class="docSection2Title">Place the <TT>DECLARE CURSOR</TT> Statement First</H4>
+<P class="docText">The <TT>DECLARE CURSOR</TT> statement must precede any other commands (such as <TT>OPEN</TT>, <TT>CLOSE</TT>, and <TT>FETCH</TT>) relating to the cursor because of the way the DB2 precompiler parses and extracts the SQL statements from the program.<A NAME="ch11index388"></A><A NAME="ch11index389"></A><A NAME="ch11index390"></A><A NAME="ch11index391"></A></P>
+<P class="docText">The <TT>DECLARE CURSOR</TT> statement is not an executable statement and should not be coded in the <TT>PROCEDURE DIVISION</TT> of an application program. Although doing so does not cause a problem, it makes your program difficult to understand and could cause others to think that <TT>DECLARE</TT> is an executable statement.</P>
+<P class="docText">You should place all cursor declarations in the <TT>WORKING-STORAGE</TT> section of the application program, immediately before <TT>PROCEDURE DIVISION</TT>. All host variable declarations must precede the <TT>DECLARE CURSOR</TT> statement in the application program.</P>
+<A NAME="ch11lev4sec30"></A><H4 class="docSection2Title">Include Only the Columns Being Updated</H4>
+<P class="docText">When you're coding the <TT>FOR UPDATE OF</TT> clause of the <TT>DECLARE CURSOR</TT> statement, you should specify only the columns that will be updated. Coding more columns than is necessary can degrade performance.<A NAME="ch11index392"></A><A NAME="ch11index393"></A><A NAME="ch11index394"></A><A NAME="ch11index395"></A><A NAME="ch11index396"></A></P>
+<P class="docText">In the <TT>FOR UPDATE OF</TT> clause of the <TT>DECLARE CURSOR</TT> statement, you must include all columns to be modified. Otherwise, subsequent <TT>UPDATE...WHERE CURRENT OF</TT> statements will not be allowed for those columns.</P>
+<A NAME="ch11lev4sec31"></A><H4 class="docSection2Title">Use <TT>FOR UPDATE OF</TT> When Updating with a Cursor</H4>
+<P class="docText">Although doing so is not mandatory, you should code the <TT>FOR UPDATE OF</TT> clause of a <TT>DECLARE CURSOR</TT> statement used for deleting rows. This technique effectively locks the row before it is deleted so that no other process can access it. If rows earmarked for deletion are accessible by other programs and ad hoc users, the integrity of the data could be compromised.<A NAME="ch11index397"></A><A NAME="ch11index398"></A></P>
+<A NAME="ch11lev4sec32"></A><H4 class="docSection2Title">Use <TT>WHERE CURRENT OF</TT> to Delete Single Rows Using a Cursor</H4>
+<P class="docText">Use the <TT>WHERE CURRENT OF</TT> clause on <TT>UPDATE</TT> and <TT>DELETE</TT> statements that are meant to modify only a single row. Failure to code the <TT>WHERE CURRENT OF</TT> clause results in the modification or deletion of every row in the table being processed.<A NAME="ch11index399"></A><A NAME="ch11index400"></A><A NAME="ch11index401"></A><A NAME="ch11index402"></A><A NAME="ch11index403"></A></P>
+<A NAME="ch11lev4sec33"></A><H4 class="docSection2Title">Avoid the <TT>FOR UPDATE OF</TT> Clause on Non-Updateable Cursors</H4>
+<P class="docText">You cannot code the <TT>FOR UPDATE OF</TT> clause on cursors that access read-only data. These cursors contain <TT>SELECT</TT> statements that<A NAME="ch11index404"></A><A NAME="ch11index405"></A><A NAME="ch11index406"></A><A NAME="ch11index407"></A><A NAME="ch11index408"></A><A NAME="ch11index409"></A></P>
+<UL><LI><P class="docList">Access read-only views</P></LI><LI><P class="docList">Join any tables</P></LI><LI><P class="docList">Issue subqueries for two or more tables</P></LI><LI><P class="docList">Access two or more tables using <TT>UNION</TT></P></LI><LI><P class="docList">Use built-in functions</P></LI><LI><P class="docList">Use <TT>ORDER BY</TT>, <TT>GROUP BY</TT>, or <TT>HAVING</TT></P></LI><LI><P class="docList">Specify <TT>DISTINCT</TT></P></LI><LI><P class="docList">Specify literals or arithmetic expressions in the <TT>SELECT</TT> list</P></LI></UL>
+<A NAME="ch11lev4sec34"></A><H4 class="docSection2Title">Open Cursors Before Fetching</H4>
+<P class="docText">Similar to a sequential file, a cursor must be opened before it can be fetched from or closed. You also cannot open a cursor twice without first closing it.<A NAME="ch11index410"></A><A NAME="ch11index411"></A></P>
+<A NAME="ch11lev4sec35"></A><H4 class="docSection2Title">Initialize Host Variables</H4>
+<P class="docText">Initialize all host variables used by the cursor before opening the cursor. All host variables used in a cursor <TT>SELECT</TT> are evaluated when the cursor is opened, not when the cursor is declared or fetched from.<A NAME="ch11index412"></A><A NAME="ch11index413"></A><A NAME="ch11index414"></A><A NAME="ch11index415"></A></P>
+<A NAME="ch11lev4sec36"></A><H4 class="docSection2Title">Use Care When Specifying Host Variables Used with <TT>FETCH</TT></H4>
+<P class="docText">The <TT>FETCH</TT> statement retrieves data one row at a time only in a forward motion. In other words, rows that have already been retrieved cannot be retrieved again.<A NAME="ch11index416"></A><A NAME="ch11index417"></A><A NAME="ch11index418"></A><A NAME="ch11index419"></A></P>
+<P class="docText">Synchronize the host variables fetched (or selected) with the <TT>SELECT</TT> list specified in the cursor declaration (or singleton <TT>SELECT</TT>). If the data type of the columns does not match the host variable, and the data cannot be converted, a compilation error results. This error can occur if host variables are transposed as follows:</P>
+<pre>
+
+</pre><BR><pre>
+EXEC SQL
+    DECLARE C1 CURSOR
+    SELECT  DEPTNO, ADMRDEPT
+    FROM    DEPT
+END-EXEC.
+EXEC SQL
+    FETCH C1
+    INTO  :ADMRDEPT, :DEPTNO
+END-EXEC.
+</pre><BR>
+<P class="docText">The <TT>DEPTNO</TT> host variable is switched with the <TT>ADMRDEPT</TT> host variable in the <TT>FETCH</TT> statement. This switch does not cause a compilation error because both columns are the same data type and length, but it does cause data integrity problems.</P>
+<A NAME="ch11lev4sec37"></A><H4 class="docSection2Title">Explicitly Close Cursors</H4>
+<P class="docText">When a DB2 program is finished, DB2 implicitly closes all cursors opened by the program. To increase performance, however, you should explicitly code the <TT>CLOSE</TT> statement for each cursor when the cursor is no longer required. The <TT>CLOSE</TT> statement can be executed only against previously <TT>OPEN</TT>ed cursors.<A NAME="ch11index420"></A><A NAME="ch11index421"></A><A NAME="ch11index422"></A><A NAME="ch11index423"></A></P>
+<A NAME="ch11lev4sec38"></A><H4 class="docSection2Title">Use the <TT>WITH HOLD</TT> Clause to Retain Cursor Position</H4>
+<P class="docText">When a <TT>COMMIT</TT> is issued by the program, open cursors are closed unless the <TT>WITH HOLD</TT> option is coded for the cursor.<A NAME="ch11index424"></A><A NAME="ch11index425"></A><A NAME="ch11index426"></A><A NAME="ch11index427"></A></P>
+<P class="docText">You can add the <TT>WITH HOLD</TT> parameter to a cursor as shown in the following example:</P>
+<pre>
+
+</pre><BR><pre>
+EXEC SQL
+    DECLARE CSR1 CURSOR WITH HOLD FOR
+        SELECT  EMPNO, LASTNAME
+        FROM    EMP
+        WHERE   SALARY &gt; 30000
+END-EXEC.
+</pre><BR>
+<P class="docText"><TT>WITH HOLD</TT> prevents subsequent <TT>COMMIT</TT>s from destroying the intermediate results table for the <TT>SELECT</TT> statement, thereby saving positioning within the cursor. This technique will not hold the cursor position over separate tasks in pseudo-conversational programs.</P>
+<A NAME="ch11note14"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<P class="docText">Be aware that the manner in which DB2 handles locks for held cursors is influenced by the value of the <TT>RELCURHL DSNZPARM</TT> parameter. The default value is <TT>YES</TT>, which causes DB2 to release the row or page lock at <TT>COMMIT</TT> for the row where the cursor is positioned. Prior to V7, the default was <TT>NO</TT>, causing DB2 to hold the lock at <TT>COMMIT</TT>. The lock is not necessary for maintaining cursor position, so specify <TT>YES</TT> to improve concurrency.</P></div><br>
+<A NAME="ch11lev4sec39"></A><H4 class="docSection2Title">Open Cursors Only When Needed</H4>
+<P class="docText">Do not open a cursor until just before you need it. Close the cursor immediately after your program receives an <TT>SQLCODE</TT> of <TT>+100</TT>, which means that the program has finished processing the cursor. This way, you can reduce the consumption of system resources.<A NAME="ch11index428"></A><A NAME="ch11index429"></A></P>
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="ch11lev1sec4.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="ch11lev1sec6.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

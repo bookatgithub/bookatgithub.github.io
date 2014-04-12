@@ -1,0 +1,248 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>Materialized Query Tables</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="ch45lev1sec7.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="ch45lev1sec9.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="ch45lev1sec8"></A><H3 class="docSection1Title" >Materialized Query Tables</H3>
+<table width="90%" border="0" cellspacing="0" cellpadding="1"><tr><td width="60" valign="top"><IMG BORDER="0"  width="30" height="18" SRC="images/0672326132/graphics/V8_icon.gif" ALT="graphics/V8_icon.gif"></td><td valign="top"><P class="docText"> DB2 Version 8 offers a new capability called <span class="docEmphStrong">Materialized Query Tables</span>, or <span class="docEmphStrong">MQTs</span>. Although not exclusively for data warehousing, MQTs can be used to greatly improve the elegance and efficiency of DB2-based data warehouses. An MQT can be thought of as a view that has been materialized—that is, a view whose data is physically stored instead of virtually accessed when needed. Each MQT is defined as a SQL query, similar to a view. But the MQT pre-computes the query results and stores the data. Subsequent user queries that require the data can re-use the data from the MQT instead of re-computing it, which can save time and resources.<A NAME="ch45index175"></A><A NAME="ch45index176"></A><A NAME="ch45index177"></A><A NAME="ch45index178"></A></P></td></tr></table><br>
+<A NAME="ch45note04"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<P class="docText">Materialized query tables are sometimes referred to as automatic summary tables (ASTs) because this used to be the name of this feature on DB2 for Linux, Unix, and Windows platforms.<A NAME="ch45index179"></A><A NAME="ch45index180"></A></P></div><br>
+<A NAME="ch45lev2sec12"></A><H4 class="docSection2Title">Why Use MQTs?</H4>
+<table width="90%" border="0" cellspacing="0" cellpadding="1"><tr><td width="60" valign="top"><IMG BORDER="0"  width="30" height="18" SRC="images/0672326132/graphics/V8_icon.gif" ALT="graphics/V8_icon.gif"></td><td valign="top"><P class="docText"> The primary use for MQTs is to optimize the performance of complex queries. Complex queries can be poor performers, because DB2 might have to access thousands of rows across multiple tables using multiple methods. By materializing the complex query into an MQT and then accessing the materialized results, the cost of materialization is borne only once—when the MQT is refreshed.<A NAME="ch45index181"></A></P></td></tr></table><br>
+<P class="docText">So, you might consider using MQTs for your existing queries that are most complex and inefficient. Another approach is to consider using MQTs instead of denormalization (when denormalization is required). Simply implement the fully normalized base tables and then build MQTs where you would have denormalized. Then you get the best of both worlds—fully normalized tables to ensure data integrity during modification and MQTs for efficient querying.</P>
+<A NAME="ch45lev3sec5"></A><H5 class="docSection3Title">Potential Drawbacks of MQTs</H5>
+<P class="docText">But there are potential drawbacks to using MQTs. These problems cross the spectrum from data currency to resource consumption to administration.<A NAME="ch45index182"></A></P>
+<P class="docText">First of all, MQTs are not magic; they need to be refreshed when the data upon which they are based changes. Therefore, the underlying data should be relatively static or, failing that, your queries should be satisfied with somewhat out-of-date data. If neither of these situations is the case, MQTs might not be a reasonable solution because the materialized data will need to be constantly refreshed.</P>
+<P class="docText">Additionally, MQTs consume disk storage. If your shop is storage-constrained, you might not be able to create many MQTs. Remember, an MQT will query underlying tables and then physically store that data. The tradeoff for MQTs is using more disk space in return for more efficient queries.</P>
+<P class="docText">Finally, keep in mind that MQTs need to be maintained. If data in the underlying base table(s) changes, then the MQT must periodically be refreshed with that current data. If the MQT is not used often enough, the cost and effort of maintaining the MQT may exceed the benefit in terms of performance.<A NAME="ch45index183"></A></P>
+<A NAME="ch45lev2sec13"></A><H4 class="docSection2Title">How to Create MQTs</H4>
+<table width="90%" border="0" cellspacing="0" cellpadding="1"><tr><td width="60" valign="top"><IMG BORDER="0"  width="30" height="18" SRC="images/0672326132/graphics/V8_icon.gif" ALT="graphics/V8_icon.gif"></td><td valign="top"><P class="docText"> There are two methods for creating an MQT: You can create it from scratch using <TT>CREATE TABLE</TT> or you can modify an existing table into an MQT using <TT>ALTER TABLE</TT>.<A NAME="ch45index184"></A></P></td></tr></table><br>
+<P class="docText">The first method uses the <TT>CREATE TABLE</TT> statement using syntax that has been augmented to look like a view definition. Consider the following, for example:</P>
+<pre>
+
+</pre><BR><pre>
+CREATE TABLE DEPT_SAL
+  (DEPT, TOTAL_SALARY, TOTAL_BONUS, TOTAL_COMM, TOTAL_COMPENSATION, EMPLOYEES)
+AS
+  (SELECT   WORKDEPT, SUM(SALARY), SUM(BONUS) SUM(COMM),
+            SUM(SALARY+BONUS+COMM), COUNT(*)
+   FROM     DSN8810.EMP
+   GROUP BY WORKDEPT)
+DATA INITIALLY DEFERRED
+REFRESH DEFERRED
+MAINTAINED BY SYSTEM
+DISABLE QUERY OPTIMIZATION;
+</pre><BR>
+<P class="docText">Let's examine each section of this DDL. First of all, we are creating a table named <TT>DEPT_SAL</TT>. The first set of parameters is the list of column names. This list is optional; DB2 will use the original names of the columns from the subsequent query if no list of names is provided. In such a scenario, every expression, constant, or function must be named using an <TT>AS</TT> clause.</P>
+<P class="docText">The actual <TT>SELECT</TT> statement that defines this MQT follows. So far, so good—this statement looks very much like a <TT>CREATE VIEW</TT> statement, except we are creating a table.</P>
+<A NAME="ch45note05"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<P class="docText">If the <TT>SELECT</TT> statement defining the MQT references any <TT>CAST</TT> functions or user-defined functions, the owner of the MQT must have the <TT>EXECUTE</TT> privilege on those functions.</P></div><br>
+<P class="docText">After the <TT>SELECT</TT> statement, there are several parameters that define the nature of the MQT.<A NAME="ch45index185"></A></P>
+<A NAME="ch45lev3sec6"></A><H5 class="docSection3Title">Refreshable Table Options</H5>
+<P class="docText">When you create an MQT there are several options available to specify how the data is to be populated and refreshed into the MQT. Population is deferred for MQTs defined for DB2 for z/OS. There are other options, though, for DB2 on other platforms. That is why there are two parameters for deferring data population even though this is currently the only choice. These parameters are<A NAME="ch45index186"></A><A NAME="ch45index187"></A></P>
+<BLOCKQUOTE><P><p class="docText"><span class="docEmphStrong"><TT>DATA INITIALLY DEFERRED</TT></span>— 
+This options indicates that data will not be inserted into the MQT when it is first created. Instead, either the <TT>REFRESH TABLE</TT> statement or <TT>INSERT</TT> statements must be used to populate data into the MQT.<A NAME="ch45index188"></A><A NAME="ch45index189"></A></p></P><P><p class="docText"><span class="docEmphStrong"><TT>REFRESH DEFERRED</TT></span>— 
+This option indicates that data in the table can be refreshed at any time using the <TT>REFRESH TABLE</TT> statement. The data in the table only reflects the result of the query as a snapshot at the time when the <TT>REFRESH TABLE</TT> statement is processed or when it was last updated for a user-maintained materialized query table.<A NAME="ch45index190"></A><A NAME="ch45index191"></A></p></P></BLOCKQUOTE>
+<P class="docText">Furthermore, you can specify whether the MQT is to be maintained by the system or the user. These options are<A NAME="ch45index192"></A><A NAME="ch45index193"></A></P>
+<BLOCKQUOTE><P><p class="docText"><span class="docEmphStrong"><TT>MAINTAINED BY SYSTEM</TT></span>— 
+Indicates that the MQT is maintained by the system. This option is the default and it means that the MQT does not allow <TT>LOAD</TT>, <TT>INSERT</TT>, <TT>UPDATE</TT>, <TT>DELETE</TT>, or <TT>SELECT FOR UPDATE</TT> statements. The <TT>REFRESH TABLE</TT> statement is used to populate data in the MQT.<A NAME="ch45index194"></A><A NAME="ch45index195"></A></p></P><P><p class="docText"><span class="docEmphStrong"><TT>MAINTAINED BY USER</TT></span>— 
+Indicates that the MQT is maintained by the user. The user can execute <TT>LOAD</TT>, <TT>INSERT</TT>, <TT>DELETE</TT>, <TT>UPDATE</TT>, <TT>SELECT FOR UPDATE</TT>, or <TT>REFRESH TABLE</TT> statements to populate the MQT.<A NAME="ch45index196"></A><A NAME="ch45index197"></A></p></P></BLOCKQUOTE>
+<A NAME="ch45lev3sec7"></A><H5 class="docSection3Title">Query Optimization Options</H5>
+<P class="docText">The <TT>CREATE</TT> statement also provides parameters to specify how DB2 uses the MQT for query optimization. Basically, there are two choices: You will either enable or disable query optimization. The choice you make will impact the type of <TT>SELECT</TT> that can be used by the MQT being defined.<A NAME="ch45index198"></A><A NAME="ch45index199"></A></P>
+<P class="docText">The default option is <TT>ENABLE QUERY OPTIMIZATION</TT>. When this option is chosen, the MQT can be used for query optimization. However, if the <TT>SELECT</TT> statement used to define the MQT does not satisfy the following restrictions of query optimization, an error will occur:<A NAME="ch45index200"></A><A NAME="ch45index201"></A></P>
+<UL><LI><P class="docList">The <TT>SELECT</TT> statement must be a subselect. This means you can specify a <TT>SELECT</TT>, a <TT>FROM</TT>, a <TT>WHERE</TT>, a <TT>GROUP BY</TT>, and <TT>HAVING</TT>. You cannot specify a <TT>UNION</TT> or <TT>UNION ALL</TT>, though.</P></LI><LI><P class="docList">The subselect cannot reference a scalar or table UDF with the <TT>EXTERNAL ACTION</TT> or <TT>NON-DETERMINISTIC</TT> attributes</P></LI><LI><P class="docList">The subselect cannot use the <TT>RAND</TT> built-in function.</P></LI><LI><P class="docList">The subselect cannot contain any predicates that include subqueries.</P></LI><LI><P class="docList">The subselect cannot contain a nested table expression or view that requires materialization.</P></LI><LI><P class="docList">The subselect cannot contain a join using the <TT>INNER JOIN</TT> syntax.</P></LI><LI><P class="docList">The subselect cannot contain an outer join.</P></LI><LI><P class="docList">The subselect cannot contain a special register.</P></LI><LI><P class="docList">The subselect cannot contain a scalar fullselect.</P></LI><LI><P class="docList">The subselect cannot contain a row expression predicate.</P></LI><LI><P class="docList">The subselect cannot contain sideway references.</P></LI><LI><P class="docList">The subselect cannot contain table objects with multiple <TT>CCSID</TT> sets.</P></LI><LI><P class="docList">If the subselect references a view, the fullselect in the view definition must follow all of the previous rules.</P></LI></UL>
+<P class="docText">Optionally, you can specify <TT>DISABLE QUERY OPTIMIZATION</TT>. Of course, this means that the MQT cannot be used for query optimization, but it can be queried directly. When query optimization is disabled, be aware of the following restrictions on the <TT>SELECT</TT> statement in the MQT:<A NAME="ch45index202"></A><A NAME="ch45index203"></A></P>
+<UL><LI><P class="docList">It cannot reference a temporary table—neither created nor declared.</P></LI><LI><P class="docList">It cannot reference another MQT.<A NAME="ch45index204"></A><A NAME="ch45index205"></A></P></LI></UL>
+<A NAME="ch45lev3sec8"></A><H5 class="docSection3Title">Attribute Copy Options</H5>
+<P class="docText">When an MQT is created, column attributes are not inherited from the underlying columns of the <TT>SELECT</TT> statement. The MQT creator must specify how to handle <TT>IDENTITY</TT> columns and default values.<A NAME="ch45index206"></A><A NAME="ch45index207"></A><A NAME="ch45index208"></A></P>
+<P class="docText">The attributes of <TT>IDENTITY</TT> columns in an MQT can either be inherited or not by specifying either of the following:</P>
+<UL><LI><P class="docList"><TT>EXCLUDING IDENTITY COLUMN ATTRIBUTES</TT></P></LI><LI><P class="docList"><TT>INCLUDING IDENTITY COLUMN ATTRIBUTES</TT></P></LI></UL>
+<P class="docText">If neither is specified, the default is to exclude <TT>IDENTITY</TT> column attributes. When you choose to include <TT>IDENTITY</TT> column attributes, be sure that your <TT>SELECT</TT> statement maps existing columns to the <TT>IDENTITY</TT> column such that the attributes can continue to be used correctly.</P>
+<P class="docText">The default value specification for columns can be controlled by specifying one of the following:</P>
+<UL><LI><p class="docText">
+<TT>EXCLUDING COLUMN DEFAULTS</TT>— 
+Indicates that column defaults will not be inherited from the source table. The default values of the column of the new table are either null or there are no default values. If the column can be null, the default is the null value. If the column cannot be null, there is no default value, and an error occurs if a value is not provided for a column on <TT>INSERT</TT> for the new table.<A NAME="ch45index209"></A><A NAME="ch45index210"></A></p></LI><LI><p class="docText">
+<TT>INCLUDING COLUMN DEFAULTS</TT>— 
+Indicates that column defaults will be inherited from the source table. However, columns that are not updatable will not have a default defined.<A NAME="ch45index211"></A><A NAME="ch45index212"></A></p></LI><LI><p class="docText">
+<TT>USING TYPE DEFAULTS</TT>— 
+Indicates that the default values depend on the data type as delineated in <A class="docLink" HREF="#ch45table02">Table 45.2</A>.<A NAME="ch45index213"></A><A NAME="ch45index214"></A></p></LI></UL>
+<A NAME="ch45table02"></A><P><TABLE CELLSPACING="0" FRAME="hsides" RULES="groups" CELLPADDING="5"><CAPTION><h5 class="docTableTitle">Table 45.2. Default Data Types</h5></CAPTION><COLGROUP><COL width="220"><COL width="330"></COLGROUP><THEAD><TR><TH class="bottomBorder thead" align="left" valign="top"><P class="docText"><span class="docEmphStrong">Data Type</span></P></TH><TH class="bottomBorder thead" align="left" valign="top"><P class="docText"><span class="docEmphStrong">Default Value</span></P></TH></TR></THEAD><TR><TD class="docTableCell" align="left" valign="top"><P class="docText">Numeric</P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">0</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText">Fixed-length string</P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Blanks</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText">Varying-length string</P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">A string of length 0</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText">Date</P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Current Date</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText">Time</P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Current Time</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText">Timestamp</P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Current Timestamp<A NAME="ch45index215"></A><A NAME="ch45index216"></A><A NAME="ch45index217"></A></P></TD></TR></TABLE></P><br>
+<A NAME="ch45lev4sec4"></A><H5 class="docSection4Title">Inheriting <TT>FIELDPROC</TT>s</H5>
+<P class="docText">The MQT will inherit an existing <TT>FIELDPROC</TT> from a column in the <TT>SELECT</TT>-list if that column can be mapped directly to a column of a base table or a view in the <TT>FROM</TT> clause.<A NAME="ch45index218"></A><A NAME="ch45index219"></A></P>
+<A NAME="ch45lev3sec9"></A><H5 class="docSection3Title"><TT>WITH NO DATA</TT></H5>
+<P class="docText">When the <TT>WITH NO DATA</TT> clause is used to define an MQT the table actually ceases to be an MQT. Using <TT>WITH NO DATA</TT> means that the table is not populated with the results of the query. Instead, the SQL statement is used to define the columns of the new table.<A NAME="ch45index220"></A><A NAME="ch45index221"></A><A NAME="ch45index222"></A></P>
+<A NAME="ch45note06"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<P class="docText">To maintain compatibility with DB2 running on other platforms, the clause <TT>DEFINTION ONLY</TT> can be used as a synonym for <TT>WITH NO DATA</TT>.</P></div><br>
+<P class="docText">The <TT>SELECT</TT> statement used when creating a table specifying the <TT>WITH NO DATA</TT> clause cannot contain any of the following:</P>
+<UL><LI><P class="docList">Host variables</P></LI><LI><P class="docList">Parameter markers</P></LI><LI><P class="docList">Any references to remote objects</P></LI><LI><P class="docList">A <TT>ROWID</TT> column (or a column with a distinct type based on a <TT>ROWID</TT>)</P></LI><LI><P class="docList">Any columns having a <TT>BLOB</TT>, <TT>CLOB</TT>, or <TT>DBCLOB</TT> data type (or a distinct type based on any of these data types)</P></LI><LI><P class="docList"><TT>PREVIOUS VALUE</TT> or <TT>NEXT VALUE</TT> expressions</P></LI><LI><P class="docList">An <TT>INSERT</TT> statement in the <TT>FROM</TT> clause<A NAME="ch45index223"></A><A NAME="ch45index224"></A><A NAME="ch45index225"></A></P></LI></UL>
+<A NAME="ch45lev2sec14"></A><H4 class="docSection2Title">Converting an Existing Table into an MQT</H4>
+<table width="90%" border="0" cellspacing="0" cellpadding="1"><tr><td width="60" valign="top"><IMG BORDER="0"  width="30" height="18" SRC="images/0672326132/graphics/V8_icon.gif" ALT="graphics/V8_icon.gif"></td><td valign="top"><P class="docText"> Some shops implemented DB2 tables to operate as a type of materialized query table prior to DB2 V8. After migrating to V8, it makes sense for these shops to consider converting these existing tables into MQTs to take advantage of automatic query rewrite and the automated refresh features built in to DB2. An existing table can be converted to an MQT using the <TT>ALTER TABLE</TT> statement and the <TT>ADD MATERIALIZED QUERY</TT> clause. For example<A NAME="ch45index226"></A><A NAME="ch45index227"></A></P></td></tr></table><br>
+<pre>
+
+</pre><BR><pre>
+ALTER TABLE DEPT_SAL
+  ADD MATERIALIZED QUERY
+  (SELECT   WORKDEPT, SUM(SALARY), SUM(BONUS) SUM(COMM),
+            SUM(SALARY+BONUS+COMM), COUNT(*)
+   FROM     DSN8810.EMP
+   GROUP BY WORKDEPT)
+DATA INITIALLY DEFERRED
+REFRESH DEFERRED
+MAINTAINED BY USER;
+</pre><BR>
+<P class="docText">This <TT>ALTER</TT> statement causes the existing <TT>DEPT_SAL</TT> table to be converted into an MQT. It defines the query to be used, as well as the additional MQT parameters. Note that we used the <TT>MAINTAINED BY USER</TT> to allow on-going user maintenance tasks to continue to work. Of course, we can now use the <TT>REFRESH TABLE</TT> statement, too.<A NAME="ch45index228"></A><A NAME="ch45index229"></A></P>
+<P class="docText">After converting the table to an MQT, its data will remain the same until the user refreshes it.</P>
+<A NAME="ch45lev2sec15"></A><H4 class="docSection2Title">MQT Population and Maintenance</H4>
+<table width="90%" border="0" cellspacing="0" cellpadding="1"><tr><td width="60" valign="top"><IMG BORDER="0"  width="30" height="18" SRC="images/0672326132/graphics/V8_icon.gif" ALT="graphics/V8_icon.gif"></td><td valign="top"><P class="docText"> As of DB2 V8, when an MQT is created, data is not initially populated into the table. The manner in which data is added to the MQT depends on the <TT>MAINTAINED BY</TT> option, as previously discussed. Most MQTs will be maintained by the system, and as such, data will be populated when the <TT>REFRESH TABLE</TT> statement is executed. The <TT>REFRESH TABLE</TT> statement is implemented "behind the scenes" by DB2 using <TT>DELETE</TT>, <TT>INSERT</TT>, and <TT>UPDATE</TT>, so MQTs follow <TT>DATA CAPTURE</TT> and <TT>AUDIT</TT> rules.<A NAME="ch45index230"></A><A NAME="ch45index231"></A><A NAME="ch45index232"></A><A NAME="ch45index233"></A></P></td></tr></table><br>
+<P class="docText">If the MQT is specified as <TT>MAINTAINED BY USER</TT> though, it can be refreshed using the <TT>LOAD</TT> utility, <TT>INSERT</TT>, <TT>UPDATE</TT> and <TT>DELETE</TT> statements, as well as the <TT>REFRESH TABLE</TT> statement.</P>
+<P class="docText">The <TT>REFRESH TABLE</TT> statement is easy to understand and execute. You simply specify the name of the MQT to refresh, and DB2 automatically rebuilds the data for the MQT using the <TT>SELECT</TT> statement upon which the MQT was defined. For example, to refresh the sample table we have been using, you would issue the following:<A NAME="ch45index234"></A><A NAME="ch45index235"></A></P>
+<pre>
+
+</pre><BR><pre>
+REFRESH TABLE DEPT_SAL;
+</pre><BR>
+<P class="docText">Running this statement causes DB2 to delete all rows in the MQT, runs the <TT>SELECT</TT> statement in the MQT, inserts the results into the MQT, and updates the DB2 catalog to modify the timestamp and cardinality metadata for the MQT. Keep in mind, though, that this all happens as one unit-of-work. So, either the entire refresh is completed, or it fails—there will be no in-between state. Also, all of the changes made by the <TT>REFRESH TABLE</TT> statement are logged.</P>
+<P class="docText">The <TT>SELECT</TT> will run with the same isolation level that was in effect at the time the <TT>CREATE TABLE</TT> statement for the MQT was issued. This is important because it can impact the results of the <TT>SELECT</TT>; but the isolation level of the MQT also impacts automatic query rewrite, which is discussed next.<A NAME="ch45index236"></A><A NAME="ch45index237"></A><A NAME="ch45index238"></A><A NAME="ch45index239"></A></P>
+<A NAME="ch45lev2sec16"></A><H4 class="docSection2Title">Automatic Query Rewrite</H4>
+<P class="docText">Up until now we have merely discussed how MQTs can be used to simplify the propagation of data from multiple tables into a physical query table. But MQTs are much more useful because the DB2 optimizer understands them.<A NAME="ch45index240"></A><A NAME="ch45index241"></A><A NAME="ch45index242"></A></P>
+<P class="docText">Your queries can continue to reference the base table. But during access path selection, the optimizer will examine your query to determine whether your table(s) can be replaced by an MQT to reduce the query cost.</P>
+<P class="docText">The process undertaken by the DB2 optimizer to recognize when an MQT can be used and then rewrite the query to use the MQT is called <span class="docEmphStrong">automatic query rewrite</span>, or <span class="docEmphStrong">AQR</span>.</P>
+<P class="docText">For AQR to be invoked for a query, the result that query must be derivable from the MQT definition. The query need not match the <TT>SELECT</TT> in the MQT definition exactly. When the query can be resolved using the MQT, the query and the MQT are said to <span class="docEmphStrong">match</span>. When DB2 finds a match, the submitted query is rewritten by the optimizer to use the MQT.</P>
+<P class="docText">By using AQR, MQTs can be utilized without the user having to rewrite his SQL statements—instead DB2 rewrites any SQL statement that matches. The goal is to reduce query execution cost. After the optimizer uses AQR to rewrite the query, it will compare the access path of the rewritten query against the original access path, and the one with the lowest cost will be run.</P>
+<P class="docText">An <TT>EXPLAIN</TT> will show whether AQR was invoked to use an MQT. If the final query plan comes from a rewritten query, the <TT>PLAN_TABLE</TT> will show the new access path using the name of the matched MQTs in the <TT>TNAME</TT> column. Additionally, the <TT>TABLE_TYPE</TT> column will be set to <TT>M</TT> to indicate that an MQT was used.<A NAME="ch45index243"></A><A NAME="ch45index244"></A></P>
+<A NAME="ch45note07"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<P class="docText">You can also determine whether AQR was used through IFCID <TT>0022</TT>, which contains the mini-plan performance trace record.</P></div><br>
+<A NAME="ch45lev3sec10"></A><H5 class="docSection3Title">How to Encourage AQR</H5>
+<P class="docText">Many factors can influence whether AQR is considered for use by the optimizer. A big factor is the way in which you build your MQTs and write your queries. But other factors are involved including database design and some new special registers.</P>
+<A NAME="ch45lev4sec5"></A><H5 class="docSection4Title">MQT DDL for AQR</H5>
+<P class="docText">The query optimization options discussed previously in this chapter will be a big determining factor in whether DB2 will consider the MQT for AQR. Fortunately, the default is <TT>ENABLE QUERY OPTIMIZATION</TT>, which specifies that the MQT can be exploited by AQR. However, if you specify <TT>DISABLE QUERY OPTIMIZATION</TT>, the MQT will not be considered for AQR.<A NAME="ch45index245"></A><A NAME="ch45index246"></A></P>
+<A NAME="ch45lev4sec6"></A><H5 class="docSection4Title">The Impact of <TT>REFRESH TABLE</TT> on AQR</H5>
+<P class="docText">Additionally, the optimizer is somewhat aware of the freshness of system-maintained MQTs. AQR will be used for a system-maintained MQT only if a <TT>REFRESH TABLE</TT> has occurred. Of course, the MQT may not be up-to-date, but DB2 knows that the MQT was refreshed at least once.<A NAME="ch45index247"></A><A NAME="ch45index248"></A><A NAME="ch45index249"></A></P>
+<P class="docText">The time between refreshes is recorded in the <TT>REFRESH_TIME</TT> column of the <TT>SYSIBM.SYSVIEWS</TT> table in the DB2 Catalog.</P>
+<P class="docText">No such restriction exists when using user-maintained MQTs. Because such an MQT is user maintained, DB2 cannot know whether the data is fresh or not, nor will DB2 maintain the <TT>REFRESH_TIME</TT> data in the DB2 Catalog. Therefore DB2 does not restrict user-maintained MQTs usage for AQR if the MQT is defined with the <TT>ENABLE QUERY OPTIMIZATION</TT> specification.</P>
+<A NAME="ch45lev4sec7"></A><H5 class="docSection4Title">Special Registers</H5>
+<P class="docText">There are new special registers in DB2 V8 that can be set to control AQR. These special registers are <TT>CURRENT REFRESH AGE</TT> and <TT>CURRENT MAINTAINED TABLE TYPES FOR OPTIMIZATION</TT>:<A NAME="ch45index250"></A><A NAME="ch45index251"></A><A NAME="ch45index252"></A></P>
+<BLOCKQUOTE><P><p class="docText"><span class="docEmphStrong"><TT>CURRENT REFRESH AGE</TT></span>— 
+Used to control how "fresh" the MQT data must be for it to be considered for AQR. The refresh age of an MQT is the time between the current timestamp and the time that <TT>REFRESH TABLE</TT> was last run for this MQT. This special register can be set to the following values:<A NAME="ch45index253"></A></p><BLOCKQUOTE><P><p class="docText"><span class="docEmphStrong"><TT>0</TT></span>— 
+Indicates that DB2 will not consider AQR for any MQTs. A zero in this register means that only current MQTs are considered by AQR. But DB2 V8 does not support immediately refreshed MQTs, so AQR will not be used.</p></P><P><p class="docText"><span class="docEmphStrong"><TT>ANY</TT></span>— 
+Indicates that all MQTs are considered by AQR.</p></P></BLOCKQUOTE><A NAME="ch45note08"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<P class="docText">You can set the <TT>REFSHAGE DSNZPARM</TT> to specify a default value for <TT>CURRENT REFRESH AGE</TT> to be used across the DB2 subsystem (or on the <TT>CURRENT REFRESH AGE</TT> field of the DSNTIP4 panel during installation).</P></div><br></P><P><p class="docText"><span class="docEmphStrong"><TT>CURRENT MAINTAINED TABLE TYPES FOR OPTIMIZATION</TT></span>— 
+Indicates the type of MQTs to be considered by AQR; that is system-maintained, user-maintained, or both. This special register can be set to the following values:<A NAME="ch45index254"></A></p><BLOCKQUOTE><P><p class="docText"><span class="docEmphStrong"><TT>ALL</TT></span>— 
+Indicates that all MQTs will be considered by AQR.</p></P><P><p class="docText"><span class="docEmphStrong"><TT>NONE</TT></span>— 
+Indicates that no MQTs will be considered by AQR.</p></P><P><p class="docText"><span class="docEmphStrong"><TT>SYSTEM</TT></span>— 
+Indicates that only system-maintained MQTs will be considered by AQR.</p></P><P><p class="docText"><span class="docEmphStrong"><TT>USER</TT></span>— 
+Indicates that only user-maintained MQTs will be considered by AQR.</p></P></BLOCKQUOTE></P></BLOCKQUOTE>
+<A NAME="ch45note09"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<P class="docText">You can set the <TT>MAINTYPE</TT> DSNZPARM to specify a default value for <TT>CURRENT MAINTAINED TABLE TYPES FOR OPTIMIZATION</TT> to be used across the DB2 subsystem (or on the <TT>CURRENT MAINT TYPES</TT> field of the DSNTIP4 panel during installation).</P></div><br>
+<P class="docText">Keep in mind, too, that MQTs having the <TT>DISABLE QUERY OPTIMIZATION</TT> specification are never eligible for AQR, regardless of the setting of <TT>CURRENT MAINT TYPES</TT>.<A NAME="ch45index255"></A><A NAME="ch45index256"></A><A NAME="ch45index257"></A></P>
+<A NAME="ch45lev4sec8"></A><H5 class="docSection4Title">Types of Queries Supported by AQR</H5>
+<P class="docText">Only certain specific types of queries can be impacted by AQR. As of DB2 V8, only queries that are dynamically prepared and read only can be rewritten by AQR. Static SQL cannot be rewritten by AQR to use MQTs. If you wish to use an MQT in static SQL, you will have to manually code the SQL to access the MQT. AQR cannot be used.<A NAME="ch45index258"></A><A NAME="ch45index259"></A><A NAME="ch45index260"></A></P>
+<P class="docText">The DB2 optimizer considers AQR at the query block level. So each block of a query might be rewritten. For a query block to be rewritten to use an MQT it must <span class="docEmphasis">not</span> contain an outer join, the <TT>RAND</TT> function, or a user-defined scalar or table function with the <TT>EXTERNAL ACTION</TT> or <TT>NON-DETERMINISTIC</TT> attribute. Furthermore, <TT>SELECT</TT> statements in an <TT>INSERT</TT> or on the <TT>SET</TT> condition of an <TT>UPDATE</TT> are not considered for AQR.</P>
+<P class="docText">Additionally, only MQTs that have an isolation level equal to or higher than the query isolation level will be considered during the AQR process.</P>
+<P class="docText">Let's look at a quick example. Remember our sample MQT from before:</P>
+<pre>
+
+</pre><BR><pre>
+CREATE TABLE DEPT_SAL
+  (DEPT, TOTAL_SALARY, TOTAL_BONUS, TOTAL_COMM, TOTAL_COMPENSATION, EMPLOYEES)
+AS
+  (SELECT   WORKDEPT, SUM(SALARY), SUM(BONUS) SUM(COMM),
+            SUM(SALARY+BONUS+COMM), COUNT(*)
+   FROM     DSN8810.EMP
+   GROUP BY WORKDEPT)
+DATA INITIALLY DEFERRED
+REFRESH DEFERRED
+MAINTAINED BY SYSTEM
+ENABLE QUERY OPTIMIZATION;
+</pre><BR>
+<P class="docText">Now, assume that we submit the following query:</P>
+<pre>
+
+</pre><BR><pre>
+SELECT   DEPT, AVG(SALARY+BONUS+COMM)
+FROM     DSN8810.EMP
+GROUP BY WORKDEPT;
+</pre><BR>
+<P class="docText">Obviously, AQR should be able to rewrite this query to utilize the <TT>DEPT_SAL</TT> MQT. This is so because the query conforms to the rules for AQR, and the information requested is a subset of the information in the MQT.<A NAME="ch45index261"></A><A NAME="ch45index262"></A><A NAME="ch45index263"></A></P>
+<A NAME="ch45lev4sec9"></A><H5 class="docSection4Title">The Impact of Database Design on AQR</H5>
+<P class="docText">AQR relies on referential constraints defined between tables to help determine whether a query can be rewritten or not. The referential constraints are used by AQR when the MQT contains extra tables that are not referenced by the query.<A NAME="ch45index264"></A><A NAME="ch45index265"></A><A NAME="ch45index266"></A><A NAME="ch45index267"></A></P>
+<P class="docText">In many shops, though, DB2 RI is not used. However, most databases have some form of referential integrity—and if it is not defined to DB2, it is maintained by the application.</P>
+<table width="90%" border="0" cellspacing="0" cellpadding="1"><tr><td width="60" valign="top"><IMG BORDER="0"  width="30" height="18" SRC="images/0672326132/graphics/V8_icon.gif" ALT="graphics/V8_icon.gif"></td><td valign="top"><P class="docText"> <span class="docEmphBoldItalic">Informational referential constraints</span> are introduced in DB2 V8 to assist AQR. An information referential constraint is not maintained by DB2 during <TT>INSERT</TT>, <TT>UPDATE</TT>, and <TT>DELETE</TT> processing or by the <TT>LOAD</TT> and <TT>CHECK</TT> utilities. But the AQR process will consider the constraint to help determine whether queries can be rewritten.<A NAME="ch45index268"></A><A NAME="ch45index269"></A></P></td></tr></table><br>
+<P class="docText">If you have tables where referential integrity is maintained programmatically, seriously consider building information referential constraints when you build MQTs on those tables.</P>
+<P class="docText">An informational referential constraint can be defined using either <TT>CREATE TABLE</TT> or <TT>ALTER TABLE</TT>. It is defined like a normal constraint, but with the <TT>NOT ENFORCED</TT> keyword. For example, the following column DDL extract defines an information referential foreign key constraint for the <TT>MGRNO</TT> column to the <TT>EMPNO</TT> of the <TT>EMP</TT> table:</P>
+<pre>
+
+</pre><BR><pre>
+. . .
+MGRNO CHAR(6) NOT NULL,
+  CONSTRAINT MGREMP FOREIGN KEY (EMPNO)
+  REFERENCES EMP NOT ENFORCED,
+. . .<A NAME="ch45index270"></A><A NAME="ch45index271"></A><A NAME="ch45index272"></A><A NAME="ch45index273"></A>
+</pre><BR>
+<A NAME="ch45note10"></A><div class="docNote"><p class="docNoteTitle">CAUTION</p>
+
+<P class="docText">Although informational referential constraints are not enforced by DB2 in most contexts, they are used by the <TT>QUIESCE</TT> and <TT>REPORT TABLESPACESET</TT> utilities. Additionally, when using <TT>LISTDEF</TT> with the <TT>RI</TT> option, information referential constraints will be considered.</P></div><br>
+<A NAME="ch45lev3sec11"></A><H5 class="docSection3Title"><TT>ALTER</TT> and Query Rewrite</H5>
+<P class="docText">The <TT>ALTER TABLE</TT> statement can be used to change the MQT's setting to specify whether query rewrite is enabled or disabled. If you alter an MQT to specify <TT>ENABLE QUERY OPTIMIZATION</TT> then that MQT is immediately eligible for query rewrite. This is so even if the MQT is empty, so be cautious.<A NAME="ch45index274"></A><A NAME="ch45index275"></A><A NAME="ch45index276"></A><A NAME="ch45index277"></A><A NAME="ch45index278"></A><A NAME="ch45index279"></A></P>
+<P class="docText">Usually, the proper course of action will be to <TT>ALTER</TT> the table to an MQT with query optimization disabled. Then the MQT should be refreshed—and only then, when the data is accurate, should query optimization be enabled for the MQT.</P>
+<A NAME="ch45note11"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<P class="docText">You can also use the <TT>ALTER TABLE</TT> statement to change an MQT into a base table.</P></div><br>
+<A NAME="ch45lev2sec17"></A><H4 class="docSection2Title">MQT Guidelines</H4>
+<table width="90%" border="0" cellspacing="0" cellpadding="1"><tr><td width="60" valign="top"><IMG BORDER="0"  width="30" height="18" SRC="images/0672326132/graphics/V8_icon.gif" ALT="graphics/V8_icon.gif"></td><td valign="top"><P class="docText"> Consider the following guidelines as you implement materialized query tables in your shop.</P></td></tr></table><br>
+<A NAME="ch45lev3sec12"></A><H5 class="docSection3Title">Enable Query Optimization After Creation</H5>
+<P class="docText">Create user-maintained MQTs with query optimization initially disabled. After the MQT is populated, enable the table for query optimization. If you create the table initially enabled for query optimization, DB2 might rewrite queries to use the empty MQT. And though the query would run quickly, you would not get the desired results.<A NAME="ch45index280"></A><A NAME="ch45index281"></A></P>
+<A NAME="ch45lev3sec13"></A><H5 class="docSection3Title">As Always, Avoid <TT>SELECT *</TT></H5>
+<P class="docText">If you create an MQT using <TT>SELECT *</TT>, the columns of the MQT will be determined at the time the MQT is created. To avoid confusion, always explicitly list the columns in the <TT>SELECT</TT>-list of the MQT definition.<A NAME="ch45index282"></A><A NAME="ch45index283"></A><A NAME="ch45index284"></A></P>
+<A NAME="ch45lev3sec14"></A><H5 class="docSection3Title">Avoid Defining MQTs with <TT>HAVING</TT></H5>
+<P class="docText">Consider leaving the <TT>HAVING</TT> clause off of MQTs defined with <TT>GROUP BY</TT>. Creating an MQT with a <TT>HAVING</TT> clause is rarely worth the effort. Generally, the <TT>HAVING</TT> clause reduces the usefulness, and therefore the benefit of the MQT.<A NAME="ch45index285"></A><A NAME="ch45index286"></A><A NAME="ch45index287"></A></P>
+<P class="docText">An MQT that aggregates data using <TT>GROUP BY</TT> can be queried for all values grouped. Specifying <TT>HAVING</TT> will reduce the amount data that can be queried.</P>
+<A NAME="ch45lev3sec15"></A><H5 class="docSection3Title">Create Indexes on MQTs</H5>
+<P class="docText">DB2 can use indexes to optimize data retrieval from a materialized query table. Build indexes on your MQTs based on their access characteristics and usage patterns.<A NAME="ch45index288"></A><A NAME="ch45index289"></A></P>
+<A NAME="ch45lev3sec16"></A><H5 class="docSection3Title">Use Segmented Table Spaces for MQTs</H5>
+<P class="docText">Consider standardizing on segmented table spaces for your MQTs. This is wise because <TT>REFRESH TABLE</TT> will perform better if the MQT is stored in a segmented table space. When <TT>REFRESH TABLE</TT> is executed to populate an MQT, DB2 uses a mass delete to clear the existing data from the MQT. A mass delete also is more efficient for segmented table spaces because of its more efficient use of the space map.<A NAME="ch45index290"></A><A NAME="ch45index291"></A><A NAME="ch45index292"></A></P>
+<A NAME="ch45lev3sec17"></A><H5 class="docSection3Title">Consider Running <TT>EXPLAIN</TT> on your <TT>REFRESH TABLE</TT> Statements</H5>
+<P class="docText">You can run an <TT>EXPLAIN</TT> on the <TT>REFRESH TABLE</TT> statement to analyze the access paths used to populate the MQT with data. The <TT>PLAN_TABLE</TT> output will contain rows for <TT>INSERT</TT> with the <TT>SELECT</TT> in the MQT definition.<A NAME="ch45index293"></A><A NAME="ch45index294"></A><A NAME="ch45index295"></A></P>
+<A NAME="ch45lev3sec18"></A><H5 class="docSection3Title">MQTs Cannot Be Unique</H5>
+<P class="docText">Although most DB2 table characteristics can be applied to MQTs, you cannot specify unique constraints or unique indexes on them. Additionally, because an MQT cannot have a unique key, you cannot make an MQT the parent table in a referential constraint.<A NAME="ch45index296"></A></P>
+<A NAME="ch45lev3sec19"></A><H5 class="docSection3Title">Monitor <TT>BIND</TT> Time with MQTs</H5>
+<P class="docText">Be aware that it might take longer to <TT>BIND</TT> plans and packages when MQTs are in use. Queries referencing tables on which MQTs are defined can experience increased <TT>BIND</TT> time due to the DB2 Catalog access and additional processing required during the automatic query rewrite phase.<A NAME="ch45index297"></A><A NAME="ch45index298"></A><A NAME="ch45index299"></A></P>
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="ch45lev1sec7.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="ch45lev1sec9.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

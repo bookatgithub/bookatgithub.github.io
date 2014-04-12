@@ -1,0 +1,512 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>The LOAD Utility</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="ch33.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="ch33lev1sec2.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="ch33lev1sec1"></A><H3 class="docSection1Title">The <TT>LOAD</TT> Utility</H3>
+<P class="docText">The <TT>LOAD</TT> utility is used to accomplish bulk inserts to DB2 tables. It can add rows to a table, retaining the current data, or it can replace existing rows with the new data.<A NAME="ch33index01"></A><A NAME="ch33index02"></A><A NAME="ch33index03"></A><A NAME="ch33index04"></A></P>
+<A NAME="ch33lev2sec1"></A><H4 class="docSection2Title">Table Loading Philosophies</H4>
+<P class="docText">There are two distinct philosophies regarding the use of the <TT>LOAD</TT> utility. The first and generally recommended philosophy takes more time to implement but is easier to support. It requires the reservation of sufficient DASD to catalog the <TT>LOAD</TT> work data sets in case the <TT>LOAD</TT> job abends.<A NAME="ch33index05"></A><A NAME="ch33index06"></A><A NAME="ch33index07"></A></P>
+<P class="docText">The work data sets for the <TT>LOAD</TT> job are allocated for the <TT>DDNAME</TT>s <TT>SORTOUT</TT>, <TT>SYSUT1</TT>, <TT>SYSERR</TT>, and <TT>SYSMAP</TT> with <TT>DISP=(MOD,DELETE,CATLG)</TT>. This enables the data sets to be allocated as new for the initial running of the <TT>REORG</TT> job. If the job abends, it catalogs the data sets in case they can be used in a restart. After the step completes successfully, the data sets are deleted. The space for these data sets must be planned and available before the <TT>LOAD</TT> job runs.</P>
+<P class="docText">The data set for <TT>SYSDISC</TT> should be allocated specifying <TT>DISP=(NEW, CATLG, CATLG)</TT>. If there are discards, the <TT>LOAD</TT> utility returns a <TT>RC=4</TT>, and it does not abend. An additional step can be added after the <TT>LOAD</TT> to detect discards and notify the appropriate personnel that discards were encountered.</P>
+<P class="docText">By creating your <TT>LOAD</TT> job with this philosophy, you can restart an abending <TT>LOAD</TT> job with little effort after the cause of the abend has been corrected (see <A class="docLink" HREF="#ch33list01">Listing 33.1</A>). You simply specify one of the <TT>RESTART</TT> options in the <TT>UTPROC</TT> parameter for <TT>DSNUTILB</TT>.<A NAME="ch33index08"></A><A NAME="ch33index09"></A><A NAME="ch33index10"></A><A NAME="ch33index11"></A><A NAME="ch33index12"></A><A NAME="ch33index13"></A></P>
+<A NAME="ch33list01"></A><H5 class="docExampleTitle">Listing 33.1. <TT>LOAD</TT> JCL (Restartable)</H5>
+
+<PRE>
+//DB2JOBU  JOB (UTILITY),'DB2 LOAD',MSGCLASS=X,CLASS=X,
+//          NOTIFY=USER
+//*
+//****************************************************************
+//*
+//*            DB2 LOAD UTILITY (RESTARTABLE)
+//*
+//****************************************************************
+//*
+//UTIL EXEC DSNUPROC,SYSTEM=DSN,UID='LOADDATA',UTPROC="
+//*
+//*  UTILITY WORK DATAETS
+//*
+//DSNUPROC.SORTWK01 DDUNIT=SYSDA,SPACE=(CYL,(2,1))
+//DSNUPROC.SORTWK02 DDUNIT=SYSDA,SPACE=(CYL,(2,1))
+//DSNUPROC.SORTOUT DD DSN=CAT.SORTOUT,DISP=(MOD,CATLG,CATLG),
+//        UNIT=SYSDA,SPACE=(CYL,(2,1))
+//DSNUPROC.SYSMAP DD DSN=CAT.SYSUT1,DISP=(MOD,DELETE,CATLG),
+//        UNIT=SYSDA,SPACE=(CYL,(2,1)),DCB=BUFNO=20
+//DSNUPROC.SYSUT1 DD DSN=CAT.SYSUT1,DISP=(MOD,DELETE,CATLG),
+//        UNIT=SYSDA,SPACE=(CYL,(2,1)),DCB=BUFNO=20
+//DSNUPROC.SYSDISC DD DSN=CAT.SYSDISC,DISP=(MOD,DELETE,CATLG),
+//        UNIT=SYSDA,SPACE=(CYL,(1,1))
+//DSNUPROC.SYSERR DD DSN=CAT.SYSERR,DISP=(MOD,DELETE,CATLG),
+//        UNIT=SYSDA,SPACE=(CYL,(1,1))
+//DSNUPROC.SYSREC00 DD DSN=CAT.LOAD.INPUT.DATASETA,DISP=SHR,DCB=BUFNO=20
+//DSNUPROC.UTPRINT DD SYSOUT=X
+//*
+//*  UTILITY INPUT CONTROL STATEMENTS
+//*       The LOAD statement reloads the DSN8810.ACT table
+//*
+//DSNUPROC.SYSIN    DD  *
+   LOAD DATA REPLACE INDDN SYSREC00 LOG NO
+   INTO TABLE DSN8810.ACT
+       (ACTNO       POSITION ( 1 )  SMALLINT,
+        ACTKWD      POSITION ( 3 )  CHAR ( 6 ),
+        ACTDESC     POSITION ( 9 )  VARCHAR
+       )
+/*
+//<A NAME="ch33index14"></A><A NAME="ch33index15"></A><A NAME="ch33index16"></A><A NAME="ch33index17"></A><A NAME="ch33index18"></A><A NAME="ch33index19"></A>
+</PRE><BR>
+
+<A NAME="ch33note01"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<P class="docText">The sort work data sets need to be assigned in the JCL only if sort work data sets are not dynamically allocated. Additionally, you should consider explicitly defining sort work data sets when loading very large tables.</P></div><br>
+<P class="docText">The second philosophy is easier to implement but more difficult to support. No additional disk space is required because all <TT>LOAD</TT> work data sets are temporary. Therefore, all interim work data sets are lost when the job abends. See <A class="docLink" HREF="#ch33list02">Listing 33.2</A> for sample JCL.<A NAME="ch33index20"></A><A NAME="ch33index21"></A><A NAME="ch33index22"></A><A NAME="ch33index23"></A><A NAME="ch33index24"></A><A NAME="ch33index25"></A><A NAME="ch33index26"></A><A NAME="ch33index27"></A></P>
+<A NAME="ch33list02"></A><H5 class="docExampleTitle">Listing 33.2. <TT>LOAD</TT> JCL (Nonrestartable)</H5>
+
+<PRE>
+//DB2JOBU  JOB (UTILITY),'DB2 LOAD',MSGCLASS=X,CLASS=X,
+//   NOTIFY=USER,REGION=3M
+//*
+//****************************************************************
+//*
+//*            DB2 LOAD UTILITY (NON-RESTARTABLE)
+//*
+//****************************************************************
+//*
+//UTIL EXEC DSNUPROC,SYSTEM=DSN,UID='LOADDATA',UTPROC="
+//*
+//*  UTILITY WORK DATASETS
+//*
+//DSNUPROC.SORTWK01 DD DSN=&amp;&amp;SORTWK01,
+//        UNIT=SYSDA,SPACE=(CYL,(2,1))
+//DSNUPROC.SORTWK02 DD DSN=&amp;&amp;SORTWK02,
+//        UNIT=SYSDA,SPACE=(CYL,(2,1))
+//DSNUPROC.SORTOUT DD DSN=&amp;&amp;SORTOUT,
+//        UNIT=SYSDA,SPACE=(CYL,(2,1))
+//DSNUPROC.SYSMAP DD DSN=CAT.SYSUT1,DISP=(MOD,CATLG,CATLG),
+//        UNIT=SYSDA,SPACE=(CYL,(2,1))
+//DSNUPROC.SYSUT1 DD DSN=&amp;&amp;SYSUT1,DCB=BUFNO=10
+//        UNIT=SYSDA,SPACE=(CYL,(2,1))
+//DSNUPROC.SYSDISC DD DSN=CAT.SYSDISC,DISP=(MOD,CATLG,CATLG),
+//        UNIT=SYSDA,SPACE=(CYL,(1,1))
+//DSNUPROC.SYSERR DD DSN=&amp;&amp;SYSERR,
+//        UNIT=SYSDA,SPACE=(CYL,(1,1))
+//DSNUPROC.SYSREC00 DD DSN=CAT.LOAD.INPUT.DATASETD,DISP=SHR,DCB=BUFNO=10
+//DSNUPROC.UTPRINT DD SYSOUT=X
+//*
+//*  UTILITY INPUT CONTROL STATEMENTS
+//*       The LOAD statement adds the data in SYSREC00 to
+//*       the DSN8810.DEPT table.
+//*
+//DSNUPROC.SYSIN    DD  *
+   LOAD DATA RESUME(YES) ENFORCE CONSTRAINTS LOG NO
+   INDDN SYSREC00 INTO TABLE DSN8810.DEPT
+       (DEPTNO       POSITION(    1)
+                     CHAR(        3),
+        DEPTNAME     POSITION(    4)
+                     VARCHAR,
+        MGRNO        POSITION(   42)
+                     CHAR(        6)  NULLIF(   48)='?',
+        ADMRDEPT     POSITION(   49)
+                     CHAR(        3),
+        LOCATION     POSITION(   52)
+                     CHAR(       16)  NULLIF(   68)='?'       )
+/*
+//<A NAME="ch33index28"></A><A NAME="ch33index29"></A><A NAME="ch33index30"></A><A NAME="ch33index31"></A><A NAME="ch33index32"></A><A NAME="ch33index33"></A><A NAME="ch33index34"></A><A NAME="ch33index35"></A>
+</PRE><BR>
+
+<P class="docText">To restart this <TT>LOAD</TT> job, you must determine in which phase the job abended. If the job abends in any phase of a <TT>LOAD REPLACE</TT>, you can simply terminate the utility and rerun. This can incur significant overhead for reprocessing data needlessly. If the first philosophy is used, reprocessing is usually avoided.</P>
+<P class="docText">For a <TT>LOAD RESUME(YES)</TT>, however, if the job abends in any phase other than <TT>UTILINIT</TT>, you must restore the table space for the table being loaded to a previous point in time. This can be accomplished by running the <TT>RECOVER TOCOPY</TT> utility or by running a full <TT>RECOVER</TT> if the <TT>LOG NO</TT> option of the <TT>LOAD</TT> utility was specified. After restoring the table space (and possibly its associated indexes), you must correct the cause of the abend, terminate the utility, and then rerun the job. As you can see, this method is significantly more difficult to restart than the first method.</P>
+<P class="docText">Try to use the first philosophy rather than the second. This makes recovery from error situations as smooth and painless as possible.<A NAME="ch33index36"></A><A NAME="ch33index37"></A><A NAME="ch33index38"></A></P>
+<A NAME="ch33lev2sec2"></A><H4 class="docSection2Title">Estimating <TT>LOAD</TT> Work Data Set Sizes</H4>
+<P class="docText">The <TT>LOAD</TT> utility requires work data sets to load data into DB2 tables. The following formulas can help you calculate estimated sizes for these work data sets. More complex and precise calculations are in the <span class="docEmphasis">DB2 Command and Utility Reference</span> manual, but these formulas should produce comparable results.<A NAME="ch33index39"></A><A NAME="ch33index40"></A><A NAME="ch33index41"></A><A NAME="ch33index42"></A><A NAME="ch33index43"></A></P>
+<pre>
+
+</pre><BR><pre><A NAME="PLID2"></A><div class="v1"></div>
+SORTOUT = (size of the largest index key or foreign key + 14) x (total number of rows in
+<IMG BORDER="0" width="14" height="9" ALIGN="left" SRC="images/ccc.gif" ALT="graphics/ccc.gif"> the table to be loaded) x (total number of indexes defined for the table) x (total number
+<IMG BORDER="0" width="14" height="9" ALIGN="left" SRC="images/ccc.gif" ALT="graphics/ccc.gif"> of foreign keys in the table) x 1.2
+</pre><BR>
+<A NAME="ch33note02"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<P class="docText">If any number in the <TT>SORTOUT</TT> calculation is 0, substitute 1.</P>
+<P class="docText">The multiplier 1.2 is factored into the calculation to provide a "fudge factor." If you are absolutely sure of your numbers, the calculation can be made more precise by eliminating the additional multiplication of 1.2.</P></div><br>
+<pre>
+
+</pre><BR><pre><A NAME="PLID3"></A><div class="v1"></div>
+SYSUT1 = (size of the largest index key or foreign key + 14) x (total number of rows to be
+<IMG BORDER="0" width="14" height="9" ALIGN="left" SRC="images/ccc.gif" ALT="graphics/ccc.gif"> loaded to the table) x (total number of indexes defined for the table) x (total number of
+<IMG BORDER="0" width="14" height="9" ALIGN="left" SRC="images/ccc.gif" ALT="graphics/ccc.gif"> foreign keys in the table) x 1.2
+</pre><BR>
+<A NAME="ch33note03"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<P class="docText">If any number in the <TT>SYSUT1</TT> calculation is 0, substitute 1. The multiplier 1.2 is factored into the calculation to provide a "fudge factor." If you are absolutely sure of your numbers, the calculation can be made more precise by eliminating the additional multiplication of 1.2.</P></div><br>
+<pre>
+
+</pre><BR><pre><A NAME="PLID4"></A><div class="v1"></div>
+SORTWKxx = (size of SYSUT1) x 2
+
+ SYSERR = ((number of estimated unique index errors) + (number of estimated data
+<IMG BORDER="0" width="14" height="9" ALIGN="left" SRC="images/ccc.gif" ALT="graphics/ccc.gif"> conversion errors) + (number of estimated referential constraint violations)) x 100
+</pre><BR>
+<A NAME="ch33note04"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<P class="docText">Always allocate the <TT>SYSERR</TT> data set to be at least 1 cylinder.</P></div><br>
+<pre>
+
+</pre><BR><pre>
+SYSMAP = (total number of rows to be loaded to the table) x 21
+</pre><BR>
+<A NAME="ch33note05"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<P class="docText">The <TT>SYSMAP</TT> data set is required if either of the following is true:<A NAME="ch33index44"></A><A NAME="ch33index45"></A></P>
+<UL><LI><P class="docList">Discard processing is requested.</P></LI><LI><P class="docList">The table space is segmented or partitioned.<A NAME="ch33index46"></A><A NAME="ch33index47"></A><A NAME="ch33index48"></A><A NAME="ch33index49"></A><A NAME="ch33index50"></A></P></LI></UL></div><br>
+<pre>
+
+</pre><BR><pre><A NAME="PLID6"></A><div class="v1"></div>
+SYSDISC = Allocate the SYSDISC data set to be the same size as the data set containing the
+<IMG BORDER="0" width="14" height="9" ALIGN="left" SRC="images/ccc.gif" ALT="graphics/ccc.gif"> rows to be loaded by the LOAD utility
+</pre><BR>
+<A NAME="ch33note06"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<P class="docText">The space requirements for <TT>SYSDISC</TT> may be prohibitive if disk space is at a premium at your shop. Instead of allocating the <TT>SYSDISC</TT> data set as large as the data being loaded, consider using a small primary quantity and a larger secondary quantity—for example:<A NAME="ch33index51"></A><A NAME="ch33index52"></A></P>
+<pre>
+
+</pre><BR><pre>
+SPACE=(CYL,(0,50),RLSE)
+</pre><BR></div><br>
+<A NAME="ch33note07"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<P class="docText">Although the <TT>SYSDISC</TT> data set is optional, specifying it is highly recommended to trap records that cannot be loaded.</P></div><br>
+<P class="docText">After calculating the estimated size in bytes for each work data set, convert the number into cylinders, rounding up to the next whole cylinder. Allocating work data sets in cylinder increments enhances the utility's performance.<A NAME="ch33index53"></A><A NAME="ch33index54"></A><A NAME="ch33index55"></A><A NAME="ch33index56"></A><A NAME="ch33index57"></A></P>
+<A NAME="ch33lev2sec3"></A><H4 class="docSection2Title"><TT>LOAD</TT> Phases</H4>
+<P class="docText">There are nine possible phases of the <TT>LOAD</TT> utility:<A NAME="ch33index58"></A><A NAME="ch33index59"></A><A NAME="ch33index60"></A></P>
+<P><TABLE CELLSPACING="0" FRAME="void" RULES="none" CELLPADDING="5"><COLGROUP><COL width="99"><COL width="451"></COLGROUP><THEAD></THEAD><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>UTILINIT</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Sets up and initializes the <TT>LOAD</TT> utility.</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>RELOAD</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Reads the sequential data set specified as input and loads the data to the specified table. This phase also populates the data set associated with the <TT>SYSUT1 DD</TT> with index and foreign key data. The compression dictionary is rebuilt in this step for <TT>COMPRESS</TT> <TT>YES</TT> table spaces. The copy pending flag is reset at the end of this phase if an inline copy is produced (unless the <TT>SORTKEYS</TT> parameter is specified).</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>SORT</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Sorts the index and foreign key data using the data sets assigned to the <TT>SORTOUT</TT> and <TT>SORTWK</TT><span class="docEmphasis"><TT>xx</TT></span> <TT>DD</TT> statements.</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>BUILD</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Builds indexes and identifies duplicate keys, placing the error information in <TT>SYSERR</TT>. The recovery pending flag is reset for all non-unique indexes. The copy pending flag is reset at the end of this phase if an inline copy is produced unless the <TT>SORTKEYS</TT> parameter is specified.</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>SORTBLD</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">When parallel index build is specified (<TT>SORTKEYS</TT>), the <TT>SORT</TT> and <TT>BUILD</TT> phases are performed in the <TT>SORTBLD</TT> phase instead.</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>INDEXVAL</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Reads the <TT>SYSERR</TT> data set to correct unique index violations. The recovery pending flag is reset for all unique indexes.</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>ENFORCE</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Checks foreign keys for conformance to referential constraints and stores the error information in <TT>SYSERR</TT>. Resets check pending flag for table space.</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>DISCARD</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Reads the <TT>SYSERR</TT> information to correct referential constraint violations and places the erroneous records in the <TT>SYSDISC</TT> data set.</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>REPORT</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Sends reports of unique index violations and referential constraint violations to <TT>SYSPRINT</TT>.</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>UTILTERM</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Performs the final utility cleanup.<A NAME="ch33index61"></A><A NAME="ch33index62"></A><A NAME="ch33index63"></A></P></TD></TR></TABLE></P><br>
+<A NAME="ch33note08"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<P class="docText">The <TT>SORT</TT> phase will be skipped if the <TT>RELOAD</TT> phase analyzes the data and determines that the <TT>SORT</TT> phase is not needed.</P></div><br>
+<A NAME="ch33lev2sec4"></A><H4 class="docSection2Title">Creating an Inline Copy During the <TT>LOAD</TT></H4>
+<P class="docText">It is possible to create a full image copy data set during the execution of the <TT>LOAD</TT> utility. This is referred to as an inline <TT>COPY</TT>. The image copy will be a <TT>SHRLEVEL REFERENCE</TT> copy.<A NAME="ch33index64"></A><A NAME="ch33index65"></A><A NAME="ch33index66"></A><A NAME="ch33index67"></A></P>
+<P class="docText">There are two major benefits of taking an inline copy. The first is that a second pass of the data is not required to create a DB2 image copy. The second benefit is that the table space into which the data is being loaded will not be placed into a copy pending state when inline copy is specified, even if the <TT>LOG NO</TT> option is specified.</P>
+<P class="docText">To create an inline copy, use the <TT>COPYDDN</TT> and <TT>RECOVERYDDN</TT> keywords. You can specify up to two primary and two secondary copies.</P>
+<A NAME="ch33lev2sec5"></A><H4 class="docSection2Title">Gathering Inline Statistics During the <TT>LOAD</TT></H4>
+<P class="docText">You also can generate statistics during the execution of the <TT>LOAD</TT> utility. This is referred to as inline <TT>RUNSTATS</TT>. Up-to-date statistics will be generated during the <TT>LOAD</TT> instead of requiring an additional <TT>RUNSTATS</TT> step. To generate inline <TT>RUNSTATS</TT>, use the <TT>STATISTICS</TT> keyword. You can gather table space statistics, index statistics, or both.<A NAME="ch33index68"></A><A NAME="ch33index69"></A><A NAME="ch33index70"></A><A NAME="ch33index71"></A><A NAME="ch33index72"></A></P>
+<A NAME="ch33lev3sec1"></A><H5 class="docSection3Title">Discards and Inline <TT>RUNSTATS</TT></H5>
+<P class="docText">If you specify both the <TT>DISCARDDN</TT> and <TT>STATISTICS</TT> options, the inline statistics collected during the <TT>LOAD</TT> may be inaccurate. When a row is found with check constraint errors or conversion errors, the row is not loaded into the table, so DB2 will not collect statistics for it. So far, so good.</P>
+<P class="docText">However, the <TT>LOAD</TT> utility will collect inline statistics before discarding rows that violate unique constraints and referential constraints. Therefore, when the number of rows that violate RI and unique constraints is high, the statistics could be quite imprecise. If a significant number of rows are discarded, you should consider executing the <TT>RUNSTATS</TT> utility on the table after the discarded data has been verified as wrong or corrected.<A NAME="ch33index73"></A><A NAME="ch33index74"></A><A NAME="ch33index75"></A><A NAME="ch33index76"></A><A NAME="ch33index77"></A><A NAME="ch33index78"></A><A NAME="ch33index79"></A></P>
+<A NAME="ch33lev2sec6"></A><H4 class="docSection2Title">Loading Delimited Input Data Sets</H4>
+<table width="90%" border="0" cellspacing="0" cellpadding="1"><tr><td width="60" valign="top"><IMG BORDER="0" width="30" height="18" SRC="images/0672326132/graphics/V8_icon.gif" ALT="graphics/V8_icon.gif"></td><td valign="top"><P class="docText"> As of DB2 V8, the IBM <TT>LOAD</TT> utility can load data from an input data set in delimited format. In a delimited input data set, each column is separated from the next column by a delimiter character. Additionally, all the fields in the input data file must be character strings or external numeric values. Accepting delimited input data sets allows the <TT>LOAD</TT> utility to recognize and load data from a large number of data sources. As long as each field is properly delimited by a specific character, the <TT>LOAD</TT> utility can be used to load the data into a DB2 table.<A NAME="ch33index80"></A><A NAME="ch33index81"></A><A NAME="ch33index82"></A><A NAME="ch33index83"></A><A NAME="ch33index84"></A><A NAME="ch33index85"></A></P></td></tr></table><br>
+<A NAME="ch33note09"></A><div class="docNote"><p class="docNoteTitle">CAUTION</p>
+
+<P class="docText">When loading delimited data, you cannot specify <TT>CONTINUEIF</TT>, <TT>INCURSOR</TT>, <TT>WHEN</TT>, or multiple <TT>INTO TABLE</TT> statements.</P></div><br>
+<P class="docText">The default delimiter character is a comma, but it can be changed using the <TT>COLDEL</TT> parameter. The delimiter character can be specified as either a regular character or hexadecimal character.<A NAME="ch33index86"></A><A NAME="ch33index87"></A></P>
+<A NAME="ch33note10"></A><div class="docNote"><p class="docNoteTitle">CAUTION</p>
+
+<P class="docText">When you specify the delimiter character, be sure to verify that the character is specified in the code page of the source data. Furthermore, if the utility control parameter is coded in a different character type than the input file, specify the <TT>COLDEL</TT> in hex or the result can be unpredictable. For example, specify the delimiter as a hex constant if the utility control statement is coded in EBCDIC and the input data is ASCII or Unicode.</P></div><br>
+<P class="docText">When loading a delimited input file, you might also want to specify a character string delimiter and a decimal point character. The default character string delimiter is the double quote character (<TT>"</TT>) but can be set to another character using the <TT>CHARDEL</TT> parameter. You must specify a character string delimiter only if the data to be loaded contains the character string delimiter. Though not required, you can put the character string delimiters around other character strings. To load a string containing the character delimiter character, you must double up the character. For example, code the following to <TT>LOAD</TT> a string containing: <TT>He told me "You look well" and I liked it.</TT><A NAME="ch33index88"></A><A NAME="ch33index89"></A></P>
+<pre>
+
+</pre><BR><pre>
+"He told me ""You look well"" and I liked it."
+</pre><BR>
+<P class="docText">Finally, you can change the decimal point character, too. This is done using the <TT>DECPT</TT> parameter. The default is a period, but some countries use a comma. Therefore, you can change the decimal point character to another character of your choice using <TT>DECPT</TT>.<A NAME="ch33index90"></A><A NAME="ch33index91"></A><A NAME="ch33index92"></A><A NAME="ch33index93"></A><A NAME="ch33index94"></A><A NAME="ch33index95"></A><A NAME="ch33index96"></A><A NAME="ch33index97"></A></P>
+<A NAME="ch33lev2sec7"></A><H4 class="docSection2Title"><TT>LOAD</TT> Rerun/Restart Procedures</H4>
+<P class="docText">The <TT>LOAD</TT> utility can be restarted. The restart or rerun procedure is determined by the abending phase of the <TT>LOAD</TT> step. There are two ways to determine the phase in which the abend occurred.<A NAME="ch33index98"></A><A NAME="ch33index99"></A><A NAME="ch33index100"></A><A NAME="ch33index101"></A></P>
+<P class="docText">The first method is to issue the <TT>DISPLAY UTILITY</TT> command to determine which utilities are currently active, stopped, or terminating in the DB2 system. The format of the command is<A NAME="ch33index102"></A><A NAME="ch33index103"></A></P>
+<pre>
+
+</pre><BR><pre>
+-DISPLAY UTILITY(*)
+</pre><BR>
+<P class="docText">The second method to determine the abending phase is to view the <TT>SYSPRINT DD</TT> statement of the <TT>LOAD</TT> step. This method is not as desirable as the first, but it is the only method you can use when the DB2 system is down. At the completion of each phase, DB2 prints a line stating that the phase has completed. You can assume that the phase immediately following the last phase reported complete in the <TT>SYSPRINT DD</TT> statement is the phase that was executing when the abend occurred.</P>
+<P class="docText">After determining the phase of the <TT>LOAD</TT> utility at the time of the abend, follow the steps outlined here to restart or rerun the load. In the following procedures, it is assumed that your <TT>LOAD</TT> utility processing is generally restartable.</P>
+<P class="docText">If the abend occurred in the <TT>UTILINIT</TT> phase<A NAME="ch33index104"></A><A NAME="ch33index105"></A></P>
+<A NAME="ch33pr01"></A>
+
+
+<div style="font-weight:bold"><OL class="docList" START="1"><LI value="1"><div style="font-weight:normal">Determine the cause of the abend. An abend in this step is usually caused by another utility executing with the same UID or a utility that is incompatible with another utility currently executing.<BR><BR></div></LI><LI value="2"><div style="font-weight:normal">Resolve the cause of the abend. An abend in this phase is probably due to improper job scheduling. Issue the <TT>DISPLAY UTILITY</TT> command to determine which utilities are currently in process for the DB2 system. Resolve the scheduling problem by allowing conflicting utilities to complete before proceeding to step 3.<BR><BR>
+Another possible cause is insufficient sort space. If the <TT>SORTWKxx</TT> data sets are dynamically added, try to resolve the problem using the following methods:<BR><BR>
+<UL><LI>Use the <TT>SORTDEVT</TT> clause to dynamically create the <TT>SORTWKxx</TT> data sets someplace else.<BR><BR></LI><LI>Use the <TT>SORTNUM</TT> clause to increase the number of dynamically allocated sort work files.<BR><BR></LI><LI>Clean the work packs by deleting or moving extraneous files.<BR><BR></LI><LI>Explicitly allocate the appropriate sort work data sets in the JCL.<BR><BR></LI></UL></div></LI><LI value="3"><div style="font-weight:normal">Restart the job at the <TT>LOAD</TT> step.<BR><BR></div></LI></OL></div>
+<P class="docText">If the abend occurred in the <TT>RELOAD</TT> phase<A NAME="ch33index106"></A><A NAME="ch33index107"></A></P>
+<A NAME="ch33pr02"></A>
+
+<div style="font-weight:bold"><OL class="docList" START="1"><LI value="1"><div style="font-weight:normal">Determine the cause of the abend. An abend in this step is usually caused by insufficient space allocated to the <TT>SYSUT1 DD</TT> statement. Another cause is that the VSAM data set associated with the table space has run out of available DASD space.<BR><BR></div></LI><LI value="2"><div style="font-weight:normal">Resolve the cause of the abend.<BR><BR>
+<div style="font-weight:bold"><OL class="docList" TYPE="a"><LI><div style="font-weight:normal"><P class="docList">If the problem is an out-of-space abend (B37) on the <TT>SYSUT1 DD</TT> statement, the data set associated with that <TT>DD</TT> statement will have been cataloged. Allocate a new data set with additional space, copy the <TT>SYSUT1</TT> data set to the new data set, delete the original <TT>SYSUT1</TT> data set, and rename the new data set to the same name as the original <TT>SYSUT1</TT> data set.</P></div></LI><LI><div style="font-weight:normal"><P class="docList">If the problem is an out-of-space abend on the VSAM data set containing the table space being reloaded, contact the DBA or DASD support unit. This situation can be corrected by adding another volume to the <TT>STOGROUP</TT> being used; using <TT>IDCAMS</TT> to redefine the VSAM data set, move the VSAM data set, or both; or altering the primary space allocation quantity for the index, the secondary space allocation quantity for the index, or both.</P><P class="docList">Restart the job at the <TT>LOAD</TT> step with a temporary <TT>JCL</TT> change to alter the <TT>UTPROC</TT> parameter to <TT>RESTART</TT>.<A NAME="ch33index108"></A><A NAME="ch33index109"></A><A NAME="ch33index110"></A><A NAME="ch33index111"></A></P></div></LI></OL></div></div></LI></OL></div>
+<A NAME="ch33note11"></A><div class="docNote"><p class="docNoteTitle">CAUTION</p>
+
+<P class="docText">Although <TT>LOAD</TT> can be restarted normally within the <TT>RELOAD</TT> phase if <TT>SORTKEYS</TT> is not used, it will restart from the beginning of the <TT>RELOAD</TT> phase if <TT>SORTKEYS</TT> is used.</P></div><br>
+<P class="docText">If the abend occurred in the <TT>SORT</TT> phase<A NAME="ch33index112"></A><A NAME="ch33index113"></A></P>
+<A NAME="ch33pr03"></A>
+
+
+<div style="font-weight:bold"><OL class="docList" START="1"><LI value="1"><div style="font-weight:normal">Determine the cause of the abend. The predominant causes are insufficient sort work space or insufficient space allocations for the <TT>SORTOUT DD</TT> statement.<BR><BR></div></LI><LI value="2"><div style="font-weight:normal">Resolve the cause of the abend. If the problem is insufficient space on the sort work or <TT>SORTOUT DD</TT> statements, simply increase the allocations and proceed to step 3.<BR><BR></div></LI><LI value="3"><div style="font-weight:normal">Restart the job at the <TT>LOAD</TT> step with a temporary change to alter the <TT>UTPROC</TT> parameter to <TT>RESTART(PHASE)</TT>.<BR><BR></div></LI></OL></div>
+<P class="docText">If the abend occurred in the <TT>BUILD</TT> phase<A NAME="ch33index114"></A><A NAME="ch33index115"></A></P>
+<A NAME="ch33pr04"></A>
+
+
+<div style="font-weight:bold"><OL class="docList" START="1"><LI value="1"><div style="font-weight:normal">Determine the cause for the abend. An abend in this step is usually caused by insufficient space allocated to the <TT>SYSERR DD</TT> statement. Another cause is that the VSAM data set associated with the index space has run out of available DASD space.<BR><BR></div></LI><LI value="2"><div style="font-weight:normal">Resolve the cause of the abend.<BR><BR>
+<div style="font-weight:bold"><OL class="docList" TYPE="a"><LI><div style="font-weight:normal"><P class="docList">If the problem is an out-of-space abend (B37) on the <TT>SYSERR DD</TT> statement, the data set associated with the <TT>DD</TT> statement will have been cataloged. Allocate a new data set with additional space, copy the <TT>SYSERR</TT> data set to the new data set, delete the original <TT>SYSERR</TT> data set, and rename the new data set to the same name as the original <TT>SYSERR</TT> data set.</P></div></LI><LI><div style="font-weight:normal"><P class="docList">If the problem is an out-of-space abend on the VSAM data set containing the index space being reloaded, contact the DBA or DASD support unit. This situation can be corrected by adding another volume to the <TT>STOGROUP</TT> being used; using IDCAMS to redefine the VSAM data set, move the VSAM data set, or both; or altering the primary space allocation quantity for the index, the secondary space allocation quantity for the index, or both.</P></div></LI></OL></div></div></LI><LI value="3"><div style="font-weight:normal"><BR><BR>
+<div style="font-weight:bold"><OL class="docList" TYPE="a"><LI><div style="font-weight:normal"><P class="docList">If <TT>LOAD</TT> was run using the <TT>REPLACE</TT> option, restart the job at the <TT>LOAD</TT> step with a temporary change to alter the <TT>UTPROC</TT> parameter to <TT>RESTART(PHASE)</TT>.</P></div></LI><LI><div style="font-weight:normal"><P class="docList">If <TT>LOAD</TT> was run using the <TT>RESUME YES</TT> option, the <TT>LOAD</TT> is not restartable. Terminate the <TT>LOAD</TT> utility and rebuild the indexes using the <TT>RECOVER INDEX</TT> utility.</P></div></LI></OL></div></div></LI></OL></div>
+<A NAME="ch33note12"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<P class="docText">When the <TT>SORTKEYS</TT> parameter is used and the <TT>LOAD</TT> utility terminates during the <TT>RELOAD</TT>, <TT>SORT</TT>, or <TT>BUILD</TT> phases, both <TT>RESTART</TT> and <TT>RESTART(PHASE)</TT> restart from the beginning of the <TT>RELOAD</TT> phase.</P></div><br>
+<P class="docText">If the abend occurred in the <TT>INDEXVAL</TT> phase<A NAME="ch33index116"></A><A NAME="ch33index117"></A></P>
+<A NAME="ch33pr05"></A>
+
+
+<div style="font-weight:bold"><OL class="docList" START="1"><LI value="1"><div style="font-weight:normal">Determine the cause of the abend. Abends in this phase are rare. The <TT>INDEXVAL</TT> phase is run only when unique indexes exist for the table being loaded.<BR><BR></div></LI><LI value="2"><div style="font-weight:normal">Resolve the cause of the abend.<BR><BR></div></LI><LI value="3"><div style="font-weight:normal">Restart the job at the <TT>LOAD</TT> step with a temporary <TT>JCL</TT> change to alter the <TT>UTPROC</TT> parameter to <TT>RESTART(PHASE)</TT>.<BR><BR></div></LI></OL></div>
+<P class="docText">If the abend occurred in the <TT>ENFORCE</TT> phase</P>
+<A NAME="ch33pr06"></A>
+
+
+<div style="font-weight:bold"><OL class="docList" START="1"><LI value="1"><div style="font-weight:normal">Determine the cause for the abend. An abend in this step is usually caused by insufficient space allocated to the <TT>SYSERR DD</TT> statement. The <TT>ENFORCE</TT> phase is optional and is not always run.<A NAME="ch33index118"></A><A NAME="ch33index119"></A><A NAME="ch33index120"></A><A NAME="ch33index121"></A><BR><BR></div></LI><LI value="2"><div style="font-weight:normal">Resolve the cause of the abend. If the problem is an out-of-space abend (<TT>B37</TT>) on the <TT>SYSERR DD</TT> statement, the data set associated with that <TT>DD</TT> statement will have been cataloged. Allocate a new data set with additional space, copy the <TT>SYSERR</TT> data set to the new data set, delete the original <TT>SYSERR</TT> data set, and rename the new data set to the same name as the original <TT>SYSERR</TT> data set.<BR><BR></div></LI><LI value="3"><div style="font-weight:normal">Restart the job at the <TT>LOAD</TT> step with a temporary change to alter the <TT>UTPROC</TT> parameter to <TT>RESTART</TT>.<BR><BR></div></LI></OL></div>
+<P class="docText">If the abend occurred in the <TT>DISCARD</TT> phase<A NAME="ch33index122"></A><A NAME="ch33index123"></A></P>
+<A NAME="ch33pr07"></A>
+
+
+<div style="font-weight:bold"><OL class="docList" START="1"><LI value="1"><div style="font-weight:normal">Determine the cause for the abend. An abend in this step is usually caused by insufficient space allocated to the <TT>SYSDISC DD</TT> statement. The <TT>DISCARD</TT> phase is optional and is not always run.<BR><BR></div></LI><LI value="2"><div style="font-weight:normal">Resolve the cause of the abend. If the problem is an out-of-space abend (<TT>B37</TT>) on the <TT>SYSDISC DD</TT> statement, the data set associated with that <TT>DD</TT> statement will have been cataloged. Allocate a new data set with additional space, copy the <TT>SYSDISC</TT> data set to the new data set, delete the original <TT>SYSDISC</TT> data set, and rename the new data set to the same name as the original <TT>SYSDISC</TT> data set.<BR><BR></div></LI><LI value="3"><div style="font-weight:normal">Restart the job at the <TT>LOAD</TT> step with a temporary change to alter the <TT>UTPROC</TT> parameter to <TT>RESTART</TT>.<BR><BR></div></LI></OL></div>
+<P class="docText">If the abend occurred in the <TT>REPORT</TT> phase<A NAME="ch33index124"></A><A NAME="ch33index125"></A></P>
+<A NAME="ch33pr08"></A>
+
+
+<div style="font-weight:bold"><OL class="docList" START="1"><LI value="1"><div style="font-weight:normal">Determine the cause for the abend. Abends in the <TT>REPORT</TT> phase are rare. The <TT>REPORT</TT> phase is run only if the <TT>INDEXVAL</TT>, <TT>ENFORCE</TT>, or <TT>DISCARD</TT> phases encounter any errors. Sometimes the cause for an abend in this phase is insufficient space allocated to the sort work data sets because the report is sorted by error type and input sequence.<BR><BR></div></LI><LI value="2"><div style="font-weight:normal">Resolve the cause of the abend. If the problem was caused by insufficient space on the sort work or <TT>SORTOUT DD</TT> statements, simply increase the allocations and proceed to step 3.<BR><BR></div></LI><LI value="3"><div style="font-weight:normal">Restart the job at the <TT>LOAD</TT> step with a temporary change to alter the <TT>UTPROC</TT> parameter to <TT>RESTART(PHASE)</TT>.<BR><BR></div></LI></OL></div>
+<P class="docText">If the abend occurred in the <TT>UTILTERM</TT> phase<A NAME="ch33index126"></A><A NAME="ch33index127"></A></P>
+<A NAME="ch33pr09"></A>
+
+
+<div style="font-weight:bold"><OL class="docList" START="1"><LI value="1"><div style="font-weight:normal">An abend in this phase is unlikely because all the work required for the load has been completed. A problem at this phase means that DB2 cannot terminate the utility.<BR><BR></div></LI><LI value="2"><div style="font-weight:normal">Terminate the DB2 utility by issuing the <TT>TERM UTILITY</TT> command. The format of the command is<BR><BR>
+<pre>
+
+</pre><BR><pre>
+-TERM UTILITY(<span class="docEmphasis">UID</span>)
+</pre><BR>
+where <span class="docEmphasis"><TT>UID</TT></span> is obtained from the <TT>-DISPLAY UTILITY (*)</TT> command.<BR><BR></div></LI><LI value="3"><div style="font-weight:normal">If the <TT>LOAD</TT> utility work data sets associated with this job were cataloged as a result of the abend, uncatalog them and force the job's completion.<A NAME="ch33index128"></A><A NAME="ch33index129"></A><A NAME="ch33index130"></A><A NAME="ch33index131"></A><BR><BR></div></LI></OL></div>
+<A NAME="ch33lev2sec8"></A><H4 class="docSection2Title"><TT>LOAD</TT> Locking and Concurrency</H4>
+<P class="docText">The <TT>LOAD</TT> utility can run concurrently with the following utilities (each accessing the same object): <TT>DIAGNOSE</TT>, <TT>REPORT</TT>, and <TT>STOSPACE</TT>.<A NAME="ch33index132"></A><A NAME="ch33index133"></A><A NAME="ch33index134"></A><A NAME="ch33index135"></A><A NAME="ch33index136"></A><A NAME="ch33index137"></A><A NAME="ch33index138"></A><A NAME="ch33index139"></A></P>
+<P class="docText">The <TT>LOAD</TT> utility will drain all claim classes for the table space or partition being loaded and any associated indexes, index partitions, and logical index partitions. Furthermore, if the <TT>ENFORCE</TT> option is specified, <TT>LOAD</TT> will drain the write claim class for the primary key index.</P>
+<P class="docText">Partitions are treated as separate objects; therefore, utilities can run concurrently on separate partitions of the same object.</P>
+<table width="90%" border="0" cellspacing="0" cellpadding="1"><tr><td width="60" valign="top"><IMG BORDER="0" width="30" height="18" SRC="images/0672326132/graphics/V7_icon.gif" ALT="graphics/V7_icon.gif"></td><td valign="top"><P class="docText"> Prior to DB2 V7, to load a partitioned table space by partition, a separate, dedicated <TT>LOAD</TT> job needed to be set up for each partition. Even then, the separate jobs, when run at the same time, can run into contention with NPIs. As of DB2 V7, though, partitions can be loaded in parallel within a single <TT>LOAD</TT> job and NPI contention is reduced.</P></td></tr></table><br>
+<P class="docText">An additional benefit of parallel loading is that the input data need not be broken out into separate data sets. And the same goes for the error data set and mapping data set.</P>
+<table width="90%" border="0" cellspacing="0" cellpadding="1"><tr><td width="60" valign="top"><IMG BORDER="0" width="30" height="18" SRC="images/0672326132/graphics/V7_icon.gif" ALT="graphics/V7_icon.gif"></td><td valign="top"><P class="docText"> Of course, you can set up your <TT>LOAD</TT> utility job to load each partition from a separate data set, with a separate discards data set for each partition, too. This is accomplished using the <TT>INDDN</TT> and the <TT>DISCARDDN</TT> keywords to set up the appropriate data sets.</P></td></tr></table><br>
+<A NAME="ch33note13"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<P class="docText">Be aware that the <TT>INDDN</TT> and <TT>DISCARDDN</TT> options can only be specified if the <TT>PART</TT> keyword is also specified. They cannot be used with segmented or simple table spaces.</P></div><br>
+<P class="docText">The actual number of parallel <TT>RELOAD</TT> tasks to be run is determined by the number of CPUs, the availability of virtual storage, and the number of available DB2 threads.</P>
+<P class="docText">When the <TT>LOAD</TT> utility builds indexes in parallel rather than sequentially, overall elapsed time for the <TT>LOAD</TT> job can be reduced. For <TT>LOAD</TT> to build indexes in parallel, the first condition, of course, is that there be more than one index defined for the table being loaded. If that is the case, the <TT>SORTKEYS</TT> clause must be specified with an estimate for the number of keys, and sort work data sets must be allocated to the <TT>LOAD</TT> job (either explicitly or dynamically).<A NAME="ch33index140"></A><A NAME="ch33index141"></A><A NAME="ch33index142"></A><A NAME="ch33index143"></A><A NAME="ch33index144"></A><A NAME="ch33index145"></A><A NAME="ch33index146"></A><A NAME="ch33index147"></A></P>
+<A NAME="ch33lev3sec2"></A><H5 class="docSection3Title">Online Loading</H5>
+<table width="90%" border="0" cellspacing="0" cellpadding="1"><tr><td width="60" valign="top"><IMG BORDER="0" width="30" height="18" SRC="images/0672326132/graphics/V7_icon.gif" ALT="graphics/V7_icon.gif"></td><td valign="top"><P class="docText"> As of DB2 V7, you can use the <TT>LOAD</TT> utility with the <TT>SHRLEVEL CHANGE</TT> parameter to load data into a table while users concurrently access the existing data. This feature is commonly referred to as an online <TT>LOAD</TT> resume.<A NAME="ch33index148"></A><A NAME="ch33index149"></A><A NAME="ch33index150"></A></P></td></tr></table><br>
+<P class="docText">Previously, running the <TT>LOAD</TT> utility made the table data unavailable. Of course, you could always code a program to insert the data, but that is not very efficient or simple.</P>
+<P class="docText">Online loading will work using normal SQL <TT>INSERT</TT>s. The <TT>LOAD</TT> will perform normal claim processing and no drains. But all normal SQL processing activities will occur. This means that in this case, <TT>LOAD</TT> will cause <TT>INSERT</TT> triggers to be fired and referential constraints to be checked.</P>
+<A NAME="ch33lev2sec9"></A><H4 class="docSection2Title"><TT>LOAD</TT> Guidelines</H4>
+<P class="docText">When running the <TT>LOAD</TT> utility consider applying the following tips, tricks, and techniques.</P>
+<A NAME="ch33lev4sec1"></A><H5 class="docSection3Title">Consider Using SORTKEYS</H5>
+<P class="docText">When index keys are not already in sorted order and indexes exist on the table into which data is being loaded, consider using the <TT>SORTKEYS</TT> keyword. When <TT>SORTKEYS</TT> is specified, index keys are sorted in memory, rather than being written to work files. This can improve performance by:<A NAME="ch33index151"></A><A NAME="ch33index152"></A><A NAME="ch33index153"></A><A NAME="ch33index154"></A><A NAME="ch33index155"></A><A NAME="ch33index156"></A><A NAME="ch33index157"></A></P>
+<UL><LI><P class="docList">Eliminating the expensive I/O operations to disk</P></LI><LI><P class="docList">Reducing the space requirements for the <TT>SYSUT1</TT> and <TT>SORTOUT</TT> data sets</P></LI><LI><P class="docList">Reducing elapsed time from the start of the reload phase to the end of the build phase</P></LI></UL>
+<P class="docText">An estimate of the number of keys to be sorted can be supplied. This is optional, but recommended because the extracted keys will be written to a work data set, minimizing the efficiency gains of using the <TT>SORTKEYS</TT> parameter. To estimate the number of keys to sort, use the following calculation:</P>
+<pre>
+
+</pre><BR><pre>
+Number of Keys = (Total number of rows to be loaded) x
+                 [(number of indexes on the table) +
+                  (number of foreign keys {unless index exists for the FK}) +
+                  ((number of foreign keys participating in multiple
+                    relationships) x (number of relationships - 1))
+                 ]
+</pre><BR>
+<A NAME="ch33note14"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<P class="docText">If more than one table is being loaded, the preceding calculation must be repeated for each table—the sum of the results is used.</P></div><br>
+<table width="90%" border="0" cellspacing="0" cellpadding="1"><tr><td width="60" valign="top"><IMG BORDER="0" width="30" height="18" SRC="images/0672326132/graphics/V7_icon.gif" ALT="graphics/V7_icon.gif"></td><td valign="top"><P class="docText"> As of DB2 V7, when loading partitions in parallel along with <TT>SORTKEYS</TT> DB2 supports multiple <TT>RELOAD</TT> tasks piping their key/RID pairs to the <TT>SORT</TT>/<TT>BUILD</TT> subtasks (one per index). The number of tasks that can be supported is roughly equal to the number of partitions. But when <TT>SORTKEYS</TT> is specified and some tasks are allocated for reloading, other tasks need to be allocated for sorting index keys and for building indexes in parallel. Thus the number of <TT>RELOAD</TT> tasks may be reduced in order to improve the overall performance of the entire <TT>LOAD</TT> job.</P></td></tr></table><br>
+<A NAME="ch33lev4sec2"></A><H5 class="docSection3Title">Avoid the <TT>LOAD</TT> Utility for Tables with Triggers</H5>
+<P class="docText">You may wish to avoid using the <TT>LOAD</TT> utility to add data to any table on which you have defined an <TT>INSERT</TT> trigger. Triggers do not fire during <TT>LOAD</TT>, so loading a table this way may cause data integrity problems. Instead, code a program to insert the data as needed because <TT>INSERT</TT> will cause the trigger to fire appropriately.<A NAME="ch33index158"></A><A NAME="ch33index159"></A><A NAME="ch33index160"></A><A NAME="ch33index161"></A><A NAME="ch33index162"></A></P>
+<A NAME="ch33note15"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<P class="docText">Of course, this caveat does not apply to an online <TT>LOAD</TT> resume, because the <TT>LOAD</TT> utility will perform normal SQL <TT>INSERT</TT>s, thereby firing triggers as desired.</P></div><br>
+<A NAME="ch33lev4sec3"></A><H5 class="docSection3Title">Consider Serializing Loads for Tables in the Same Database</H5>
+<P class="docText">The <TT>LOAD</TT> utility is sensitive to concurrent processing. If concurrent loading of tables in the same databases takes too long, consider serializing the <TT>LOAD</TT> jobs for those tables. Typical symptoms involve <TT>LOAD</TT> jobs that timeout or languish in the <TT>UTILINIT</TT> phase until the <TT>RELOAD</TT> phase of other concurrent <TT>LOAD</TT> jobs is finished.<A NAME="ch33index163"></A><A NAME="ch33index164"></A><A NAME="ch33index165"></A><A NAME="ch33index166"></A></P>
+<A NAME="ch33note16"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<P class="docText">Consider assigning tables needing to be loaded concurrently to different databases to avoid this problem. Another approach is to assign only one table per database.</P></div><br>
+<A NAME="ch33lev4sec4"></A><H5 class="docSection3Title">Use <TT>LOAD</TT> to Append or Replace Rows</H5>
+<P class="docText">You can use <TT>LOAD</TT> to replace data in a table by specifying the <TT>REPLACE</TT> option. <TT>LOAD</TT> also can append new data to a table, leaving current data intact, by specifying the <TT>RESUME(YES)</TT> option. Choose the appropriate option based on your data loading needs.<A NAME="ch33index167"></A><A NAME="ch33index168"></A><A NAME="ch33index169"></A><A NAME="ch33index170"></A><A NAME="ch33index171"></A><A NAME="ch33index172"></A><A NAME="ch33index173"></A></P>
+<A NAME="ch33lev4sec5"></A><H5 class="docSection3Title">Use <TT>LOAD</TT> to Perform Mass Deletes</H5>
+<P class="docText">Use the <TT>LOAD</TT> utility, specifying an empty input data set (or <TT>DD DUMMY</TT>), to delete all rows from a non-segmented table space. This is called a <span class="docEmphasis">mass delete</span>. <TT>LOAD</TT> is usually more efficient than <TT>DELETE</TT> SQL without a <TT>WHERE</TT> clause. Specifying the <TT>LOG NO</TT> option to avoid logging data changes will further enhance the performance of the mass delete. Note, however, the following considerations:<A NAME="ch33index174"></A><A NAME="ch33index175"></A><A NAME="ch33index176"></A><A NAME="ch33index177"></A><A NAME="ch33index178"></A></P>
+<UL><LI><P class="docList">If multiple tables are assigned to a simple table space, the <TT>LOAD</TT> utility deletes all rows for all tables in that table space.</P></LI><LI><P class="docList">Consider loading a <TT>DUMMY</TT> data set even for segmented table spaces if a large amount of data must be deleted. Because DB2 logging can be avoided during a <TT>LOAD</TT>, the <TT>LOAD</TT> utility can be substantially faster than the improved mass delete algorithms used by segmented table spaces.</P></LI></UL>
+<A NAME="ch33lev4sec6"></A><H5 class="docSection3Title">Use Fixed Blocked Input</H5>
+<P class="docText">To enhance the performance of the <TT>LOAD</TT> utility, use a fixed blocked input data set rather than a variable blocked data set.<A NAME="ch33index179"></A><A NAME="ch33index180"></A><A NAME="ch33index181"></A></P>
+<A NAME="ch33lev4sec7"></A><H5 class="docSection3Title">Buffer the Work Data Sets Appropriately</H5>
+<P class="docText">For large loads, set the <TT>BUFNO</TT> parameter in the <TT>JCL</TT> for the <TT>SYSUT1 DD</TT> statement to a number greater than 20. A <TT>BUFNO</TT> of approximately 20 is recommended for medium-sized indexes, and a <TT>BUFNO</TT> between 50 and 100 is recommended for larger tables. The <TT>BUFNO</TT> parameter creates read and write buffers in main storage for the data set, thereby enhancing the performance of the <TT>LOAD</TT> utility. The default for <TT>BUFNO</TT> is 8 for DB2 V3 and 20 for DB2 V4.<A NAME="ch33index182"></A><A NAME="ch33index183"></A><A NAME="ch33index184"></A><A NAME="ch33index185"></A><A NAME="ch33index186"></A><A NAME="ch33index187"></A></P>
+<P class="docText">Ensure that sufficient memory (real or expanded) is available, however, before increasing the <TT>BUFNO</TT> specification for your <TT>LOAD</TT> utility data sets.</P>
+<A NAME="ch33lev4sec8"></A><H5 class="docSection3Title">Enforce RI During Table Loading When Possible</H5>
+<P class="docText">Favor using the <TT>ENFORCE</TT> option of the <TT>LOAD</TT> utility to enforce referential constraints instead of running <TT>CHECK DATA</TT> after the <TT>LOAD</TT> completes. It is usually more efficient to process the loaded data once, as it is loaded, than to process the data twice, once to load it and once to check it. If <TT>LOAD</TT> with the <TT>RESUME(YES)</TT> option was executed, new data has been added to the table. However, if <TT>ENFORCE</TT> was not specified and a subsequent <TT>CHECK DATA</TT> is run, <TT>CHECK DATA</TT> will check the entire table, not just the new data.<A NAME="ch33index188"></A><A NAME="ch33index189"></A><A NAME="ch33index190"></A><A NAME="ch33index191"></A></P>
+<A NAME="ch33lev4sec9"></A><H5 class="docSection3Title">Ensure That <TT>LOAD</TT> Input Data Sets Are in Key Sequence</H5>
+<P class="docText">Favor sorting the <TT>LOAD</TT> input data set into sequence by the columns designated in the clustering index. Be sure to sort the data in the appropriate sequence, either ascending or descending, depending on how the index was defined. Otherwise, the <TT>LOAD</TT> utility does not load data in clustering order, and the table space and indexes will be inefficiently organized.<A NAME="ch33index192"></A><A NAME="ch33index193"></A><A NAME="ch33index194"></A><A NAME="ch33index195"></A><A NAME="ch33index196"></A></P>
+<A NAME="ch33note17"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<P class="docText">When the index key is null, it should be treated as "high values" for sorting purposes.</P></div><br>
+<P class="docText">If you use <TT>DFSORT</TT> to sort the input data before loading, consider invoking the <TT>SORT DEDUPE</TT> option. Doing so not only can decrease the size of the file passed to the <TT>LOAD</TT> step, but it can minimize or eliminate <TT>LOAD</TT> discard processing.</P>
+<P class="docText">Removing duplicates in <TT>DFSORT</TT> can improve performance because of the different ways that <TT>DFSORT</TT> and the <TT>LOAD</TT> utility handle duplicates. When <TT>DFSORT</TT> encounters duplicates, it sends one of the values to the output file then discards the remaining duplicates. When the <TT>LOAD</TT> utility encounters duplicates in the input file, it sends all of the duplicates to the discard file. Consider the following code for <TT>DFSORT</TT>:</P>
+<pre>
+
+</pre><BR><pre>
+//SYSIN    DD *
+  SORT FIELDS=(1,4,BI,A,5,4,BI,A,9,12,CH,A)
+  SUM FIELDS=NONE
+/*
+</pre><BR>
+<P class="docText">This code indicates that <TT>DFSORT</TT> is to sort on three fields. The first starts in position 1 for 4 bytes, the second starts in position 5 for 4 bytes, and the third starts in position 9 for 12 bytes. The first two fields are unsigned binary and the third is character. And the sort is to be ascending for each field. Finally, the <TT>SUM FIELDS=NONE</TT> statement indicates that <TT>DFSORT</TT> is to eliminate records with duplicate keys.</P>
+<P class="docText">Additionally, you can improve performance by removing unneeded records during the <TT>DFSORT</TT> step, instead of using a <TT>WHEN</TT> clause on the <TT>LOAD</TT> utility. Doing so can decrease the size of the file passed to the <TT>LOAD</TT> step and the <TT>DFSORT INCLUDE</TT> is more efficient than <TT>LOAD WHEN</TT>. Consider the following sample <TT>DFSORT</TT> code:</P>
+<pre>
+
+</pre><BR><pre>
+//SYSIN    DD *
+  INCLUDE COND=(9,4,CH,EQ,C'CDBD')
+/*
+</pre><BR>
+<P class="docText">This code indicates that <TT>DFSORT</TT> is to start in position 9 and drop the record when the next four bytes equal 'CDBD'. More details on how to use <TT>DFSORT</TT> can be found in the IBM manual number SC33-4035, <span class="docEmphasis">DFSORT Application Programming Guide</span>.<A NAME="ch33index197"></A><A NAME="ch33index198"></A><A NAME="ch33index199"></A><A NAME="ch33index200"></A><A NAME="ch33index201"></A></P>
+<A NAME="ch33lev4sec10"></A><H5 class="docSection3Title"><TT>REORG</TT> After Loading When the Input Is Not Sorted</H5>
+<P class="docText">If data is not loaded in clustering sequence, consider following the <TT>LOAD</TT> with a table space reorganization. This can be performed all the time, which is not recommended, or based on the value of <TT>CLUSTER RATIO</TT> stored in the DB2 Catalog for the table space and its clustering index. If <TT>CLUSTER RATIO</TT> is not 100% for a newly loaded table, the <TT>REORG</TT> utility should be used to cluster and organize the application data.<A NAME="ch33index202"></A><A NAME="ch33index203"></A><A NAME="ch33index204"></A></P>
+<A NAME="ch33note18"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<P class="docText">If <TT>LOAD</TT> is run specifying <TT>RESUME(YES)</TT> then even if the input is in clustering sequence, the result can be a <TT>CLUSTER RATIO</TT> less than 100%. It is best to avoid sorting the input in this case. Instead, run the load, and then run the <TT>REORG</TT> utility to cluster and organize the data.</P></div><br>
+<A NAME="ch33lev4sec11"></A><H5 class="docSection3Title">Favor the Use of <TT>LOG NO</TT></H5>
+<P class="docText">Use the <TT>LOG NO</TT> option unless the table to be loaded is very small. Doing so avoids the overhead of logging the loaded data and speeds load processing. If data is loaded without being logged, however, follow the <TT>LOAD</TT> utility with a full image copy.<A NAME="ch33index205"></A><A NAME="ch33index206"></A><A NAME="ch33index207"></A><A NAME="ch33index208"></A></P>
+<A NAME="ch33lev4sec12"></A><H5 class="docSection3Title">Specify <TT>KEEPDICTIONARY</TT> for Performance</H5>
+<P class="docText">The <TT>LOAD</TT> utility will rebuild the compression dictionary for table spaces defined with the <TT>COMPRESS YES</TT> parameter. Specifying the <TT>KEEPDICTIONARY</TT> parameter causes the <TT>LOAD</TT> utility to bypass dictionary rebuilding. The <TT>LOAD REPLACE</TT> option must be specified to build the compression dictionary.<A NAME="ch33index209"></A><A NAME="ch33index210"></A><A NAME="ch33index211"></A><A NAME="ch33index212"></A><A NAME="ch33index213"></A><A NAME="ch33index214"></A></P>
+<P class="docText">This will improve the overall performance of the <TT>LOAD</TT> utility because the CPU cycles used to build the dictionary can be avoided. However, this option should be utilized only when you are sure that the same basic type of data is being loaded into the table. If the type of data differs substantially, allowing the <TT>LOAD</TT> utility to rebuild the compression dictionary will provide for more optimal data compression.</P>
+<A NAME="ch33note19"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<P class="docText">Keeping the compression dictionary can increase work space requirements for the <TT>REORG</TT> utility. When the compression rate deteriorates, the <TT>REORG</TT> utility will send longer rows to the <TT>SYSREC DD</TT> statement.</P></div><br>
+<A NAME="ch33lev4sec13"></A><H5 class="docSection3Title">Avoid Nullable Columns for Frequently Loaded Tables</H5>
+<P class="docText">Loading tables with nullable columns can degrade the <TT>LOAD</TT> utility's performance. If a table will be loaded frequently (daily, for example), consider reducing or eliminating the number of nullable columns defined to the table to increase the performance of the <TT>LOAD</TT> utility. This is not always practical or desirable because many program changes may be required to change columns from nullable to <TT>NOT NULL</TT> or to <TT>NOT NULL WITH DEFAULT</TT>. Additionally, nullable columns might make more sense than default values given the specification of the application.<A NAME="ch33index215"></A><A NAME="ch33index216"></A><A NAME="ch33index217"></A><A NAME="ch33index218"></A></P>
+<A NAME="ch33lev4sec14"></A><H5 class="docSection3Title">Avoid Decimal Columns for Frequently Loaded Tables</H5>
+<P class="docText">Avoid <TT>DECIMAL</TT> columns for tables that are loaded frequently. Loading <TT>DECIMAL</TT> columns requires more CPU time than loading the other data types.<A NAME="ch33index219"></A><A NAME="ch33index220"></A><A NAME="ch33index221"></A><A NAME="ch33index222"></A><A NAME="ch33index223"></A></P>
+<A NAME="ch33lev4sec15"></A><H5 class="docSection3Title">Avoid Data Conversion</H5>
+<P class="docText">The <TT>LOAD</TT> utility automatically converts similar data types as part of its processing. However, try to avoid data conversion, because the <TT>LOAD</TT> utility requires additional CPU time to process these conversions.<A NAME="ch33index224"></A><A NAME="ch33index225"></A><A NAME="ch33index226"></A><A NAME="ch33index227"></A><A NAME="ch33index228"></A></P>
+<P class="docText">The following data conversions are performed automatically by the <TT>LOAD</TT> utility:</P>
+<P><TABLE CELLSPACING="0" FRAME="void" RULES="groups" CELLPADDING="5"><COLGROUP><COL width="187"><COL width="363"></COLGROUP><THEAD><TR><TH class="bottomBorder thead" align="left" valign="top"><P class="docText"><span class="docEmphStrong">Original Data Type</span></P></TH><TH class="bottomBorder thead" align="left" valign="top"><P class="docText"><span class="docEmphStrong">Converted Data Type</span></P></TH></TR></THEAD><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>SMALLINT</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>INTEGER</TT></P>
+<P class="docText"><TT>DECIMAL</TT></P>
+<P class="docText"><TT>FLOAT</TT></P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>INTEGER</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>SMALLINT</TT></P>
+<P class="docText"><TT>DECIMAL</TT></P>
+<P class="docText"><TT>FLOAT</TT></P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>DECIMAL</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>SMALLINT</TT></P>
+<P class="docText"><TT>INTEGER</TT></P>
+<P class="docText"><TT>FLOAT</TT></P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>FLOAT</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>SMALLINT</TT></P>
+<P class="docText"><TT>INTEGER</TT></P>
+<P class="docText"><TT>DECIMAL</TT></P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>CHAR</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>VARCHAR</TT></P>
+<P class="docText"><TT>LONG VARCHAR</TT></P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>VARCHAR</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>CHAR</TT></P>
+<P class="docText"><TT>LONG VARCHAR</TT></P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>GRAPHIC</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>VARGRAPHIC</TT></P>
+<P class="docText"><TT>LONG VARGRAPHIC</TT></P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>VARGRAPHIC</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>GRAPHIC</TT></P>
+<P class="docText"><TT>LONG VARGRAPHIC</TT></P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>TIMESTAMP EXT</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>DATE</TT></P>
+<P class="docText"><TT>TIME</TT></P>
+<P class="docText"><TT>TIMESTAMP</TT></P></TD></TR></TABLE></P><br>
+<A NAME="ch33lev4sec16"></A><H5 class="docSection3Title">Reduce CPU Usage by Explicitly Coding All <TT>LOAD</TT> Parameters</H5>
+<P class="docText">Explicitly define the input file specifications in the <TT>LOAD</TT> control cards. Do this even when the data set to be loaded conforms to all the default lengths specified in <A class="docLink" HREF="#ch33table01">Table 33.1</A>. This reduces the <TT>LOAD</TT> utility's CPU use.<A NAME="ch33index229"></A><A NAME="ch33index230"></A><A NAME="ch33index231"></A><A NAME="ch33index232"></A></P>
+<A NAME="ch33table01"></A><P><TABLE CELLSPACING="0" FRAME="hsides" RULES="groups" CELLPADDING="5"><CAPTION><h5 class="docTableTitle">Table 33.1. Default <TT>LOAD</TT> Lengths</h5></CAPTION><COLGROUP><COL width="231"><COL width="319"></COLGROUP><THEAD><TR><TH class="bottomBorder thead" align="left" valign="top"><P class="docText"><span class="docEmphStrong">Column Data Type</span></P></TH><TH class="bottomBorder thead" align="left" valign="top"><P class="docText"><span class="docEmphStrong">Default Length</span></P></TH></TR></THEAD><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>SMALLINT</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">2</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>INTEGER</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">4</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>DECIMAL</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Column's precision</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>REAL</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">4</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>DOUBLE PRECISION</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">8</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>DATE</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">10</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>TIME</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">8</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>TIMESTAMP</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">26</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>CHAR</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Column's length</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>VARCHAR</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Column's maximum length</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>GRAPHIC</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Double the column's length</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>VARGRAPHIC</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Double the column's maximum length</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>ROWID</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Varies</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>BLOB</TT>, <TT>CLOB</TT>, <TT>DBCLOB</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Varies</P></TD></TR></TABLE></P><br>
+<P class="docText">If the input file specifications are not explicitly identified, the <TT>LOAD</TT> utility assumes that the input data set is formatted with the defaults specified in <A class="docLink" HREF="#ch33table01">Table 33.1</A>.</P>
+<A NAME="ch33note20"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<P class="docText">You can use the <TT>DSNTIAUL</TT> sample program, the <TT>UNLOAD</TT> utility, or <TT>REORG UNLOAD EXTERNAL</TT> to build <TT>LOAD</TT> control cards with explicit definitions. The <TT>PUNCHDDN</TT> keyword is used to specify a data set for the control cards.</P></div><br>
+<P class="docText">For <TT>BLOB</TT>, <TT>CLOB</TT>, and <TT>DBCLOB</TT> data, you must specify the length of the input field in bytes. This length value is placed in a four-byte binary field at the beginning of the <TT>LOB</TT> value. The length value must begin in the column specified as <TT>START</TT> in the <TT>POSITION</TT> clause. The <TT>END</TT> specification is not used for <TT>LOB</TT>s.</P>
+<A NAME="ch33lev4sec17"></A><H5 class="docSection3Title">Consider Using <TT>LOAD</TT> Parameters to Edit Data Before Loading</H5>
+
+<P class="docText">You can use the <TT>STRIP</TT> and <TT>TRUNCATE</TT> parameters of <TT>LOAD</TT> to tweak graphic and character data before loading. These parameters can be used in conjunction with <TT>CHAR</TT>, <TT>VARCHAR</TT>, <TT>GRAPHIC</TT>, and <TT>VARGRAPHIC</TT> columns.<A NAME="ch33index233"></A><A NAME="ch33index234"></A><A NAME="ch33index235"></A></P>
+<P class="docText">The <TT>STRIP</TT> parameter indicates that <TT>LOAD</TT> must remove specified characters from the beginning, the end, or both ends of the data prior to loading it. <TT>LOAD</TT> will strip the characters before performing any character code conversion or padding. If a specific character is not coded, the default is to strip blanks. <TT>STRIP</TT> works the same way as the <TT>STRIP</TT> function explained in <A class="docLink" HREF="ch03.html#ch03">Chapter 3</A>, "Using DB2 Functions."</P>
+<P class="docText">The <TT>TRUNCATE</TT> parameter indicates that the input character string will be truncated from the right if it does not fit into the column. <TT>LOAD</TT> will truncate the data after any required CCSID translation.</P>
+<A NAME="ch33lev4sec18"></A><H5 class="docSection3Title">Create All Indexes Before Loading</H5>
+<P class="docText">It is usually more efficient to define all indexes before using the <TT>LOAD</TT> utility. The <TT>LOAD</TT> utility uses an efficient algorithm to build DB2 indexes.<A NAME="ch33index236"></A><A NAME="ch33index237"></A><A NAME="ch33index238"></A><A NAME="ch33index239"></A></P>
+<P class="docText">If indexes must be created after the data has been loaded, create the indexes with the <TT>DEFER YES</TT> option and build them later using the <TT>REBUILD INDEX</TT> utility.</P>
+<A NAME="ch33lev4sec19"></A><H5 class="docSection3Title">Favor <TT>LOAD</TT> over <TT>INSERT</TT></H5>
+<P class="docText">To insert initial data into a DB2 table, favor the use of the <TT>LOAD</TT> utility with the <TT>REPLACE</TT> option over an application program coded to process <TT>INSERT</TT>s. <TT>LOAD</TT> should be favored even if the application normally processes <TT>INSERT</TT>s as part of its design. The initial loading of DB2 table data usually involves the insertion of many more rows than does typical application processing. For the initial population of table data, the <TT>LOAD</TT> utility is generally more efficient and less error-prone than a corresponding application program, and also maintains free space.<A NAME="ch33index240"></A><A NAME="ch33index241"></A><A NAME="ch33index242"></A></P>
+<P class="docText">Consider using the <TT>LOAD</TT> utility with the <TT>RESUME(YES)</TT> option to process a large volume of table insertions. <TT>LOAD</TT> is usually more efficient and less error-prone than a corresponding application program that issues a large number of <TT>INSERT</TT>s.</P>
+<A NAME="ch33lev4sec20"></A><H5 class="docSection3Title">Do Not Load Tables in a Multi-Table Simple Table Space</H5>
+<P class="docText">Avoid loading tables with the <TT>REPLACE</TT> option when multiple tables have been defined to a simple table space. The <TT>LOAD</TT> utility with the <TT>REPLACE</TT> option deletes all rows in all tables in the simple table space, which is not usually the desired result.<A NAME="ch33index243"></A><A NAME="ch33index244"></A><A NAME="ch33index245"></A><A NAME="ch33index246"></A></P>
+<A NAME="ch33lev4sec21"></A><H5 class="docSection3Title">Gather Statistics When Loading Data</H5>
+<P class="docText">If you are loading data into a DB2 table specifying <TT>RESUME NO</TT> and the <TT>REPLACE</TT> keyword, you also should use the <TT>STATISTICS</TT> keyword to gather statistics during <TT>LOAD</TT> processing. These keywords specify that you are loading a table from scratch and that any previous data will be lost. If you are loading using <TT>RESUME YES</TT>, execute the <TT>RUNSTATS</TT> utility immediately after loading a DB2 table.<A NAME="ch33index247"></A><A NAME="ch33index248"></A><A NAME="ch33index249"></A><A NAME="ch33index250"></A><A NAME="ch33index251"></A><A NAME="ch33index252"></A></P>
+<P class="docText">Accurate statistics are necessary to maintain current information about your table data for access path determination. Of course, access paths for static SQL will not change unless all packages and plans accessing the table are rebound. Any dynamic SQL statements will immediately take advantage of the new statistics.</P>
+<A NAME="ch33lev4sec22"></A><H5 class="docSection3Title">Consider Loading by Partition</H5>
+<P class="docText">Concurrent loading of multiple partitions of a single table space can be achieved using partition independence. This technique is useful for reducing the overall elapsed time of loading a table in a partitioned table space.<A NAME="ch33index253"></A><A NAME="ch33index254"></A><A NAME="ch33index255"></A><A NAME="ch33index256"></A></P>
+<A NAME="ch33lev4sec23"></A><H5 class="docSection3Title">Use Data Contingency Options As Required</H5>
+<P class="docText">The <TT>LOAD</TT> utility can perform special processing of data depending on the data values in the input load data set. Data contingency processing parameters indicate a field defined in the <TT>LOAD</TT> parameters or a beginning and ending location of data items to be checked. The data contingency processing parameters follow:<A NAME="ch33index257"></A><A NAME="ch33index258"></A><A NAME="ch33index259"></A></P>
+<P><TABLE CELLSPACING="0" FRAME="void" RULES="none" CELLPADDING="5"><COLGROUP><COL width="115.5"><COL width="434.5"></COLGROUP><THEAD></THEAD><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>NULLIF</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Sets column values to null if a particular character string is found at a particular location—for example:</P>
+
+<PRE>
+NULLIF (22) = '?'
+</PRE><BR>
+</TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>DEFAULTIF</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Sets column values to a predefined default value if a particular character string is found at a particular location. For example</P>
+
+<PRE>
+DEFAULTIF FIELD = 'DEFLT'
+</PRE><BR>
+</TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>WHEN</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Limits the loaded data to specific records in the load input data set. For example</P>
+
+<PRE>
+LOAD DATA REPLACE
+INTO DSN8510.DEPT
+WHEN (1 : 3) = 'A00'
+</PRE><BR>
+</TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>CONTINUEIF</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Used when there are record types in the input load data set. Specifies that loading will continue, logically concatenating the next record to the previous input record. For example</P>
+
+<PRE>
+LOAD DATA
+INTO DSN8510.EMP
+CONTINUEIF (10 : 10) = 'X'
+</PRE><BR>
+</TD></TR></TABLE></P><br>
+<A NAME="ch33note21"></A><div class="docNote"><p class="docNoteTitle">CAUTION</p>
+
+<P class="docText"><TT>NULLIF</TT> cannot be used with <TT>ROWID</TT> columns because a <TT>ROWID</TT> column cannot be null.</P></div><br>
+<A NAME="ch33lev4sec24"></A><H5 class="docSection3Title">Separate Work Data Sets</H5>
+<P class="docText">Spread the work data sets across different physical devices to reduce contention.<A NAME="ch33index260"></A><A NAME="ch33index261"></A><A NAME="ch33index262"></A><A NAME="ch33index263"></A><A NAME="ch33index264"></A></P>
+<A NAME="ch33lev4sec25"></A><H5 class="docSection3Title">Use Caution When Loading <TT>ROWID</TT> Data</H5>
+<P class="docText">When loading a table with a <TT>ROWID</TT> column, ensure that the input data is a valid <TT>ROWID</TT> value. The appropriate way to do this is to load <TT>ROWID</TT> values that were previously generated by DB2.<A NAME="ch33index265"></A><A NAME="ch33index266"></A><A NAME="ch33index267"></A><A NAME="ch33index268"></A><A NAME="ch33index269"></A></P>
+<P class="docText">If the <TT>ROWID</TT> is defined with the <TT>GENERATED ALWAYS</TT> keyword, you cannot load data into that column. Instead, the <TT>ROWID</TT> value must be generated by DB2.</P>
+<A NAME="ch33lev4sec26"></A><H5 class="docSection3Title">Handle Floating Point Data</H5>
+<P class="docText">Loading floating point data into DB2 tables requires that you know the format of the data. Two options are available for loading floating point data:<A NAME="ch33index270"></A><A NAME="ch33index271"></A><A NAME="ch33index272"></A><A NAME="ch33index273"></A><A NAME="ch33index274"></A></P>
+<P><TABLE CELLSPACING="0" FRAME="void" RULES="none" CELLPADDING="5"><COLGROUP><COL width="93.5"><COL width="456.5"></COLGROUP><THEAD></THEAD><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>S390</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Floating point data is specified in System/390 hexadecimal floating point format. This is the default value. It is also the format in which DB2 stores floating point numbers.</P></TD></TR><TR><TD class="docTableCell" align="left" valign="top"><P class="docText"><TT>IEEE</TT></P></TD><TD class="docTableCell" align="left" valign="top"><P class="docText">Floating point data is specified in IEEE binary floating point format. DB2 expects to find the input numbers in binary floating point format and will convert the data to hexadecimal floating point format as the data is loaded.</P></TD></TR></TABLE></P><br>
+<A NAME="ch33note22"></A><div class="docNote"><p class="docNoteTitle">NOTE</p>
+
+<P class="docText">If a conversion error occurs while converting from binary floating point format to hexadecimal floating point format, DB2 will place the record in the discard file.</P></div><br>
+<A NAME="ch33lev4sec27"></A><H5 class="docSection3Title">Optimize Sort Utility Processing</H5>
+<P class="docText">Be sure to optimize the operation of the sort utility in use at your shop. For example, you can assign additional resources to <TT>DFSORT</TT> using the following DD statement:<A NAME="ch33index275"></A><A NAME="ch33index276"></A><A NAME="ch33index277"></A></P>
+<pre>
+
+</pre><BR><pre>
+//DFSPARM  DD *
+HIPRMAX=0,EXCPVR=NONE,SIZE=32768K
+</pre><BR>
+<P class="docText">Additionally, consider using the <TT>SORTNUM</TT> clause to increase the number of dynamically allocated files and use the <TT>SORTDEVT</TT> clause to assign the disk pool.</P>
+<A NAME="ch33lev4sec28"></A><H5 class="docSection3Title">Be Aware of the Impact of Multi-Level Security on <TT>LOAD</TT></H5>
+
+<P class="docText">If you use multilevel security to control authorization, the user or process must have write-down privilege to run a <TT>LOAD REPLACE</TT> on a table space containing a table that has multilevel security with row-level granularity. This allows you to specify values for the security label columns.<A NAME="ch33index278"></A><A NAME="ch33index279"></A><A NAME="ch33index280"></A><A NAME="ch33index281"></A></P>
+<P class="docText">To run a <TT>LOAD RESUME</TT>, the user or process must have the write-down privilege to specify values for the security label columns. If you run a <TT>LOAD RESUME</TT> job without having the write-down privilege, DB2 will assign your security label as the value for the security label column for the loaded rows.</P>
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="ch33.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="ch33lev1sec2.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>
