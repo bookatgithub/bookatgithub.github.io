@@ -1,0 +1,471 @@
+<html xmlns="http://www.w3.org/1999/xhtml">
+   
+   <head>
+      <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+      
+      <title>Chapter 17. Floating-Point</title>
+      
+      <link href="9780133085013.css" rel="stylesheet" type="text/css" />
+      
+      <link href="page-template.xpgt" rel="stylesheet" type="application/vnd.adobe-page-template+xml" />
+      
+      <meta content="urn:uuid:767ce45a-85bb-4273-91f5-801bab42906b" name="Adept.expected.resource" />
+      
+   </head>
+   
+   <body>
+      
+      <h2><a id="page_375"></a><a id="ch17"></a>Chapter 17. Floating-Point
+      </h2>
+      
+      <p class="indent4"><em>God created the integers,<br />all else is the work of man</em>.
+      </p>
+      
+      <p class="indent4">Leopold Kronecker</p>
+      
+      <p class="noindent">Operating on floating-point numbers with integer arithmetic and logical instructions
+         is often a messy proposition. This is particularly true for the rules and formats
+         of the <em>IEEE Standard for Floating-Point Arithmetic</em>, IEEE Std. 754-2008, commonly known as “IEEE arithmetic.” It has the NaN (not a number)
+         and infinities, which are special cases for almost all operations. It has plus and
+         minus zero, which must compare equal to one another. It has a fourth comparison result,
+         “unordered.” The most significant bit of the fraction is not explicitly present in
+         “normal” numbers, but it is in “subnormal” numbers. The fraction is in signed-true
+         form and the exponent is in biased form, whereas integers are now almost universally
+         in two’s-complement form. There are, of course, reasons for all this, but it results
+         in programs that deal with the representation being full of tests and branches, and
+         that present a challenge to implement efficiently.
+      </p>
+      
+      <p class="indent">We assume the reader has some familiarity with the IEEE standard, and summarize it
+         here only very briefly.
+      </p>
+      
+      <h3><a id="ch17lev1"></a><strong>17–1 IEEE Format</strong></h3>
+      
+      <p class="noindent">The 2008 standard includes three binary and two decimal formats. We will restrict
+         our attention to the binary “single” and “double” formats (32- and 64-bit). These
+         are shown below.
+      </p>
+      
+      <div class="image"><img alt="Image" src="graphics/375fig01.jpg" /></div>
+      
+      <p class="indent">The sign bit <em>s</em> is encoded as 0 for plus, 1 for minus. The biased exponent <em>e</em> and fraction <em>f</em> are magnitudes with their most significant bits on the left. The floating-point value
+         represented is encoded as shown on the next page.
+      </p>
+      
+      <div class="image"><a id="page_376"></a><img alt="Image" src="graphics/376fig01.jpg" /></div>
+      
+      <p class="indent">As an example, consider encoding the number π in single format. In binary [Knu1],</p>
+      
+      <p class="indent">π ≈ 11.0010 0100 0011 1111 0110 1010 1000 1000 1000 0101 1010 0011 0000 10....</p>
+      
+      <p class="indent">This is in the range of the “normal” numbers shown in the third row of the table above.
+         The most significant 1 in π is dropped, as the leading 1 is not stored in the encoding
+         of normal numbers. The exponent <em>e</em> – 127 should be 1, to get the binary point in the right place, and hence <em>e</em> = 128. Thus, the representation is
+      </p>
+      
+      <p class="codelink"><a href="images16.html#p376fig02" id="p376fig02a">Click here to view code image</a></p>
+      
+      <p class="programlistings1">0 10000000 10010010000111111011011</p>
+      
+      <p class="indent">or, in hexadecimal,</p>
+      
+      <p class="codelink"><a href="images16.html#p376fig03" id="p376fig03a">Click here to view code image</a></p>
+      
+      <p class="programlistings1">40490FDB,</p>
+      
+      <p class="noindent">where we have rounded the fraction to the nearest representable number.</p>
+      
+      <p class="indent">Numbers with 1 ≤ <em>e</em> ≤ 254 are the “normal numbers.” These are “normalized,” meaning that their most significant
+         bit is 1 and it is not explicitly stored. Nonzero numbers with <em>e</em> = 0 are called “subnormal numbers,” or simply “subnormals.” Their most significant
+         bit <em>is</em> explicitly stored. This scheme is sometimes called “gradual underflow.” Some extreme
+         values in the various ranges of floating-point numbers are shown in <a href="ch17.html#ch17tab1">Table 17–1</a>. In this table, “Max integer” means the largest integer such that all integers less
+         than or equal to it, in absolute value, are representable exactly; the next integer
+         is rounded.
+      </p>
+      
+      <p class="indent">For normal numbers, one unit in the last position (ulp) has a relative value ranging
+         from 1 / 2<sup>24</sup> to 1 / 2<sup>23</sup> (about 5.96 × 10<sup>–8</sup> to 1.19 × 10<sup>–7</sup>) for single format, and from 1 / 2<sup>53</sup> to 1 / 2<sup>52</sup> (about 1.11 × 10<sup>–16</sup> to 2.22 × 10<sup>–16</sup>) for double format. The maximum “relative error,” for round to nearest mode, is half
+         of those figures.
+      </p>
+      
+      <p class="indent">The range of integers that is represented exactly is from –2<sup>24</sup> to +2<sup>24</sup>(–16,777,216 to +16,777,216) for single format, and from –2<sup>53</sup> to +2<sup>53</sup>(–9,007,199,254,740,992 to +9,007,199,254,740,992) for double format. Of <a id="page_377"></a>course, certain integers outside these ranges, such as larger powers of 2, can be
+         represented exactly; the ranges cited are the maximal ranges for which <em>all</em> integers are represented exactly.
+      </p>
+      
+      <p class="fig-caption"><a id="ch17tab1"></a>T<small>ABLE</small> 17–1. E<small>XTREME</small> V<small>ALUES</small></p>
+      
+      <div class="image"><img alt="Image" src="graphics/377tab01.jpg" /></div>
+      
+      <p class="indent">One might want to change division by a constant to multiplication by the reciprocal.
+         This can be done with complete (IEEE) accuracy only for numbers whose reciprocals
+         are represented exactly. These are the powers of 2 from 2<sup>–127</sup> to 2<sup>127</sup> for single format, and from 2<sup>–1023</sup> to 2<sup>1023</sup> for double format. The numbers 2<sup>–127</sup> and 2<sup>–1023</sup> are subnormal numbers, which are best avoided on machines that implement operations
+         on subnormal numbers inefficiently.
+      </p>
+      
+      <h3><a id="ch17lev2"></a><strong>17–2 Floating-Point To/From Integer Conversions</strong></h3>
+      
+      <p class="indent"><a href="ch17.html#ch17tab2">Table 17–2</a> gives some formulas for conversion between IEEE floating-point format and integers.
+         These methods are concise and fast, but they do not give the correct result for the
+         full range of input values. The ranges over which they do give the precisely correct
+         result are given in the table. They all give the correct result for ±0.0 and for subnormals
+         within the stated ranges. Most do not give a reasonable result for a NaN or infinity.
+         These formulas may be suitable for direct use in some applications, or in a library
+         routine to get the common cases quickly.
+      </p>
+      
+      <p class="fig-caption"><a id="ch17tab2"></a>T<small>ABLE</small> 17–2. F<small>LOATING</small>-P<small>OINT</small> C<small>ONVERSIONS</small></p>
+      
+      <div class="image2"><img alt="Image" src="graphics/378tab01.jpg" /></div>
+      
+      <div class="image2"><a id="page_379"></a><img alt="Image" src="graphics/379tab01.jpg" /></div>
+      
+      <div class="image2"><a id="page_380"></a><img alt="Image" src="graphics/380tab01.jpg" /></div>
+      
+      <p class="indent"><a id="page_378"></a>The Type column denotes the type of conversion desired, including the rounding mode:
+         n for round to nearest even, d for round down, u for round up, and z for round toward
+         zero. The R column denotes the rounding mode that the machine must be in for the formula
+         to give the correct result. (On some machines, such as the Intel IA-32, the rounding
+         mode can be specified in the instruction itself, rather than in a “mode” register.)
+      </p>
+      
+      <p class="indent">A “double” is an IEEE double, which is 64 bits in length. A “float” is an IEEE single,
+         which is 32 bits in length.
+      </p>
+      
+      <p class="indent">The notation “ulp” means one unit in the last position. For example, 1.0 – ulp denotes
+         the IEEE-format number that is closest to 1.0 but less than 1.0, something like 0.99999....
+         The notation “int64” denotes a signed 64-bit integer (two’s-complement), and “int32”
+         denotes a signed 32-bit integer. “uint64” and “uint32” have similar meanings, but
+         for unsigned interpretations.
+      </p>
+      
+      <p class="indent">The function low32(<strong><em>x</em></strong>) extracts the low-order 32 bits of <strong><em>x</em></strong>.
+      </p>
+      
+      <p class="indent">The operators <img alt="Image" src="graphics/378equ01.jpg" /> and <img alt="Image" src="graphics/378equ02.jpg" /> denote double- and single-precision floating-point addition, respectively. Similarly,
+         the operators <img alt="Image" src="graphics/378equ03a.jpg" /> and <img alt="Image" src="graphics/378equ03.jpg" /> denote double- and single-precision subtraction.
+      </p>
+      
+      <p class="indent">It might seem curious that on most Intel machines the double to integer (of any size)
+         conversions require that the machine’s precision mode be reduced to 53 bits, whereas
+         for <em>float</em> to integer conversions, the reduction in precision is not necessary—the correct result
+         is obtained with the machine running in extended-precision mode (64 bits of precision).
+         This is because for the double-precision add of the constant, the fraction might be
+         shifted right as many as 52 bits, which may cause 1-bits to be shifted beyond the
+         64-bit limit, and hence lost. Thus, two roundings occur—first to 64 bits and then
+         to 53 bits. On the other hand, for the single-precision add of the constant, the maximum
+         shift is 23 bits. With that small shift amount, no bit can be shifted beyond the 64-bit
+         boundary, so that only one rounding operation occurs. The conversions from float to
+         integer get the correct result on Intel machines in all three precision modes.
+      </p>
+      
+      <div class="image"><img alt="Image" src="graphics/380equ01.jpg" /></div>
+      
+      <p class="indent">On Intel machines running in extended-precision mode, the conversions from double
+         to int64 and uint64 can be done without changing the precision mode by using different
+         constants and one more floating-point operation. The calculation is <a id="page_381"></a>where <img alt="Image" src="graphics/381fig01.jpg" /> and <img alt="Image" src="graphics/381fig02.jpg" /> denote extended-precision addition and subtraction, respectively. (The result of
+         the <em>add</em> must remain in the 80-bit register for use by the extended-precision subtract operation.)
+      </p>
+      
+      <p class="indent">For double to int64,</p>
+      
+      <p class="indentpre"><strong><em>c</em></strong><sub>1</sub> = 0x43E00300 00000000 = 2<sup>63</sup> + 2<sup>52</sup> + 2<sup>51</sup><br /><strong><em>c</em></strong><sub>2</sub> = 0x43E00000 00000000 = 2<sup>63</sup><br /><strong><em>c</em></strong><sub>3</sub> = 0x43380000 00000000 = 2<sup>52</sup> + 2<sup>51</sup>.
+      </p>
+      
+      <p class="indent">For double to uint64,</p>
+      
+      <p class="indentpre"><strong><em>c</em></strong><sub>1</sub> = 0x43E00200 00000000 = 2<sup>63</sup> + 2<sup>52</sup><br /><strong><em>c</em></strong><sub>2</sub> = 0x43E00000 00000000 = 2<sup>63</sup><br /><strong><em>c</em></strong><sub>3</sub> = 0x43300000 00000000 = 2<sup>52</sup>.
+      </p>
+      
+      <p class="indent">Using these constants, similar expressions can be derived for the conversion and rounding
+         operations shown in <a href="ch17.html#ch17tab2">Table 17–2</a> that are flagged by Note 1. The ranges of applicability are close to those shown
+         in the table.
+      </p>
+      
+      <p class="indent">However, for the round double to nearest operation, if the calculation subtracts first
+         and then adds, that is,
+      </p>
+      
+      <div class="image"><img alt="Image" src="graphics/381equ01.jpg" /></div>
+      
+      <p class="noindent">(using the first set of constants above), then the range for which the correct result
+         is obtained is – 2<sup>51</sup> – 0.5 to ∞, but not a NaN.
+      </p>
+      
+      <h3><a id="ch17lev3"></a><strong>17–3 Comparing Floating-Point Numbers Using Integer Operations</strong></h3>
+      
+      <p class="noindent">One of the features of the IEEE encodings is that non-NaN values are properly ordered
+         if treated as signed magnitude integers.
+      </p>
+      
+      <p class="indent">To program a floating-point comparison using integer operations, it is necessary that
+         the “unordered” result not be needed. In IEEE 754, the unordered result occurs when
+         one or both comparands are NaNs. The methods below treat NaNs as if they were numbers
+         greater in magnitude than infinity.
+      </p>
+      
+      <p class="indent">The comparisons are also much simpler if -0.0 can be treated as strictly less than
+         +0.0 (which is not in accordance with IEEE 754). Assuming this is acceptable, the
+         comparisons can be done as shown below, where <img alt="Image" src="graphics/381fig03.jpg" />, <img alt="Image" src="graphics/381fig04.jpg" />, and <img alt="Image" src="graphics/381fig05.jpg" /> denote floating-point comparisons, and the ≈ symbol is used as a reminder that these
+         formulas do not treat ±0.0 quite right. These comparisons are the same as IEEE 754-2008’s
+         “total-ordering” predicate.
+      </p>
+      
+      <div class="image"><img alt="Image" src="graphics/381fig06.jpg" /></div>
+      
+      <p class="indent"><a id="page_382"></a>If -0.0 must be treated as equal to +0.0, there does not seem to be any slick way
+         to do it, but the following formulas, which follow more or less obviously from the
+         above, are possibilities.
+      </p>
+      
+      <div class="image"><img alt="Image" src="graphics/382fig01.jpg" /></div>
+      
+      <p class="indent">In some applications, it might be more efficient to first transform the numbers in
+         some way, and then do a floating-point comparison with a single fixed-point comparison
+         instruction. For example, in sorting <em>n</em> numbers, the transformation would be done only once to each number, whereas a comparison
+         must be done at least <img alt="Image" src="graphics/382fig02.jpg" /> times (in the minimax sense).
+      </p>
+      
+      <p class="indent"><a href="ch17.html#ch17tab3">Table 17–3</a> gives four such transformations. For those in the left column, -0.0 compares equal
+         to +0.0, and for those in the right column, -0.0 compares less than +0.0. In all cases,
+         the sense of the comparison is not altered by the transformation. Variable <code>n</code> is signed, <code>t</code> is unsigned, and <code>c</code> may be either signed or unsigned.
+      </p>
+      
+      <p class="indent">The last row shows branch-free code that can be implemented on our basic RISC in four
+         instructions for the left column, and three for the right column (these four or three
+         instructions must be executed for each comparand).
+      </p>
+      
+      <p class="fig-caption"><a id="ch17tab3"></a>T<small>ABLE</small> 17-3. P<small>RECONDITIONING</small> F<small>LOATING</small>-P<small>OINT</small> N<small>UMBERS FOR</small> I<small>NTEGER</small> C<small>OMPARISONS</small></p>
+      
+      <div class="image"><img alt="Image" src="graphics/382tab01.jpg" /></div>
+      
+      <h3><a id="page_383"></a><a id="ch17lev4"></a><strong>17–4 An Approximate Reciprocal Square Root Routine</strong></h3>
+      
+      <p class="noindent">In the early 2000s, there was some buzz in programming circles about an amazing routine
+         for computing an approximation to the reciprocal square root of a number in IEEE single
+         format. The routine is useful in graphics applications, for example, to normalize
+         a vector by multiplying its components <em>x, y</em>, and <em>z</em> by <img alt="Image" src="graphics/383fig01.jpg" />. C code for the function is shown in <a href="ch17.html#ch17fig1">Figure 17–1</a> [Taro].
+      </p>
+      
+      <p class="indent">The relative error of the result is in the range 0 to -0.00176 for all normal single-precision
+         numbers (it errs on the low side). It gives the correct IEEE result (NaN) if its argument
+         is a NaN. However, it gives an unreasonable result if its argument is ±∞, a negative
+         number, or -0. If the argument is +0 or a positive subnormal, the result is not what
+         it should be, but it is a large number (greater than 9 x 10<sup>18</sup>), which might be acceptable in some applications.
+      </p>
+      
+      <p class="indent">The relative error can be reduced in magnitude, to the range ±0.000892, by changing
+         the constant 1.5 in the Newton step to 1.5008908.
+      </p>
+      
+      <p class="indent">Another possible refinement is to replace the multiplication by 0.5 with a subtract
+         of 1 from the exponent of <code>x</code>. That is, replace the definition of <code>xhalf</code> with
+      </p>
+      
+      <p class="codelink"><a href="images16.html#p383fig02" id="p383fig02a">Click here to view code image</a></p>
+      
+      <p class="programlisting1">union {int ihalf; float xhalf;};<br />ihalf = ix - 0x00800000;
+      </p>
+      
+      <p class="noindent">However, the function then gives inaccurate results (although greater than 6 × 10<sup>18</sup>) for <code>x</code> a normal number less than about 2.34 × 10<sup>-38</sup>, and NaN for <code>x</code> a subnormal number. For <code>x</code> = 0 the result is ±∞ (which is correct).
+      </p>
+      
+      <p class="indent">The Newton step is a standard Newton-Raphson calculation for the reciprocal square
+         root function (see <a href="app02.html">Appendix B</a>). Simply repeating this step reduces the relative error to the range 0 to -0.0000047.
+         The optimal constant for this is 0x5F37599E.
+      </p>
+      
+      <p class="indent">On the other hand, deleting the Newton step results in a substantially faster function
+         with a relative error within ±0.035, using a constant of 0x5F37642F. It consists of
+         only two integer instructions, plus code to load the constant. (The variable <code>xhalf</code> can be deleted.)
+      </p>
+      
+      <p class="codelink"><a href="images16.html#p383tab01" id="p383tab01a">Click here to view code image</a></p>
+      
+      <hr />
+      
+      <p class="programlisting">float rsqrt(float x0) {<br />   union {int ix; float x;};<br /><br />   x = x0;                         // x can be viewed as int.<br />   float xhalf = 0.5f*x;<br />   ix = 0x5f375a82 - (ix &gt;&gt; 1);    // Initial guess.<br />   x = x*(1.5f - xhalf*x*x);       // Newton step.<br />   return x;<br />}
+      </p>
+      
+      <hr />
+      
+      <p class="fig-caption"><a id="ch17fig1"></a>F<small>IGURE</small> 17–1. Approximate reciprocal square root.
+      </p>
+      
+      <p class="indent"><a id="page_384"></a>To get an inkling of why this works, suppose <em>x</em> = 2<sup><em>n</em></sup> (1 + <em>f</em>), where <em>n</em> is the unbiased exponent and <em>f</em> is the fraction (0 ≤ <em>f</em> &lt; 1). Then
+      </p>
+      
+      <div class="image"><img alt="Image" src="graphics/384equ01.jpg" /></div>
+      
+      <p class="noindent">Ignoring the fraction, this shows that we must change the biased exponent from 127
+         <em>+ n</em> to 127 <em>-n/2</em>. If <em>e =</em> 127 <em>+n</em>, then 127 –<em>n</em>/2 = 127 – (<em>e</em> – 127)/2 = 190.5 –<em>e</em>/2. Therefore, it appears that a calculation something like shifting <em>x</em> right one position and subtracting it from 190 in the exponent position, might give
+         a very rough approximation to <img alt="Image" src="graphics/384fig02.jpg" />. In C, this can be expressed as<sup><a id="ch17fna1"></a><a href="footnotes.html#ch17fn1">1</a></sup></p>
+      
+      <p class="codelink"><a href="images16.html#p384fig01" id="p384fig01a">Click here to view code image</a></p>
+      
+      <p class="programlisting1">union {int ix; float x;}; // Make ix and x overlap.<br />...<br />0x5F000000 - (ix &gt;&gt; 1);   // Refer to x as integer ix.
+      </p>
+      
+      <p class="indent">To find a better value for the constant 0x5F000000 by analysis is difficult. Four
+         cases must be analyzed: the cases in which a 0-bit or a 1-bit is shifted from the
+         exponent field to the fraction field, and the cases in which the subtraction does
+         or does not generate a borrow that propagates to the exponent field. This analysis
+         is done in [Lomo]. Here, we make some simple observations.
+      </p>
+      
+      <p class="indent">Using rep(<em>x</em>) to denote the representation of the floating-point number <em>x</em> in IEEE single format, we want a formula of the form
+      </p>
+      
+      <div class="image"><img alt="Image" src="graphics/384equ02.jpg" /></div>
+      
+      <p class="noindent">for some constant <em>k</em>. (Whether the shift is signed or unsigned makes no difference, because we exclude
+         negative values of <em>x</em> and -0.0.) We can get an idea of roughly what <em>k</em> should be from
+      </p>
+      
+      <div class="image"><img alt="Image" src="graphics/384equ03.jpg" /></div>
+      
+      <p class="noindent">and trying a few values of <em>x</em>. The results are shown in <a href="ch17.html#ch17tab4">Table 17–4</a> (in hexadecimal).
+      </p>
+      
+      <p class="indent">It looks like <em>k</em> is approximately a constant. Notice that the same value is obtained for <em>x</em> = 1.0 and 4.0. In fact, the same value of <em>k</em> results from any number <em>x</em> and 4<em>x</em> (provided they are both normal numbers). This is because, in the formula for <em>k</em>, if <em>x</em> is quadrupled, then the term rep<img alt="Image" src="graphics/384fig02.jpg" /> decreases by 1 in the exponent field, and the term rep<img alt="Image" src="graphics/384fig03.jpg" /> increases by 1 in the exponent field.
+      </p>
+      
+      <p class="indent">More significantly, the relative errors for <em>x</em> and 4<em>x</em> are exactly the same, provided both quantities are normal numbers. To see this, it
+         can be shown that if the argument <code>x</code> of the <code>rsqrt</code> function is quadrupled, the result of the function is <a id="page_385"></a>exactly halved, and this is true no matter how many Newton steps are done. Of course,
+         <img alt="Image" src="graphics/385fig01.jpg" /> is also halved. Therefore, the relative error is unchanged.
+      </p>
+      
+      <p class="fig-caption"><a id="ch17tab4"></a>T<small>ABLE</small> 17–4. D<small>ETERMINING THE</small> C<small>ONSTANT</small></p>
+      
+      <div class="image"><img alt="Image" src="graphics/385tab01.jpg" /></div>
+      
+      <p class="indent">This is important, because it means that if we find an optimal value (by some criterion,
+         such as minimizing the maximum absolute value of the error) for values of <em>x</em> in the range 1.0 to 4.0, then the same value of <em>k</em> is optimal for all normal numbers.
+      </p>
+      
+      <p class="indent">It is then a straightforward task to write a program that, for a given value of <em>k</em>, calculates the true value of <img alt="Image" src="graphics/385fig02.jpg" /> (using a known accurate library routine) and the estimated value for some 10,000
+         or so values of <em>x</em> from 1.0 to 4.0, and calculates the maximum error. The optimal value of <em>k</em> can be determined by hand, which is tedious but sometimes illuminating. It is quite
+         amazing that there is a constant for which the error is less than ±3.5% in a function
+         that uses only two integer operations and no table lookup.
+      </p>
+      
+      <h3><a id="ch17lev5"></a><strong>17–5 The Distribution of Leading Digits</strong></h3>
+      
+      <p class="noindent">When IBM introduced the System/360 computer in 1964, numerical analysts were horrified
+         at the loss of precision of single-precision arithmetic. The previous IBM computer
+         line, the 704 - 709 - 7090 family, had a 36-bit word. For single-precision floating-point,
+         the format consisted of a 9-bit sign and exponent field, followed by a 27-bit fraction
+         in binary. The most significant fraction bit was explicitly included (in “normal”
+         numbers), so quantities were represented with a precision of 27 bits.
+      </p>
+      
+      <p class="indent">The S/360 has a 32-bit word. For single-precision, IBM chose to have an 8-bit sign
+         and exponent field followed by a 24-bit fraction. This drop from 27 to 24 bits was
+         bad enough, but it gets worse. To keep the exponent range large, a unit in the 7-bit
+         exponent of the S/360 format represents a factor of 16. Thus, the fraction is in base
+         16, and this format came to be called “hexadecimal” floating-point. The leading digit
+         can be any number from 1 to 15 (binary 0001 to 1111). Numbers with leading digit 1
+         have only 21 bits of precision (because of the three leading 0’s), but they should
+         constitute only 1/15 (6.7%) of all numbers.
+      </p>
+      
+      <p class="indent"><a id="page_386"></a>No, it’s worse than that! There was a flurry of activity to show, both analytically
+         and empirically, that leading digits are <em>not</em> uniformly distributed. In hexadecimal floating-point, one would expect 25% of the
+         numbers to have leading digit 1, and hence only 21 bits of precision.
+      </p>
+      
+      <p class="indent">Let us consider the distribution of leading digits in decimal. Suppose you have a
+         large set of numbers with units, such as length, volume, mass, speed, and so on, expressed
+         in “scientific” notation (e.g., 6.022 <strong>x</strong> 10<sup>23</sup>). If the leading digit of a large number of such numbers has a well-defined distribution
+         function, then it must be independent of the units—whether inches or centimeters,
+         pounds or kilograms, and so on. Thus, if you multiply all the numbers in the set by
+         any constant, the distribution of leading digits should be unchanged. For example,
+         considering multiplying by 2, we conclude that the number of numbers with leading
+         digit 1 (those from 1.0 to 1.999... times 10 to some power) must equal the number
+         of numbers with leading digit 2 or 3 (those from 2.0 to 3.999... times 10 to some
+         power), because it shouldn’t matter if our unit of length is inches or half inches,
+         or our unit of mass is kilograms or half kilograms, and so on.
+      </p>
+      
+      <p class="indent">Let <em>f(x)</em>, for 1 <strong>≤</strong> <em>x</em> &lt; 10, be the probability density function for the leading digits of the set of numbers
+         with units. <em>f(x)</em> has the property that
+      </p>
+      
+      <div class="image"><img alt="Image" src="graphics/386equ01.jpg" /></div>
+      
+      <p class="noindent">is the proportion of numbers that have leading digits ranging from <em>a</em> to <em>b</em>. Referring to the figure below, for a small increment Δ <em>x</em> in <em>x, f</em> must satisfy
+      </p>
+      
+      <p class="center"><em>f</em>(1) · Δ<em>x</em> = <em>f</em>(<em>x</em>) · <em>x</em>Δ<em>x</em>,
+      </p>
+      
+      <div class="image"><img alt="Image" src="graphics/386fig01.jpg" /></div>
+      
+      <p class="noindent">because <em>f</em> (1) · Δ<em>x</em> is, approximately, the proportion of numbers ranging from 1 to 1 + Δ<em>x</em> (ignoring a multiplier of a power of 10), and <em>f</em>(<em>x</em>) · <em>x</em> Δ<em>x</em> is the approximate proportion of numbers ranging from <em>x</em> to <em>x</em> + <em>x</em> Δ<em>x</em>. Because the latter set is the first set multiplied by <em>x</em>, their proportions must be equal. Thus, the probability density function is a simple
+         reciprocal relationship,
+      </p>
+      
+      <p class="center"><em>f</em>(<em>x</em>) = <em>f</em>(1) / <em>x</em>.
+      </p>
+      
+      <p class="indent"><a id="page_387"></a>Because the area under the curve from <em>x</em> = 1 to <em>x</em> = 10 must be 1 (all numbers have leading digits from 1.000... to 9.999...), it is
+         easily shown that
+      </p>
+      
+      <p class="center"><em>f</em>(1) = 1/ln10.
+      </p>
+      
+      <p class="indent">The proportion of numbers with leading digits in the range <em>a</em> to <em>b</em>, with 1 ≤ <em>a</em> ≤ <em>b</em> &lt; 10, is
+      </p>
+      
+      <div class="image"><img alt="Image" src="graphics/387fig01.jpg" /></div>
+      
+      <p class="noindent">Thus, in decimal, the proportion of numbers with leading digit 1 is log<sub>10</sub>(2 / 1) ≈ 0.30103, and the proportion of numbers with leading digit 9 is log<sub>10</sub>(10 / 9) ≈ 0.0458.
+      </p>
+      
+      <p class="indent">For base 16, the proportion of numbers with leading digits in the range <em>a</em> to <em>b</em>, with 1 ≤ <em>a</em> ≤ <em>b</em> &lt; 16, is similarly derived to be log<sub>16</sub>(<em>b</em> / <em>a</em>). Hence, the proportion of numbers with leading digit 1 is log<sub>16</sub>(2 / 1) = 1 / log<sub>2</sub>16 = 0.25.
+      </p>
+      
+      <h3><a id="ch17lev6"></a><strong>17–6 Table of Miscellaneous Values</strong></h3>
+      
+      <p class="noindent"><a href="ch17.html#ch17tab5">Table 17–5</a> shows the IEEE representation of miscellaneous values that may be of interest. The
+         values that are not exact are rounded to the nearest representable value.
+      </p>
+      
+      <p class="fig-caption"><a id="ch17tab5"></a>T<small>ABLE</small> 17–5. M<small>ISCELLANEOUS</small> V<small>ALUES</small></p>
+      
+      <div class="image2"><img alt="Image" src="graphics/387tab01.jpg" /></div>
+      
+      <div class="image2"><a id="page_388"></a><img alt="Image" src="graphics/388tab01.jpg" /></div>
+      
+      <div class="image2"><a id="page_389"></a><img alt="Image" src="graphics/389tab01.jpg" /></div>
+      
+      <p class="indent">IEEE 754 does not specify how the signaling and quiet NaNs are distinguished. <a href="ch17.html#ch17tab5">Table 17–5</a> uses the convention employed by PowerPC, the AMD 29050, the Intel x86 and I860, the
+         SPARC, and the ARM family: The most significant fraction bit is 0 for signaling and
+         1 for quiet NaN’s. A few machines, mostly older ones, use the opposite convention
+         (0 = quiet, 1 = signaling).
+      </p>
+      
+      <h4><strong>Exercises</strong></h4>
+      
+      <p class="question"><a href="ch19_answer.html#ch17ans1" id="ch17ansa1"><strong>1</strong>.</a> What numbers have the same representation, apart from trailing 0’s, in both single-
+         and double-precision?
+      </p>
+      
+      <p class="question"><a href="ch19_answer.html#ch17ans2" id="ch17ansa2"><strong>2</strong>.</a> Is there a program similar to the approximate reciprocal square root routine for
+         computing the approximate square root?
+      </p>
+      
+      <p class="question"><a href="ch19_answer.html#ch17ans3" id="ch17ansa3"><strong>3</strong>.</a> Is there a similar program for the approximate cube root of a nonnegative normal
+         number?
+      </p>
+      
+      <p class="question"><a href="ch19_answer.html#ch17ans4" id="ch17ansa4"><strong>4</strong>.</a> Is there a similar program for the reciprocal square root of a double-precision floating-point
+         number? Assume it is for a 64-bit machine, or at any rate that the “long long” (64-bit
+         integer) data type is available.<a id="page_390"></a></p>
+      
+   </body>
+   
+</html>

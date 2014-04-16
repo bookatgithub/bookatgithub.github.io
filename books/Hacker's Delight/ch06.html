@@ -1,0 +1,552 @@
+<html xmlns="http://www.w3.org/1999/xhtml">
+   
+   <head>
+      <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+      
+      <title>Chapter 6. Searching Words</title>
+      
+      <link href="9780133085013.css" rel="stylesheet" type="text/css" />
+      
+      <link href="page-template.xpgt" rel="stylesheet" type="application/vnd.adobe-page-template+xml" />
+      
+      <meta content="urn:uuid:767ce45a-85bb-4273-91f5-801bab42906b" name="Adept.expected.resource" />
+      
+   </head>
+   
+   <body>
+      
+      <h2><a id="page_117"></a><a id="ch06"></a>Chapter 6. Searching Words
+      </h2>
+      
+      <h3><a id="ch06lev1"></a><strong>6–1 Find First 0-Byte</strong></h3>
+      
+      <p class="noindent">The need for this function stems mainly from the way character strings are represented
+         in the C language. They have no explicit length stored with them; instead, the end
+         of the string is denoted by an all-0 byte. To find the length of a string, a C program
+         uses the “strlen” (string length) function. This function searches the string, from
+         left to right, for the 0-byte, and returns the number of bytes scanned, not counting
+         the 0-byte.
+      </p>
+      
+      <p class="indent">A fast implementation of “strlen” might load and test single bytes until a word boundary
+         is reached, and then load a word at a time into a register, and test the register
+         for the presence of a 0-byte. On big-endian machines, we want a function that returns
+         the index of the first 0-byte from the left. A convenient encoding is values from
+         0 to 3 denoting bytes 0 to 3, and a value of 4 denoting that there is no 0-byte in
+         the word. This is the value to add to the string length, as successive words are searched,
+         if the string length is initialized to 0. On little-endian machines, one wants the
+         index of the first 0-byte from the right end of the register, because little-endian
+         machines reverse the four bytes when a word is loaded into a register. Specifically,
+         we are interested in the following functions, where “00” denotes a 0-byte, “nn” denotes
+         a nonzero byte, and “xx” denotes a byte that may be 0 or nonzero.
+      </p>
+      
+      <div class="image"><img alt="Image" src="graphics/117equ01.jpg" /></div>
+      
+      <p class="indent">Our first procedure for the <em>find leftmost 0-byte</em> function, shown in <a href="ch06.html#ch06fig1">Figure 6–1</a>, simply tests each byte, in left-to-right order, and returns the result when the
+         first 0-byte is found.
+      </p>
+      
+      <p class="codelink"><a href="images5.html#p06fig01" id="p06fig01a">Click here to view code image</a></p>
+      
+      <hr />
+      
+      <p class="programlisting"><a id="ch06fig1"></a>int zbytel(unsigned x) {<br />   if             ((x &gt;&gt; 24) == 0) return 0;<br />   else if ((x &amp; 0x00FF0000) == 0) return 1;<br />   else if ((x &amp; 0x0000FF00) == 0) return 2;<br />   else if ((x &amp; 0x000000FF) == 0) return 3;<br />   else return 4;<br />}
+      </p>
+      
+      <hr />
+      
+      <p class="fig-caption">F<small>IGURE</small> 6–1. <em>Find leftmost 0-byte</em>, simple sequence of tests.
+      </p>
+      
+      <p class="indent">This executes in two to 11 basic RISC instructions, 11 in the case that the word has
+         no 0-bytes (which is the important case for the “strlen” function). A very similar
+         program will handle the problem of finding the rightmost 0-byte.
+      </p>
+      
+      <p class="indent"><a href="ch06.html#ch06fig2">Figure 6–2</a> shows a branch-free procedure for this function. The idea is to convert each 0-byte
+         to 0x80, and each nonzero byte to 0x00, and then use <em>number of leading zeros</em>. This procedure executes in eight instructions, if the machine has the <em>number of leading zeros</em> and <em>nor</em> instructions. Some similar tricks are described in [Lamp].
+      </p>
+      
+      <p class="codelink"><a id="page_118"></a><a href="images5.html#p06fig02" id="p06fig02a">Click here to view code image</a></p>
+      
+      <hr />
+      
+      <p class="programlisting"><a id="ch06fig2"></a>int zbytel(unsigned x) {<br />   unsigned y;<br />   int n;<br />                          // Original byte: 00 80 other<br />   y = (x &amp; 0x7F7F7F7F)+ 0x7F7F7F7F;     // 7F 7F 1xxxxxxx<br />   y = ~(y 1 x 1 0x7F7F7F7F);            // 80 00 00000000<br />   n = nlz(y) &gt;&gt; 3;              // n = 0 ... 4, 4 if x<br />   return n;                     // has no 0-byte.<br />}
+      </p>
+      
+      <hr />
+      
+      <p class="fig-caption">F<small>IGURE</small> 6–2. <em>Find leftmost 0-byte</em>, branch-free code.
+      </p>
+      
+      <p class="indent">The position of the <em>rightmost</em> 0-byte is given by the number of trailing 0’s in the final value of <code>y</code> computed above, divided by 8 (with fraction discarded). Using the expression for
+         computing the number of trailing 0’s by means of the <em>number of leading zeros</em> instruction (see <a href="ch05.html#ch05lev4">Section 5–4</a>, “<a href="ch05.html#ch05lev4">Counting Trailing 0’s</a>,” on page <a href="ch05.html#page_107">107</a>), this can be computed by replacing the assignment to <code>n</code> in the procedure above with:
+      </p>
+      
+      <p class="codelink"><a href="images5.html#p118equ01" id="p118equ01a">Click here to view code image</a></p>
+      
+      <p class="programlisting1">n = (32 - nlz(~y &amp; (y - 1))) &gt;&gt; 3;</p>
+      
+      <p class="noindent">This is a 12-instruction solution, if the machine has <em>nor</em> and <em>and not</em>.
+      </p>
+      
+      <p class="indent">In most situations on PowerPC, incidentally, a procedure to find the rightmost 0-byte
+         would not be needed. Instead, the words can be loaded with the <em>load word byte-reverse</em> instruction (<code>lwbrx</code>).
+      </p>
+      
+      <p class="indent">The procedure of <a href="ch06.html#ch06fig2">Figure 6–2</a> is more valuable on a 64-bit machine than on a 32-bit one, because on a 64-bit machine
+         the procedure (with obvious modifications) requires about the same number of instructions
+         (seven or ten, depending upon how the constant is generated), whereas the technique
+         of <a href="ch06.html#ch06fig1">Figure 6–1</a> requires 23 instructions worst case.
+      </p>
+      
+      <p class="indent">If only a test for the presence of a 0-byte is wanted, then a <em>branch on zero</em> (or <em>nonzero</em>) can be inserted just after the second assignment to <code>y</code>.
+      </p>
+      
+      <p class="indent">A method similar to that of <a href="ch06.html#ch06fig2">Figure 6–2</a>, but for finding the <em>rightmost</em> 0-byte in a word <code>x</code> (zbyter(<em>x</em>)), is [Mycro]:
+      </p>
+      
+      <p class="codelink"><a href="images5.html#p118equ02" id="p118equ02a">Click here to view code image</a></p>
+      
+      <p class="programlisting1">y = (x - 0x01010101) &amp; ~x &amp; 0x80808080;<br />n = ntz(y) &gt;&gt; 3;
+      </p>
+      
+      <p class="noindent"><a id="page_119"></a>This executes in only five instructions exclusive of loading the constants if the
+         machine has the <em>and not</em> and <em>number of trailing zeros</em> instructions. It cannot be used to compute zbytel(<em>x</em>), because of a problem with borrows. It would be most useful for finding the first
+         0-byte in a character string on a little-endian machine, or to simply test for a 0-byte
+         (using only the assignment to <code>y</code>) on a machine of either endianness.
+      </p>
+      
+      <p class="indent">If the nlz instruction is not available, there does not seem to be any really good
+         way to compute the <em>find first 0-byte</em> function. <a href="ch06.html#ch06fig3">Figure 6–3</a> shows a possibility (only the executable part of the code is shown).
+      </p>
+      
+      <p class="indent">This executes in ten to 13 basic RISC instructions, ten in the all-nonzero case. Thus,
+         it is probably not as good as the code of <a href="ch06.html#ch06fig1">Figure 6–1</a>, although it does have fewer branch instructions. It does not scale very well to
+         64-bit machines, unfortunately.
+      </p>
+      
+      <p class="indent">There are other possibilities for avoiding the nlz function. The value of <code>y</code> computed by the code of <a href="ch06.html#ch06fig3">Figure 6–3</a> consists of four bytes, each of which is either 0x00 or 0x80. The remainder after
+         dividing such a number by 0x7F is the original value with the up-to-four 1-bits moved
+         and compressed to the four rightmost positions. Thus, the remainder ranges from 0
+         to 15 and uniquely identifies the original number. For example,
+      </p>
+      
+      <div class="image"><img alt="Image" src="graphics/119equ01.jpg" /></div>
+      
+      <p class="noindent">This value can be used to index a table, 16 bytes in size, to get the desired result.
+         Thus, the code beginning <code>if (y == 0)</code> can be replaced with
+      </p>
+      
+      <p class="codelink"><a href="images5.html#p119equ02" id="p119equ02a">Click here to view code image</a></p>
+      
+      <p class="programlisting1">static char table[16] = {4, 3, 2, 2, 1, 1, 1, 1,<br />                         0, 0, 0, 0, 0, 0, 0, 0};<br />return table[y%127];
+      </p>
+      
+      <p class="noindent">where <code>y</code> is unsigned. The number 31 can be used in place of 127, but with a different table.
+      </p>
+      
+      <p class="codelink"><a href="images5.html#p06fig03" id="p06fig03a">Click here to view code image</a></p>
+      
+      <hr />
+      
+      <p class="programlisting1"><a id="ch06fig3"></a>                    // Original byte: 00 80 other<br />y = (x &amp; 0x7F7F7F7F) + 0x7F7F7F7F; // 7F 7F 1xxxxxxx<br />y = ~(y | x | 0x7F7F7F7F);         // 80 00 00000000<br />                                   // These steps map:<br />if (y == 0) return 4;              // 00000000 ==&gt; 4,<br />else if (y &gt; 0x0000FFFF)           // 80xxxxxx ==&gt; 0,<br />   return (y &gt;&gt; 31) ^ 1;           // 0080xxxx ==&gt; 1,<br />else                               // 000080xx ==&gt; 2,<br />   return (y &gt;&gt; 15) ^ 3;           // 00000080 ==&gt; 3.
+      </p>
+      
+      <hr />
+      
+      <p class="fig-caption">F<small>IGURE</small> 6–3. <em>Find leftmost 0-byte</em>, not using <code>nlz</code>.
+      </p>
+      
+      <p class="indent"><a id="page_120"></a>These methods involving dividing by 127 or 31 are really just curiosities, because
+         the <em>remainder</em> function is apt to require 20 cycles or more, even if directly implemented in hardware.
+         However, below are two more efficient replacements for the code in <a href="ch06.html#ch06fig3">Figure 6–3</a> beginning with <code>if (y == 0):</code></p>
+      
+      <p class="codelink"><a href="images5.html#p120equ01" id="p120equ01a">Click here to view code image</a></p>
+      
+      <p class="programlisting1"><br />return table[hopu(y, 0x02040810) &amp; 15];<br />return table[y*0x00204081 &gt;&gt; 28];
+      </p>
+      
+      <p class="noindent">Here, <code>hopu(a, b)</code> denotes the high-order 32 bits of the unsigned product of <code>a</code> and <code>b</code>. In the second line, we assume the usual HLL convention that the value of the multiplication
+         is the low-order 32 bits of the complete product. This might be a practical method,
+         if either the machine has a fast multiply or the multiplication by 0x204081 is done
+         by <em>shift</em>-and-<em>add</em>’s. It can be done in four such instructions, as suggested by
+      </p>
+      
+      <p class="center"><em>y</em> (1 + 2<sup>7</sup> + 2<sup>14</sup> + 2<sup>21</sup>) = <em>y</em> (1 + 2<sup>7</sup>)(1 + 2<sup>14</sup>).
+      </p>
+      
+      <p class="noindent">Using this 4-cycle way to do the multiplication, the total time for the procedure
+         comes to 13 cycles (7 to compute <code>y</code>, plus 4 for the <em>shift</em>-and-<em>add</em>’s, plus 2 for the <em>shift right</em> of 28 and the table index), and of course it is branch-free.
+      </p>
+      
+      <p class="indent">These scale reasonably well to a 64-bit machine. For the “modulus” method, use</p>
+      
+      <p class="codelink"><a href="images5.html#p120equ03" id="p120equ03a">Click here to view code image</a></p>
+      
+      <p class="programlisting1">return table[y%511];</p>
+      
+      <p class="noindent">where <code>table</code> is of size 256, with values 8, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0, 4, ...
+         (i.e., <code>table[i]</code> = number of trailing 0’s in <em>i</em>).
+      </p>
+      
+      <p class="indent">For the multiplicative methods, use either</p>
+      
+      <p class="indentpre"><code>return table[hopu(y, 0x02040810 20408100) &amp; 255];</code> or<br />
+         <code>return table[(y*0x00020408 10204081&gt;&gt;56];</code></p>
+      
+      <p class="noindent">where <code>table</code> is of size 256, with values 8, 7, 6, 6, 5, 5, 5, 5, 4, 4, 4, 4, 4, 4, 4, 4, 3, ....
+      </p>
+      
+      <p class="indent">The multiplication by 0x20408 10204081 can be done with</p>
+      
+      <div class="image"><img alt="Image" src="graphics/120equ05.jpg" /></div>
+      
+      <p class="noindent">which gives a 13-cycle solution.</p>
+      
+      <p class="indent">All these variations using the table can, of course, implement the <em>find rightmost 0-byte</em> function by simply changing the data in the table.
+      </p>
+      
+      <p class="indent"><a id="page_121"></a>If the machine does not have the <em>nor</em> instruction, the <em>not</em> in the second assignment to <code>y</code> in <a href="ch06.html#ch06fig3">Figure 6–3</a> can be omitted, in the case of a 32-bit machine, by using one of the three <code>return</code> statements given above, with <code>table[i]</code> = 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 3, 4. This scheme does not quite work
+         on a 64-bit machine.
+      </p>
+      
+      <p class="indent">Here is an interesting variation on the procedure of <a href="ch06.html#ch06fig2">Figure 6–2</a>, again aimed at machines that do not have <em>number of leading zeros</em>. Let <em>a, b, c</em>, and <em>d</em> be 1-bit variables for the predicates “the first byte of <strong><em>x</em></strong> is nonzero,” “the second byte of <strong><em>x</em></strong> is nonzero,” and so on. Then,
+      </p>
+      
+      <p class="center">zbytel(<strong><em>x</em></strong>) = <strong><em>a</em></strong> + <strong><em>ab</em></strong> + <strong><em>abc</em></strong> + <strong><em>abcd</em></strong>.
+      </p>
+      
+      <p class="noindent">The multiplications can be done with <em>and</em>’s, leading to the procedure shown in <a href="ch06.html#ch06fig4">Figure 6–4</a> (only the executable code is shown). This comes to 15 instructions on the basic RISC,
+         which is not particularly fast, but there is a certain amount of parallelism. On a
+         superscalar machine that can execute up to three arithmetic instructions in parallel,
+         provided they are independent, it comes to only ten cycles.
+      </p>
+      
+      <p class="codelink"><a href="images5.html#p06fig04" id="p06fig04a">Click here to view code image</a></p>
+      
+      <hr />
+      
+      <p class="programlisting1"><a id="ch06fig4"></a>y = (x &amp; 0x7F7F7F7F) + 0x7F7F7F7F;<br />y = y | x;           // Leading 1 on nonzero bytes.<br /><br />t1 = y &gt;&gt; 31;                // tl = a.<br />t2 = (y &gt;&gt; 23) &amp; tl;         // t2 = ab.<br />t3 = (y &gt;&gt; 15) &amp; t2;         // t3 = abc.<br />t4 = (y &gt;&gt;  7) &amp; t3;          // t4 = abcd.<br />return t1 + t2 + t3 + t4;
+      </p>
+      
+      <hr />
+      
+      <p class="fig-caption">F<small>IGURE</small> 6–4. <em>Find leftmost 0-byte</em> by evaluating a polynomial.
+      </p>
+      
+      <p class="indent">A simple variation of this does the <em>find rightmost 0-byte</em> function, based on
+      </p>
+      
+      <p class="center">zbyter(<strong><em>x</em></strong>) = <strong><em>abcd</em></strong> + <strong><em>bcd</em></strong> + <strong><em>cd</em></strong> + <strong><em>d</em></strong>.
+      </p>
+      
+      <p class="noindent">(This requires one more <em>and</em> than the code of <a href="ch06.html#ch06fig4">Figure 6–4</a>.)
+      </p>
+      
+      <h4><strong>Some Simple Generalizations</strong></h4>
+      
+      <p class="noindent">Functions zbytel and zbyter can be used to search for a byte equal to any particular
+         value, by first <em>exclusive or</em>’ing the argument <strong><em>x</em></strong> with a word consisting of the desired value replicated in each byte position. For
+         example, to search <strong><em>x</em></strong> for an ASCII blank (0x20), search <strong><em>x</em></strong> ⊕ <strong>0<em>x</em> 20202020</strong> for a 0-byte.
+      </p>
+      
+      <p class="indent">Similarly, to search for a byte position in which two words <strong><em>x</em></strong> and <strong><em>y</em></strong> are equal, search <strong><em>x</em></strong> ⊕ <strong><em>y</em></strong> for a 0-byte.
+      </p>
+      
+      <p class="indent">There is nothing special about byte boundaries in the code of <a href="ch06.html#ch06fig2">Figure 6–2</a> and its variants. For example, to search a word for a 0-value in any of the first
+         four bits, the next 12, or the last 16, use the code of <a href="ch06.html#ch06fig2">Figure 6–2</a> with the mask replaced by 0x77FF7FFF [PHO]. (If a field length is 1, use a 0 in the
+         mask at that position.)
+      </p>
+      
+      <h4><a id="page_122"></a><strong>Searching for a Value in a Given Range</strong></h4>
+      
+      <p class="noindent">The code of <a href="ch06.html#ch06fig2">Figure 6–2</a> can easily be modified to search for a byte in the range 0 to any specified value
+         less than 128. To illustrate, the following code finds the index of the leftmost byte
+         having value from 0 to 9:
+      </p>
+      
+      <p class="codelink"><a href="images5.html#p122equ01" id="p122equ01a">Click here to view code image</a></p>
+      
+      <p class="programlisting1">y = (x &amp; 0x7F7F7F7F) + 0x76767676;<br />y = y | x;<br />y = y | 0x7F7F7F7F;          // Bytes &gt; 9 are 0xFF.<br />y = ~y;                      // Bytes &gt; 9 are 0x00,<br />                             // bytes &lt;= 9 are 0x80.<br />n = nlz(y) &gt;&gt; 3;
+      </p>
+      
+      <p class="indent">More generally, suppose you want to find the leftmost byte in a word that is in the
+         range <em>a</em> to <em>b</em>, where the difference between <em>a</em> and <em>b</em> is less than 128. For example, the uppercase letters encoded in ASCII range from
+         0x41 to 0x5A. To find the first uppercase letter in a word, subtract 0x41414141 in
+         such a way that the borrow does not propagate across byte boundaries, and then use
+         the above code to identify bytes having value from 0 to 0x19 (0x5A – 0x41). Using
+         the formulas for subtraction given in <a href="ch02.html#ch02lev18">Section 2–18</a>, “<a href="ch02.html#ch02lev18">Multibyte Add, Subtract, Absolute Value</a>,” on page <a href="ch02.html#page_40">40</a>, with obvious simplifications possible with <strong><em>y</em></strong> = 0x41414141, gives
+      </p>
+      
+      <p class="codelink"><a href="images5.html#p122equ02" id="p122equ02a">Click here to view code image</a></p>
+      
+      <p class="programlisting1">d = (x | 0x80808080) - 0x41414141;<br />d = ~((x | 0x7F7F7F7F) ^ d);<br />y = (d &amp; 0x7F7F7F7F) + 0x66666666;<br />y = y | d;<br />y = y | 0x7F7F7F7F;    // Bytes not from 41–5A are FF.<br />y = ~y;                // Bytes not from 41–5A are 00,<br />                       // bytes from 41–5A are 80.<br />n = nlz(y) &gt;&gt; 3;
+      </p>
+      
+      <p class="indent">For some ranges of values, simpler code exists. For example, to find the first byte
+         whose value is 0x30 to 0x39 (a decimal digit encoded in ASCII), simply <em>exclusive or</em> the input word with 0x30303030 and then use the code given above to search for a
+         value in the range 0 to 9. (This simplification is applicable when the upper and lower
+         limits have <em>n</em> high-order bits in common, and the lower limit ends with 8 – <em>n</em> 0’s.)
+      </p>
+      
+      <p class="indent">These techniques can be adapted to handle ranges of 128 or larger with no additional
+         instructions. For example, to find the index of the leftmost byte whose value is in
+         the range 0 to 137 (0x89), simply change the line <code>y = y | x</code> to <code>y = y &amp; x</code> in the code above for searching for a value from 0 to 9.
+      </p>
+      
+      <p class="indent">Similarly, changing the line <code>y = y | d</code> to <code>y = y &amp; d</code> in the code for finding the leftmost byte whose value is in the range 0x41 to 0x5A
+         causes it to find the leftmost byte whose value is in the range 0x41 to 0xDA.
+      </p>
+      
+      <h3><a id="page_123"></a><a id="ch06lev2"></a><strong>6–2 Find First String of 1-Bits of a Given Length</strong></h3>
+      
+      <p class="noindent">The problem here is to search a word in a register for the first string of 1-bits
+         of a given length <em>n</em> or longer, and to return its position, with some special indication if no such string
+         exists. Variants are to return only the yes/no indication and to locate the first
+         string of exactly <em>n</em> 1-bits. This problem has application in disk-allocation programs, particularly for
+         disk compaction (rearranging data on a disk so that all blocks used to store a file
+         are contiguous). The problem was suggested to me by Albert Chang, who pointed out
+         that it is one of the uses for the <em>number of leading zeros</em> instruction.
+      </p>
+      
+      <p class="indent">We assume here that the <em>number of leading zeros</em> instruction, or a suitable subroutine for that function, is available.
+      </p>
+      
+      <p class="indent">An algorithm that immediately comes to mind is to first count the number of leading
+         0’s and skip over them by shifting left by the number obtained. Then count the leading
+         1’s by inverting and counting leading 0’s. If this is of sufficient length, we are
+         done. Otherwise, shift left by the number obtained and repeat from the beginning.
+         This algorithm might be coded as shown below. If <em>n</em> consecutive 1-bits are found, it returns a number from 0 to 31, giving the position
+         of the leftmost 1-bit in the leftmost such sequence. Otherwise, it returns 32 as a
+         “not found” indication.
+      </p>
+      
+      <p class="codelink"><a href="images5.html#p123equ01" id="p123equ01a">Click here to view code image</a></p>
+      
+      <p class="programlisting">int ffstr1(unsigned x, int n) {<br />   int k, p;<br /><br />   p = 0;                  // Initialize position to return.<br />   while (x != 0) {<br />      k = nlz(x);          // Skip over initial 0's<br />      x = x <span class="entity">&lt;&lt;</span> k;          // (if any).<br />      p = p + k;<br />      k = nlz(~x);         // Count first/next group of 1's.<br />      if (k &gt;= n)          // If enough,<br />         return p;         // return.<br />      x = x <span class="entity">&lt;&lt;</span> k;          // Not enough 1's, skip over<br />      p = p + k;           // them.<br />   }<br />   return 32;<br />}
+      </p>
+      
+      <p class="indent">This algorithm is reasonable if it is expected that the loop will not be executed
+         very many times—for example, if it is expected that <code>x</code> will have long sequences of 1’s and of 0’s. This might very well be the expectation
+         in the disk-allocation application. Its worst-case execution time, however, is not
+         very good; for example, about 178 full RISC instructions executed for x = 0x55555555
+         and <em>n</em> ≥ 2.
+      </p>
+      
+      <p class="indent">An algorithm that is better in worst-case execution time is based on a sequence of
+         <em>shift left</em> and <em>and</em> instructions. To see how this works, consider searching for a <a id="page_124"></a>string of eight or more consecutive 1-bits in a 32-bit word <strong><em>x</em></strong>. This might be done as follows:
+      </p>
+      
+      <div class="image"><img alt="Image" src="graphics/124equ01.jpg" /></div>
+      
+      <p class="indent">After the first assignment, the 1’s in <strong><em>x</em></strong> indicate the starting positions of strings of length 2. After the second assignment,
+         the 1’s in <strong><em>x</em></strong> indicate the starting positions of strings of length 4 (a string of length 2 followed
+         by another string of length 2). After the third assignment, the 1’s in <strong><em>x</em></strong> indicate the starting positions of strings of length 8. Executing <em>number of leading zeros</em> on this word gives the position of the first string of length 8 (or more), or 32
+         if none exists.
+      </p>
+      
+      <p class="indent">To develop an algorithm that works for any length <em>n</em> from 1 to 32, we will look at this a little differently. First, observe that the
+         above three assignments can be done in any order. Reverse order will be more convenient.
+         To illustrate the general method, consider the case <em>n</em> = 10:
+      </p>
+      
+      <div class="image"><img alt="Image" src="graphics/124equ02.jpg" /></div>
+      
+      <p class="indent">The first statement shifts by <em>n</em>/2. After executing it, the problem is reduced to finding a string of five consecutive
+         1-bits in <strong><em>x</em></strong><sub>1</sub>. This can be done by shifting left by <span class="entity">⌊</span>5/2<span class="entity">⌋</span> = 2, <em>and</em>’ing, and searching the result for a string of length 3 (5 – 2). The last two statements
+         identify where the strings of length 3 are in <strong><em>x</em></strong><sub>2</sub>. The sum of the shift amounts is always <em>n</em>– 1. The algorithm is shown in <a href="ch06.html#ch06fig5">Figure 6–5</a>. The execution time ranges from 3 to 36 full RISC instructions, as <code>n</code> ranges from 1 to 32.
+      </p>
+      
+      <p class="codelink"><a href="images5.html#p06fig05" id="p06fig05a">Click here to view code image</a></p>
+      
+      <hr />
+      
+      <p class="programlisting"><a id="ch06fig5"></a>int ffstr1(unsigned x, int n) {<br />   int s;<br /><br />   while (n &gt; 1) {<br />      s = n &gt;&gt; 1;<br />      x = x &amp; (x &gt;&gt; s);<br />      n = n − s;<br />   }<br />   return nlz(x);<br />}
+      </p>
+      
+      <hr />
+      
+      <p class="fig-caption">F<small>IGURE</small> 6–5. Find first string of <em>n</em> 1’s, <em>shift</em>-and-<em>and</em> sequence.
+      </p>
+      
+      <p class="indent">If <code>n</code> is often moderately large, it is not unreasonable to unroll this loop by repeating
+         the loop body five times and omitting the test <code>n &gt; 1</code>. (Five is always sufficient for a 32-bit machine.) This gives a branch-free algorithm
+         that runs in a constant time of 20 instructions executed (the last assignment to <code>n</code> can be omitted). Although for small values of <code>n</code>, the three assignments are executed more than necessary, the result is unchanged
+         by the extra steps, because variable <code>n</code> sticks at the value 1, and for this value the three steps have no effect on <code>x</code> or <code>n</code>. The unrolled version is faster than the looping version for <code>n</code> ≥ 5, in terms of number of instructions executed.
+      </p>
+      
+      <p class="indent">A string of exactly <em>n</em> 1-bits can be found in six more instructions (four if <em>and not</em> is available). The quantity <strong><em>x</em></strong> computed by the algorithm of <a href="ch06.html#ch06fig5">Figure 6–5</a> has <a id="page_125"></a>1-bits wherever a string of length <em>n</em> or more 1-bits begins. Hence, using the final value of <strong><em>x</em></strong> computed by that algorithm, the expression
+      </p>
+      
+      <div class="image"><img alt="Image" src="graphics/125equ01.jpg" /></div>
+      
+      <p class="noindent">contains a 1-bit wherever the final <strong><em>x</em></strong> contains an isolated 1-bit, which is to say wherever the original <strong><em>x</em></strong> began a string of exactly <em>n</em> 1-bits.
+      </p>
+      
+      <p class="indent">The algorithm is also easily adapted to finding strings of length <em>n</em> that begin at certain locations. For example, to find strings that begin at byte
+         boundaries, simply <em>and</em> the final <strong><em>x</em></strong> with 0x80808080.
+      </p>
+      
+      <p class="indent">It can be used to find strings of 0-bits either by complementing <strong><em>x</em></strong> at the start, or by changing the <em>and</em>’s to <em>or</em>’s and complementing <strong><em>x</em></strong> just before invoking nlz. For example, below is an algorithm for finding the first
+         (leftmost) 0-byte (see <a href="ch06.html#ch06lev1">Section 6–1</a>, “<a href="ch06.html#ch06lev1">Find First 0-Byte</a>,” on page <a href="ch06.html#page_117">117</a>, for a precise definition of this problem).
+      </p>
+      
+      <div class="image"><img alt="Image" src="graphics/125equ02.jpg" /></div>
+      
+      <p class="noindent">This executes in 12 instructions on the full RISC (not as good as the algorithm of
+         <a href="ch06.html#ch06fig2">Figure 6–2</a> on page <a href="ch06.html#page_118">118</a>, which executes in eight instructions).
+      </p>
+      
+      <h3><a id="ch06lev3"></a><strong>6–3 Find Longest String of 1-Bits</strong></h3>
+      
+      <p class="noindent">The nicely concise function shown in <a href="ch06.html#ch06fig6">Figure 6–6</a> returns the length of the longest string of 1-bits in <code>x</code> [Hsieh].
+      </p>
+      
+      <p class="codelink"><a id="page_126"></a><a href="images5.html#p06fig06" id="p06fig06a">Click here to view code image</a></p>
+      
+      <hr />
+      
+      <p class="programlisting"><a id="ch06fig6"></a>int maxstr1(unsigned x) {<br />   int k;<br />   for (k = 0; x ! = 0; k++) x = x &amp; 2*x;<br />   return k;<br />}
+      </p>
+      
+      <hr />
+      
+      <p class="fig-caption">F<small>IGURE</small> 6–6. Find length of longest string of 1’s.
+      </p>
+      
+      <p class="indent">It executes in 4<em>n</em> + 3 instructions on the basic RISC, where <em>n</em> is the length of the longest string of 1’s, or 131 instructions in the worst case.
+      </p>
+      
+      <p class="indent">To reduce the worst-case execution time, a “logarithmic” version is possible. It works
+         by propagating 0’s one, two, four, eight, and 16 positions to the left, stopping at
+         the last nonzero word, and then backtracking to find the length of the longest contiguous
+         string of 1’s.
+      </p>
+      
+      <p class="indent">For example, suppose</p>
+      
+      <p class="codelink"><a href="images5.html#p126equ01" id="p126equ01a">Click here to view code image</a></p>
+      
+      <p class="programlisting1"> x = 0011 1111 1111 0011 1111 0011 1111 1000</p>
+      
+      <p class="noindent">Then</p>
+      
+      <p class="codelink"><a href="images5.html#p126equ02" id="p126equ02a">Click here to view code image</a></p>
+      
+      <p class="programlisting1"> x2 = 0011 1111 1110 0011 1110 0011 1111 0000<br /> x4 = 0011 1111 1000 0011 1000 0011 1100 0000<br /> x8 = 0011 1000 0000 0000 0000 0000 0000 0000<br />x16 = all 0's
+      </p>
+      
+      <p class="indent">In this case, the last nonzero word is <code>x8.</code> Observe that each 1-bit in <code>x8</code> indicates the leftmost position of a string of eight 1’s. Thus, the longest string
+         of 1’s begins at the leftmost position of a 1-bit in <code>x8,</code> bit position 29 in the example. To test for a string of length 12, one can test the
+         bit at position 21 (29 – 8) in <code>x4.</code> Since that is 0, there is no string of length 12. To test for a string of length
+         10, one can test the bit at position 21 in <code>x2.</code> Since that is 1, position 29 is the start of a string of length 10 (or more). Last,
+         to test for a string of length 11, one can test the bit at position 19 (21 – 2) in
+         <code>x</code>. Because that is 0, the longest string is of length 10, and it starts at position
+         29.
+      </p>
+      
+      <p class="indent">This scheme is coded in <a href="ch06.html#ch06fig7">Figure 6–7</a>, except the code uses only two variables, <code>x</code> and <code>y</code>, instead of the five variables <code>x</code>, <code>x2, x4, x8,</code> and <code>x16.</code> This code finds both the length and position of the longest string of 1’s, with the
+         position being measured from the left end of the string. The scheme does not work
+         if <code>x</code> is 0 or all 1’s. These are special-cased, with the latter possibility being handled
+         in a place that is not executed frequently.
+      </p>
+      
+      <p class="codelink"><a href="images5.html#p06fig07" id="p06fig07a">Click here to view code image</a></p>
+      
+      <hr />
+      
+      <p class="programlisting"><a id="ch06fig7"></a>int fmaxstr1(unsigned x, int *apos) {<br />   unsigned y;<br />   int s;<br /><br />   if (x == 0) {*apos = 32; return 0;}<br />   y = x &amp; (x <span class="entity">&lt;&lt;</span> 1);<br />   if (y == 0) {s = 1; goto L1;}<br />   x = y &amp; (y <span class="entity">&lt;&lt;</span> 2);<br />   if (x == 0) {s = 2; x = y; goto L2;}<br />   y = x &amp; (x <span class="entity">&lt;&lt;</span> 4);<br />   if (y == 0) {s = 4; goto L4;}<br />   x = y &amp; (y <span class="entity">&lt;&lt;</span> 8);<br />   if (x == 0) {s = 8; x = y; goto L8;}<br />   if (x == 0xFFFF8000) {*apos = 0; return 32;}<br />   s = 16;<br /><br />L16: y = x &amp; (x <span class="entity">&lt;&lt;</span> 8);<br />     if (y != 0) {s = s + 8; x = y;}<br />L8:  y = x &amp; (x <span class="entity">&lt;&lt;</span> 4);<br />     if (y != 0) {s = s + 4; x = y;}<br />L4:  y = x &amp; (x <span class="entity">&lt;&lt;</span> 2);<br />     if (y != 0) {s = s + 2; x = y;}<br />L2:  y = x &amp; (x <span class="entity">&lt;&lt;</span> 1);<br />     if (y != 0) {s = s + 1; x = y;}<br />L1:  *apos = nlz(x);<br />   return s;<br />}
+      </p>
+      
+      <hr />
+      
+      <p class="fig-caption">F<small>IGURE</small> 6–7. Find length and position of longest string of 1’s.
+      </p>
+      
+      <p class="indent">The worst-case execution time on the basic RISC is 39 instructions, plus those required
+         for the nlz function. If only the length of the longest string of 1’s is wanted, there
+         is no significant savings in execution time, except for omitting the use of the nlz
+         function.
+      </p>
+      
+      <h3><a id="ch06lev4"></a><strong>6–4 Find Shortest String of 1-Bits</strong></h3>
+      
+      <p class="noindent">It is more difficult to find the <em>shortest</em> string of 1-bits in a word. One way to do it is to mark the beginnings of all strings
+         of 1’s in a word <code>b</code> and the ends of all such <a id="page_127"></a>strings in a word <code>e</code>. Then, if <code>b &amp; e</code> is nonzero, the shortest string is of length 1. Otherwise, shift <code>e</code> left one position and test again. For example, if
+      </p>
+      
+      <p class="codelink"><a href="images5.html#p127equ01" id="p127equ01a">Click here to view code image</a></p>
+      
+      <p class="programlisting2">x = 0011 1111 1111 0011 1111 0011 1111 1000</p>
+      
+      <p class="noindent">then</p>
+      
+      <p class="codelink"><a href="images5.html#p127equ02" id="p127equ02a">Click here to view code image</a></p>
+      
+      <p class="programlisting2">b = 0010 0000 0000 0010 0000 0010 0000 0000<br />e = 0000 0000 0001 0000 0001 0000 0000 1000
+      </p>
+      
+      <p class="noindent">After shifting <code>e</code> left five places, <code>b &amp; e</code> is nonzero. This means that the shortest string of 1-bits is of length 6.
+      </p>
+      
+      <p class="indent">This idea is embodied in the code shown in <a href="ch06.html#ch06fig8">Figure 6–8</a>. As in the preceding material, the position of the string is measured from the left,
+         and if there are two or more minimal length strings of equal length, this function
+         finds the leftmost one. For example, if <code>x</code> = 0x00FF0FF0 it returns length 8, position 8.
+      </p>
+      
+      <p class="codelink"><a href="images5.html#p06fig08" id="p06fig08a">Click here to view code image</a></p>
+      
+      <hr />
+      
+      <p class="programlisting"><a id="ch06fig8"></a>int fminstr1(unsigned x, int *apos) {<br />   int k;<br />   unsigned b, e;       // Beginnings, ends.<br /><br />   if (x == 0) {*apos = 32; return 0;}<br />   b = ~(x &gt;&gt; 1) &amp; x;   // 0–1 transitions.<br />   e = x &amp; ~(x <span class="entity">&lt;&lt;</span> 1);   // 1–0 transitions.<br />   for (k = 1; (b &amp; e) == 0; k++)<br />      e = e <span class="entity">&lt;&lt;</span> 1;<br />   *apos = nlz(b &amp; e);<br />   return k;<br />}
+      </p>
+      
+      <hr />
+      
+      <p class="fig-caption">F<small>IGURE</small> 6–8. Find length and position of shortest string of 1’s.
+      </p>
+      
+      <p class="indent">The function executes in 8 + 4 <em>n</em> instructions on the basic RISC (without <em>andc</em>), plus the time for the nlz function, for <em>n</em> ≥ 2, where <em>n</em> is the length of the shortest contiguous string of 1’s in <code>x</code>.
+      </p>
+      
+      <p class="indent">Perhaps the ultimate problem in this class is to find the length and position of the
+         shortest string of 1’s in <strong><em>x</em></strong> that is at least as long as a given integer <em>n</em>&gt; 0. In <a id="page_128"></a>terms of the storage allocation problem, this is a “best fit” algorithm. This can
+         be done by first left-propagating the 0’s in <strong><em>x</em></strong> by <em>n</em> − 1 positions and then finding the shortest string of 1’s in the revised <strong><em>x</em></strong>. See the exercises.
+      </p>
+      
+      <h4><strong>Exercises</strong></h4>
+      
+      <p class="question"><a href="ch19_answer.html#ch06ans1" id="ch06ansa1"><strong>1</strong>.</a> Code an elaboration of Hsieh’s algorithm that will find both the length and position
+         of the longest string of 1’s in a word <strong><em>x</em></strong>. You may use the nlz function.
+      </p>
+      
+      <p class="question"><a href="ch19_answer.html#ch06ans2" id="ch06ansa2"><strong>2</strong>.</a> Code a function for finding the length and position of the shortest string of 1’s
+         in a word <strong><em>x</em></strong> that is at least as long as a given integer <em>n</em>.
+      </p>
+      
+      <p class="question"><a href="ch19_answer.html#ch06ans3" id="ch06ansa3"><strong>3</strong>.</a> Another way to find the shortest string of 1’s in a word <strong><em>x</em></strong> is to successively turn off the rightmost string of 1’s in <strong><em>x</em></strong> and observe the change in population count at each step. Code a function for the
+         full RISC that uses this idea and also finds the position of a shortest string of
+         1’s.
+      </p>
+      
+      <p class="question"><a href="ch19_answer.html#ch06ans4" id="ch06ansa4"><strong>4</strong>.</a> For “completely random” 32-bit words <strong><em>x</em></strong> (each bit independently 0 or 1 with probability 0.5), what is the average number
+         of strings of 1’s in <strong><em>x</em></strong>? The answer determines the average execution time of the function of exercise 3,
+         for such input data.
+      </p>
+      
+      <p class="question"><a href="ch19_answer.html#ch06ans5" id="ch06ansa5"><strong>5</strong>.</a> Again, for “completely random” 32-bit words <strong><em>x</em></strong>, what is the average length of the shortest contiguous string of 1’s in <strong><em>x</em></strong>? The answer determines the average execution time of function <code>fminstr1</code> in <a href="ch06.html#ch06fig8">Figure 6–8</a> for such input data. Compute this with a Monte Carlo or exhaustive enumeration program.
+      </p>
+      
+      <p class="question"><a href="ch19_answer.html#ch06ans6" id="ch06ansa6"><strong>6</strong>.</a> Of the 2<sup><em>n</em></sup> binary words of length <em>n</em>, for how many is their shortest contained string of 1’s of length 1? That is, how
+         many <em>n</em>-bit words begin with 10, or end with 01, or contain the sequence 010? Find a closed-form
+         solution or a recursion, not an exhaustive enumeration program.
+      </p>
+      
+      <p class="question"><a href="ch19_answer.html#ch06ans7" id="ch06ansa7"><strong>7</strong>.</a> Similarly, of the 2<sup><em>n</em></sup> binary words of length <em>n</em>, for how many is their shortest contained string of 1’s of length 2?
+      </p>
+      
+   </body>
+   
+</html>

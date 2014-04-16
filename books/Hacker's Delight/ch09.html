@@ -1,0 +1,911 @@
+<html xmlns="http://www.w3.org/1999/xhtml">
+   
+   <head>
+      <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+      
+      <title>Chapter 9. Integer Division</title>
+      
+      <link href="9780133085013.css" rel="stylesheet" type="text/css" />
+      
+      <link href="page-template.xpgt" rel="stylesheet" type="application/vnd.adobe-page-template+xml" />
+      
+      <meta content="urn:uuid:767ce45a-85bb-4273-91f5-801bab42906b" name="Adept.expected.resource" />
+      
+   </head>
+   
+   <body>
+      
+      <h2><a id="page_181"></a><a id="ch09"></a>Chapter 9. Integer Division
+      </h2>
+      
+      <h3><a id="ch09lev1"></a><strong>9–1 Preliminaries</strong></h3>
+      
+      <p class="noindent">This chapter and the following one give a number of tricks and algorithms involving
+         “computer division” of integers. In mathematical formulas we use the expression <em>x</em> / <em>y</em> to denote ordinary rational division, <em>x</em> ÷ <em>y</em> to denote signed computer division of integers (truncating toward 0), and <span class="middle"><img alt="Image" src="graphics/181fig01.jpg" /></span> to denote unsigned computer division of integers. Within C code, <code>x/y</code>, of course, denotes computer division, unsigned if either operand is unsigned, and
+         signed if both operands are signed.
+      </p>
+      
+      <p class="indent">Division is a complex process, and the algorithms involving it are often not very
+         elegant. It is even a matter of judgment as to just how signed integer division should
+         be defined. Most high-level languages and most computer instruction sets define the
+         result to be the rational result truncated toward 0. This and two other possibilities
+         are illustrated below.
+      </p>
+      
+      <p class="codelink"><a href="images8.html#p181equ01" id="p181equ01a">Click here to view code image</a></p>
+      
+      <p class="programlisting2"><br />                truncating   modulus   floor<br />7÷3         =   2 rem 1      2 rem 1   2 rem 1<br />(–7)÷3      =  –2 rem –1    -3 rem 2  –3 rem 2<br />7÷–(–3)     =  –2 rem 1     –2 rem 1  –3 rem –2<br />(–7)÷– (–3) =   2 rem –1     3 rem 2   2 rem –1
+      </p>
+      
+      <p class="indent">The relation <em>dividend</em> = <em>quotient</em> * <em>divisor</em> + <em>remainder</em> holds for all three possibilities. We define “modulus” division by requiring that
+         the remainder be nonnegative.<sup><a id="ch09fna1"></a><a href="footnotes.html#ch09fn1">1</a></sup> We define “floor” division by requiring that the quotient be the floor of the rational
+         result. For positive divisors, modulus and floor division are equivalent. A fourth
+         possibility, seldom used, rounds the quotient to the nearest integer.
+      </p>
+      
+      <p class="indent">One advantage of modulus and floor division is that most of the tricks simplify. For
+         example, division by 2<em><sup>n</sup></em> can be replaced by a <em>shift right signed</em> of <em>n</em> positions, and the remainder of dividing <em>x</em> by 2<em><sup>n</sup></em> is given by the logical <em>and</em> of <em>x</em> and 2<em><sup>n</sup></em> – 1. I suspect that modulus and floor division more often give the result you want.
+         For example, suppose you are writing a program to graph an integer-valued function,
+         and the values range from <em>imin</em> to <em>imax</em>. You want to set up the extremes of the ordinate to be the smallest multiples of
+         10 that include <em>imin</em> and <em>imax</em>. Then the extreme values are simply (<em>imin</em> ÷ 10) * 10 and ((<em>imax</em> + 9) ÷ 10) * 10 if <a id="page_182"></a>modulus or floor division is used. If conventional division is used, you must evaluate
+         something like:
+      </p>
+      
+      <p class="codelink"><a href="images8.html#p182equ01" id="p182equ01a">Click here to view code image</a></p>
+      
+      <p class="programlisting1">if (imin &gt;= 0)   gmin = (imin/10)*10;<br />else             gmin = ((imin - 9)/10)*10;<br />if (imax &gt;= 0)   gmax = ((imax + 9)/10)*10;<br />else             gmax = (imax/10)*10;
+      </p>
+      
+      <p class="indent">Besides the quotient being more useful with modulus or floor division than with truncating
+         division, we speculate that the nonnegative remainder is probably wanted more often
+         than a remainder that can be negative.
+      </p>
+      
+      <p class="indent">It is hard to choose between modulus and floor division, because they differ only
+         when the divisor is negative, which is unusual. Appealing to existing high-level languages
+         does not help, because they almost universally use truncating division for <code>x/y</code> when the operands are signed integers. A few give floating-point numbers, or rational
+         numbers, for the result. Looking at remainders, there is confusion. In Fortran 90,
+         the <code>MOD</code> function gives the remainder of truncating division and <code>MODULO</code> gives the remainder of floor division (which can be negative). Similarly, in Common
+         Lisp and ADA, REM is the remainder of truncating division, and MOD is the remainder
+         of floor division. In PL/I, <code>MOD</code> is always nonnegative (it is the remainder of modulus division). In Pascal, <code>A mod B</code> is defined only for <code>B</code> &gt; 0, and then it is the nonnegative value (the remainder of either modulus or floor
+         division).
+      </p>
+      
+      <p class="indent">Anyway, we cannot change the world even if we knew how we wanted to change it,<sup><a id="ch09fna2"></a><a href="footnotes.html#ch09fn2">2</a></sup> so in what follows we will use the usual definition (truncating) for <em>x</em> ÷ <em>y</em>.
+      </p>
+      
+      <p class="indent">A nice property of truncating division is that it satisfies</p>
+      
+      <p class="center">(–<em>n</em>) ÷ <em>d</em> = <em>n</em> ÷ (–<em>d</em>) = –(<em>n</em> ÷ <em>d</em>), for <em>d</em> ≠0.
+      </p>
+      
+      <p class="noindent">Care must be exercised when applying this to transform programs, because if <em>n</em> or <em>d</em> is the maximum negative number, –<em>n</em> or –<em>d</em> cannot be represented in 32 bits. The operation (–2<sup>31</sup>) ÷ (–1) is an overflow (the result cannot be expressed as a signed quantity in two’s-complement
+         notation), and on most machines the result is undefined or the operation is suppressed.
+      </p>
+      
+      <p class="indent">Signed integer (truncating) division is related to ordinary rational division by</p>
+      
+      <div class="image"><img alt="Image" src="graphics/09equ01.jpg" /></div>
+      
+      <p class="noindent">Unsigned integer division—that is, division in which both <em>n</em> and <em>d</em> are interpreted as unsigned integers—satisfies the upper portion of (1).
+      </p>
+      
+      <p class="indent"><a id="page_183"></a>In the discussion that follows, we make use of the following elementary properties
+         of arithmetic, which we don’t prove here. See [Knu1] and [GKP] for interesting discussions
+         of the floor and ceiling functions.
+      </p>
+      
+      <p class="indent">T<small>HEOREM</small> D1. <em>For x real, k an integer</em>,
+      </p>
+      
+      <div class="image"><img alt="Image" src="graphics/183equ01.jpg" /></div>
+      
+      <p class="indent">T<small>HEOREM</small> D2. <em>For n, d integers, d</em> &gt; 0,
+      </p>
+      
+      <div class="image"><img alt="Image" src="graphics/183equ02.jpg" /></div>
+      
+      <p class="indent"><em>If d</em> &lt; 0:
+      </p>
+      
+      <div class="image"><img alt="Image" src="graphics/183equ03.jpg" /></div>
+      
+      <p class="indent">T<small>HEOREM</small> D3. <em>For x real, d an integer</em> &gt; 0:
+      </p>
+      
+      <div class="image"><img alt="Image" src="graphics/183equ04.jpg" /></div>
+      
+      <p class="indent">C<small>OROLLARY</small>. <em>For a, b real, b</em> ≠ 0, <em>d an integer</em> &gt; 0,
+      </p>
+      
+      <div class="image"><img alt="Image" src="graphics/183equ05.jpg" /></div>
+      
+      <p class="indent">T<small>HEOREM</small> D4. <em>For n, d integers, d</em> ≠ 0, <em>and x real</em>,
+      </p>
+      
+      <div class="image"><img alt="Image" src="graphics/183equ06.jpg" /></div>
+      
+      <p class="indent">In the theorems below, rem(<em>n, d</em>) denotes the remainder of <em>n</em> divided by <em>d</em>. For negative <em>d</em>, it is defined by rem(<em>n</em>, –<em>d</em>) = rem(<em>n, d</em>), as in truncating and modulus division. We do not use rem(<em>n, d</em>) with <em>n</em> &lt; 0. Thus, for our use, the remainder is always nonnegative.
+      </p>
+      
+      <p class="indent"><a id="page_184"></a>T<small>HEOREM</small> D5. <em>For n</em> ≥ 0, <em>d</em> ≠0,
+      </p>
+      
+      <div class="image"><img alt="Image" src="graphics/184equ01.jpg" /></div>
+      
+      <p class="noindent">(<em>whichever value is greater than or equal to</em> 0 <em>and less than |d|</em>).
+      </p>
+      
+      <p class="indent">T<small>HEOREM</small> D6. <em>For n</em> ≥ 0, <em>d</em> ≠ 0,
+      </p>
+      
+      <p class="center">rem(2<em>n</em>, 2<em>d</em>) = 2rem(<em>n, d)</em>.
+      </p>
+      
+      <p class="indent">Theorems D5 and D6 are easily proved from the basic definition of remainder—that is,
+         that for some integer <em>q</em> it satisfies
+      </p>
+      
+      <p class="center"><em>n</em> = <em>qd</em> + rem(<em>n, d</em>) with 0 ≤ rem(<em>n, d</em>) &lt; |<em>d</em>|,
+      </p>
+      
+      <p class="noindent">provided <em>n</em> ≥ 0 and <em>d</em> ≠ 0 (<em>n</em> and <em>d</em> can be non-integers, but we will use these theorems only for integers).
+      </p>
+      
+      <h3><a id="ch09lev2"></a><strong>9–2 Multiword Division</strong></h3>
+      
+      <p class="noindent">As in the case of multiword multiplication, multiword division can be done by the
+         traditional grade-school method. The details, however, are surprisingly complicated.
+         <a href="ch09.html#ch09fig1">Figure 9–1</a> is Knuth’s Algorithm D [Knu2, 4.3.1], coded in C. The underlying form of division
+         it uses is <span class="middle"><img alt="Image" src="graphics/184fig01.jpg" /></span>. (Actually, the quotient of these underlying division operations is at most 17 bits
+         long.)
+      </p>
+      
+      <p class="codelink"><a id="page_185"></a><a href="images8.html#p09fig01" id="p09fig01a">Click here to view code image</a></p>
+      
+      <hr />
+      
+      <p class="programlisting"><a id="ch09fig1"></a>int divmnu(unsigned short q[], unsigned short r[],<br />
+              const unsigned short u[], const unsigned short v[],<br />
+              int m, int n) {<br />
+         <br />
+            const unsigned b = 65536;   // Number base (16 bits).<br />
+            unsigned short *un, *vn;    // Normalized form of u, v.<br />
+            unsigned qhat;              // Estimated quotient digit.<br />
+            unsigned rhat;              // A remainder.<br />
+            unsigned p;                 // Product of two digits.<br />
+            int s, i, j, t, k;<br />
+         <br />
+            if (m &lt; n || n &lt;= 0 || v[n-1] == 0)<br />
+               return 1;                // Return if invalid param.<br />
+         <br />
+            if (n == 1) {                      // Take care of<br />
+               k = 0;                          // the case of a<br />
+               for (j = m - 1; j &gt;= 0; j--) {  // single-digit<br />
+                  q[j] = (k*b + u[j])/v[0];    // divisor here.<br />
+                  k = (k*b + u[j]) - q[j]*v[0];<br />
+               }<br />
+               if (r != NULL) r[0] = k;<br />
+               return 0;<br />
+            }<br />
+         <br />
+            // Normalize by shifting v left just enough so that<br />
+            // its high-order bit is on, and shift u left the<br />
+            // same amount. We may have to append a high-order<br />
+            // digit on the dividend; we do that unconditionally.<br />
+         <br />
+            s = nlz(v[n-1]) - 16;       // 0 &lt;= s &lt;= 16.<br />
+            vn = (unsigned short *)alloca(2*n);<br />
+            for (i = n - 1; i &gt; 0; i--)<br />
+               vn[i] = (v[i] <span class="entity">&lt;&lt;</span> s) | (v[i-1] &gt;&gt; 16-s);<br />
+            vn[0] = v[0] <span class="entity">&lt;&lt;</span> s;<br />
+         <br />
+            un = (unsigned short *)alloca(2*(m + 1));<br />
+            un[m] = u[m-1] &gt;&gt; 16-s;<br />
+            for (i = m - 1; i &gt; 0; i--)<br />
+               un[i] = (u[i] <span class="entity">&lt;&lt;</span> s) | (u[i-1] &gt;&gt; 16-s);<br />
+            un[0] = u[0] <span class="entity">&lt;&lt;</span> s;<br />
+            for (j = m - n; j &gt;= 0; j--) {    // Main loop.<br />
+               // Compute estimate qhat of q[j].<br />
+               qhat = (un[j+n]*b + un[j+n-1])/vn[n-1];<br />
+               rhat = (un[j+n]*b + un[j+n-1]) - qhat*vn[n-1];<br />
+         again:<br />
+            <a id="page_186"></a>   if (qhat &gt;= b || qhat*vn[n-2] &gt; b*rhat + un[j+n-2])<br />
+               { qhat = qhat - 1;<br />
+                 rhat = rhat + vn[n-1];<br />
+                 if (rhat &lt; b) goto again;<br />
+               }<br />
+            <br />
+               // Multiply and subtract.<br />
+               k = 0;<br />
+               for (i = 0; i &lt; n; i++) {<br />
+                  p = qhat*vn[i];<br />
+                  t = un[i+j] - k - (p &amp; 0xFFFF);<br />
+                  un[i+j] = t;<br />
+                  k = (p &gt;&gt; 16) - (t &gt;&gt; 16);<br />
+               }<br />
+               t = un[j+n] - k;<br />
+               un[j+n] = t;<br />
+            <br />
+               q[j] = qhat;         // Store quotient digit.<br />
+               if (t &lt; 0) {         // If we subtracted too<br />
+                  q[j] = q[j] - 1;   // much, add back.<br />
+                  k = 0;<br />
+                  for (i = 0; i &lt; n; i++) {<br />
+                     t = un[i+j] + vn[i] + k;<br />
+                     un[i+j] = t;<br />
+                     k = t &gt;&gt; 16;<br />
+                  }<br />
+                  un[j+n] = un[j+n] + k;<br />
+                }<br />
+             } // End j.<br />
+             // If the caller wants the remainder, unnormalize<br />
+             // it and pass it back.<br />
+             if (r != NULL) {<br />
+                for (i = 0; i &lt; n; i++)<br />
+                   r[i] = (un[i] &gt;&gt; s) | (un[i + 1] <span class="entity">&lt;&lt;</span> 16-s);<br />
+             }<br />
+             return 0;<br />
+         }
+      </p>
+      
+      <hr />
+      
+      <p class="fig-caption">F<small>IGURE</small> 9–1. Multiword integer division, unsigned.
+      </p>
+      
+      <p class="indent">The algorithm processes its inputs and outputs a halfword at a time. Of course, we
+         would prefer to process a fullword at a time, but it seems that such an algorithm
+         would require an instruction that does <span class="middle"><img alt="Image" src="graphics/184fig02.jpg" /></span> division. We assume here that either the machine does not have that instruction or
+         it is hard to access from our high-level language. Although we generally assume the
+         machine has <span class="middle"><img alt="Image" src="graphics/184fig03.jpg" /></span> division, for this problem <span class="middle"><img alt="Image" src="graphics/184fig04.jpg" /></span> suffices.
+      </p>
+      
+      <p class="indent">Thus, for this implementation of Knuth’s algorithm, the base <code>b</code> is 65536. See [Knu2] for most of the explanation of this algorithm.
+      </p>
+      
+      <p class="indent">The dividend <code>u</code> and the divisor <code>v</code> are in “little-endian” order—that is, <code>u[0]</code> and <code>v[0]</code> are the least significant digits. (The code works correctly on both big- and little-endian
+         machines.) Parameters <code>m</code> and <code>n</code> are the number of halfwords in <code>u</code> and <code>v</code>, respectively (Knuth defines <code>m</code> to be the length of the quotient). The caller supplies space for the quotient <code>q</code> and, optionally, for the remainder <code>r</code>. The space for the quotient must be at least <code>m – n + 1</code> halfwords, and for the remainder, <code>n</code> halfwords. Alternatively, a value of <code>NULL</code> can be given for the address of the remainder to signify that the remainder is not
+         wanted.
+      </p>
+      
+      <p class="indent">The algorithm requires that the most significant digit of the divisor, <code>v[n – 1]</code>, be nonzero. This simplifies the normalization steps and helps to ensure that the
+         caller has allocated sufficient space for the quotient. The code checks that <code>v[n – 1]</code> is nonzero, and also the requirements that <code>n ≥ 1</code> and <code>m ≥ n</code>. If any of these conditions are violated, it returns with an error code (return value
+         1).
+      </p>
+      
+      <p class="indent">After these checks, the code performs the division for the simple case in which the
+         divisor is of length 1. This case is not singled out for speed; the rest of the algorithm
+         requires that the divisor be of length 2 or more.
+      </p>
+      
+      <p class="indent"><a id="page_187"></a>If the divisor is of length 2 or more, the algorithm normalizes the divisor by shifting
+         it left just enough so that its high-order bit is 1. The dividend is shifted left
+         the same amount, so the quotient is not changed by these shifts. As explained by Knuth,
+         these steps are necessary to make it easy to guess each quotient digit with good accuracy.
+         The <em>number of leading zeros</em> function, nlz(<strong><em>x</em></strong>), is used to determine the shift amount.
+      </p>
+      
+      <p class="indent">In the normalization steps, new space is allocated for the normalized dividend and
+         divisor. This is done because it is generally undesirable, from the caller’s point
+         of view, to alter these input arguments, and because it may be impossible to alter
+         them—they may be constants in read-only memory. Furthermore, the dividend may need
+         an additional high-order digit. C’s “alloca” function is ideal for allocating this
+         space. It is usually implemented very efficiently, requiring only two or three in-line
+         instructions to allocate the space and no instructions at all to free it. The space
+         is allocated on the program’s stack, in such a way that it is freed automatically
+         upon subroutine return.
+      </p>
+      
+      <p class="indent">In the main loop, the quotient digits are cranked out one per loop iteration, and
+         the dividend is reduced until it becomes the remainder. The estimate <code>qhat</code> of each quotient digit, after being refined by the steps in the loop labeled <code>again</code>, is always either exact or too high by 1.
+      </p>
+      
+      <p class="indent">The next steps multiply <code>qhat</code> by the divisor and subtract the product from the current remainder, as in the grade-school
+         method. If the remainder is negative, it is necessary to decrease the quotient digit
+         by 1 and either re-multiply and subtract or, more simply, adjust the remainder by
+         adding the divisor to it. This need be done at most once, because the quotient digit
+         was either exact or 1 too high.
+      </p>
+      
+      <p class="indent">Lastly, the remainder is given back to the caller if the address of where to put it
+         is non-null. The remainder must be shifted right by the normalization shift amount
+         <code>s</code>.
+      </p>
+      
+      <p class="indent">The “add back” steps are executed only rarely. To see this, observe that the first
+         calculation of each estimated quotient digit <code>qhat</code> is done by dividing the most significant two digits of the current remainder by the
+         most significant digit of the divisor. The steps in the “again” loop amount to refining
+         <code>qhat</code> to be the result of dividing the most significant <em>three</em> digits of the current remainder by the most significant <em>two</em> digits of the divisor (proof omitted; convince yourself of this by trying some examples
+         using <code>b</code> = 10). Note that the divisor is greater than or equal to <code>b</code>/2 (because of normalization), and the dividend is less than or equal to <code>b</code> times the divisor (because each remainder is less than the divisor).
+      </p>
+      
+      <p class="indent">How accurate is the quotient estimated by using only three dividend digits and two
+         divisor digits? Because normalization was done, it can be shown to be quite accurate.
+         To see this somewhat intuitively (not a formal proof), consider estimating <em>u</em> / <em>v</em> in this way for base ten arithmetic. It can be shown that the estimate is always
+         high (or exact). Thus, the worst case occurs if truncation of the divisor to two digits
+         decreases the divisor by as much as possible in the sense of relative error, and truncation
+         of the dividend to three digits decreases it by as little as possible (which is 0),
+         and if the dividend is as large as possible. This occurs for the <a id="page_188"></a>case 49900...0/5099...9, which we estimate by 499/50 = 9.98. The true result is approximately
+         499/51 ≈ 9.7843. The difference of 0.1957 reveals that the estimated quotient digit
+         and the true quotient digit, which are the floor functions of these ratios, will differ
+         by at most 1, and this will occur about 20% of the time (assuming the quotient digits
+         are uniformly distributed). This, in turn, means that the “add back” steps will be
+         executed about 20% of the time.
+      </p>
+      
+      <p class="indent">Carrying out this (non-rigorous) analysis for a general base <em>b</em> yields the result that the estimated and true quotients differ by at most 2 / <em>b</em>. For <em>b</em> = 65536, we again obtain the result that the difference between the estimated and
+         true quotient digits is at most 1, and this occurs with probability 2/65536 ≈ 0.00003.
+         Thus, the “add back” steps are executed for only about 0.003% of the quotient digits.
+      </p>
+      
+      <p class="indent">An example that requires the add back step is, in decimal, 4500/501. A similar example
+         for base 65536 is 0x7FFF8000 00000000/0x8000 00000001.
+      </p>
+      
+      <p class="indent">We will not attempt to estimate the running time of this entire program, but simply
+         note that for large <em>m</em> and <em>n</em>, the execution time is dominated by the multiply/subtract loop. On a good compiler
+         this will compile into about 16 basic RISC instructions, one of which is <em>multiply</em>. The “<code>for j</code>” loop is executed <em>m</em> – <em>n</em> + 1 times, and the multiply/subtract loop <em>n</em> times, giving an execution time for this part of the program of (15 + <em>mul</em>)<em>n</em>(<em>m</em> – <em>n</em> + 1) cycles, where <em>mul</em> is the time to multiply two 16-bit variables. The program also executes <em>m</em> – <em>n</em> + 1 <em>divide</em> instructions and one <em>number of leading zeros</em> instruction.
+      </p>
+      
+      <h4><strong>Signed Multiword Division</strong></h4>
+      
+      <p class="noindent">We do not give an algorithm specifically for signed multiword division, but merely
+         point out that the unsigned algorithm can be adapted for this purpose as follows:
+      </p>
+      
+      <p class="indenthangingN">1. Negate the dividend if it is negative, and similarly for the divisor.</p>
+      
+      <p class="indenthangingN">2. Convert the dividend and divisor to unsigned representation.</p>
+      
+      <p class="indenthangingN">3. Use the unsigned multiword division algorithm.</p>
+      
+      <p class="indenthangingN">4. Convert the quotient and remainder to signed representation.</p>
+      
+      <p class="indenthangingN">5. Negate the quotient if the dividend and divisor had opposite signs.</p>
+      
+      <p class="indenthangingN">6. Negate the remainder if the dividend was negative.</p>
+      
+      <p class="noindent">These steps sometimes require adding or deleting a most significant digit. For example,
+         assume for simplicity that the numbers are represented in base 256 (one byte per digit),
+         and that in the signed representation, the high-order bit of the sequence of digits
+         is the sign bit. This is much like ordinary two’s-complement representation. Then,
+         a divisor of 255, which has signed representation 0x00FF, must be shortened in step
+         2 to 0xFF. Similarly, if the quotient from step 3 begins with a 1-bit, it must be
+         provided with a leading 0-byte for correct representation as a signed quantity.
+      </p>
+      
+      <h3><a id="page_189"></a><a id="ch09lev3"></a><strong>9–3 Unsigned Short Division from Signed Division</strong></h3>
+      
+      <p class="noindent">By “short division” we mean the division of one single word by another (e.g., 32÷32
+         ⇒ 32). It is the form of division provided by the “/” operator, when the operands
+         are integers, in C and many other high-level languages. C has both signed and unsigned
+         short division, but some computers provide only signed division in their instruction
+         repertoire. How can you implement unsigned division on such a machine? There does
+         not seem to be any really slick way to do it, but we offer some possibilities here.
+      </p>
+      
+      <h4><strong>Using Signed Long Division</strong></h4>
+      
+      <p class="noindent">Even if the machine has signed long division (64÷32 ⇒ 32), unsigned short division
+         is not as simple as you might think. In the XLC compiler for the IBM RS/6000, it is
+         implemented as illustrated below for <span class="middle"><img alt="Image" src="graphics/189fig01.jpg" /></span>.
+      </p>
+      
+      <div class="image"><img alt="Image" src="graphics/189equ01.jpg" /></div>
+      
+      <p class="indent">The third line is really testing to see if <span class="middle"><img alt="Image" src="graphics/189fig02.jpg" /></span>. If <em>d</em> is algebraically less than or equal to 1 at this point, then because it is not equal
+         to 1 (from the second line), it must be algebraically less than or equal to 0. We
+         don’t care about the case <em>d</em> = 0, so for the cases of interest, if the test on the third line evaluates to <strong>true</strong>, the sign bit of <strong><em>d</em></strong> is on, that is, <span class="middle"><img alt="Image" src="graphics/189fig02.jpg" /></span>. Because from the first line it is known that <span class="middle"><img alt="Image" src="graphics/189fig04.jpg" /></span>, and because <strong><em>n</em></strong> cannot exceed <strong>2<sup>32</sup> – 1</strong>, <span class="middle"><img alt="Image" src="graphics/189fig03.jpg" /></span>.
+      </p>
+      
+      <p class="indent">The notation on the fourth line means to form the double-length integer consisting
+         of 32 0-bits followed by the 32-bit quantity <strong><em>n</em></strong>, and divide it by <strong><em>d</em></strong>. The test for <strong><em>d</em></strong> = <strong>1</strong> (second line) is necessary to ensure that this division does not overflow (it would
+         overflow if <span class="middle"><img alt="Image" src="graphics/189fig06.jpg" /></span>, and then the quotient would be undefined).
+      </p>
+      
+      <p class="indent">By commoning the comparisons on the second and third lines,<sup><a id="ch09fna3"></a><a href="footnotes.html#ch09fn3">3</a></sup> the above can be implemented in 11 instructions, three of which are branches. If
+         it is necessary that the <em>divide</em> be executed when <strong><em>d</em></strong> = <strong>0</strong>, to get the overflow interrupt, then the third line can be changed to “else if <strong><em>d</em></strong> &lt; <strong>0</strong> then <strong><em>q</em> ← 1</strong>,” giving a 12-instruction solution on the RS/6000.
+      </p>
+      
+      <p class="indent">It is a simple matter to alter the above code so that the probable usual cases <span class="middle"><img alt="Image" src="graphics/189fig05.jpg" /></span> do not go through so many tests (begin with if <strong><em>d</em> ≤ 1</strong> ...), but the code volume increases slightly.
+      </p>
+      
+      <h4><a id="page_190"></a><strong>Using Signed Short Division</strong></h4>
+      
+      <p class="noindent">This section is written for a 32-bit machine, but it applies to a 64-bit machine (that
+         is, getting unsigned 64÷64 ⇒ 64 division from the same form of signed division) by
+         changing all occurrences of 31 to 63. It can be used to get unsigned division in Java,
+         which lacks unsigned integers.
+      </p>
+      
+      <p class="indent">If signed long division is not available, but signed short division is, then <span class="middle"><img alt="Image" src="graphics/190fig01.jpg" /></span> can be implemented by somehow reducing the problem to the case <em>n, d</em> &lt; 2<sup>31</sup> and using the machine’s <em>divide</em> instruction. If <span class="middle"><img alt="Image" src="graphics/190fig03.jpg" /></span>, then <span class="middle"><img alt="Image" src="graphics/190fig01.jpg" /></span> can only be <strong>0</strong> or <strong>1</strong>, so this case is easily dispensed with. Then, we can reduce the dividend by using
+         the fact that the expression (<span class="middle"><img alt="Image" src="graphics/190fig02.jpg" /></span> approximates <span class="middle"><img alt="Image" src="graphics/190fig01.jpg" /></span> with an error of only 0 or 1. This leads to the following method:
+      </p>
+      
+      <div class="image"><img alt="Image" src="graphics/190equ01.jpg" /></div>
+      
+      <p class="indent">The test <strong><em>d</em></strong> &lt; <strong>0</strong> on line 1 is really testing to determine if <span class="middle"><img alt="Image" src="graphics/190fig03.jpg" /></span>. If <span class="middle"><img alt="Image" src="graphics/190fig03.jpg" /></span>, then the largest the quotient could be is (2<sup>32</sup> – 1) ÷ 2<sup>31</sup> = 1, so the first two lines compute the correct quotient.
+      </p>
+      
+      <p class="indent">Line 4 represents the code <em>shift right unsigned 1, divide, shift left 1</em>. Clearly, <span class="middle"><img alt="Image" src="graphics/190fig04.jpg" /></span>, and at this point <span class="middle"><img alt="Image" src="graphics/190fig05.jpg" /></span> as well, so these quantities can be used in the computer’s signed division instruction.
+         (If <strong><em>d</em></strong> = <strong>0</strong>, overflow will be signaled here.)
+      </p>
+      
+      <p class="indent">The estimate computed at line 4 is</p>
+      
+      <div class="image"><img alt="Image" src="graphics/190equ02.jpg" /></div>
+      
+      <p class="noindent">where we have used the corollary of Theorem D3. Line 5 computes the remainder corresponding
+         to the estimated quotient. It is
+      </p>
+      
+      <div class="image"><img alt="Image" src="graphics/190equ03.jpg" /></div>
+      
+      <p class="noindent">Thus, <em>0</em> ≤ <em>r</em> &lt; 2<em>d</em>. If <em>r</em> &lt; <em>d</em>, then <em>q</em> is the correct quotient. If <em>r</em> ≥ <em>d</em>, then adding 1 to <em>q</em> gives the correct quotient (the program must use an unsigned comparison here, because
+         of the possibility that <em>r</em> ≥ 2<sup>31</sup>).
+      </p>
+      
+      <p class="indent"><a id="page_191"></a>By moving the <em>load immediate</em> of <strong>0</strong> into <strong><em>q</em></strong> ahead of the comparison <span class="middle"><img alt="Image" src="graphics/191fig01.jpg" /></span>, and coding the assignment <strong><em>q</em> ← 1</strong> in line 2 as a branch to the assignment <strong><em>q</em> ← <em>q</em></strong> + <strong>1</strong> in line 6, this can be coded in 14 instructions on most machines, four of which are
+         branches. It is straightforward to augment the code to produce the remainder as well:
+         to line 1 append <strong><em>r</em> ← <em>n</em></strong>, to line 2 append <strong><em>r</em> ← <em>n</em> – <em>d</em></strong>, and to the “then” clause in line 6 append <strong><em>r</em> ← <em>r</em> – <em>d</em></strong>. (Or, at the cost of a <em>multiply</em>, simply append <strong><em>r</em> ← <em>n</em> – <em>qd</em></strong> to the end of the whole sequence.)
+      </p>
+      
+      <p class="indent">An alternative for lines 1 and 2 is</p>
+      
+      <div class="image"><img alt="Image" src="graphics/191equ01.jpg" /></div>
+      
+      <p class="noindent">which can be coded a little more compactly, for a total of 13 instructions, three
+         of which are branches. But it executes more instructions in what is probably the usual
+         case (small numbers with <em>n</em> &gt; <em>d</em>).
+      </p>
+      
+      <p class="indent">Using predicate expressions, the program can be written</p>
+      
+      <div class="image"><img alt="Image" src="graphics/191equ02.jpg" /></div>
+      
+      <p class="noindent">which saves two branches if there is a way to evaluate the predicates without branching.
+         On the basic RISC they can be evaluated in one instruction (<code>CMPGEU</code>); on MIPS they take two (<code>SLTU, XORI</code>). On most computers, they can be evaluated in four instructions each (three if equipped
+         with a full set of logic instructions), by using the expression for <span class="middle"><img alt="Image" src="graphics/191fig02.jpg" /></span> given in “Comparison Predicates” on page <a href="ch02.html#page_23">23</a>, and simplifying because on line 1 of the program above it is known that <strong><em>d</em></strong><sub>31</sub> = 1, and on line 5 it is known that <strong><em>d</em></strong><sub>31</sub> = 0. The expression simplifies to
+      </p>
+      
+      <div class="image"><img alt="Image" src="graphics/191equ03.jpg" /></div>
+      
+      <p class="indent">We can get branch-free code by forcing the dividend to be <strong>0</strong> when <span class="middle"><img alt="Image" src="graphics/190fig03.jpg" /></span>. Then, the divisor can be used in the machine’s signed <em>divide</em> instruction, because when it is misinterpreted as a negative number, the result is
+         set to 0, which is within 1 of being correct. We’ll still handle the case of a large
+         dividend by shifting it one position to the right before the division, and then shifting
+         the quotient one <a id="page_192"></a>position to the left after the division. This gives the following program (ten basic
+         RISC instructions):
+      </p>
+      
+      <div class="image"><img alt="Image" src="graphics/192equ01.jpg" /></div>
+      
+      <h3><a id="ch09lev4"></a><strong>9–4 Unsigned Long Division</strong></h3>
+      
+      <p class="noindent">By “long division” we mean the division of a doubleword by a single word. For a 32-bit
+         machine, this is <span class="middle"><img alt="Image" src="graphics/192fig02.jpg" /></span> division, with the result unspecified in the overflow cases, including division by
+         0.
+      </p>
+      
+      <p class="indent">Some 32-bit machines provide an instruction for unsigned long division. Its full capability,
+         however, gets little use, because only <span class="middle"><img alt="Image" src="graphics/192fig03.jpg" /></span> division is accessible with most high-level languages. Therefore, a computer designer
+         might elect to provide only <span class="middle"><img alt="Image" src="graphics/192fig04.jpg" /></span> division and would probably want an estimate of the execution time of a subroutine
+         that implements the missing function. Here we give two algorithms for providing this
+         missing function.
+      </p>
+      
+      <h4><strong>Hardware Shift-and-Subtract Algorithms</strong></h4>
+      
+      <p class="noindent">As a first attempt at doing long division, we consider doing what the hardware does.
+         There are two algorithms commonly used, called <em>restoring</em> and <em>nonrestoring</em> division [H&amp;P, sec. A-2; EL]. They are both basically “shift-and-subtract” algorithms.
+         In the restoring version, shown below, the restoring step consists of adding back
+         the divisor when the subtraction gives a negative result. Here <strong><em>x, y</em></strong>, and <strong><em>z</em></strong> are held in 32-bit registers. Initially, the double-length dividend is <strong><em>x</em></strong> || <strong><em>y</em></strong>, and the divisor is <strong><em>z</em></strong>. We need a single-bit register <strong><em>c</em></strong> to hold the overflow from the subtraction.
+      </p>
+      
+      <div class="image"><img alt="Image" src="graphics/192equ02.jpg" /></div>
+      
+      <p class="noindent">Upon completion, the quotient is in register <strong><em>y</em></strong> and the remainder is in register <strong><em>x</em></strong>.
+      </p>
+      
+      <p class="indent">The algorithm does <em>not</em> give a useful result in the overflow cases. For division of the doubleword quantity
+         <strong><em>x</em></strong> || <strong><em>y</em></strong> by 0, the quotient obtained is the one’s-complement of <strong><em>x</em></strong>, and the remainder obtained is <strong><em>y</em></strong>. In particular, <span class="middle"><img alt="Image" src="graphics/192fig06.jpg" /></span> rem 0. The other overflow cases are difficult to characterize.
+      </p>
+      
+      <p class="indent"><a id="page_193"></a>It might be useful if, for nonzero divisors, the algorithm would give the correct
+         quotient modulo 2<sup>32</sup>, and the correct remainder. The only way to do this seems to be to make the register
+         represented by <strong><em>c</em></strong> || <strong><em>x</em></strong> || <strong><em>y</em></strong> above 97 bits long, and do the loop 64 times. This is doing <span class="middle"><img alt="Image" src="graphics/193fig03.jpg" /></span> division. The subtractions would still be 33-bit operations, but the additional hardware
+         and execution time make this refinement probably not worthwhile.
+      </p>
+      
+      <p class="indent">This algorithm is difficult to implement exactly in software, because most machines
+         do not have the 33-bit register that we have represented by <strong><em>c</em></strong> || <strong><em>x</em></strong>. <a href="ch09.html#ch09fig2">Figure 9–2</a>, however, illustrates a shift-and-subtract algorithm that reflects the hardware algorithm
+         to some extent.
+      </p>
+      
+      <p class="indent">The variable <code>t</code> is used for a device to make the comparison come out right. We want to do a 33-bit
+         comparison after shifting <code>x || y</code>. If the first bit of <code>x</code> is 1 (before the shift), then certainly the 33-bit quantity is greater than the divisor
+         (32 bits). In this case, <code>x | t</code> is all 1’s, so the comparison gives the correct result (<strong>true)</strong>. On the other hand, if the first bit of <code>x</code> is 0, then a 32-bit comparison is sufficient.
+      </p>
+      
+      <p class="indent">The code of the algorithm in <a href="ch09.html#ch09fig2">Figure 9–2</a> executes in 321 to 385 basic RISC instructions, depending upon how often the comparison
+         is <strong>true</strong>. If the machine has <em>shift left double</em>, the shifting operation can be done in one instruction, rather than the four used
+         above. This would reduce the execution time to about 225 to 289 instructions (we are
+         allowing two instructions per iteration for loop control).
+      </p>
+      
+      <p class="indent">The algorithm in <a href="ch09.html#ch09fig2">Figure 9–2</a> can be used to do <span class="middle"><img alt="Image" src="graphics/192fig03.jpg" /></span> division by supplying <code>x</code> = 0. The only simplification that results is that the variable <code>t</code> can be omitted, as its value would always be 0.
+      </p>
+      
+      <p class="codelink"><a href="images8.html#p09fig02" id="p09fig02a">Click here to view code image</a></p>
+      
+      <hr />
+      
+      <p class="programlisting"><a id="ch09fig2"></a>unsigned divlu(unsigned x, unsigned y, unsigned z) {<br />   // Divides (x || y) by z.<br />   int i;<br />   unsigned t;<br /><br />   for (i = 1; i &lt;= 32; i++) {<br />      t = (int)x &gt;&gt; 31;          // All 1’s if x(31) = 1.<br />      x = (x <span class="entity">&lt;&lt;</span> 1) | (y &gt;&gt; 31);  // Shift x || y left<br />      y = y <span class="entity">&lt;&lt;</span> 1;                // one bit.<br />      if ((x | t) &gt;= z) {<br />         x = x - z;<br />         y = y + 1;<br />      }<br />   }<br />   return y;                     // Remainder is x.<br />}
+      </p>
+      
+      <hr />
+      
+      <p class="fig-caption">F<small>IGURE</small> 9–2. <em>Divide long unsigned</em>, shift-and-subtract algorithm.
+      </p>
+      
+      <p class="indent">On the next page is the nonrestoring hardware division algorithm (unsigned). The basic
+         idea is that, after subtracting the divisor <strong><em>z</em></strong> from the 33-bit quantity that <a id="page_194"></a>we denote by <strong><em>c</em></strong> || <strong><em>x</em></strong>, there is no need to add back <strong><em>z</em></strong> if the result was negative. Instead, it suffices to <em>add</em> on the next iteration rather than <em>subtract</em>. This is because adding <strong><em>z</em></strong> (to correct the error of having subtracted <strong><em>z</em></strong> on the previous iteration), shifting left, and subtracting <strong><em>z</em></strong> is equivalent to adding <strong><em>z</em></strong>(2(<em>u</em> + <em>z</em>) – <em>z</em> = 2 <em>u</em> + <em>z</em>). The advantage to hardware is that there is only one add or subtract operation on
+         each loop iteration, and the adder is likely to be the slowest circuit in the loop.<sup><a id="ch09fna4"></a><a href="footnotes.html#ch09fn4">4</a></sup> An adjustment to the remainder is needed at the end if it is negative. (No corresponding
+         adjustment of the quotient is required.)
+      </p>
+      
+      <p class="indent">The input dividend is the doubleword quantity <strong><em>x</em></strong> || <strong><em>y</em></strong>, and the divisor is <strong><em>z</em></strong>. Upon completion, the quotient is in register <strong><em>y</em></strong> and the remainder is in register <strong><em>x</em></strong>.
+      </p>
+      
+      <div class="image"><img alt="Image" src="graphics/194equ01.jpg" /></div>
+      
+      <p class="noindent">This does not seem to adapt very well to a 32-bit algorithm.</p>
+      
+      <p class="indent">The 801 minicomputer (an early experimental RISC machine built by IBM) had a <em>divide step</em> instruction that essentially performed the steps in the body of the loop above. It
+         used the machine’s carry status bit to hold <strong><em>c</em></strong> and the MQ (a 32-bit register) to hold <strong><em>y</em></strong>. A 33-bit adder/subtracter is needed for its implementation. The 801’s <em>divide step</em> instruction was a little more complicated than the loop above, because it performed
+         signed division and it had an overflow check. Using it, a division subroutine can
+         be written that consists essentially of 32 consecutive <em>divide step</em> instructions followed by some adjustments to the quotient and remainder to make the
+         remainder have the desired sign.
+      </p>
+      
+      <h4><a id="page_195"></a><strong>Using Short Division</strong></h4>
+      
+      <p class="noindent">An algorithm for <span class="middle"><img alt="Image" src="graphics/192fig02.jpg" /></span> division can be obtained from the multiword division algorithm of <a href="ch09.html#ch09fig1">Figure 9–1</a> on page <a href="ch09.html#page_185">185</a>, by specializing it to the case <em>m</em> = 4, <em>n</em> = 2. Several other changes are necessary. The parameters should be fullwords passed
+         by value, rather than arrays of halfwords. The overflow condition is different; it
+         occurs if the quotient cannot be contained in a single fullword. It turns out that
+         many simplifications to the routine are possible. It can be shown that the guess <code>qhat</code> is always exact; it is exact if the divisor consists of only two halfword digits.
+         This means that the “add back” steps can be omitted. If the “main loop” of <a href="ch09.html#ch09fig1">Figure 9–1</a> and the loop within it are unrolled, some minor simplifications become possible.
+      </p>
+      
+      <p class="indent">The result of these transformations is shown in <a href="ch09.html#ch09fig3">Figure 9–3</a>. The dividend is in <code>u1</code> and <code>u0,</code> with <code>u1</code> containing the most significant word. The divisor is parameter <code>v</code>. The quotient is the returned value of the function. If the caller provides a non-null
+         pointer in parameter <code>r</code>, the function will return the remainder in the word to which <code>r</code> points.
+      </p>
+      
+      <p class="indent">For an overflow indication, the program returns a remainder equal to the maximum unsigned
+         integer. This is an impossible remainder for a valid division operation, because the
+         remainder must be less than the divisor. In the overflow case, the program also returns
+         a quotient equal to the maximum unsigned integer, which may be an adequate indicator
+         in some cases in which the remainder is not wanted.
+      </p>
+      
+      <p class="indent">The strange expression <code>(-s &gt;&gt; 31)</code> in the assignment to <code>un32</code> is supplied to make the program work for the case <code>s = 0</code> on machines that have mod 32 shifts (e.g., Intel x86).
+      </p>
+      
+      <p class="indent">Experimentation with uniformly distributed random numbers suggests that the bodies
+         of the “again” loops are each executed about 0.38 times for each execution of the
+         function. This gives an execution time, if the remainder is not wanted, of about 52
+         instructions. Of these instructions, one is <em>number of leading zeros</em>, two are <em>divide</em>, and 6.5 are <em>multiply</em> (not counting the multiplications by <code>b</code>, which are <em>shift</em>’s). If the remainder is wanted, add six instructions (counting the store of <code>r</code>), one of which is <em>multiply</em>.
+      </p>
+      
+      <p class="indent">What about a signed version of <code>divlu</code>? It would probably be difficult to modify the code of <a href="ch09.html#ch09fig3">Figure 9–3</a>, step by step, to produce a signed variant. That algorithm, however, can be used
+         for signed division by taking the absolute value of the arguments, running <code>divlu</code>, and then complementing the result if the signs of the original arguments differ.
+         There is no problem with extreme values such as the maximum negative number, because
+         the absolute value of any signed integer has a correct representation as an unsigned
+         integer. This algorithm is shown in <a href="ch09.html#ch09fig4">Figure 9–4</a>.
+      </p>
+      
+      <p class="indent">It is hard to devise really good code to detect overflow in the signed case. The algorithm
+         shown in <a href="ch09.html#ch09fig4">Figure 9–4</a> makes a preliminary determination identical to that used by the unsigned long division
+         routine, which ensures that |<em>u</em> / <em>v</em>| &lt; 2<sup>32</sup>. After that, it is necessary only to ensure that the quotient has the proper sign
+         or is 0.
+      </p>
+      
+      <p class="codelink"><a id="page_196"></a><a href="images8.html#p09fig03" id="p09fig03a">Click here to view code image</a></p>
+      
+      <hr />
+      
+      <p class="programlisting"><a id="ch09fig3"></a>unsigned divlu(unsigned u1, unsigned u0, unsigned v,<br />               unsigned *r) {<br />   const unsigned b = 65536;        // Number base (16 bits).<br />   unsigned un1, un0,               // Norm. dividend LSD’s.<br />            vn1, vn0,               // Norm. divisor digits.<br />            q1, q0,                 // Quotient digits.<br />            un32, un21, un10,       // Dividend digit pairs.<br />            rhat;                   // A remainder.<br />   int s;                           // Shift amount for norm.<br /> <br />   if (u1 &gt;= v) {                   // If overflow, set rem.<br />      if (r != NULL)                // to an impossible value,<br />         *r = 0xFFFFFFFF;           // and return the largest<br />      return 0xFFFFFFFF;}           // possible quotient.<br /> <br />   s = nlz(v);                      // 0 &lt;= s &lt;= 31.<br />   v = v <span class="entity">&lt;&lt;</span> s;                      // Normalize divisor.<br />   vn1 = v &gt;&gt; 16;                   // Break divisor up into<br />   vn0 = v &amp; 0xFFFF;                // two 16-bit digits.<br /> <br />   un32 = (u1 <span class="entity">&lt;&lt;</span> s) | (u0 &gt;&gt; 32 - s) &amp; (-s &gt;&gt; 31);<br />   un10 = u0 <span class="entity">&lt;&lt;</span> s;                  // Shift dividend left.<br /> <br />   un1 = un10 &gt;&gt; 16;                // Break right half of<br />   un0 = un10 &amp; 0xFFFF;             // dividend into two digits.<br /> <br />   q1 = un32/vn1;                   // Compute the first<br />   rhat = un32 - q1*vn1;            // quotient digit, q1.<br /> again1:<br />   if (q1 &gt;= b || q1*vn0 &gt; b*rhat + un1) {<br />      q1 = q1 - 1;<br />      rhat = rhat + vn1;<br />      if (rhat &lt; b) goto again1;}<br /> <br />   un21 = un32*b + un1 - q1*v;         // Multiply and subtract.<br /> <br />   q0 = un21/vn1;                    // Compute the second<br />   rhat = un21 - q0*vn1;             // quotient digit, q0.<br /> again2:<br />   if (q0 &gt;= b || q0*vn0 &gt; b*rhat + un0) {<br />     q0 = q0 - 1;<br />     rhat = rhat + vn1;<br />     if (rhat &lt; b) goto again2;}<br /> <br />   if (r != NULL)                    // If remainder is wanted,<br />      *r = (un21*b + un0 - q0*v) &gt;&gt; s;     // return it.<br />   return q1*b + q0;<br /> }
+      </p>
+      
+      <hr />
+      
+      <p class="fig-caption">F<small>IGURE</small> 9–3. <em>Divide long unsigned</em>, using fullword division instruction.
+      </p>
+      
+      <p class="codelink"><a id="page_197"></a><a href="images8.html#p09fig04" id="p09fig04a">Click here to view code image</a></p>
+      
+      <hr />
+      
+      <p class="programlisting"><a id="ch09fig4"></a>int divls(int u1, unsigned u0, int v, int *r) {<br />  int q, uneg, vneg, diff, borrow;<br /><br />  uneg = u1 &gt;&gt; 31;        // -1 if u &lt; 0.<br />  if (uneg) {             // Compute the absolute<br />     u0 = -u0;            // value of the dividend u.<br />     borrow = (u0 != 0);<br />     u1 = -u1 - borrow;}<br /><br />  vneg = v &gt;&gt; 31;         // -1 if v &lt; 0.<br />  v = (v ^ vneg) - vneg;  // Absolute value of v.<br /><br />  if ((unsigned)u1 &gt;= (unsigned)v) goto overflow;<br /><br />  q = divlu(u1, u0, v, (unsigned *)r);<br /><br />  diff = uneg ^ vneg;     // Negate q if signs of<br />  q = (q ^ diff) - diff;  // u and v differed.<br />  if (uneg &amp;&amp; r != NULL)<br />     *r = -*r;<br /><br />  if ((diff ^ q) &lt; 0 &amp;&amp; q != 0) {  // If overflow,<br />overflow:                 // set remainder<br />     if (r != NULL)       // to an impossible value,<br />       *r = 0x80000000;   // and return the largest<br />     q = 0x80000000;}     // possible neg. quotient.<br />  return q;<br />}
+      </p>
+      
+      <hr />
+      
+      <p class="fig-caption">F<small>IGURE</small> 9–4. <em>Divide long signed</em>, using <em>divide long unsigned</em>.
+      </p>
+      
+      <h3><a id="ch09lev5"></a><strong>9–5 Doubleword Division from Long Division</strong></h3>
+      
+      <p class="noindent">This section considers how to do 64 ÷ 64 ⇒ 64 division from 64 ÷ 32 ⇒ 32 division,
+         for both the unsigned and signed cases. The algorithms that follow are most suited
+         to a machine that has an instruction for long division (64 ÷ 32), at least for the
+         unsigned case. It is also helpful if the machine has the <em>number of leading zeros</em> instruction. The machine may have either 32-bit or 64-bit registers, but we will
+         assume that if it has 32-bit registers, then the compiler implements basic operations
+         such as adds and shifts on 64-bit operands (the “long long” data type in C).
+      </p>
+      
+      <p class="indent">These functions are known as “_ _udivdi3” and “_ _divdi3” in the GNU C world, and
+         similar names are used here.
+      </p>
+      
+      <h4><strong>Unsigned Doubleword Division</strong></h4>
+      
+      <p class="noindent">A procedure for this operation is shown in <a href="ch09.html#ch09fig5">Figure 9–5</a>.
+      </p>
+      
+      <p class="codelink"><a id="page_198"></a><a href="images8.html#p09fig05" id="p09fig05a">Click here to view code image</a></p>
+      
+      <hr />
+      
+      <p class="programlisting"><a id="ch09fig5"></a>unsigned long long udivdi3(unsigned long long u,<br />
+                                    unsigned long long v) {<br />
+         <br />
+            unsigned long long u0, u1, v1, q0, q1, k, n;<br />
+         <br />
+            if (v &gt;&gt; 32 == 0) {        // If v &lt; 2**32:<br />
+               if (u &gt;&gt; 32 &lt; v)        // If u/v cannot overflow,<br />
+                  return DIVU(u, v)    // just do one division.<br />
+                     &amp; 0xFFFFFFFF;<br />
+               else {                  // If u/v would overflow:<br />
+                  u1 = u &gt;&gt; 32;        // Break u up into two<br />
+                  u0 = u &amp; 0xFFFFFFFF; // halves.<br />
+                  q1 = DIVU(u1, v)     // First quotient digit.<br />
+                     &amp; 0xFFFFFFFF;<br />
+                  k = u1 - q1*v;       // First remainder, &lt; v.<br />
+                  q0 = DIVU((k <span class="entity">&lt;&lt;</span> 32) + u0, v)  // 2nd quot. digit.<br />
+                     &amp; 0xFFFFFFFF;<br />
+                  return (q1 <span class="entity">&lt;&lt;</span> 32) + q0;<br />
+               }<br />
+            }<br />
+                                       // Here v &gt;= 2**32.<br />
+            n = nlz64(v);              // 0 &lt;= n &lt;= 31.<br />
+            v1 = (v <span class="entity">&lt;&lt;</span> n) &gt;&gt; 32;       // Normalize the divisor<br />
+                                       // so its MSB is 1.<br />
+            u1 = u &gt;&gt; 1;               // To ensure no overflow.<br />
+            q1 = DIVU(u1, v1)          // Get quotient from<br />
+               &amp; 0xFFFFFFFF;           // divide unsigned insn.<br />
+            q0 = (q1 <span class="entity">&lt;&lt;</span> n) &gt;&gt; 31;      // Undo normalization and<br />
+                                       // division of u by 2.<br />
+            if (q0 != 0)               // Make q0 correct or<br />
+               q0 = q0 - 1;            // too small by 1.<br />
+            if ((u - q0*v) &gt;= v)<br />
+               q0 = q0 + 1;            // Now q0 is correct.<br />
+            return q0;<br />
+         }
+      </p>
+      
+      <hr />
+      
+      <p class="fig-caption">F<small>IGURE</small> 9–5. Unsigned doubleword division from long division.
+      </p>
+      
+      <p class="indent">This code distinguishes three cases: (1) the case in which a single execution of the
+         machine’s unsigned long division instruction (DIVU) can be used, (2) the case in which
+         (1) does not apply, but the divisor is a 32-bit quantity, and (3) the cases in which
+         the divisor cannot be represented in 32 bits. It is not too hard to see that the above
+         code is correct for cases (1) and (2). For case (2), think of the grade-school method
+         of doing long division.
+      </p>
+      
+      <p class="indent">Case (3), though, deserves proof, because it is very close to not working in some
+         cases. Notice that in this case only a single execution of DIVU is needed, but the
+         <em>number of leading zeros</em> and <em>multiply</em> operations are needed.
+      </p>
+      
+      <p class="indent"><a id="page_199"></a>For the proof, we need these basics (for integer variables):
+      </p>
+      
+      <div class="image"><img alt="Image" src="graphics/09equ02.jpg" /></div>
+      
+      <div class="image"><img alt="Image" src="graphics/09equ03.jpg" /></div>
+      
+      <p class="indent">From the first line in the section of the procedure of interest (we assume that <em>v</em> ≠ 0),
+      </p>
+      
+      <p class="center">0 ≤ <em>n</em> ≤ 31.
+      </p>
+      
+      <p class="indent">In computing <em>v</em><sub>1</sub>, the left shift clearly cannot overflow. Therefore,
+      </p>
+      
+      <div class="image"><img alt="Image" src="graphics/199equ01.jpg" /></div>
+      
+      <p class="indent">In computing <em>q</em><sub>1</sub>, <em>u</em><sub>1</sub> and <em>v</em><sub>1</sub> are in range for the DIVU instruction and it cannot overflow. Hence,
+      </p>
+      
+      <p class="center"><em>q</em><sub>1</sub> = <span class="entity">⌊</span><em>u</em><sub>1</sub> / <em>v</em><sub>1</sub><span class="entity">⌋</span>.
+      </p>
+      
+      <p class="indent">In the first computation of <em>q</em><sub>0</sub>, the left shift cannot overflow because <em>q</em><sub>1</sub> &lt; 2<sup>32</sup> (because the maximum value of <em>u</em><sub>1</sub> is 2<sup>63</sup> – 1 and the minimum value of <em>v</em><sub>1</sub> is 2<sup>31</sup>). Therefore,
+      </p>
+      
+      <p class="center"><em>q</em><sub>0</sub> = <span class="entity">⌊</span><em>q</em><sub>1</sub>/2<sup>31 – n</sup><span class="entity">⌋</span>.
+      </p>
+      
+      <p class="indent">Now, for the main part of the proof, we want to show that</p>
+      
+      <p class="center"><span class="entity">⌊</span><em>u</em> / <em>v</em> <span class="entity">⌋</span> ≤ <em>q</em><sub>0</sub> ≤ <span class="entity">⌊</span><em>u</em> / <em>v</em><span class="entity">⌋</span> + 1,
+      </p>
+      
+      <p class="noindent">which is to say, the first computation of <em>q</em><sub>0</sub> is the desired result or is that plus 1.
+      </p>
+      
+      <p class="indent">Using Equation (2) twice gives</p>
+      
+      <div class="image"><img alt="Image" src="graphics/199equ05.jpg" /></div>
+      
+      <p class="indent">Using Equation (3) gives</p>
+      
+      <div class="image"><img alt="Image" src="graphics/199equ06.jpg" /></div>
+      
+      <p class="noindent"><a id="page_200"></a>Using algebra to get this in the form <em>u</em> / <em>v</em> + something:
+      </p>
+      
+      <div class="image"><img alt="Image" src="graphics/200equ01.jpg" /></div>
+      
+      <p class="noindent">This is of the form</p>
+      
+      <div class="image"><img alt="Image" src="graphics/200equ02.jpg" /></div>
+      
+      <p class="noindent">and we will now show that δ &lt; 1.</p>
+      
+      <p class="indent">δ is largest when rem(<em>v</em>, 2<sup>32 – <em>n</em></sup>) is as large as possible and, given that, when <em>v</em> is as small as possible. The maximum value of rem(<em>v</em>, 2<sup>32 – <em>n</em></sup>) is 2<sup>32 – <em>n</em></sup> – 1. Because of the way <em>n</em> is defined in terms of <em>v, v</em> ≥ 2<sup>63 – <em>n</em></sup>. Thus, the smallest value of <em>v</em> having that remainder is
+      </p>
+      
+      <p class="center">2<sup>63 – <em>n</em></sup> + 2<sup>32 – n</sup> – 1.
+      </p>
+      
+      <p class="noindent">Therefore,</p>
+      
+      <div class="image"><img alt="Image" src="graphics/200equ03.jpg" /></div>
+      
+      <p class="noindent">By inspection, for <em>n</em> in its range of 0 to 31,
+      </p>
+      
+      <div class="image"><img alt="Image" src="graphics/200equ04.jpg" /></div>
+      
+      <p class="noindent">Since <em>u</em> is at most 2<sup>64</sup> – 1, δ &lt; 1. Because <span class="middle"><img alt="Image" src="graphics/200fig01.jpg" /></span> and δ &lt; 1 (and obviously δ ≥ 0),
+      </p>
+      
+      <div class="image"><img alt="Image" src="graphics/200equ05.jpg" /></div>
+      
+      <p class="indent">To correct this result by subtracting 1 when necessary, we would like to code</p>
+      
+      <p class="codelink"><a href="images8.html#p200pro01" id="p200pro01a">Click here to view code image</a></p>
+      
+      <p class="programlisting1">if (u &lt; q0*v) q0 = q0 - 1;</p>
+      
+      <p class="noindent">(i.e., if the remainder <em>u</em> – <em>q</em><sub>0</sub><em>v</em> is negative, subtract 1 from <em>q</em><sub>0</sub>). However, this doesn’t quite work, because <em>q</em><sub>0</sub> <em>v</em> can overflow (e.g., for <em>u</em> = 2<sup>64</sup> – 1 and <em>v</em> = 2<sup>32</sup> + 3). Instead, we subtract 1 from <em>q</em><sub>0</sub>, so that it is either correct or too <em>small</em> by 1. Then <em>q</em><sub>0</sub> <em>v</em> will not overflow. We must avoid subtracting 1 if <em>q</em><sub>0</sub> = 0 (if <em>q</em><sub>0</sub> = 0, it is already the correct quotient).
+      </p>
+      
+      <p class="indent"><a id="page_201"></a>Then the final correction is:
+      </p>
+      
+      <p class="codelink"><a href="images8.html#p201equ01" id="p201equ01a">Click here to view code image</a></p>
+      
+      <p class="programlisting1">if ((u - q0*v) &gt;= v) q0 = q0 - 1;</p>
+      
+      <p class="noindent">To see that this is a valid computation, we already noted that <em>q</em><sub>0</sub><em>v</em> does not overflow. It is easy to show that
+      </p>
+      
+      <p class="center">0 ≤ <em>u</em> – <em>q</em><sub>0</sub><em>v</em> &lt; 2<em>v</em>.
+      </p>
+      
+      <p class="noindent">If <em>v</em> is very large (≥ 2<sup>63</sup>), can the subtraction overflow by trying to produce a result greater than <em>v</em>? No, because <em>u</em> &lt; 2<sup>64</sup> and <em>q</em><sub>0</sub><em>v</em> ≥ 0.
+      </p>
+      
+      <p class="indent">Incidentally, there are alternatives to the lines</p>
+      
+      <p class="codelink"><a href="images8.html#p201equ02" id="p201equ02a">Click here to view code image</a></p>
+      
+      <p class="programlisting1">if (q0 != 0)     // Make q0 correct or<br />   q0 = q0 - 1   // too small by 1.
+      </p>
+      
+      <p class="noindent">that may be preferable on some machines. One is to replace them with</p>
+      
+      <p class="codelink"><a href="images8.html#p201equ04" id="p201equ04a">Click here to view code image</a></p>
+      
+      <p class="programlisting1">if (q0 == 0) return 0;</p>
+      
+      <p class="noindent">Another is to place at the beginning of this section of the procedure, or at the beginning
+         of the whole procedure, the line
+      </p>
+      
+      <p class="codelink"><a href="images8.html#p201equ03" id="p201equ03a">Click here to view code image</a></p>
+      
+      <p class="programlisting1">if (u &lt; v) return 0; // Avoid a problem later.</p>
+      
+      <p class="indent">These alternatives are preferable if branches are not costly. The code shown in <a href="ch09.html#ch09fig5">Figure 9–5</a> works well if the machine’s comparison instructions produce a 0/1 integer result
+         in a general register. Then, the compiler can change it to, in effect,
+      </p>
+      
+      <p class="codelink"><a href="images8.html#p201equ05" id="p201equ05a">Click here to view code image</a></p>
+      
+      <p class="programlisting1">q0 = q0 - (q0 != 0);</p>
+      
+      <p class="noindent">(or you can code it that way if your compiler doesn’t do this optimization). This
+         is just a <em>compare</em> and <em>subtract</em> on such machines.
+      </p>
+      
+      <h4><strong>Signed Doubleword Division</strong></h4>
+      
+      <p class="noindent">In the signed case, there seems to be no better way to do doubleword division than
+         to divide the absolute values of the operands, using function <code>udivdi3</code>, and then negate the sign of the quotient if the operands have different signs. If
+         the machine has a signed long division instruction, which we designate here as DIVS,
+         then it may be advantageous to single out the cases in which DIVS can be used rather
+         than invoking <code>udivdi3</code>. This presumes that these cases are common. Such a function is shown in <a href="ch09.html#ch09fig6">Figure 9–6</a>.
+      </p>
+      
+      <p class="indent">The <code>“#define</code>” in the code in <a href="ch09.html#ch09fig6">Figure 9–6</a> uses the GCC facility of enclosing a compound statement in parentheses to construct
+         an expression, a facility that most C compilers do not have. Some other compilers
+         may have <code>llabs(x)</code> as a built-in function.
+      </p>
+      
+      <p class="codelink"><a id="page_202"></a><a href="images8.html#p09fig06" id="p09fig06a">Click here to view code image</a></p>
+      
+      <hr />
+      
+      <p class="programlisting"><a id="ch09fig6"></a>#define llabs(x) \<br />({unsigned long long t = (x) &gt;&gt; 63; ((x) ^ t) - t;})<br /><br />long long divdi3(long long u, long long v) {<br /><br />   unsigned long long au, av;<br />   long long q, t;<br /><br />   au = llabs(u);<br />   av = llabs(v);<br />   if (av &gt;&gt; 31 == 0) {         // If |v| &lt; 2**31 and<br />      if (au &lt; av <span class="entity">&lt;&lt;</span> 31) {      // |u|/|v| cannot<br />         q = DIVS(u, v);        // overflow, use DIVS.<br />         return (q <span class="entity">&lt;&lt;</span> 32) &gt;&gt; 32;<br />      }<br />   }<br />   q = au/av;                   // Invoke udivdi3.<br />   t = (u ^ v) &gt;&gt; 63;           // If u, v have different<br />   return (q ^ t) - t;          // signs, negate q.<br />}
+      </p>
+      
+      <hr />
+      
+      <p class="fig-caption">F<small>IGURE</small> 9–6. Signed doubleword division from unsigned doubleword division.
+      </p>
+      
+      <p class="indent">The test that <code>v</code> is in range is not precise; it misses the case in which <strong><em>v</em></strong> = –2<sup>31</sup>. If it is important to use the DIVS instruction in that case, the test
+      </p>
+      
+      <p class="codelink"><a href="images8.html#p202equ01" id="p202equ01a">Click here to view code image</a></p>
+      
+      <p class="programlisting1">if ((v <span class="entity">&lt;&lt;</span> 32) &gt;&gt; 32 == v) { // If v is in range and
+      </p>
+      
+      <p class="noindent">can be used in place of the third executable line in <a href="ch09.html#ch09fig6">Figure 9–6</a> (at a cost of one instruction). Similarly, the test that <strong>|<em>u</em>|</strong> / <strong>|<em>v</em>|</strong> cannot overflow is simplified and a few “corner cases” will be missed; the code amounts
+         to using δ = 0 in the signed division overflow test scheme shown in “Division” on
+         page <a href="ch02.html#page_34">34</a>.
+      </p>
+      
+      <h4><strong>Exercises</strong></h4>
+      
+      <p class="question"><a href="ch19_answer.html#ch09ans1" id="ch09ansa1"><strong>1</strong>.</a> Show that for real <em>x</em>, <span class="entity">⌊</span><em>x</em> <span class="entity">⌋</span> = – <span class="entity">⌈</span>– <em>x</em> <span class="entity">⌉</span>.
+      </p>
+      
+      <p class="question"><a href="ch19_answer.html#ch09ans2" id="ch09ansa2"><strong>2</strong>.</a> Find branch-free code for computing the quotient and remainder of modulus division
+         on a basic RISC that has division and remainder instructions for truncating division.
+      </p>
+      
+      <p class="question"><a href="ch19_answer.html#ch09ans3" id="ch09ansa3"><strong>3</strong>.</a> Similarly, find branch-free code for computing the quotient and remainder of floor
+         division on a basic RISC that has division and remainder instructions for truncating
+         division.
+      </p>
+      
+      <p class="question"><a href="ch19_answer.html#ch09ans4" id="ch09ansa4"><strong>4</strong>.</a> How would you compute <strong><span class="entity">⌈</span><em>n</em></strong> / <strong><em>d</em> <span class="entity">⌉</span></strong> for unsigned integers <strong><em>n</em></strong> and <strong><em>d</em></strong>, 0 ≤ <em>n</em> ≤ 2<sup>32</sup> – 1 and 1 ≤ <em>d</em> ≤ 2<sup>32</sup> – 1? Assume your machine has an unsigned <em>divide</em> instruction that computes <strong><span class="entity">⌊</span><em>n</em></strong> / <strong><em>d</em> <span class="entity">⌋</span></strong>.
+      </p>
+      
+      <p class="question"><a id="page_203"></a><a href="ch19_answer.html#ch09ans5" id="ch09ansa5"><strong>5</strong>.</a> Theorem D3 states that for <em>x</em> real and <em>d</em> an integer, <span class="entity">⌊</span><span class="entity">⌊</span><em>x</em><span class="entity">⌋</span> / <em>d</em><span class="entity">⌋</span> = <span class="entity">⌊</span><em>x</em> / <em>d</em><span class="entity">⌋</span>. Show that, more generally, if a function <em>f</em>(<em>x</em>) is (a) continuous, (b) monotonically increasing, and (c) has the property that if
+         <em>f</em>(<em>x</em>) is an integer then <em>x</em> is an integer, then <span class="entity">⌊</span><em>f</em>(<span class="entity">⌊</span><em>x</em><span class="entity">⌋</span>)<span class="entity">⌋</span> = <span class="entity">⌊</span><em>f</em>(<em>x</em>)<span class="entity">⌋</span> [GKP].<a id="page_204"></a></p>
+      
+   </body>
+   
+</html>

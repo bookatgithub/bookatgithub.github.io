@@ -1,0 +1,433 @@
+<html xmlns="http://www.w3.org/1999/xhtml">
+   
+   <head>
+      <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+      
+      <title>Chapter 14. Cyclic Redundancy Check</title>
+      
+      <link href="9780133085013.css" rel="stylesheet" type="text/css" />
+      
+      <link href="page-template.xpgt" rel="stylesheet" type="application/vnd.adobe-page-template+xml" />
+      
+      <meta content="urn:uuid:767ce45a-85bb-4273-91f5-801bab42906b" name="Adept.expected.resource" />
+      
+   </head>
+   
+   <body>
+      
+      <h2><a id="page_319"></a><a id="ch14"></a>Chapter 14. Cyclic Redundancy Check
+      </h2>
+      
+      <h3><a id="ch14lev1"></a><strong>14–1 Introduction</strong></h3>
+      
+      <p class="noindent">The cyclic redundancy check, or CRC, is a technique for detecting errors in digital
+         data, but not for making corrections when errors are detected. It is used primarily
+         in data transmission. In the CRC method, a certain number of check bits, often called
+         a checksum, or a hash code, are appended to the message being transmitted. The receiver
+         can determine whether or not the check bits agree with the data to ascertain with
+         a certain degree of probability that an error occurred in transmission. If an error
+         occurred, the receiver sends a “negative acknowledgment” (NAK) back to the sender,
+         requesting that the message be retransmitted.
+      </p>
+      
+      <p class="indent">The technique is also sometimes applied to data storage devices, such as a disk drive.
+         In this situation each block on the disk would have check bits, and the hardware might
+         automatically initiate a reread of the block when an error is detected, or it might
+         report the error to software.
+      </p>
+      
+      <p class="indent">The material that follows speaks in terms of a “sender” and a “receiver” of a “message,”
+         but it should be understood that it applies to storage writing and reading as well.
+      </p>
+      
+      <p class="indent"><a href="ch14.html#ch14lev2">Section 14–2</a> describes the theory behind the CRC methodology. <a href="ch14.html#ch14lev3">Section 14–3</a> shows how the theory is put into practice in hardware, and gives a software implementation
+         of a popular method known as CRC-32.
+      </p>
+      
+      <h4><strong>Background</strong></h4>
+      
+      <p class="noindent">There are several techniques for generating check bits that can be added to a message.
+         Perhaps the simplest is to append a single bit, called the “parity bit,” which makes
+         the total number of 1-bits in the <em>code vector</em> (message with parity bit appended) even (or odd). If a single bit gets altered in
+         transmission, this will change the parity from even to odd (or the reverse). The sender
+         generates the parity bit by simply summing the message bits modulo 2—that is, by <em>exclusive or</em>’ing them together. It then appends the parity bit (or its complement) to the message.
+         The receiver can check the message by summing all the message bits modulo 2 and checking
+         that the sum agrees with the parity bit. Equivalently, the receiver can sum all the
+         bits (message and parity) and check that the result is 0 (if even parity is being
+         used).
+      </p>
+      
+      <p class="indent">This simple parity technique is often said to detect 1-bit errors. Actually, it detects
+         errors in any odd number of bits (including the parity bit), but it is a small comfort
+         to know you are detecting 3-bit errors if you are missing 2-bit errors.
+      </p>
+      
+      <p class="indent">For bit serial sending and receiving, the hardware required to generate and check
+         a single parity bit is very simple. It consists of a single <em>exclusive or</em> gate <a id="page_320"></a>together with some control circuitry. For bit parallel transmission, an <em>exclusive or</em> tree may be used, as illustrated in <a href="ch14.html#ch14fig1">Figure 14–1</a>. Efficient ways to compute the parity bit in software are given in <a href="ch05.html#ch05lev2">Section 5–2</a> on page <a href="ch05.html#page_96">96</a>.
+      </p>
+      
+      <div class="image"><a id="ch14fig1"></a><img alt="Image" src="graphics/14fig01.jpg" /></div>
+      
+      <p class="fig-caption">F<small>IGURE</small> 14–1. <em>Exclusive or</em> tree.
+      </p>
+      
+      <p class="indent">Other techniques for computing a checksum are to form the <em>exclusive or</em> of all the bytes in the message, or to compute a sum with end-around carry of all
+         the bytes. In the latter method, the carry from each 8-bit sum is added into the least
+         significant bit of the accumulator. It is believed that this is more likely to detect
+         errors than the simple <em>exclusive or</em>, or the sum of the bytes with carry discarded.
+      </p>
+      
+      <p class="indent">A technique that is believed to be quite good in terms of error detection, and which
+         is easy to implement in hardware, is the cyclic redundancy check. This is another
+         way to compute a checksum, usually eight, 16, or 32 bits in length, that is appended
+         to the message. We will briefly review the theory, show how the theory is implemented
+         in hardware, and then give software for a commonly used 32-bit CRC checksum.
+      </p>
+      
+      <p class="indent">We should mention that there are much more sophisticated ways to compute a checksum,
+         or hash code, for data. Examples are the hash functions known as MD5 and SHA-1, whose
+         hash codes are 128 and 160 bits in length, respectively. These methods are used mainly
+         in cryptographic applications and are substantially more difficult to implement, in
+         hardware and software, than the CRC methodology described here. However, SHA-1 is
+         used in certain revision control systems (Git and others) as simply a check on data
+         integrity.
+      </p>
+      
+      <h3><a id="ch14lev2"></a><strong>14–2 Theory</strong></h3>
+      
+      <p class="noindent">The CRC is based on polynomial arithmetic, in particular, on computing the remainder
+         when dividing one polynomial in GF(2) (Galois field with two elements) by another.
+         It is a little like treating the message as a very large binary number, and computing
+         the remainder when dividing it by a fairly large prime such as 2<sup>32</sup> – 5. Intuitively, one would expect this to give a reliable checksum.
+      </p>
+      
+      <p class="indent"><a id="page_321"></a>A polynomial in GF(2) is a polynomial in a single variable <em>x</em> whose coefficients are 0 or 1. Addition and subtraction are done modulo 2—that is,
+         they are both the same as the <em>exclusive or</em> operation. For example, the sum of the polynomials
+      </p>
+      
+      <div class="image"><img alt="Image" src="graphics/321equ01.jpg" /></div>
+      
+      <p class="noindent">is <em>x</em><sup>4</sup> + <em>x</em><sup>2</sup> + 1, as is their difference. These polynomials are not usually written with minus
+         signs, but they could be, because a coefficient of –1 is equivalent to a coefficient
+         of 1.
+      </p>
+      
+      <p class="indent">Multiplication of such polynomials is straightforward. The product of one coefficient
+         by another is the same as their combination by the logical <em>and</em> operator, and the partial products are summed using <em>exclusive or</em>. Multiplication is not needed to compute the CRC checksum.
+      </p>
+      
+      <p class="indent">Division of polynomials over GF(2) can be done in much the same way as long division
+         of polynomials over the integers. Here is an example.
+      </p>
+      
+      <div class="image"><img alt="Image" src="graphics/321equ02.jpg" /></div>
+      
+      <p class="noindent">The reader may verify that the quotient <em>x</em><sup>4</sup> + <em>x</em><sup>3</sup> + 1 multiplied by the divisor <em>x</em><sup>3</sup> + <em>x</em> + 1, plus the remainder <em>x</em><sup>2</sup> + 1, equals the dividend.
+      </p>
+      
+      <p class="indent">The CRC method treats the message as a polynomial in GF(2). For example, the message
+         11001001, where the order of transmission is from left to right (110...), is treated
+         as a representation of the polynomial <em>x</em><sup>7</sup> + <em>x</em><sup>6</sup> + <em>x</em><sup>3</sup> + 1. The sender and receiver agree on a certain fixed polynomial called the <em>generator</em> polynomial. For example, for a 16-bit CRC the CCITT (Le Comité Consultatif International
+         Télégraphique et Téléphonique)<sup><a id="ch14fna1"></a><a href="footnotes.html#ch14fn1">1</a></sup> has chosen the polynomial <em>x</em><sup>16</sup> + <em>x</em><sup>12</sup> + <em>x</em><sup>5</sup> + 1, which is now widely used for a 16-bit CRC checksum. To compute an <em>r</em>-bit CRC checksum, the generator polynomial must be of degree <em>r</em>. The sender appends <em>r</em> 0-bits to the <em>m</em>-bit message and divides the resulting polynomial of degree <em>m</em> + <em>r</em> – 1 by the generator polynomial. This produces a remainder polynomial of degree <em>r</em> – 1 (or less). The remainder polynomial has <em>r</em> coefficients, which are the checksum. The quotient polynomial is discarded. The data
+         transmitted (the code vector) is the original <em>m</em>-bit message followed by the <em>r</em>-bit checksum.
+      </p>
+      
+      <p class="indent"><a id="page_322"></a>There are two ways for the receiver to assess the correctness of the transmission.
+         It can compute the checksum from the first <em>m</em> bits of the received data and verify that it agrees with the last <em>r</em> received bits. Alternatively, and following usual practice, the receiver can divide
+         all the <em>m</em> + <em>r</em> received bits by the generator polynomial and check that the <em>r</em>-bit remainder is 0. To see that the remainder must be 0, let <em>M</em> be the polynomial representation of the message, and let <em>R</em> be the polynomial representation of the remainder that was computed by the sender.
+         Then the transmitted data corresponds to the polynomial <em>Mx<sup>r</sup></em> – <em>R</em> (or, equivalently, <em>Mx<sup>r</sup></em> + <em>R</em>). By the way <em>R</em> was computed, we know that <em>Mx<sup>r</sup></em> = <em>QG</em> + <em>R</em>, where <em>G</em> is the generator polynomial and <em>Q</em> is the quotient (that was discarded). Therefore the transmitted data, <em>Mx<sup>r</sup></em> – <em>R</em>, is equal to <em>QG</em>, which is clearly a multiple of <em>G</em>. If the receiver is built as nearly as possible just like the sender, the receiver
+         will append <em>r</em> 0-bits to the received data as it computes the remainder <em>R</em>. The received data with 0-bits appended is still a multiple of <em>G</em>, so the computed remainder is still 0.
+      </p>
+      
+      <p class="indent">That’s the basic idea, but in reality the process is altered slightly to correct for
+         certain deficiencies. For example, the method as described is insensitive to the number
+         of leading and trailing 0-bits in the data transmitted. In particular, if a failure
+         occurred that caused the received data, including the checksum, to be all-0, it would
+         be accepted.
+      </p>
+      
+      <p class="indent">Choosing a “good” generator polynomial is something of an art and beyond the scope
+         of this text. Two simple observations: For an <em>r</em>-bit checksum, <em>G</em> should be of degree <em>r</em>, because otherwise the first bit of the checksum would always be 0, which wastes
+         a bit of the checksum. Similarly, the last coefficient should be 1 (that is, <em>G</em> should not be divisible by <em>x</em>), because otherwise the last bit of the checksum would always be 0 (because <em>Mx<sup>r</sup></em> = <em>QG</em> + <em>R</em>, if <em>G</em> is divisible by <em>x</em>, then <em>R</em> must be also). The following facts about generator polynomials are proved in [PeBr]
+         and/or [Tanen]:
+      </p>
+      
+      <p class="indenthangingB">• If <em>G</em> contains two or more terms, all single-bit errors are detected.
+      </p>
+      
+      <p class="indenthangingB">• If <em>G</em> is not divisible by <em>x</em> (that is, if the last term is 1), and <em>e</em> is the least positive integer such that <em>G</em> evenly divides <em>x<sup>e</sup></em> + 1, then all double errors that are within a frame of <em>e</em> bits are detected. A particularly good polynomial in this respect is <em>x</em><sup>15</sup> + <em>x</em><sup>14</sup> + 1, for which <em>e</em> = 32767.
+      </p>
+      
+      <p class="indenthangingB">• If <em>x</em> + 1 is a factor of <em>G</em>, all errors consisting of an odd number of bits are detected.
+      </p>
+      
+      <p class="indenthangingB">• An <em>r</em>-bit CRC checksum detects all burst errors of length ≤ <em>r</em>. (A burst error of length <em>r</em> is a string of <em>r</em> bits in which the first and last are in error, and the intermediate <em>r</em> – 2 bits may or may not be in error.)
+      </p>
+      
+      <p class="indent">The generator polynomial <em>x</em> + 1 creates a checksum of length 1, which applies even parity to the message. (<em>Proof hint:</em> For arbitrary <em>k</em> ≥ 0, what is the remainder when dividing <em>x<sup>k</sup></em> by <em>x</em> + 1 ?)
+      </p>
+      
+      <p class="indent"><a id="page_323"></a>It is interesting to note that if a code of any type can detect all double-bit and
+         single-bit errors, then it can in principle correct single-bit errors. To see this,
+         suppose data containing a single-bit error is received. Imagine complementing all
+         the bits, one at a time. In all cases but one, this results in a double-bit error,
+         which is detected. But when the erroneous bit is complemented, the data is error free,
+         which is recognized. In spite of this, the CRC method does not seem to be used for
+         single-bit error correction. Instead, the sender is requested to repeat the whole
+         transmission if any error is detected.
+      </p>
+      
+      <h3><a id="ch14lev3"></a><strong>14–3 Practice</strong></h3>
+      
+      <p class="noindent"><a href="ch14.html#ch14tab1">Table 14–1</a> shows the generator polynomials used by some common CRC standards. The “Hex” column
+         shows the hexadecimal representation of the generator polynomial; the most significant
+         bit is omitted, as it is always 1.
+      </p>
+      
+      <p class="indent">The CRC standards differ in ways other than the choice of generating polynomials.
+         Most initialize by assuming that the message has been preceded by certain nonzero
+         bits, others do no such initialization. Most transmit the bits within a byte least
+         significant bit first, some most significant bit first. Most append the checksum least
+         significant byte first, others most significant byte first. Some complement the checksum.
+      </p>
+      
+      <p class="indent">CRC-12 is used for transmission of 6-bit character streams, and the others are for
+         8-bit characters, or 8-bit bytes of arbitrary data. CRC-16 is used in IBM’s BISYNCH
+         communication standard. The CRC-CCITT polynomial, also known as ITU-TSS, is used in
+         communication protocols such as XMODEM, X.25, IBM’s SDLC, and ISO’s HDLC [Tanen].
+         CRC-32 is also known as AUTODIN-II and ITU-TSS (ITU-TSS has defined both 16- and a
+         32-bit polynomials). It is used in PKZip, Ethernet, AAL5 (ATM Adaptation Layer 5),
+         FDDI (Fiber Distributed Data Interface), the IEEE-802 LAN/MAN standard, and in some
+         DOD applications. It is the one for which software algorithms are given here.
+      </p>
+      
+      <p class="indent">The first three polynomials in <a href="ch14.html#ch14tab1">Table 14–1</a> have <em>x</em> + 1 as a factor. The last (CRC-32) does not.
+      </p>
+      
+      <p class="tab-caption"><a id="ch14tab1"></a>T<small>ABLE</small> 14–1. G<small>ENERATOR</small> P<small>OLYNOMIALS OF SOME</small> CRC C<small>ODES</small></p>
+      
+      <div class="image"><img alt="Image" src="graphics/323tab01.jpg" /></div>
+      
+      <p class="indent"><a id="page_324"></a>To detect the error of erroneous insertion or deletion of leading 0’s, some protocols
+         prepend one or more nonzero bits to the message. These don’t actually get transmitted;
+         they are simply used to initialize the key register (described below) used in the
+         CRC calculation. A value of <em>r</em> 1-bits seems to be universally used. The receiver initializes its register in the
+         same way.
+      </p>
+      
+      <p class="indent">The problem of trailing 0’s is a little more difficult. There would be no problem
+         if the receiver operated by comparing the remainder based on just the message bits
+         to the checksum received. But, it seems to be simpler for the receiver to calculate
+         the remainder for all bits received (message and checksum), plus <em>r</em> appended 0-bits. The remainder should be 0. With a 0 remainder, if the message has
+         trailing 0-bits inserted or deleted, the remainder will still be 0, so this error
+         goes undetected.
+      </p>
+      
+      <p class="indent">The usual solution to this problem is for the sender to complement the checksum before
+         appending it. Because this makes the remainder calculated by the receiver nonzero
+         (usually), the remainder will change if trailing 0’s are inserted or deleted. How
+         then does the receiver recognize an error-free transmission?
+      </p>
+      
+      <p class="indent">Using the “mod” notation for remainder, we know that</p>
+      
+      <p class="center">(<em>Mx</em><sup><em>r</em></sup> + <em>R</em>) mod <em>G</em> = 0.
+      </p>
+      
+      <p class="noindent">Denoting the “complement” of the polynomial <em>R</em> by <span class="middle"><img alt="Image" src="graphics/r-bar.jpg" /></span>, we have
+      </p>
+      
+      <div class="image"><img alt="Image" src="graphics/324equ01.jpg" /></div>
+      
+      <p class="noindent">Thus, the checksum calculated by the receiver for an error-free transmission should
+         be
+      </p>
+      
+      <p class="center">(<em>x</em><sup><em>r</em> – 1</sup> + <em>x</em><sup><em>r</em> – 2</sup> + ... + 1) mod <em>G</em>.
+      </p>
+      
+      <p class="noindent">This is a constant (for a given <em>G</em>). For CRC-32 this polynomial, called the <em>residual</em> or <em>residue</em>, is
+      </p>
+      
+      <div class="image"><img alt="Image" src="graphics/324equ02.jpg" /></div>
+      
+      <p class="noindent">or hex C704DD7B [Black].</p>
+      
+      <h4><strong>Hardware</strong></h4>
+      
+      <p class="noindent">To develop a hardware circuit for computing the CRC checksum, we reduce the polynomial
+         division process to its essentials.
+      </p>
+      
+      <p class="indent">The process employs a shift register, which we denote by CRC. This is of length <em>r</em> (the degree of <em>G</em>) bits, not <em>r</em> + 1 as you might expect. When the subtractions <a id="page_325"></a>(<em>exclusive or</em>’s) are done, it is not necessary to represent the high-order bit, because the high-order
+         bits of <em>G</em> and the quantity it is being subtracted from are both 1. The division process might
+         be described informally as follows:
+      </p>
+      
+      <p class="indent">Initialize the CRC register to all 0-bits.</p>
+      
+      <p class="indent1">Get first/next message bit <em>m</em>.
+      </p>
+      
+      <p class="indent1">If the high-order bit of CRC is 1,</p>
+      
+      <p class="indent5">Shift CRC and <em>m</em> together left 1 position, and XOR the result with the low-order <em>r</em> bits of <em>G</em>.
+      </p>
+      
+      <p class="indent1">Otherwise,</p>
+      
+      <p class="indent5">Just shift CRC and <em>m</em> left 1 position.
+      </p>
+      
+      <p class="indent1">If there are more message bits, go back to get the next one.</p>
+      
+      <p class="indent">It might seem that the subtraction should be done first, and then the shift. It would
+         be done that way if the CRC register held the entire generator polynomial, which in
+         bit form is <em>r</em> + 1 bits. Instead, the CRC register holds only the low-order <em>r</em> bits of <em>G</em>, so the shift is done first, to align things properly.
+      </p>
+      
+      <p class="indent">The contents of the CRC register for the generator <em>G</em> = <em>x</em><sup>3</sup> + <em>x</em> + 1 and the message <em>M</em> = <em>x</em><sup>7</sup> + <em>x</em><sup>6</sup> + <em>x</em><sup>5</sup> + <em>x</em><sup>2</sup> + <em>x</em> are shown below. Expressed in binary, <em>G</em> = 1011 and <em>M</em> = 11100110.
+      </p>
+      
+      <div class="image"><img alt="Image" src="graphics/325fig01.jpg" /></div>
+      
+      <p class="indent">These steps can be implemented with the (simplified) circuit shown in <a href="ch14.html#ch14fig2">Figure 14–2</a>, which is known as a <em>feedback shift register</em>. The three boxes in the figure represent the three bits of the CRC register. When
+         a message bit comes in, if the high-order bit (<em>x</em><sup>2</sup> box) is 0, simultaneously the message bit is shifted into the <em>x</em><sup>0</sup> box, the bit in <em>x</em><sup>0</sup> is shifted to <em>x</em><sup>1</sup>, the bit in <em>x</em><sup>1</sup> is shifted to <em>x</em><sup>2</sup>, and the bit in <em>x</em><sup>2</sup> is discarded. If the high-order bit of the CRC register is 1, then a 1 is present
+         at the lower <a id="page_326"></a>input of each of the two <em>exclusive or</em> gates. When a message bit comes in, the same shifting takes place, but the three
+         bits that wind up in the CRC register have been <em>exclusive or</em>’ed with binary 011. When all the message bits have been processed, the CRC holds
+         <em>M</em> mod <em>G</em>.
+      </p>
+      
+      <div class="image"><a id="ch14fig2"></a><img alt="Image" src="graphics/14fig02.jpg" /></div>
+      
+      <p class="fig-caption">F<small>IGURE</small> 14–2. Polynomial division circuit for <em>G</em> = <em>x</em><sup>3</sup> + <em>x</em> + 1.
+      </p>
+      
+      <p class="indent">If the circuit of <a href="ch14.html#ch14fig2">Figure 14–2</a> were used for the CRC calculation, then after processing the message, <em>r</em> (in this case 3) 0-bits would have to be fed in. Then the CRC register would have
+         the desired checksum, <em>Mx<sup>r</sup></em> mod <em>G</em>. There is a way to avoid this step with a simple rearrangement of the circuit.
+      </p>
+      
+      <p class="indent">Instead of feeding the message in at the right end, feed it in at the left end, <em>r</em> steps away, as shown in <a href="ch14.html#ch14fig3">Figure 14–3</a>. This has the effect of premultiplying the input message <em>M</em> by <em>x<sup>r</sup></em>. But premultiplying and postmultiplying are the same for polynomials. Therefore,
+         as each message bit comes in, the CRC register contents are the remainder for the
+         portion of the message processed, as if that portion had <em>r</em> 0-bits appended.
+      </p>
+      
+      <div class="image"><a id="ch14fig3"></a><img alt="Image" src="graphics/14fig03.jpg" /></div>
+      
+      <p class="fig-caption">F<small>IGURE</small> 14–3. CRC circuit for <em>G</em> = <em>x</em><sup>3</sup> + <em>x</em> + 1.
+      </p>
+      
+      <p class="indent"><a href="ch14.html#ch14fig4">Figure 14–4</a> shows the circuit for the CRC-32 polynomial.
+      </p>
+      
+      <div class="image"><a id="ch14fig4"></a><img alt="Image" src="graphics/14fig04.jpg" /></div>
+      
+      <p class="fig-caption">F<small>IGURE</small> 14–4. CRC circuit for CRC-32.
+      </p>
+      
+      <h4><a id="page_327"></a><strong>Software</strong></h4>
+      
+      <p class="indent"><a href="ch14.html#ch14fig5">Figure 14–5</a> shows a basic implementation of CRC-32 in software. The CRC-32 protocol initializes
+         the CRC register to all 1’s, transmits each byte least significant bit first, and
+         complements the checksum. We assume the message consists of an integral number of
+         bytes.
+      </p>
+      
+      <p class="indent">To follow <a href="ch14.html#ch14fig4">Figure 14–4</a> as closely as possible, the program uses left shifts. This requires reversing each
+         message byte and positioning it at the left end of the 32-bit register, denoted <code>byte</code> in the program. The word-level reversing program shown in <a href="ch07.html#ch07fig1">Figure 7–1</a> on page <a href="ch07.html#page_129">129</a> can be used (although this is not very efficient, because we need to reverse only
+         eight bits).
+      </p>
+      
+      <p class="indent">The code of <a href="ch14.html#ch14fig5">Figure 14–5</a> is shown for illustration only. It can be improved substantially while still retaining
+         its one-bit-at-a-time character. First, notice that the eight bits of the reversed
+         <code>byte</code> are used in the inner loop’s <code>if</code>-statement and then discarded. Also, the high-order eight bits of <code>crc</code> are not altered in the inner loop (other than by shifting). Therefore, we can set
+         <code>crc</code> = <code>crc</code> ^ b<code>yte</code> ahead of the inner loop, simplify the <code>if</code>-statement, and omit the left shift of b<code>yte</code> at the bottom of the loop.
+      </p>
+      
+      <p class="indent">The two reversals can be avoided by shifting right instead of left. This requires
+         reversing the hex constant that represents the CRC-32 polynomial and testing the least
+         significant bit of <code>crc.</code> Finally, the <code>if</code>-test can be replaced with some simple logic, to save branches. The result is shown
+         in <a href="ch14.html#ch14fig6">Figure 14–6</a>.
+      </p>
+      
+      <p class="codelink"><a href="images13.html#p14fig05" id="p14fig05a">Click here to view code image</a></p>
+      
+      <hr />
+      
+      <p class="programlisting"><a id="ch14fig5"></a>unsigned int crc32(unsigned char *message) {<br />   int i, j;<br />   unsigned int byte, crc;<br /><br />   i = 0;<br />   crc = 0xFFFFFFFF;<br />   while (message[i] != 0) {<br />      byte = message[i];             // Get next byte.<br />      byte = reverse(byte);          // 32-bit reversal.<br />      for (j = 0; j &lt; = 7; j++) {    // Do eight times.<br />         if ((int)(crc ^ byte) &lt; 0)<br />              crc = (crc <span class="entity">&lt;&lt;</span> 1) ^ 0x04C11DB7;<br />         else crc = crc <span class="entity">&lt;&lt;</span> 1;<br />         byte = byte <span class="entity">&lt;&lt;</span> 1;            // Ready next msg bit.<br />      }<br />      i = i + 1;<br />   }<br />   return reverse(~crc);<br />}
+      </p>
+      
+      <hr />
+      
+      <p class="fig-caption">F<small>IGURE</small> 14–5. Basic CRC-32 algorithm.
+      </p>
+      
+      <p class="indent">It is not unreasonable to unroll the inner loop by the full factor of eight. If this
+         is done, the program of <a href="ch14.html#ch14fig6">Figure 14–6</a> executes in about 46 instructions per byte of <a id="page_328"></a>input message. This includes a load and a branch. (We rely on the compiler to common
+         the two loads of <code>message[i]</code> and to transform the <code>while</code>-loop so there is only one branch, at the bottom of the loop.)
+      </p>
+      
+      <p class="codelink"><a href="images13.html#p14fig06" id="p14fig06a">Click here to view code image</a></p>
+      
+      <hr />
+      
+      <p class="programlisting"><a id="ch14fig6"></a>unsigned int crc32(unsigned char *message) {<br />   int i, j;<br />   unsigned int byte, crc, mask;<br /><br />   i = 0;<br />   crc = 0xFFFFFFFF;<br />   while (message[i] != 0) {<br />      byte = message[i];              // Get next byte.<br />      crc = crc ^ byte;<br />      for (j = 7; j &gt;= 0; j--) {      // Do eight times.<br />         mask = -(crc &amp; 1);<br />         crc = (crc &gt;&gt; 1) ^ (0xEDB88320 &amp; mask);<br />      }<br />      i = i + 1;<br />   }<br />   return ~crc;<br />}
+      </p>
+      
+      <hr />
+      
+      <p class="fig-caption">F<small>IGURE</small> 14–6. Improved bit-at-a-time CRC-32 algorithm.
+      </p>
+      
+      <p class="indent">Our next version employs table lookup. This is the usual way that CRC-32 is calculated.
+         Although the programs above work one bit at a time, the table lookup method (as usually
+         implemented) works one byte at a time. A table of 256 fullword constants is used.
+      </p>
+      
+      <p class="indent">The inner loop of <a href="ch14.html#ch14fig6">Figure 14–6</a> shifts register <code>crc</code> right eight times, while doing an <em>exclusive or</em> operation with a constant when the low-order bit of <code>crc</code> is 1. These steps can be replaced by a single right shift of eight positions, followed
+         by a single <em>exclusive or</em> with a mask that depends on the pattern of 1-bits in the rightmost eight bits of
+         the <code>crc</code> register.
+      </p>
+      
+      <p class="indent">It turns out that the calculations for setting up the table are the same as those
+         for computing the CRC of a single byte. The code is shown in <a href="ch14.html#ch14fig7">Figure 14–7</a>. To keep the program self-contained, it includes steps to set up the table on first
+         use. In practice, these steps would probably be put in a separate function to keep
+         the CRC calculation as simple as possible. Alternatively, the table could be defined
+         by a long sequence of array initialization data. When compiled with GCC to the basic
+         RISC, the function executes 13 instructions per byte of input. This includes two loads
+         and one branch instruction.
+      </p>
+      
+      <p class="indent">Faster versions of these programs can be constructed by standard techniques, but there
+         is nothing dramatic known to this writer. One can unroll loops and do careful scheduling
+         of loads that the compiler may not do automatically. One can load the message string
+         a halfword or a word at a time (with proper attention paid to alignment), to reduce
+         the number of loads of the message and the number of <a id="page_329"></a><em>exclusive or</em>’s of <code>crc</code> with the message (see exercise 1). The table lookup method can process message bytes
+         two at a time using a table of size 65536 words. This might make the program run faster
+         or slower, depending on the size of the data cache and the penalty for a miss.
+      </p>
+      
+      <p class="codelink"><a href="images13.html#p14fig07" id="p14fig07a">Click here to view code image</a></p>
+      
+      <hr />
+      
+      <p class="programlisting"><a id="ch14fig7"></a>unsigned int crc32(unsigned char *message) {<br />   int i, j;<br />   unsigned int byte, crc, mask;<br />   static unsigned int table[256];<br /><br />   /* Set up the table, if necessary. */<br /><br />   if (table[1] == 0) {<br />      for (byte = 0; byte &lt;= 255; byte++) {<br />         crc = byte;<br />         for (j = 7; j &gt;= 0; j--) {     // Do eight times.<br />            mask = -(crc &amp; 1);<br />            crc = (crc &gt;&gt; 1) ^ (0xEDB88320 &amp; mask);<br />         }<br />         table[byte] = crc;<br />      }<br />   }<br /><br />   /* Through with table setup, now calculate the CRC. */<br /><br />   i = 0;<br />   crc = 0xFFFFFFFF;<br />   while ((byte = message[i]) != 0) {<br />      crc = (crc &gt;&gt; 8) ^ table[(crc ^ byte) &amp; 0xFF];<br />      i = i + 1;<br />   }<br />   return ~crc;<br />}
+      </p>
+      
+      <hr />
+      
+      <p class="fig-caption">F<small>IGURE</small> 14–7. Table lookup CRC algorithm.
+      </p>
+      
+      <h4><strong>Exercises</strong></h4>
+      
+      <p class="question"><a href="ch19_answer.html#ch14ans1" id="ch14ansa1"><strong>1</strong>.</a> Show that if a generator <em>G</em> contains two or more terms, all single-bit errors are detected.
+      </p>
+      
+      <p class="question"><a href="ch19_answer.html#ch14ans2" id="ch14ansa2"><strong>2</strong>.</a> Referring to <a href="ch14.html#ch14fig7">Figure 14–7</a>, show how to code the main loop so that the message data is loaded one word at a
+         time. For simplicity, assume the message is full-word aligned and an integral number
+         of words in length, before the zero byte that marks the end of the message.<a id="page_330"></a></p>
+      
+   </body>
+   
+</html>
