@@ -1,0 +1,375 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>7.2 Configuring Replication</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="hpmysql-CHP-7-SECT-1.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="hpmysql-CHP-7-SECT-3.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="hpmysql-CHP-7-SECT-2"></A>
+<H3 class="docSection1Title">7.2 Configuring Replication</H3>
+
+<P class="docText"><A NAME="hpmysql-CHP-7-ITERM-1607"></A>With
+the theory out of the way, let's get our hands on
+some servers and configure a master and slave. We'll
+cover two scenarios. In the first, we'll assume that
+you have a fresh installation of MySQL on the master and slave, with
+no data on either server aside from the default
+<TT>test</TT> and <TT>mysql</TT> databases.
+Later, we'll examine the ways you can configure
+replication on a running master with minimal hassle and interruptions
+for your users.</P>
+
+<A NAME="hpmysql-CHP-7-SECT-2.1"></A>
+<H4 class="docSection2Title">7.2.1 On a New Server</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-7-ITERM-1608"></A>Configuring replication on a new server
+is a straightforward process. The tasks you need to perform are:</P>
+
+<span style="font-weight:bold"><OL class="docList" TYPE="1"><LI><span style="font-weight:normal"><P class="docList">Create a replication account on each server.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">Add configuration entries in <I>my.cnf</I> on each
+server.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">Restart the master and verify the creation of a binary log.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">Restart the slave and verify that replication is working.</P></span></LI></OL></span>
+<P class="docText">That's it. Four steps.</P>
+
+<P class="docText">For the sake of clarity, we'll use the hostnames
+<I>master</I> and <I>slave</I> for our
+master and slave, respectively.</P>
+
+<A NAME="hpmysql-CHP-7-SECT-2.1.1"></A>
+<H5 class="docSection3Title">7.2.1.1 Account creation</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-7-ITERM-1609"></A>When the slave connects to the master,
+it must authenticate itself just like any other MySQL client, so it
+needs a username and password. We'll create an
+account named <span class="docEmphasis">repl</span> with a password of
+<TT>c0pyIT!</TT> on both the master and slave.</P>
+
+<P class="docText">Why create the account on the slave? Should the master ever fail,
+you'll want the slave to become the new master. When
+the old master is repaired, it can be put back online as a slave of
+the new master (which is the old slave). If the account
+didn't exist on the new master, the new slave
+wouldn't be able to replicate.</P>
+
+<P class="docText">So, on each server let's create the account and give
+it only the minimum privileges necessary for replication:
+<TT>REPLICATION</TT> <TT>SLAVE</TT> and
+<TT>REPLICATION</TT> <TT>CLIENT</TT>. (In MySQL
+3.23 you'd use <TT>USAGE</TT> and
+<TT>FILE</TT>.)</P>
+
+<PRE>mysql&gt; <B>GRANT REPLICATION SLAVE, REPLICATION CLIENT ON *.* TO 
+repl@"192.168.1.0/255.255.255.0" IDENTIFIED BY 'c0pyIT!';</B>
+Query OK, 0 rows affected (0.00 sec)</PRE>
+
+<P class="docText">After creating the account, verify that the settings are correct:</P>
+
+<PRE>mysql&gt; <B>SHOW GRANTS FOR repl;</B>
++----------------------------------------------------------------------------------+
+|Grants for repl@"192.168.1.0/255.255.255.0"                                         |
++----------------------------------------------------------------------------------+
+| GRANT REPLICATION SLAVE, REPLICATION CLIENT ON *.* TO 'repl'@'...' IDENTIFIED BY ...|
++-------------------------------------------------------------------------+
+1 row in set (0.00 sec)</PRE>
+
+<P class="docText">If that command returns no rows or doesn't list the
+privileges, double-check that you entered the
+<TT>GRANT</TT> command properly.</P>
+
+
+
+<A NAME="hpmysql-CHP-7-SECT-2.1.2"></A>
+<H5 class="docSection3Title">7.2.1.2 Configuration file entries</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-7-ITERM-1610"></A>The next step is to update the
+<I>my.cnf</I> file on each server. You need to tell the
+master to enable binary logging and to tell the slave about its
+master, login credentials, and so on.</P>
+
+<P class="docText">Finally, each server needs to be assigned an ID number, known as a
+<I>server ID</I><A NAME="hpmysql-CHP-7-ITERM-1611"></A>. As you'll see later, the
+server ID is recorded in each server's binary log
+entries so that any other server can know which server first executed
+and logged a query. The server ID can be any number in the range
+1-4294967295.<sup class="docFootnote"><A class="docLink" HREF="#hpmysql-CHP-7-FNOTE-4">[4]</A></sup></P><blockquote><p class="docFootnote"><sup><A NAME="hpmysql-CHP-7-FNOTE-4">[4]</A></sup> A server ID of 1 is assumed if not
+explicitly assigned.</p></blockquote>
+
+<P class="docText">So, on the master, make sure the following lines are present in the
+<TT>[</TT><span class="docEmphasis">mysqld</span><TT>]</TT>
+section of the <I>my.cnf</I> file:</P>
+
+<PRE>log-bin
+server-id = 1</PRE>
+
+<P class="docText">The <TT>log-bin</TT> option tells MySQL to enable binary
+logging. By default, MySQL places the log file in its data directory.
+To place the logs elsewhere, you can supply a path and filename:</P>
+
+<PRE>log-bin = /var/db/repl/log-bin</PRE>
+
+<P class="docText">The slave requires a bit more information than the master. Add the
+following lines to its <I>my.cnf</I> file:</P>
+
+<PRE>server-id = 2
+master-host = master.example.com
+master-user = repl
+master-password = c0pyIT!
+master-port = 3306</PRE>
+
+<P class="docText">The slave's settings are self-explanatory. It just
+needs to know how to contact the master and authenticate itself.
+Later we'll look at some optional replication
+settings that can also appear in <I>my.cnf</I>.</P>
+
+
+
+<A NAME="hpmysql-CHP-7-SECT-2.1.3"></A>
+<H5 class="docSection3Title">7.2.1.3 Restart master</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-7-ITERM-1612"></A>With the settings on the master,
+it's time to stop and start MySQL and verify that
+the binary log appears. No replication-specific method is necessary;
+simply stop and restart MySQL using your normal scripts that handle
+MySQL when the machine boots and shuts down.</P>
+
+<P class="docText">If you didn't specify a path and filename after
+<TT>log-bin</TT> in your <I>my.cnf</I> file,
+MySQL writes the log files in your data directory. Otherwise, the
+logs are written in the location you specified.</P>
+
+<P class="docText">You should find a binary log file with a <I>.001</I>
+extension. By default, the filename will be
+<I>hostname-bin</I><A NAME="hpmysql-CHP-7-ITERM-1613"></A>.
+On the host <I>master.example.com</I>, the first log
+file will be <I>master-bin.001</I>. If you
+haven't run any write queries yet, the file will be
+less than 100 bytes in size. Each log file contains a short header
+and some meta information.</P>
+
+<P class="docText">If you then execute a few write queries, you should notice the size
+of the binary log file increasing. If not, check the error log for
+hints about what might have gone wrong.</P>
+
+<P class="docText">You can use the
+<I>mysqlbinlog</I><A NAME="hpmysql-CHP-7-ITERM-1614"></A> utility to examine the data stored in a
+binary log file. It reads the entries and prints out the SQL for each
+one. It also prints some comments that contain other helpful
+information. For example, running it on a fresh log produces output
+like this:</P>
+
+<PRE>$ <B>mysqlbinlog master-bin.001</B>
+# at 4
+#020922 14:59:11 server id 1  log_pos 4        \
+ Start: binlog v 3, server v 4.0.4-beta-log created 020922 14:59:11</PRE>
+
+<P class="docText">The first comment indicates that this entry is at offset 4 in the
+log. The second comment indicates when the log was created, the
+server ID, the log version, and the server version.</P>
+
+
+
+<A NAME="hpmysql-CHP-7-SECT-2.1.4"></A>
+<H5 class="docSection3Title">7.2.1.4 Restart slave</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-7-ITERM-1615"></A>With the master logging properly, a
+simple restart of the slave should be sufficient to get replication
+running. When a MySQL server is started, it checks to see whether it
+should connect to a master and begin (or continue) replicating
+queries. Upon connecting to the master, MySQL logs a message in its
+error log to indicate whether the connection succeeded or failed:</P>
+
+<PRE>021103 13:58:10  Slave I/O thread: connected to master 'repl@master:3306',
+replication started in log 'log-bin.001' at position 4</PRE>
+
+<P class="docText">This entry indicates that the slave has connected to the master and
+begun reading the binary log file <I>master-bin.001</I>
+at position (or offset) 4, that of the first query.</P>
+
+<P class="docText">Run some write queries on the master and verify that the data on the
+slave reflects those changes. Once the slave is happily replicating
+from the master, it can continue to do so indefinitely.<A NAME="hpmysql-CHP-7-ITERM-1616"></A></P>
+
+
+
+<A NAME="hpmysql-CHP-7-SECT-2.2"></A>
+<H4 class="docSection2Title">7.2.2 On an Existing Server</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-7-ITERM-1617"></A>Setting up replication on a new server
+is easy. A few config file entries and a couple of restarts are all
+you need. On an existing server, however, there's a
+bit more work to do because you can't simply point a
+new slave at a master and ask it to clone all the existing
+data.<sup class="docFootnote"><A class="docLink" HREF="#hpmysql-CHP-7-FNOTE-5">[5]</A></sup></P><blockquote><p class="docFootnote"><sup><A NAME="hpmysql-CHP-7-FNOTE-5">[5]</A></sup> There are plans to fix that in a future version
+of MySQL.</p></blockquote>
+
+<P class="docText">There are a couple of ways to do get the job done.
+We'll look at two specific solutions in a moment.
+First, let's outline the work that needs to be done;
+we'll deal then with common solutions.</P>
+
+<A NAME="hpmysql-CHP-7-SECT-2.2.1"></A>
+<H5 class="docSection3Title">7.2.2.1 What needs to happen</H5>
+
+<P class="docText">Normally, to enable replication, you have to add binary logging to
+your server, which means subsequently restarting the server. If you
+happen to have binary logging already enabled, you
+don't have to restart the server. As described
+earlier, you'll need to add at least two lines to
+the server's <I>my.cnf</I> file:</P>
+
+<PRE>log-bin
+server-id = 1</PRE>
+
+<P class="docText">Optionally, specify a full path and base filename for the binary logs:</P>
+
+<PRE>log-bin = /var/db/repl/binary-log</PRE>
+
+<P class="docText">The other task involves getting a copy of all the data from the
+master and putting it on the new slave. But there's
+a twist. The data given to the slave must correspond to the exact
+moment in time the binary log begins. Said another way, the binary
+log should contain <span class="docEmphasis">all</span> the queries that are
+executed on the master after the snapshot was taken and
+<span class="docEmphasis">none</span> of the queries from before the snapshot.</P>
+
+<P class="docText">If the binary log contains queries that are already reflected in the
+data given to the slave, the slave has no way to know that.
+Consequently, it reexecutes the queries, possibly producing strange
+errors or otherwise making the data inconsistent with what is on the
+master.</P>
+
+<P class="docText">If the binary log misses a few queries that weren't
+reflected in the slave's copy of the data, it
+won't see those queries. This can cause strange and
+hard-to-diagnose problems. Maybe records that were supposed to have
+expired are still there, or perhaps there's data on
+the master that doesn't appear on the slave.</P>
+
+<P class="docText">Getting the initial data from the master to the slave may be
+complicated. If you're using only MyISAM tables and
+can afford to shut down the master for enough time to copy all the
+data, it will be easy. Otherwise, you'll need to
+perform an online copy or dump of the data.</P>
+
+
+
+<A NAME="hpmysql-CHP-7-SECT-2.2.2"></A>
+<H5 class="docSection3Title">7.2.2.2 Snapshot or backup, then copy</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-7-ITERM-1618"></A>The easiest way to get the
+necessary data is to perform a snapshot (online backup) or a more
+traditional offline backup and then copy the data to the slave. Using
+archive tools such as <I>tar</I> or
+<I>zip</I>, or your traditional backup software, shut
+down MySQL and copy the contents of the data directory to your slave;
+then extract the data on the slave.</P>
+
+<P class="docText">This method works well if you intend to replicate all the data and
+can shut down MySQL for the time required to make a copy of the data.
+If, however, you can't afford to have MySQL offline
+for more than a few seconds, there's an alternative
+approach: restart the server once after making the config file
+changes and then perform an online snapshot of the data.</P>
+
+<P class="docText"><A NAME="hpmysql-CHP-7-ITERM-1619"></A>A snapshot works well only for MyISAM
+tables. InnoDB and BDB tables are best backed up when MySQL
+isn't running at all. A snapshot also requires a
+read lock on the data for the duration of the snapshot. So
+you'll be able to service read requests during the
+snapshot process, but all writers will be blocked.</P>
+
+<P class="docText">To perform the actual snapshot, you can write your own script to do
+the job, or you can use <span class="docEmphasis">mysqlhotcopy</span> or
+<span class="docEmphasis">mysqlsnapshot</span>. If you roll your own script, you
+need to ensure that the <A NAME="hpmysql-CHP-7-ITERM-1620"></A>binary log
+is reset before the locks are released. The easiest way to do that is
+by executing <TT>FLUSH</TT> <TT>TABLES</TT>
+<TT>WITH</TT> <TT>READ</TT>
+<TT>LOCK</TT> and then <TT>RESET</TT>
+<TT>MASTER</TT> (or <TT>FLUSH</TT>
+<TT>MASTER</TT> in versions older than 3.23.26).</P>
+
+<P class="docText"><A class="docLink" HREF="hpmysql-CHP-9.html#hpmysql-CHP-9">Chapter 9</A> covers backups as well as the
+<span class="docEmphasis">mysqlhotcopy</span> and <span class="docEmphasis">mysqlsnapshot</span>
+utilities.</P>
+
+
+
+<A NAME="hpmysql-CHP-7-SECT-2.2.3"></A>
+<H5 class="docSection3Title">7.2.2.3 Online table copies</H5>
+
+<P class="docText">Another approach is to use MySQL's command:</P>
+
+<A NAME="hpmysql-CHP-7-ITERM-1621"></A><A NAME="hpmysql-CHP-7-ITERM-1622"></A><PRE> LOAD TABLE mytable FROM MASTER</PRE>
+
+<P class="docText">Doing so instructs a slave to load an entire table from the master.
+By writing a relatively simple script, you can instruct the slave to
+clone all the tables it needs using a series of those commands.</P>
+
+<P class="docText">The usefulness of this technique is relatively limited, however. Like
+the previous option, it requires a master that isn't
+being updated. In an environment in which there are frequent updates
+to the master, this technique is simply not viable. Furthermore, the
+slave copies only the data from the master. It then reconstructs the
+indexes locally, for which large amounts of data can take hours or
+even days.</P>
+
+
+
+<A NAME="hpmysql-CHP-7-SECT-2.2.4"></A>
+<H5 class="docSection3Title">7.2.2.4 Online copy and synchronize (MySQL 4.x only)</H5>
+
+<P class="docText">MySQL 4.0 introduced the <TT>LOAD</TT>
+<TT>DATA</TT> <TT>FROM</TT>
+<TT>MASTER</TT> command. It combines the previous two
+approaches by first obtaining a read lock on all the
+master's tables, then loading each table one by one
+using the <TT>LOAD</TT> <TT>TABLE</TT>
+mechanism.<sup class="docFootnote"><A class="docLink" HREF="#hpmysql-CHP-7-FNOTE-6">[6]</A></sup> It
+respects any slave-side database or table filtering. Once it
+completes the loading process, it releases the locks on the master
+and begins replicating.</P><blockquote><p class="docFootnote"><sup><A NAME="hpmysql-CHP-7-FNOTE-6">[6]</A></sup> This doesn't include the
+tables in the <TT>mysql</TT> database. Put another way,
+<TT>LOAD DATA FROM MASTER</TT> doesn't
+clone users and permissions from the master.</p></blockquote>
+
+<P class="docText">While this option is very appealing, it suffers from the same
+limitations as scripting the <I>LOAD</I>
+<I>TABLE</I> command yourself. It is much slower than
+using a master snapshot. It also requires that you grant the
+<TT>repl</TT> user <TT>SUPER</TT> and
+<TT>RELOAD</TT> privileges on the master. Finally, it works
+only with MyISAM tables.<A NAME="hpmysql-CHP-7-ITERM-1623"></A><A NAME="hpmysql-CHP-7-ITERM-1624"></A></P>
+
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="hpmysql-CHP-7-SECT-1.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="hpmysql-CHP-7-SECT-3.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

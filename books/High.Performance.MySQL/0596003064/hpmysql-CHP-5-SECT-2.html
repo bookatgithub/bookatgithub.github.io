@@ -1,0 +1,235 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>5.2 Optimizer Features and Oddities</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="hpmysql-CHP-5-SECT-1.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="hpmysql-CHP-5-SECT-3.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="hpmysql-CHP-5-SECT-2"></A>
+<H3 class="docSection1Title">5.2 Optimizer Features and Oddities</H3>
+
+<P class="docText"><A NAME="hpmysql-CHP-5-ITERM-1418"></A>When testing queries, always remember
+to use realistic data. A common source of problems with MySQL is the
+query optimizer's handling of test data. It often
+does surprising things. If you don't know what
+it's doing and why (and it rarely tells you why),
+you may spend a lot of time tracking down a problem that really
+isn't there. Or, worse yet, you may embarrass
+yourself asking about it on the MySQL mailing list, only to learn
+that you've created the problem all on your own.</P>
+
+<P class="docText"><A NAME="hpmysql-CHP-5-ITERM-1419"></A>In general, MySQL uses an index when it is
+reasonably confident that doing so is <span class="docEmphasis">more
+efficient</span> than not doing so. This leads to false negatives
+during testing. The false negative tends to occur in the two
+situations that we'll now investigate.</P>
+
+<A NAME="hpmysql-CHP-5-SECT-2.1"></A>
+<H4 class="docSection2Title">5.2.1 Too Little Diversity</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-5-ITERM-1420"></A><A NAME="hpmysql-CHP-5-ITERM-1421"></A>Even if you have a lot of data (thousands of
+rows or more), MySQL may choose to ignore your indexes some of the
+time if your data doesn't have sufficient diversity.
+Why might that happen? Imagine you have a table that contains
+historical climate data for most world cities:</P>
+
+<PRE>CREATE TABLE weather
+(
+  city       VARCHAR(100) NOT NULL,
+  high_temp  TINYINT      NOT NULL,
+  low_temp   TINYINT      NOT NULL,
+  the_date   DATE         NOT NULL,
+  INDEX (city),
+  INDEX (the_date),
+)</PRE>
+
+<P class="docText">Rather than loading all two million records, you load two years worth
+of data (1980 and 1981) to test. After some testing, you find that
+queries that need to access many of the records are using full table
+scans rather than the <TT>the_date</TT> index. For example,
+to find the average high temperature in 1980, you might write
+something like this:</P>
+
+<PRE>SELECT AVG(high_temp) FROM weather
+WHERE the_date BETWEEN '1980-01-01' AND '1980-12-31';</PRE>
+
+<P class="docText">Having data from only 1980 and 1981 loaded, that query needs to
+examine 50% of the rows in the <TT>weather</TT> table. In
+such a case, MySQL decides that it is faster to simply scan the
+entire table.</P>
+
+<P class="docText">How does it know? When you cross a certain threshold, it is slower to
+locate rows using an index than to read them sequentially. For MySQL,
+the cutoff point is roughly 30%. The number is chosen by the MySQL
+developers based on their extensive experience (and knowledge of the
+code) and is subject to change from release to release. The actual
+number is specific to each storage engine: InnoDB has a different
+threshold than MyISAM tables, and so forth.</P>
+
+<P class="docText">The main reason index performance is worse in these circumstances
+goes all the way down to the hardware: disk seek performance. Indexes
+are always sorted, but the data on disk is not. Using an index means
+accessing the rows in index-sorted order rather than in the order
+they reside on disk. The end result is more time spent moving around
+the disk and less time reading data. Sequential reads are always
+going to be faster than random seeks. If you're
+lucky enough to be using a RAM disk, most of the overhead vanishes.</P>
+
+<P class="docText">You can draw two conclusions from this knowledge. First, if a table
+really is going to remain very small, you may want to leave off the
+indexes. (Unique indexes are an exception to this rule. Without them
+you can't enforce a unique constraint on the table.)
+The second conclusion merely reinforces what we said
+earlier—always use a representative data set for your testing.
+It should be representative both in terms of size and diversity.</P>
+
+<P class="docText">One special case that must be mentioned is that of index-only
+queries. If you happen to write a query that requires only columns
+contained within a single index, you'll be
+pleasantly surprised. MySQL is smart enough to realize that all the
+required data is present in the index, so it doesn't
+bother to fetch any of the rows from disk. This, obviously, provides
+you with excellent performance.</P>
+
+
+<A NAME="hpmysql-CHP-5-SECT-2.2"></A>
+<H4 class="docSection2Title">5.2.2 Index-Based Ordering</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-5-ITERM-1422"></A><A NAME="hpmysql-CHP-5-ITERM-1423"></A>One of MySQL's weak
+points is sorting. It can usually fetch 15,000 rows in a heartbeat,
+but if you happen to need them in any particular order it may take
+quite a bit more time.<sup class="docFootnote"><A class="docLink" HREF="#hpmysql-CHP-5-FNOTE-2">[2]</A></sup></P><blockquote><p class="docFootnote"><sup><A NAME="hpmysql-CHP-5-FNOTE-2">[2]</A></sup> Of course, performance is
+always relative. we've seen queries that MySQL
+answered in 20 ms take 200 ms after adding an <TT>ORDER
+BY</TT> clause. For many applications, 200 ms is still quite
+fast.</p></blockquote>
+
+<P class="docText">The problem is really two-fold. First, sorting is simply more work,
+and work takes time. Aside from adding a faster CPU,
+there's no avoiding that fact. If
+you're not sorting on a computed field, your first
+instinct is likely to add an index on the sorting column.
+Unfortunately, that rarely helps. As you'll remember
+from <A class="docLink" HREF="hpmysql-CHP-4.html#hpmysql-CHP-4">Chapter 4</A>, MySQL uses at most one index
+per table per query. Odds are that you're already
+using an index on the table in question, so MySQL will not touch your
+new index.</P>
+
+<P class="docText">The solution to the second problem also goes back to <A class="docLink" HREF="hpmysql-CHP-4.html#hpmysql-CHP-4">Chapter 4</A>. Add the sorting column as a second part in
+the existing index. By doing so you get the best of both worlds.
+You'll have an index MySQL can use to quickly locate
+rows (just as before) <span class="docEmphasis">and</span> an index that provides
+order to the data. That removes the need for MySQL to make a sorting
+pass over the results.</P>
+
+<P class="docText">Going back to the weather example, to speed up queries like this:</P>
+
+<PRE>SELECT * FROM weather WHERE city = 'Toledo' ORDER BY the_date DESC</PRE>
+
+<P class="docText">you'd change the index on <TT>city</TT> to
+an index on <TT>(city, the_date)</TT>:</P>
+
+<PRE>ALTER TABLE weather DROP INDEX city, ADD INDEX (city, the_date)</PRE>
+
+<P class="docText">Remember that the order of columns is significant. The leftmost
+prefix rule dictates that <TT>city</TT> must appear first
+in the index to be used for that query.</P>
+
+<P class="docText">Taking things a step further, you might then be tempted to remove the
+single index on <TT>the_date</TT>. Don't
+do it unless you're sure there are no queries using
+<TT>the_date</TT> in their <TT>WHERE</TT> clause.
+A query based on <TT>the_date</TT> can't
+be satisfied using the new index on <TT>(city,
+the_date)</TT> because <TT>the_date</TT>
+isn't a leftmost prefix in the index.</P>
+
+
+<A NAME="hpmysql-CHP-5-SECT-2.3"></A>
+<H4 class="docSection2Title">5.2.3 Impossible Queries</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-5-ITERM-1424"></A>MySQL performs a basic logical
+analysis of the <TT>WHERE</TT> clause of every query. In
+doing so, it can often detect when you've asked for
+something that doesn't make any sense:</P>
+
+<PRE>SELECT * FROM mytable WHERE id &lt; 5000 and id &gt; 30000</PRE>
+
+<P class="docText">If it finds an impossible <TT>WHERE</TT> clause, it returns
+zero records, sparing the expense of running an otherwise pointless
+and possibly expensive query.</P>
+
+<P class="docText">If you suspect that MySQL has optimized away an impossible
+<TT>WHERE</TT> clause, simply ask it to
+<TT>EXPLAIN</TT> the query. If you see a result like this:</P>
+
+<PRE>mysql&gt; <B>SELECT * FROM mytable WHERE id &lt; 5000 and id &gt; 30000</B>
++-----------------------------------------------------+
+| Comment                                             |
++-----------------------------------------------------+
+| Impossible WHERE noticed after reading const tables |
++-----------------------------------------------------+
+1 row in set (0.00 sec)</PRE>
+
+<P class="docText">you'll know what it was thinking.</P>
+
+<P class="docText">Aside from making a simple typo, it's unlikely that
+you'll run many queries like that. However, if
+you're building an application on top of MySQL and
+happen to make a typo or a serious logic error in the code, you can
+end up running lots of pointless queries before tracking down the
+problem. It's good to know that MySQL
+doesn't waste much time dealing with your illogical
+queries.</P>
+
+
+<A NAME="hpmysql-CHP-5-SECT-2.4"></A>
+<H4 class="docSection2Title">5.2.4 Full-Text Instead of LIKE</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-5-ITERM-1425"></A><A NAME="hpmysql-CHP-5-ITERM-1426"></A><A NAME="hpmysql-CHP-5-ITERM-1427"></A><A NAME="hpmysql-CHP-5-ITERM-1428"></A>From <A class="docLink" HREF="hpmysql-CHP-4.html#hpmysql-CHP-4">Chapter 4</A>,
+it's clear that full-text indexes are much faster
+than using a <TT>LIKE</TT> clause in your queries to search
+for a word or phrase. In the vast majority of cases, you should use a
+full-text index to tackle these types of problems.</P>
+
+<P class="docText">However, there are times when this can be problematic. The query
+optimizer doesn't look very closely at full-text
+indexes when deciding which index to use for a table. In fact, if
+there's a usable full-text index, the optimizer will
+always prefer it regardless of how many rows it actually eliminates
+from the result set. Hopefully this will be fixed in a future version
+of MySQL.<A NAME="hpmysql-CHP-5-ITERM-1429"></A></P>
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="hpmysql-CHP-5-SECT-1.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="hpmysql-CHP-5-SECT-3.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

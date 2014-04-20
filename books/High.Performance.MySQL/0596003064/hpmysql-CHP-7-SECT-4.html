@@ -1,0 +1,250 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>7.4 Replication Architectures</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="hpmysql-CHP-7-SECT-3.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="hpmysql-CHP-7-SECT-5.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="hpmysql-CHP-7-SECT-4"></A>
+<H3 class="docSection1Title">7.4 Replication Architectures</H3>
+
+<P class="docText"><A NAME="hpmysql-CHP-7-ITERM-1640"></A>Though
+MySQL's replication system is relatively simple
+compared to some commercial databases, you can use it to build
+arbitrarily complex architectures that solve a variety of problems.
+In this section we'll look at some of the more
+popular and exotic configurations. We'll also review
+how MySQL's replication design makes this possible.</P>
+
+<A NAME="hpmysql-CHP-7-SECT-4.1"></A>
+<H4 class="docSection2Title">7.4.1 The Replication Rules</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-7-ITERM-1641"></A>Before
+looking at the architectures, it helps to understand the basic rules
+that must be followed in any MySQL replication setup:</P>
+
+<UL><LI><P class="docList">Every slave must have a unique <A NAME="hpmysql-CHP-7-ITERM-1642"></A>server ID.</P></LI><LI><P class="docList">A slave may have only one master.</P></LI><LI><P class="docList">A master may have many slaves.</P></LI><LI><P class="docList">Slaves can also be masters for other slaves.</P></LI></UL>
+<P class="docText">The first rule isn't entirely true, but
+let's assume that it is for right now, and soon
+enough you'll see why it isn't
+always necessary. In any case, the rules aren't
+terribly complex. Those four rules provide quite a bit of
+flexibility, as the next sections illustrate.</P>
+
+
+<A NAME="hpmysql-CHP-7-SECT-4.2"></A>
+<H4 class="docSection2Title">7.4.2 Sample Configurations</H4>
+
+<P class="docText">Building on the four rules, let's begin by
+constructing simple replication configurations and discussing the
+types of problems they solve. We'll also look at the
+types of configurations that don't work because they
+violate the second rule. We'll use the simple
+configuration as a building block for arbitrarily complex
+architectures.</P>
+
+<P class="docText">Each configuration is illustrated in a figure that includes the
+server ID of each server as well as its role: master, slave, or
+master/slave.</P>
+
+<A NAME="hpmysql-CHP-7-SECT-4.2.1"></A>
+<H5 class="docSection3Title">7.4.2.1 Master with slaves</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-7-ITERM-1643"></A>The most basic replication
+model, a single master with one or more slaves, is illustrated in
+<A class="docLink" HREF="#hpmysql-CHP-7-FIG-1">Figure 7-1</A>. The master is given server ID 1 and
+each slave has a different ID.</P>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="hpmysql-CHP-7-FIG-1"></A>Figure 7-1. Simple master/slave replication</H5>
+<IMG BORDER="0" WIDTH="157" HEIGHT="134" SRC="images/0596003064/figs/hpsql_0701.gif" ALT="figs/hpsql_0701.gif"></CENTER>
+
+<P class="docText">This configuration is useful in situations in which you have few
+write queries and many reads. Using several slaves, you can
+effectively spread the workload among many servers. In fact, each of
+the slaves can be running other services, such as Apache. By
+following this model, you can scale horizontally with many servers.
+The only limit you are likely to hit is bandwidth from the master to
+the slaves. If you have 20 slaves, which each need to pull an average
+of 500 KB per second, that's a total of 10,000
+KB/sec (or nearly 10 Mbits/sec) of bandwidth.</P>
+
+<P class="docText">A 100-Mbit network should have little trouble with that volume, but
+if either the rate of updates to the master increases or you
+significantly increase the number of slaves, you run the risk of
+saturating even a 100-Mbit network. In this case, you need to
+consider gigabit network hardware or an alternative replication
+architecture, such as the pyramid described later.</P>
+
+
+
+<A NAME="hpmysql-CHP-7-SECT-4.2.2"></A>
+<H5 class="docSection3Title">7.4.2.2 Slave with two masters</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-7-ITERM-1644"></A><A NAME="hpmysql-CHP-7-ITERM-1645"></A>It would be nice
+to use a single slave to handle two unrelated masters, as seen in
+<A class="docLink" HREF="#hpmysql-CHP-7-FIG-2">Figure 7-2</A>. That allows you to minimize hardware
+costs and still have a backup server for each master. However,
+it's a violation of the second rule: a slave
+can't have two masters.</P>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="hpmysql-CHP-7-FIG-2"></A>Figure 7-2. A slave can't have two masters</H5>
+<IMG BORDER="0" WIDTH="184" HEIGHT="120" SRC="images/0596003064/figs/hpsql_0702.gif" ALT="figs/hpsql_0702.gif"></CENTER>
+
+<P class="docText">To get around that limitation, you can run two copies of MySQL on the
+slave machine. Each MySQL instance is responsible for replicating a
+different master. In fact, there's no reason you
+couldn't do this for 5 or 10 distinct MySQL masters.
+As long as the slave has sufficient disk space, I/O, and CPU power to
+keep up with all the masters, you shouldn't have any
+problems.</P>
+
+
+
+<A NAME="hpmysql-CHP-7-SECT-4.2.3"></A>
+<H5 class="docSection3Title">7.4.2.3 Dual master</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-7-ITERM-1646"></A><A NAME="hpmysql-CHP-7-ITERM-1647"></A>Another possibility is to
+have a pair of masters, as pictured in <A class="docLink" HREF="#hpmysql-CHP-7-FIG-3">Figure 7-3</A>.
+This is particularly useful when two geographically separate parts of
+an organization need write access to the same shared database. Using
+a dual-master design means that neither site has to endure the
+latency associated with a WAN connection.</P>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="hpmysql-CHP-7-FIG-3"></A>Figure 7-3. Dual master replication</H5>
+<IMG BORDER="0" WIDTH="157" HEIGHT="57" SRC="images/0596003064/figs/hpsql_0703.gif" ALT="figs/hpsql_0703.gif"></CENTER>
+
+<P class="docText">Furthermore, WAN connections are more likely to have brief
+interruptions or outages. When they occur, neither site will be
+without access to their data, and when the connection returns to
+normal, both masters will catch up from each other.</P>
+
+<P class="docText">Of course, there are drawbacks to this setup. <A class="docLink" HREF="hpmysql-CHP-7-SECT-7.html#hpmysql-CHP-7-SECT-7.3">Section 7.7.3</A>, later in this chapter,
+discusses some of the problems associated with a multi-master setup.
+However, if responsibility for your data is relatively well
+partitioned (site A writes only to customer records, and site B
+writes only to contract records) you may not have much to worry
+about.</P>
+
+<P class="docText">A logical extension to the dual-master configuration is to add one or
+more slaves to each master, as pictured in <A class="docLink" HREF="#hpmysql-CHP-7-FIG-4">Figure 7-4</A>. This has the same benefits and drawbacks of a
+dual-master arrangement, but it also inherits the master/slave
+benefits at each site. With a slave available, there is no single
+point of failure. The slaves can be used to offload read-intensive
+queries that don't require the absolutely latest
+data.</P>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="hpmysql-CHP-7-FIG-4"></A>Figure 7-4. Dual master replication with slaves</H5>
+<IMG BORDER="0" WIDTH="157" HEIGHT="146" SRC="images/0596003064/figs/hpsql_0704.gif" ALT="figs/hpsql_0704.gif"></CENTER>
+
+
+
+<A NAME="hpmysql-CHP-7-SECT-4.2.4"></A>
+<H5 class="docSection3Title">7.4.2.4 Replication ring (multi-master)</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-7-ITERM-1648"></A><A NAME="hpmysql-CHP-7-ITERM-1649"></A>The dual-master
+configuration is really just a special case of the master ring
+configuration, shown in <A class="docLink" HREF="#hpmysql-CHP-7-FIG-5">Figure 7-5</A>. In a master
+ring, there are three or more masters that form a ring. Each server
+is a slave of one of its neighbors and a master to the other.</P>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="hpmysql-CHP-7-FIG-5"></A>Figure 7-5. A replication ring or multi-master replication topology</H5>
+<IMG BORDER="0" WIDTH="157" HEIGHT="132" SRC="images/0596003064/figs/hpsql_0705.gif" ALT="figs/hpsql_0705.gif"></CENTER>
+
+<P class="docText">The benefits of a replication ring are, like a dual-master setup,
+geographical. Each site has a master so it can update the database
+without incurring high network latencies. However, this convenience
+comes at a high price. Master rings are fragile; if a single master
+is unavailable for any reason, the ring is broken. Queries will flow
+around the ring only until they reach the break. Full service
+can't be restored until all nodes are online.</P>
+
+<P class="docText">To mitigate the risk of a single node crashing and interrupting
+service to the ring, you can add one or more slaves at each site, as
+shown in <A class="docLink" HREF="#hpmysql-CHP-7-FIG-6">Figure 7-6</A>. But this does little to guard
+against a loss of connectivity.</P>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="hpmysql-CHP-7-FIG-6"></A>Figure 7-6. A replication ring with slaves at each site</H5>
+<IMG BORDER="0" WIDTH="295" HEIGHT="273" SRC="images/0596003064/figs/hpsql_0706.gif" ALT="figs/hpsql_0706.gif"></CENTER>
+
+
+
+<A NAME="hpmysql-CHP-7-SECT-4.2.5"></A>
+<H5 class="docSection3Title">7.4.2.5 Pyramid</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-7-ITERM-1650"></A><A NAME="hpmysql-CHP-7-ITERM-1651"></A>In large, geographically diverse
+organizations, there may be a single master that must be replicated
+to many smaller offices. Rather than configure each slave to contact
+the master directly, it may be more manageable to use a pyramid
+design as illustrated in <A class="docLink" HREF="#hpmysql-CHP-7-FIG-7">Figure 7-7</A>.</P>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="hpmysql-CHP-7-FIG-7"></A>Figure 7-7. Using a pyramid of MySQL servers to distribute data</H5>
+<IMG BORDER="0" WIDTH="270" HEIGHT="209" SRC="images/0596003064/figs/hpsql_0707.gif" ALT="figs/hpsql_0707.gif"></CENTER>
+
+<P class="docText">The main office in Chicago can host the master (1). A slave in London
+(2) might replicate from Chicago and also serve as a local master to
+slaves in Paris, France (4), and Frankfurt, Germany (5).</P>
+
+
+
+<A NAME="hpmysql-CHP-7-SECT-4.2.6"></A>
+<H5 class="docSection3Title">7.4.2.6 Design your own</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-7-ITERM-1652"></A>There's really
+no limit to the size or complexity of the architectures you can
+design with MySQL replication. You're far more
+likely to run into practical limitations such as network bandwidth,
+management and configuration hassles, etc. Using the simple patterns
+presented here, you should be able to design a system that meets your
+needs. And that's what all this really comes down
+to: if you need to replicate your data to various locations,
+there's a good chance you can design a good solution
+using MySQL.</P>
+
+<P class="docText">You can often combine aspects of the architectures
+we've looked at. In reality, however, the vast
+majority of needs are handled with less complicated architectures. As
+load and traffic grows, the number of servers may increase, but the
+ways in which they are organized generally doesn't.
+We'll return to this topic in <A class="docLink" HREF="hpmysql-CHP-8.html#hpmysql-CHP-8">Chapter 8</A>.<A NAME="hpmysql-CHP-7-ITERM-1653"></A><A NAME="hpmysql-CHP-7-ITERM-1654"></A></P>
+
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="hpmysql-CHP-7-SECT-3.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="hpmysql-CHP-7-SECT-5.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

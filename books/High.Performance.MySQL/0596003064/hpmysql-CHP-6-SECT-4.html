@@ -1,0 +1,599 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>6.4 Techniques</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="hpmysql-CHP-6-SECT-3.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="hpmysql-CHP-7.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="hpmysql-CHP-6-SECT-4"></A>
+<H3 class="docSection1Title" id="162637-999">6.4 Techniques</H3>
+
+<P class="docText"><A NAME="hpmysql-CHP-6-ITERM-1548"></A>With
+all the basic theory and recommendations covered,
+it's time to get down to business. When you notice
+your server is slow, what can you do about it? How do you locate the
+bottlenecks? What tools are available? What's the
+thought process?</P>
+
+<P class="docText"><A NAME="hpmysql-CHP-6-ITERM-1549"></A>The first step is to identify the
+type of bottleneck at the operating-system level. Using standard
+operating system tools, try to determine which of the
+server's resources are being taxed. Using
+<span class="docEmphasis">top</span><A NAME="hpmysql-CHP-6-ITERM-1550"></A>,
+<span class="docEmphasis">vmstat</span><A NAME="hpmysql-CHP-6-ITERM-1551"></A>,
+or the <A NAME="hpmysql-CHP-6-ITERM-1552"></A>Windows Task Manager, check the
+machine's CPU utilization. If it's
+at or near 100%, it's obviously CPU-bound. Use
+<span class="docEmphasis">top</span> to verify which processes are responsible
+for the bulk of the CPU utilization. (If you don't
+have much experience with operating-system performance tools, consult
+a qualified system administrator.)</P>
+
+<P class="docText">If MySQL is indeed consuming lots of CPU time, there are several
+techniques you can employ in an attempt to reduce the CPU load. 
+See <A class="docLink" HREF="#hpmysql-CHP-6-SECT-4.2">Section 6.4.2</A> later in
+this chapter. If the processes using the bulk of the CPU time
+aren't <span class="docEmphasis">mysqld</span>, you clearly have
+to solve a problem unrelated to MySQL. Perhaps it's
+a runaway process or simply something that should be moved to another
+machine. Either way, it's not a MySQL issue, so the
+problem is "solved" from our point
+of view.</P>
+
+<P class="docText">If the CPU is very busy but there doesn't appear to
+be any obvious process or group of processes using a large amount of
+CPU time, look at the division between system and user time. If
+there's an unusually high amount of time being spent
+on system (kernel) tasks, that <span class="docEmphasis">may</span> be a sign of
+a MySQL configuration problem or something completely unrelated. See
+<A class="docLink" HREF="#hpmysql-CHP-6-SECT-4.4">Section 6.4.4</A> later in this chapter
+for an example of why MySQL might be working the kernel too hard.</P>
+
+<P class="docText">If the CPU is relatively idle because it's
+frequently waiting for the disks, see <A class="docLink" HREF="#hpmysql-CHP-6-SECT-4.1">Section 6.4.1</A>. You'll
+know this because of the higher than normal numbers you see with
+<span class="docEmphasis">vmstat</span> and/or <span class="docEmphasis">iostat</span>. If
+the CPU is waiting on disk I/O because of swapping activity, however,
+go to <A class="docLink" HREF="#hpmysql-CHP-6-SECT-4.3">Section 6.4.3</A>.</P>
+
+<A NAME="hpmysql-CHP-6-SECT-4.1"></A>
+<H4 class="docSection2Title">6.4.1 Solving I/O Bottlenecks</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-6-ITERM-1553"></A>Disk (I/O) bottlenecks
+tend to be the most common MySQL performance problem.
+They're typically caused by inefficient
+queries—meaning that MySQL has to read too many rows to locate
+the data you're interested in. Usually that means
+your queries aren't using an index, or
+they're using an index that's not
+terribly effective for this particular query. Before going much
+further, be sure you've reviewed <A class="docLink" HREF="hpmysql-CHP-5.html#hpmysql-CHP-5">Chapter 5</A>.</P>
+
+<P class="docText">Diagnosing a query that's not using an index is
+relatively easy. If you've enabled the slow query
+log (see <A class="docLink" HREF="hpmysql-CHP-5-SECT-3.html#hpmysql-CHP-5-SECT-3">Section 5.3</A>
+in <A class="docLink" HREF="hpmysql-CHP-5.html#hpmysql-CHP-5">Chapter 5</A>) and set
+<TT>log-long-format</TT>, MySQL automatically logs any
+query that doesn't use an index. You really need to
+start with that query: use <TT>EXPLAIN</TT> and do simple
+benchmarks when you have more than one way to write a given query.</P>
+
+<P class="docText">After you've looked at any slow queries and fixed
+them, the next things to look at are more subtle issues. In some
+cases, queries do use an index and run relatively fast, so MySQL
+never considers them to be slow, but it's actually
+the wrong index from a performance point of view. There may be an
+alternative index MySQL can use to further decrease the I/O required.</P>
+
+<A NAME="hpmysql-CHP-6-SECT-4.1.1"></A>
+<H5 class="docSection3Title">6.4.1.1 Wrong index</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-6-ITERM-1554"></A><A NAME="hpmysql-CHP-6-ITERM-1555"></A><A NAME="hpmysql-CHP-6-ITERM-1556"></A>Finding queries that use
+the wrong index can be more of a challenge. It requires an intimate
+understanding of your data and the queries being run against it. A
+real-world example may help to illustrate how subtle the problem can
+be.</P>
+
+<P class="docText">Jeremy uses the <TT>mod_log_sql</TT> Apache module to
+record all his web site hits into a MyISAM table named
+<TT>access_jeremy_zawodny_com</TT>. The table is roughly
+1.3 GB in size, contains over 6 million records, and looks like this:</P>
+
+<PRE>+------------------+----------------------+------+-----+---------+-------+
+| Field            | Type                 | Null | Key | Default | Extra |
++------------------+----------------------+------+-----+---------+-------+
+| agent            | varchar(255)         | YES  | MUL | NULL    |       |
+| bytes_sent       | int(10) unsigned     | YES  |     | NULL    |       |
+| child_pid        | smallint(5) unsigned | YES  |     | NULL    |       |
+| cookie           | varchar(255)         | YES  |     | NULL    |       |
+| request_file     | varchar(255)         | YES  |     | NULL    |       |
+| referer          | varchar(255)         | YES  |     | NULL    |       |
+| remote_host      | varchar(50)          | YES  | MUL | NULL    |       |
+| remote_logname   | varchar(50)          | YES  |     | NULL    |       |
+| remote_user      | varchar(50)          | YES  |     | NULL    |       |
+| request_duration | smallint(5) unsigned | YES  |     | NULL    |       |
+| request_line     | varchar(255)         | YES  |     | NULL    |       |
+| request_method   | varchar(6)           | YES  |     | NULL    |       |
+| request_protocol | varchar(10)          | YES  |     | NULL    |       |
+| request_time     | varchar(28)          | YES  |     | NULL    |       |
+| request_uri      | varchar(255)         | YES  | MUL | NULL    |       |
+| server_port      | smallint(5) unsigned | YES  |     | NULL    |       |
+| ssl_cipher       | varchar(25)          | YES  |     | NULL    |       |
+| ssl_keysize      | smallint(5) unsigned | YES  |     | NULL    |       |
+| ssl_maxkeysize   | smallint(5) unsigned | YES  |     | NULL    |       |
+| status           | smallint(5) unsigned | YES  |     | NULL    |       |
+| time_stamp       | int(10) unsigned     | YES  | MUL | NULL    |       |
+| virtual_host     | varchar(50)          | YES  |     | NULL    |       |
++------------------+----------------------+------+-----+---------+-------+</PRE>
+
+<P class="docText">There are separate indexes on four columns: <TT>agent</TT>,
+<TT>time_stamp</TT>, <TT>request_uri</TT>, and
+<TT>remote_host</TT>. The intention is to provide an
+efficient way to produce statistics based on time, user agent
+(browser), the document fetched (<TT>request_uri</TT>), or
+the client (<TT>remote_host</TT>). Notice the indexes on
+each of those columns.</P>
+
+<P class="docText">Most queries ran very quickly, but one particular query was
+problematic. It seemed to run longer than expected. After repeated
+execution and watching <span class="docEmphasis">vmstat</span> output, it became
+clear that a lot of time was spent waiting on the disk. The query
+attempts to find out which documents a given client has requested
+during a particular time range—usually a single day. It is run
+once for every client that requested anything in the past day. The
+request looks like this:</P>
+
+<PRE>  select request_uri from access_jeremy_zawodny_com
+   where remote_host = '24.69.255.236'
+     and time_stamp &gt;= 1056782930
+     and time_stamp &lt;= 1056869330
+order by time_stamp asc</PRE>
+
+<P class="docText">Running the query through <TT>EXPLAIN</TT> proved to be
+quite interesting:</P>
+
+<PRE>mysql&gt; <B>explain select request_uri from access_jeremy_zawodny_com</B>
+    -&gt;    <B>where remote_host = '24.69.255.236'</B>
+    -&gt;      <B>and time_stamp &gt;= 1056782930</B>
+    -&gt;      <B>and time_stamp &lt;= 1056869330</B>
+    -&gt; <B>order by time_stamp asc \G</B>
+*************************** 1. row ***************************
+        table: access_jeremy_zawodny_com
+         type: ref
+possible_keys: time_stamp,remote_host
+          key: remote_host
+      key_len: 6
+          ref: const
+         rows: 4902
+        Extra: Using where; Using filesort
+1 row in set (0.00 sec)</PRE>
+
+<P class="docText">MySQL chose to use the index on <TT>remote_host</TT>. But
+it doesn't always make that choice. Sometimes it
+decides to use the index on <TT>time_stamp</TT>.
+Here's an example:</P>
+
+<PRE>mysql&gt; <B>explain  select request_uri from access_jeremy_zawodny_com</B>
+    -&gt;    <B>where remote_host = '67.121.154.34'</B>
+    -&gt;      <B>and time_stamp &gt;= 1056782930</B>
+    -&gt;      <B>and time_stamp &lt;= 1056869330</B>
+    -&gt; <B>order by time_stamp asc \G</B>
+*************************** 1. row ***************************
+        table: access_jeremy_zawodny_com
+         type: range
+possible_keys: time_stamp,remote_host
+          key: time_stamp
+      key_len: 5
+          ref: NULL
+         rows: 20631
+        Extra: Using where
+1 row in set (0.01 sec)</PRE>
+
+<P class="docText">The only difference between those two queries is the IP address
+we're looking for. In each case,
+MySQL's query optimizer estimates the number of rows
+it will need to read to satisfy the query using each possible index.
+In the first example, it decides that there are fewer records with a
+<TT>remote_host</TT> of <TT>24.69.255.236</TT>
+than there are records in the specified 24-hour time range. In the
+second example, it does just the opposite, deciding the time range
+will result in fewer rows to read.</P>
+
+<P class="docText">By experimenting with various IP addresses, it
+doesn't take long to find one for which MySQL makes
+the wrong choice. It chooses the <TT>remote_host</TT> index
+when using the <TT>time_stamp</TT> index is actually
+faster—even though the <TT>remote_host</TT> requires
+reading the fewest rows.<sup class="docFootnote"><A class="docLink" HREF="#hpmysql-CHP-6-FNOTE-4">[4]</A></sup> How is that possible?</P><blockquote><p class="docFootnote"><sup><A NAME="hpmysql-CHP-6-FNOTE-4">[4]</A></sup> Using a <TT>USE
+INDEX</TT> specification in the query, you can test the
+performance of either index.</p></blockquote>
+
+<P class="docText">The underlying assumption is that all rows cost roughly the same
+amount of time to read. But this is a case in which
+that's not always true. Consider how the data will
+be stored in this MyISAM table. Apache is logging requests to the
+table all the time and has been doing so for over a year. Rows are
+never removed, so the data is already sorted by timestamp in the
+table and on disk (assuming minimal fragmentation).</P>
+
+<P class="docText">Once you have a nontrivial amount of information in a table like
+this, the rules change a bit. If we assume that the records for a
+given IP address are evenly distributed among the millions of
+records, it's clear that using the
+<TT>remote_host</TT> index <span class="docEmphasis">may</span> result
+in many more disk seeks. And since disk seeks are slower than reading
+consecutive blocks from disk, it follows that MySQL may be doing less
+work (evaluating fewer rows) but the disk is doing more
+work—using precious seek time that may slow down other queries
+too.</P>
+
+<P class="docText">In logging applications when you're frequently
+querying based on a time range as well as another indexed field, this
+problem is quite common and has no good generalizable solution. If
+you have some insight into your data and can add it to the software
+that writes the queries, that can help a lot. The software could be
+configured to tell MySQL which index to use. For example, if your
+software knows that a given IP address shows up only very
+infrequently recently, it can force MySQL to use the
+<TT>time_stamp</TT> range:</P>
+
+<PRE>SELECT ... USE_INDEX(time_stamp) ...</PRE>
+
+<P class="docText">It's not the ideal solution, but it is quite
+effective when used appropriately.<A NAME="hpmysql-CHP-6-ITERM-1557"></A><A NAME="hpmysql-CHP-6-ITERM-1558"></A><A NAME="hpmysql-CHP-6-ITERM-1559"></A></P>
+
+
+
+<A NAME="hpmysql-CHP-6-SECT-4.1.2"></A>
+<H5 class="docSection3Title">6.4.1.2 Temporary tables</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-6-ITERM-1560"></A>Another problem that
+doesn't show up in the slow query log is an
+excessive use of disk-based temporary tables. In the output of
+<TT>EXPLAIN</TT>, you'll often see
+<TT>Using</TT> <TT>temporary</TT>. It indicates
+that MySQL must create a temporary table to complete the query.
+However, it doesn't tell you whether that temporary
+table will be in memory or on disk. That's
+controlled by the size of the table and MySQL's
+<TT>tmp_table_size</TT><A NAME="hpmysql-CHP-6-ITERM-1561"></A> variable.</P>
+
+<P class="docText">If the space required to build the temporary table is less than or
+equal to <TT>tmp_table_size</TT>, MySQL keeps it in memory
+rather than incur the overhead and time required to write the data to
+disk and read it again. However, if the space required exceeds
+<TT>tmp_table_size</TT>, MySQL creates a disk-based table
+in its <TT>tmpdir</TT> directory (often
+<I>/tmp</I> on Unix systems.) The default
+<TT>tmp_table_size</TT> size is 32 MB.</P>
+
+<P class="docText">To find out how often that happens, compare the relative sizes of the
+<TT>Created_tmp_tables</TT> and
+<TT>Created_tmp_disk_tables</TT> counters:</P>
+
+<PRE>mysql&gt; <B>SHOW STATUS LIKE 'Created_tmp_%';</B>
++-------------------------+-------+
+| Variable_name           | Value |
++-------------------------+-------+
+| Created_tmp_disk_tables | 18    |
+| Created_tmp_tables      | 203   |
+| Created_tmp_files       | 0     |
++-------------------------+-------+</PRE>
+
+<P class="docText">If you create a lot of disk-based temporary tables, increase the size
+of <TT>tmp_table_size</TT> if you can do so safely. Keep in
+mind that setting the value too high may result in excessive swapping
+or MySQL running out of memory if too many threads attempt to
+allocate in-memory temporary tables at the same time. Otherwise, make
+sure that <TT>tmpdir</TT> points to a very fast disk
+that's not already doing lots of I/O.</P>
+
+<P class="docText">As a last resort, consider using a tmpfs (or ramdisk, or mdmfs, or
+whatever your OS calls memory-backed filesystems) and setting
+<TT>$TMPDIR</TT> to point there when starting MySQL.</P>
+
+
+
+<A NAME="hpmysql-CHP-6-SECT-4.1.3"></A>
+<H5 class="docSection3Title">6.4.1.3 Caching</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-6-ITERM-1562"></A><A NAME="hpmysql-CHP-6-ITERM-1563"></A>If
+your queries are already optimized and using the most efficient
+indexes, it's still possible to run into I/O
+bottlenecks at some point. Simply running too many queries, no matter
+how efficient they are, can become too much for the disk(s) to keep
+up with. If so, it's time to consider caching.</P>
+
+<P class="docText">The easiest thing to do is make sure you're using
+the MySQL query cache. Available since MySQL 4.0, the query cache
+keeps the results of frequently executed <TT>SELECTs</TT>
+in memory so that MySQL doesn't need to perform any
+disk I/O at all. See <A class="docLink" HREF="hpmysql-CHP-5-SECT-4.html#hpmysql-CHP-5-SECT-4.4">Section 5.4.4</A> in <A class="docLink" HREF="hpmysql-CHP-5.html#hpmysql-CHP-5">Chapter 5</A> for more information.</P>
+
+<P class="docText">Taking things a step further, you might consider application-level
+caching. If there's data that
+doesn't change frequently at all, query for it once
+in a while and store it in memory or on local disk until you requery
+for it.</P>
+
+
+
+<A NAME="hpmysql-CHP-6-SECT-4.1.4"></A>
+<H5 class="docSection3Title">6.4.1.4 Spread the load</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-6-ITERM-1564"></A><A NAME="hpmysql-CHP-6-ITERM-1565"></A>If
+you've already covered the causes listed earlier and
+implemented the suggestions, it's likely that you
+need to spread the I/O load more effectively. As described earlier,
+installing disks with faster RPMs and lower seek times may help.
+Using RAID (especially RAID 0, RAID 5, or RAID 10) will spread the
+work across multiple disks, possibly eliminating or reducing the
+bottleneck.</P>
+
+<P class="docText">Another option, if you have multiple disks and can't
+easily configure RAID, is to attempt to balance the disk I/O
+manually. Spend some time with
+<span class="docEmphasis">iostat</span><A NAME="hpmysql-CHP-6-ITERM-1566"></A>
+or
+<span class="docEmphasis">systat</span><A NAME="hpmysql-CHP-6-ITERM-1567"></A>
+(depending on your OS) to discover where the bulk of the I/O is
+going. If you have all your MySQL data on a single disk, you can try
+moving pieces to another disk. If the majority of activity is focused
+on a small group of tables, consider moving them to a separate disk.</P>
+
+<P class="docText">Another approach is to separate predominantly random I/O from that
+which is mostly serial. Store logs such as the binary logs,
+replication relay logs, and InnoDB transaction logs, on a separate
+disk from the actual data files. It's ultimately a
+game of trial and error. As with benchmarking, keep a close eye on
+the numbers and try not to change too many things at once.</P>
+
+<P class="docText">Finally, replication is always an option. If you've
+simply outgrown the capacity of a single machine,
+it's often the least disruptive solution. See <A class="docLink" HREF="hpmysql-CHP-7.html#hpmysql-CHP-7">Chapter 7</A> to learn all about replication.</P>
+
+
+
+<A NAME="hpmysql-CHP-6-SECT-4.2"></A>
+<H4 class="docSection2Title">6.4.2 Solving CPU Bottlenecks</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-6-ITERM-1568"></A><A NAME="hpmysql-CHP-6-ITERM-1569"></A>CPU bottlenecks in MySQL
+can be difficult to track down. Unlike some database servers, MySQL
+currently doesn't provide per-query statistics about
+the amount of time spent actually doing work versus waiting for disk
+I/O to complete.</P>
+
+<P class="docText">Luckily it doesn't have to be a complete guessing
+game. If you see a query in the slow query log and suspect that it
+may be CPU-bound, simply benchmark it. Pull out a copy of MySQL
+super-smack, and run it a few thousand times in a row. Then, in
+another window, watch <span class="docEmphasis">top</span>,
+<span class="docEmphasis">vmstat</span>, or your favorite system monitoring tool.
+If the CPU quickly hits 100% utilization even with a relatively low
+number of concurrent queries, the query is very likely CPU-bound.</P>
+
+<P class="docText">If you find yourself staring at a very large list of slow queries,
+how do you decide which ones to start analyzing? Easy: look for those
+that examine a large number of rows (thousands, tens of thousands, or
+more), and focus on those that use any of MySQL's
+built-in data-manipulation functions. Common suspects are those that:</P>
+
+<UL><LI><P class="docList">Format or compare dates</P></LI><LI><P class="docList">Encrypt data or compute hashes</P></LI><LI><P class="docList">Perform complex comparisons, such as regular expressions</P></LI></UL>
+<P class="docText">You'll often find that something as simple as
+computing an MD5 hash over millions of values per hour is using too
+much CPU time. By moving the logic into the application servers that
+query that database, you'll free up CPU time for
+work that only MySQL can do efficiently.</P>
+
+<P class="docText">If you can't easily ask MySQL to do less work by
+moving logic into the application layer, you always have the option
+of throwing hardware at the problem. You can do this in one of two
+ways. You might simply upgrade the CPUs in your server or add more
+CPUs if there's room. Alternatively, you may find it
+less expensive and more scalable to add new servers, replicate the
+data to them, and spread the load among them.
+There's nothing wrong with using
+Moore's Law to your advantage once in a while.</P>
+
+<P class="docText">High CPU utilization with MyISAM tables isn't
+<span class="docEmphasis">always</span> bad. It may mean that you are doing
+queries on tables that have been entirely cached in the operating
+system's cache. This may or may not be a bad thing.
+It's certainly better than reading from disk, but
+each time MySQL has to ask the OS for a block of data,
+that's CPU time that could be better spent
+processing the rest of the query. Moving to InnoDB or BDB tables lets
+MySQL cache table data itself, so it doesn't have to
+ask the OS for records.</P>
+
+
+<A NAME="hpmysql-CHP-6-SECT-4.3"></A>
+<H4 class="docSection2Title">6.4.3 Solving Memory Bottlenecks</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-6-ITERM-1570"></A><A NAME="hpmysql-CHP-6-ITERM-1571"></A>Tuning memory usage on MySQL
+servers can be a delicate balancing act. As explained earlier, MySQL
+has some global memory buffers in addition to a number of per-thread
+buffers. The trick is to balance the performance gains that come from
+having large global buffers against the need to service a particular
+number of concurrent users. At a minimum, you should have enough
+memory available to handle MySQL's global buffers
+plus the per-thread buffers multiplied by the maximum number of
+concurrent connections you will use.</P>
+
+<P class="docText">Expressed mathematically, that is:</P>
+
+<PRE>min_memory_needed = global_buffers + (thread_buffers * max_connections)</PRE>
+
+<P class="docText">where <TT>thread_buffers</TT> includes the following:</P>
+
+<DL class="docList"><DD><TT>sort_buffer</TT></DD><DD><TT>myisam_sort_buffer</TT></DD><DD><TT>read_buffer</TT></DD><DD><TT>join_buffer</TT></DD><DD><TT>read_rnd_buffer</TT></DD></DL>
+
+<P class="docText">and <TT>global_buffers</TT> includes:</P>
+
+<DL class="docList"><DD><TT>key_buffer</TT></DD><DD><TT>innodb_buffer_pool</TT></DD><DD><TT>innodb_log_buffer</TT></DD><DD><TT>innodb_additional_mem_pool</TT></DD><DD><TT>net_buffer</TT></DD></DL>
+
+<P class="docText">We say that's the minimum memory required because
+ideally you'd like some left over for the operating
+system itself to use. In the case of MyISAM tables,
+"spare" memory will often be put to
+use caching records from MyISAM data (.<span class="docEmphasis">MYD</span>)
+files.</P>
+
+<P class="docText">In addition to any memory the threads may allocate in the process of
+handling queries, the threads themselves also require a bit of memory
+simply to exist. The <TT>thread_stack</TT> variable
+controls this overhead. On most platforms, 192 KB is the default
+value.<sup class="docFootnote"><A class="docLink" HREF="#hpmysql-CHP-6-FNOTE-5">[5]</A></sup></P><blockquote><p class="docFootnote"><sup><A NAME="hpmysql-CHP-6-FNOTE-5">[5]</A></sup> If you happen to be using LinuxThreads on
+FreeBSD, the value is hardcoded in the LinuxThreads library. Changing
+MySQL's <TT>thread_stack</TT> setting will
+have no effect. You must recompile the library to change the stack
+size.</p></blockquote>
+
+<P class="docText">A likely problem is typified by an all-too-common scenario. Imagine
+you have a server with 1 GB of memory hosting a mix of MyISAM and
+InnoDB tables—mostly MyISAM. To get the most bang for your
+buck, you configure a 512-MB <TT>key_buffer</TT> after
+watching the key efficiency in <TT>mytop</TT> (see <A class="docLink" HREF="hpmysql-APP-B.html#hpmysql-APP-B">Appendix B</A>) and a 256-MB
+<TT>innodb_buffer_pool</TT> after checking the buffer pool
+and memory statistics from <TT>SHOW INNODB</TT>
+<TT>STATUS</TT> (see <A class="docLink" HREF="hpmysql-APP-A.html#hpmysql-APP-A">Appendix A</A>). That
+leaves 256 MB that is used to cache data files at the operating
+system level as well as the per-thread buffers that are allocated on
+an as-needed basis. The MySQL server handles a relatively small
+number of concurrent users, maybe 20-50 most of the time, and the
+per-thread buffer settings are all left at their default sizes.</P>
+
+<P class="docText">Things work very well until a few new applications are built that
+also use this MySQL server. These new applications need a significant
+number of concurrent connections. Instead of 20-50 connections on
+average, the server is handling 300-400. When this happens, the odds
+of several connections needing to allocate a per-thread buffer (such
+as the <TT>sort_buffer</TT>) at the same time increase
+quite a bit.</P>
+
+<P class="docText">This can lead to a particularly nasty series of events. If a large
+number of threads need to allocate additional memory,
+it's probably because the server is handling a heavy
+query load. That can cause MySQL to allocate so much memory that the
+operating system begins swapping, which causes performance to degrade
+further, which means that each query takes longer to complete. With
+queries running more slowly, the odds of more threads needing memory
+increases. It's a vicious spiral.</P>
+
+<P class="docText">The only solution is to restore balance between the
+system's memory and MySQL's memory
+needs. That means doing one of the following.</P>
+
+<UL><LI><P class="docList">Add more memory</P></LI><LI><P class="docList">Decrease <TT>max_connections</TT></P></LI><LI><P class="docList">Decrease some of the per-thread buffer sizes</P></LI></UL>
+<P class="docText">Be proactive. Monitor memory use on your servers. Do the math to
+ensure that in the worst case (hitting
+<TT>max_connections</TT> and each thread allocating
+additional memory), you'll still have a bit of
+breathing room.</P>
+
+
+<A NAME="hpmysql-CHP-6-SECT-4.4"></A>
+<H4 class="docSection2Title">6.4.4 Solving Kernel Bottlenecks</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-6-ITERM-1572"></A><A NAME="hpmysql-CHP-6-ITERM-1573"></A>Though
+it's not common, you may find that MySQL
+doesn't appear to be using an overwhelming amount of
+CPU time, yet the machine is rather busy. There's
+little idle CPU. Upon looking at it more closely, you find that quite
+a bit of the time is spent in
+"system" rather than
+"user" or
+"idle." That's
+likely a sign that MySQL is doing something unusual to exercise the
+kernel—usually creating and destroying threads.</P>
+
+<P class="docText">This happened at Yahoo! during the launch of a new web site. In
+September 2002, engineers were scrambling to create a September 11th
+memorial web site known as
+<span class="docEmphasis">remember.yahoo.com</span>.<sup class="docFootnote"><A class="docLink" HREF="#hpmysql-CHP-6-FNOTE-6">[6]</A></sup> On it, anyone could create a memorial
+"tile" by selecting a graphic and
+adding a customized message. The tile was then viewable by anyone
+visiting the site. To get the job done as quickly as possible, it was
+constructed using standard open source tools, including FreeBSD,
+Apache, PHP, and MySQL</P><blockquote><p class="docFootnote"><sup><A NAME="hpmysql-CHP-6-FNOTE-6">[6]</A></sup> The entire
+site was conceived, designed, built, and launched in roughly two
+weeks using the spare time of handful of Yahoo's
+engineers.</p></blockquote>
+
+<P class="docText">The architecture was relatively straightforward, but
+we'll simplify it a bit to focus on the main point.
+A group of frontend web servers was configured to connect to a slave
+server by way of a hardware load balancer. Using the slave
+connection, the server could pull the information necessary to
+display the tiles. When a visitor created a tile, however, the web
+server needed to connect to the master to insert several records. The
+master was a beefier machine: dual 1.2-GHz CPUs, 2 GB of RAM, and a
+SCSI hardware RAID 5 disk array.</P>
+
+<P class="docText">At its peak, there were roughly 25-30 web servers that needed to work
+with the master. Each server was configured to run roughly 30-40
+Apache processes. That meant the master would need to support over
+1,000 concurrent clients. Knowing that could tie up substantial
+resources on the master, the designers opted for a simplified
+approach. Unfortunately, the web application (written in PHP) was
+configured to use persistent connections. So, to keep connection
+numbers down on the master, the <TT>wait_timeout</TT> was
+set very low—to roughly 10 seconds.</P>
+
+<P class="docText">By and large, it worked. Idle connections were dropped after 10
+seconds. The number of connections on the master remained below 200,
+leaving lots of resources free. But there was a problem: the CPUs in
+the master were quite busy. Most of the time there was less than 10%
+idle time, and nearly 50% of the CPU time was being spent on system
+(rather than user) tasks.</P>
+
+<P class="docText">After an hour or so of head-scratching, looking at system logs and
+the output of <TT>SHOW</TT> <TT>STATUS</TT>, a
+light finally flickered on in Jeremy's head. The
+value of <TT>Threads_created</TT> was very large and
+increasing at an alarming rate. The kernel was so busy creating and
+destroying threads that it was eating into MySQL's
+ability to use the CPUs effectively.</P>
+
+<P class="docText">With that realization, the solution was easy. Increasing the
+<TT>thread_cache</TT> from its default value of 0 to
+roughly 150 resulted in an instant improvement. The system CPU time
+dropped to roughly 10%, thus freeing up quite a bit of CPU time for
+MySQL to use. As it turns out, MySQL didn't need it
+all, so the machine ended up with 20% idle time—breathing
+room.<A NAME="hpmysql-CHP-6-ITERM-1574"></A></P>
+
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="hpmysql-CHP-6-SECT-3.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="hpmysql-CHP-7.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

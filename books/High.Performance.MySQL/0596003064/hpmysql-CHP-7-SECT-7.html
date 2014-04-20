@@ -1,0 +1,302 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>7.7 The Future of Replication</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="hpmysql-CHP-7-SECT-6.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="hpmysql-CHP-8.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="hpmysql-CHP-7-SECT-7"></A>
+<H3 class="docSection1Title">7.7 The Future of Replication</H3>
+
+<P class="docText"><A NAME="hpmysql-CHP-7-ITERM-1706"></A>To solve some of
+MySQL's current shortcomings and to provide the
+infrastructure for handling problems that MySQL
+hasn't yet seen, a number of future enhancements
+have been proposed for MySQL. Let's look at them
+briefly.</P>
+
+<A NAME="hpmysql-CHP-7-SECT-7.1"></A>
+<H4 class="docSection2Title">7.7.1 Eliminating the Snapshot</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-7-ITERM-1707"></A>With MySQL's current
+implementation, it's difficult to add a slave to a
+master after the master has been running for a long period of time.
+Many of the original binary logs have probably been removed to save
+space. Without all the logs, you can't simply
+configure the slave and point it at the master.</P>
+
+<P class="docText">Even if you have all the binary logs on the master, it may take days,
+weeks, or even months for a slave to execute all the queries and
+finally catch up to the master. If you're looking to
+add slaves in a hurry, this clearly isn't the way to
+do it.</P>
+
+<P class="docText">In either case, the ideal solution is simply to configure the new
+slave and tell it to begin replicating. Behind the scenes, the slave
+contacts the master and requests copies of the all the tables it
+needs, probably using a mechanism similar to <TT>LOAD</TT>
+<TT>TABLE FROM</TT> <TT>MASTER</TT>. The master
+will need a way to track all changes to tables between the time that
+the slave begins and finishes copying the tables. Upon completion of
+the copy, the slave receives all the necessary changes and begins
+replicating from the binary log.</P>
+
+<P class="docText">An alternative is for all of MySQL's storage engines
+to implement a versioning scheme similar to
+InnoDB's. When a new slave connects and begins to
+copy the tables, it can get a snapshot from that moment in time. When
+the copy is complete, the slave can begin replicating from the binary
+log position corresponding to the moment when the snapshot was
+marked.</P>
+
+
+<A NAME="hpmysql-CHP-7-SECT-7.2"></A>
+<H4 class="docSection2Title">7.7.2 Fail-Safe Replication</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-7-ITERM-1708"></A>When a master fails, you must
+select a new master and instruct all the slaves to connect to the new
+master and begin replicating. Not only is that process prone to
+errors, it can be time-consuming too. Ideally, MySQL should handle
+failover automatically.</P>
+
+<P class="docText">The proposed solution involves each slave registering itself with the
+master so that the master can keep track of it. Not only will the
+master know which servers are slaves, it can also keep track of how
+up to date each slave is. The slaves, in turn, will also keep track
+of who all the other slaves are.</P>
+
+<P class="docText">In the event that the master fails, the slaves can elect a master
+based on the available information. Ideally, they will find the slave
+that was the most up to date when the master went down.</P>
+
+
+<A NAME="hpmysql-CHP-7-SECT-7.3"></A>
+<H4 class="docSection2Title">7.7.3 Safe Multi-Master Replication</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-7-ITERM-1709"></A>Today it's
+possible to use replication in a multi-master architecture, as
+depicted earlier (see <A class="docLink" HREF="hpmysql-CHP-7-SECT-4.html#hpmysql-CHP-7-FIG-3">Figure 7-3</A>). The major
+drawback to doing so, however, is that you can't
+rely on <TT>AUTO_INCREMENT</TT> columns to function
+properly.</P>
+
+<P class="docText">Each MyISAM table has a single counter that controls the next
+<TT>AUTO_INCREMENT</TT> value. Once that value has
+increased, it can't easily be decreased. If inserts
+are timed properly, they cause data to become inconsistent between
+the two masters.</P>
+
+<P class="docText">Imagine the following events occurring on two servers,
+<span class="docEmphasis">master1</span> and <span class="docEmphasis">master2</span>:</P>
+
+<span style="font-weight:bold"><OL class="docList" TYPE="1"><LI><span style="font-weight:normal"><P class="docList">Both servers start with an empty orders table.</P></span></LI><LI><span style="font-weight:normal"><P class="docList"><span class="docEmphasis">master1</span> inserts a record for customer 58, which
+is assigned ID 1.</P></span></LI><LI><span style="font-weight:normal"><P class="docList"><span class="docEmphasis">master2</span> inserts a record for customer 1232,
+which is assigned ID 1.</P></span></LI><LI><span style="font-weight:normal"><P class="docList"><span class="docEmphasis">master2</span> replicates
+<span class="docEmphasis">master1</span>'s insert, adding the
+record for customer 58 and trying to assign it an ID of 1. That fails
+and results in a duplicate key error.</P></span></LI><LI><span style="font-weight:normal"><P class="docList"><span class="docEmphasis">master1</span> replicates
+<span class="docEmphasis">master2</span>'s insert, adding the
+record for customer 1232 and trying to assign it an ID of 1. That
+fails and results in a duplicate key error.</P></span></LI></OL></span>
+<P class="docText">Each master was given an insert by some client before it had
+replicated the other master's insert. The result is
+that both masters are out of sync.</P>
+
+<P class="docText">The current solution is to avoid using
+<TT>AUTO_INCREMENT</TT> fields completely and assign
+primary keys through some other means. You might use an MD5 hash of
+some values in the record, or perhaps use another library to generate
+a globally unique identifier (GUID).</P>
+
+<P class="docText">Let's look at the two proposed solutions for the
+future.</P>
+
+<A NAME="hpmysql-CHP-7-SECT-7.3.1"></A>
+<H5 class="docSection3Title">7.7.3.1 Multipart auto-increment unique keys</H5>
+
+<P class="docText">The first is to use MyISAM's multipart
+auto-increment unique keys. Rather than using a single column as a
+primary key, you'd set up a table like this:</P>
+
+<PRE>CREATE TABLE orders (
+    server_id       INTEGER UNSIGNED NOT NULL,
+    record_id       INTEGER UNSIGNED NOT NULL AUTO_INCREMENT,
+    stuff           VARCHAR(255)     NOT NULL,
+    UNIQUE mykey (server_id, record_id)
+);</PRE>
+
+<P class="docText">Notice that the <TT>record_id</TT> is an
+<TT>AUTO_INCREMENT</TT> field and is the second part of a
+two-part unique key. When you insert NULL into the
+<TT>record_id</TT> column, MySQL will consider the value of
+<TT>server_id</TT> when automatically generating a value.</P>
+
+<P class="docText">To illustrate this, notice the following:</P>
+
+<PRE>mysql&gt; <B>insert into orders values (1, NULL, 'testing');</B>
+Query OK, 1 row affected (0.01 sec)
+
+mysql&gt; <B>insert into orders values (1, NULL, 'testing');</B>
+Query OK, 1 row affected (0.00 sec)
+
+mysql&gt; <B>insert into orders values (2, NULL, 'testing');</B>
+Query OK, 1 row affected (0.00 sec)
+
+mysql&gt; <B>select * from orders;</B>
++-----------+-----------+---------+
+| server_id | record_id | stuff   |
++-----------+-----------+---------+
+|         1 |         1 | testing |
+|         1 |         2 | testing |
+|         2 |         1 | testing |
++-----------+-----------+---------+
+3 rows in set (0.03 sec)</PRE>
+
+<P class="docText">MySQL, in effect, allows you to select from multiple
+<TT>AUTO_INCREMENT</TT> sequences based on the prefix you
+use. By adding a function such as <TT>SERVER_ID( )</TT> to
+MySQL and rewriting the previous queries, you can use
+<TT>AUTO_INCREMENT</TT> with multi-master replication
+safely.</P>
+
+<PRE>mysql&gt; <B>insert into orders values (SERVER_ID( ), NULL, 'testing');</B>
+Query OK, 1 row affected (0.01 sec)
+
+mysql&gt; <B>insert into orders values (SERVER_ID( ), NULL, 'testing');</B>
+Query OK, 1 row affected (0.00 sec)
+
+mysql&gt; <B>insert into orders values (SERVER_ID( ), NULL, 'testing');</B>
+Query OK, 1 row affected (0.00 sec)</PRE>
+
+<P class="docText">There are three problems with this approach. First, it works only for
+MyISAM tables. An ideal solution works across all table types.
+Another issue is that all slaves require some special logic. Today,
+when a slave reads the binary log of a master, it knows the
+master's server ID as well as its own, but it
+doesn't really do anything with the
+master's server ID. In this solution, the slave has
+to actually use the master's server ID any time that
+it replicated a query that involved the mythical <TT>SERVER_ID(
+)</TT> function. That makes the replication logic a bit trickier
+on the slaves.</P>
+
+<P class="docText">You could work around the lack of a <TT>SERVER_ID( )</TT>
+function by simply using the actual server ID in your SQL statements.
+If you know you're talking to server 12, write the
+query accordingly:</P>
+
+<PRE>mysql&gt; <B>insert into orders values (12, NULL, 'testing');</B>
+Query OK, 1 row affected (0.01 sec)</PRE>
+
+<P class="docText">But there's the rub. You need to know, in advance of
+each query, what the server's ID is. Granted, the
+server's ID doesn't change, but if
+you're accessing one of many servers via a load
+balancer or don't have a persistent connection, the
+server you're talking to may change often. So
+you'd have to deal with the overhead of obtaining
+the server's ID whenever you need it.</P>
+
+<PRE>mysql&gt; <B>show variables like 'server_id';</B>
++---------------+-------+
+| Variable_name | Value |
++---------------+-------+
+| server_id     | 102   |
++---------------+-------+
+1 row in set (0.00 sec)</PRE>
+
+<P class="docText">Finally, and most importantly, using two columns as the primary key
+just doesn't feel natural. It feels like a hack or a
+workaround. If this solution became widespread, others problems might
+arise. For example, setting up foreign-key relationships would be
+troublesome. Putting aside the fact that InnoDB
+doesn't even support multipart auto-increment unique
+keys, how would you define a foreign-key relationship with multipart
+keys?</P>
+
+
+
+<A NAME="hpmysql-CHP-7-SECT-7.3.2"></A>
+<H5 class="docSection3Title">7.7.3.2 Partitioned auto-increment fields</H5>
+
+<P class="docText">The second solution is to make auto-increment fields a bit more
+complex. Rather than simply using a 32-bit integer that starts at 1
+and keeps counting, it might make sense to use more bits and
+partition the key-space based on the server ID. Currently, server IDs
+are 32-bit values, so by using a 64-bit auto-increment value, the two
+can be combined. The high 32 bits of the value would be the server ID
+of the server that originally generated the record, and the low 32
+bits would be the real auto-increment value.</P>
+
+<P class="docText">Internally, MySQL needs to treat the 64-bit auto-increment value a
+lot like the multipart auto-increment unique keys previously
+discussed. The value generated for the low 32 bits is dependent on
+the value of the high 32 bits (the server ID). The benefit is that
+from the user's point of view, it's
+a single column and can be used just like any other column. Insert
+statements are no more complex; all the magic is conveniently under
+the hood, where it belongs.</P>
+
+<P class="docText">There are some downsides to this approach, however. The most apparent
+issue is that there would be large gaps in the values. For the sake
+of simplicity, MySQL can always subtract 1 from the server ID when
+generating the high bits of the auto-increment value. This allows
+values to continue starting at 1 when the server ID is 1. However, as
+soon as a second server is introduced, with server ID 2, it inserts
+values starting from 4,294,967,297 (2<SUP>32</SUP> +
+1) and counting up from there.</P>
+
+<P class="docText">Another problem is that columns will require more space on disk (both
+in the data and index files). <TT>BIGINT</TT> columns are
+already 8 bytes (64 bits) wide. Adding another 4 bytes (32 bits) for
+the server ID portion of the auto-increment value means a 50%
+increase in the space required. That may not sound like a lot, but an
+application that requires 64-bit values in the first place is likely
+to be storing billions of rows. Adding an additional 4 bytes to a
+table containing 10 billion rows means storing an additional 40 GB of
+data!</P>
+
+<P class="docText">It makes sense to break compatibility with existing MySQL versions
+(which use 32-bit server IDs) and reduce the size of the server ID to
+8 or 16 bits. After all, with even 8 bits available, you can have up
+to 255 unique servers in a single replication setup; with 16 bits,
+that jumps to 65,535. It's unlikely anyone will have
+that many servers in a single replication setup.<sup class="docFootnote"><A class="docLink" HREF="#hpmysql-CHP-7-FNOTE-9">[9]</A></sup><A NAME="hpmysql-CHP-7-ITERM-1710"></A><A NAME="hpmysql-CHP-7-ITERM-1711"></A><A NAME="hpmysql-CHP-7-ITERM-1712"></A></P><blockquote><p class="docFootnote"><sup><A NAME="hpmysql-CHP-7-FNOTE-9">[9]</A></sup> Perhaps Google will decide to run MySQL on their growing farm
+of 100,000+ Linux servers. They'd need more than 8
+bits.</p></blockquote>
+
+
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="hpmysql-CHP-7-SECT-6.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="hpmysql-CHP-8.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

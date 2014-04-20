@@ -1,0 +1,289 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>7.3 Under the Hood</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="hpmysql-CHP-7-SECT-2.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="hpmysql-CHP-7-SECT-4.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="hpmysql-CHP-7-SECT-3"></A>
+<H3 class="docSection1Title" id="151807-851">7.3 Under the Hood</H3>
+
+<P class="docText"><A NAME="hpmysql-CHP-7-ITERM-1625"></A><A NAME="hpmysql-CHP-7-ITERM-1626"></A>What really happens during
+replication? What does the binary log contain?
+What's different in Version 4.0? To help answer
+those questions, let's get deeper into the details
+and then walk through the steps that MySQL performs during
+replication. We'll start with an insert on the
+master and follow it to completion on the slave.
+We'll also look at how MySQL 3.23 and 4.x differ.</P>
+
+<A NAME="hpmysql-CHP-7-SECT-3.1"></A>
+<H4 class="docSection2Title">7.3.1 Replication in 3.23</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-7-ITERM-1627"></A>MySQL's original
+replication code provides basic replication services. The master logs
+all write queries to the binary log. The slave reads and executes the
+queries from the master's binary log. If the two are
+ever disconnected, the slave attempts to reconnect to the master.</P>
+
+<P class="docText">If you follow a query from start to finish, here's
+what's happening behind the scenes:</P>
+
+<span style="font-weight:bold"><OL class="docList" TYPE="1"><LI><span style="font-weight:normal"><P class="docList">The client issues a query on the master.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">The master parses and executes the query.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">The master records the query in the binary log.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">The slave reads the query from the master.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">The slave parses and executes the query.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">The slave performs a sanity check, comparing its result with the
+master's. If the query failed on the slave but
+succeeded on the master, replication stops. The reverse is also true.
+If the query partially completed on the master but succeeds on the
+slave, the slave stops and complains.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">The slave updates the <I>master.info</I> file to
+reflect the new offset at which it is reading the
+master's binary log.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">The slave waits for the next query to appear in the
+master's binary log. When one appears, it starts
+over at Step 4.</P></span></LI></OL></span>
+<P class="docText">That's a relatively simple arrangement. The master
+simply logs any queries that change data. The slave reads those
+queries from the master, one by one, and executes each of them. If
+there are any discrepancies between the results on the master and the
+slave, the slave stops replicating, logs an error, and waits for
+human intervention.</P>
+
+<P class="docText">The simplicity of this system has problems, however. If the master
+and slave are separated by a slow network, the speed at which
+replication can occur becomes bounded by the network latency. Why?
+Because the process is highly serialized. The slave runs in a simple
+"fetch query, execute query, fetch query,
+..." loop. If the "fetch
+query" half of the loop takes more than a trivial
+amount of time, the slave may not be able to keep up with the master
+during very heavy workloads. The master may be able to execute and
+log 800 queries per second, but if the slave requires 25 msec to
+fetch each query over the network, it can replicate no more than 40
+queries per second.</P>
+
+<P class="docText">This can be problematic even with a fast network connection. Suppose
+the master executes a query that takes five minutes to complete.
+Maybe it's an <TT>UPDATE</TT> that affects
+50 million records. During the five minutes the slave spends running
+the same query, it isn't pulling new queries from
+the master. By the time it completes the query, it's
+effectively five minutes behind the master, in terms of replication.
+It has a fair bit of catching up to do. If the master fails during
+that five-minute window, there's simply no way for
+the slave to catch up until the master reappears. Some of these
+problems are solved in 4.0.</P>
+
+
+<A NAME="hpmysql-CHP-7-SECT-3.2"></A>
+<H4 class="docSection2Title">7.3.2 Replication in 4.0</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-7-ITERM-1628"></A>To
+solve the problem of slaves falling behind because of slow queries or
+slow networks, the replication code was reworked for Version 4.0.
+Instead of a single thread on the slave that runs in a
+"fetch, execute, fetch, ..." loop,
+there are two replication threads: the <I>IO
+thread</I> and the <I>SQL thread</I>.</P>
+
+<P class="docText">These two threads divide the work in an effort to make sure the slave
+can always be as up to date as possible. The IO thread is concerned
+only with replicating queries from the master's
+binary log. Rather than execute them, it records them into the
+slave's <I>relay log</I>.<sup class="docFootnote"><A class="docLink" HREF="#hpmysql-CHP-7-FNOTE-7">[7]</A></sup> The SQL thread reads queries from the local relay log and
+executes them.</P><blockquote><p class="docFootnote"><sup><A NAME="hpmysql-CHP-7-FNOTE-7">[7]</A></sup> To keep things simple, the relay log file uses the same storage
+format as the master's binary log.</p></blockquote>
+
+<P class="docText">To put this in context, let's look at the
+step-by-step breakdown for replication in MySQL 4.0:</P>
+
+<span style="font-weight:bold"><OL class="docList" TYPE="1"><LI><span style="font-weight:normal"><P class="docList">The client issues a query on the master.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">The master parses and executes the query.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">The master records the query in the binary log.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">The slave's IO thread reads the query from the
+master and appends it to the relay log.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">The slave's IO thread updates the
+<I>master.info</I> file to reflect the new offset at
+which it is reading the master's binary log. It then
+returns to Step 4, waiting for the next query.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">The slave's SQL thread reads the query from its
+relay log, parses it, and then executes it.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">The slave's SQL thread performs a sanity check,
+comparing its result with the master's. If the query
+failed on the slave but succeeded on the master, replication stops.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">The slave's SQL thread updates the
+<I>relay-log.info</I> file to reflect the new offset at
+which it is reading the local relay log.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">The slave's SQL thread waits for the next query to
+appear in the relay log. When one appears, it starts over at Step 6.</P></span></LI></OL></span>
+<P class="docText">While the steps are presented as a serial list, it's
+important to realize that Steps 4-5 and 6-9 are running as separate
+threads and are mostly independent of each other. The IO thread never
+waits for the SQL thread; it copies queries from the
+master's binary log as fast as possible, which helps
+ensure that the slave can bring itself up to date even if the master
+goes down. The SQL thread waits for the IO thread only after it has
+reached the end of the relay log. Otherwise it is working as fast as
+it can to execute the queries waiting for it.</P>
+
+<P class="docText">This solution isn't foolproof. It's
+possible for the IO thread to miss one or more queries if the master
+crashes before the thread has had a chance to read them. The amount
+of data that could be missed is greatly reduced compared to the 3.23
+implementation, however.<A NAME="hpmysql-CHP-7-ITERM-1629"></A><A NAME="hpmysql-CHP-7-ITERM-1630"></A></P>
+
+
+<A NAME="hpmysql-CHP-7-SECT-3.3"></A>
+<H4 class="docSection2Title">7.3.3 Files and Settings Related to Replication</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-7-ITERM-1631"></A>There are several files and
+configuration options related to replication in this chapter. Without
+going into a lot of detail on any one of them
+(that's done elsewhere), the files fall into three
+categories: log files, log index files, and status files.</P>
+
+<A NAME="hpmysql-CHP-7-SECT-3.3.1"></A>
+<H5 class="docSection3Title">7.3.3.1 Log files</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-7-ITERM-1632"></A><A NAME="hpmysql-CHP-7-ITERM-1633"></A>The
+log files are the binary log and the relay log. The binary log
+contains all write queries that are written when the log is enabled.
+The <TT>log-bin</TT> option in <I>my.cnf</I>
+enables the binary log. Binary log files must be removed when
+they're no longer needed because MySQL
+doesn't do so automatically.</P>
+
+<P class="docText">The relay log stores replicated queries from a MySQL 4.0 slave (from
+the master's binary log) before it executes them.
+It's best thought of as a spool for queries. The
+relay log is enabled automatically in 4.0 slaves. The
+<TT>relay-log</TT> option in <I>my.cnf</I>
+can customize the name and location of the relay
+log's base filename:</P>
+
+<PRE>relay-log = /home/mysql/relay.log</PRE>
+
+<P class="docText">Like the binary log, MySQL always appends a sequence number to the
+base name, starting with 001. Unlike the binary log, MySQL takes care
+of removing old relay logs when they are no longer needed. MySQL 3.23
+servers don't use relay logs.</P>
+
+
+
+<A NAME="hpmysql-CHP-7-SECT-3.3.2"></A>
+<H5 class="docSection3Title">7.3.3.2 Log index files</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-7-ITERM-1634"></A><A NAME="hpmysql-CHP-7-ITERM-1635"></A>Each log file has a corresponding index
+file. The index files simply list the names of the log files on disk.
+When logs are added or removed, MySQL updates the appropriate index
+file.</P>
+
+<P class="docText">You can add settings to <I>my.cnf</I> to specify the
+log index filenames and locations:</P>
+
+<PRE>log-bin-index = /var/db/logs/log-bin.index
+relay-log-index = /var/db/logs/relay-log.index</PRE>
+
+<P class="docText">Never change these settings once a slave is configured and
+replicating. If you do, MySQL uses the new values when it is
+restarted and ignores the older files.</P>
+
+
+
+<A NAME="hpmysql-CHP-7-SECT-3.3.3"></A>
+<H5 class="docSection3Title">7.3.3.3 Status files</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-7-ITERM-1636"></A><A NAME="hpmysql-CHP-7-ITERM-1637"></A>MySQL 3.23 and 4.0 slaves use a file
+named <I>master.info</I> to store information about
+their master. The file contains the master's
+hostname, port number, username, password, log file name, position,
+and so on. MySQL updates the log position and log file name (as
+necessary) in this file as it reads queries from the
+master's binary log. While you should never need to
+edit the file, it's worth knowing what it is used
+for.</P>
+
+<P class="docText">The <TT>master-info-file</TT> option in
+<I>my.cnf</I> can be used to change the name and
+location of the <I>master.info</I> file:</P>
+
+<PRE>master-info-file = /home/mysql/master-stuff.info</PRE>
+
+<P class="docText">However, there's rarely a need to do so.</P>
+
+<P class="docText">MySQL 4.0 slaves use an additional status file for the SQL thread to
+track its processing of the relay log, in much the same way the
+<I>master.info</I> file is used. The
+<TT>relay-log-info-file</TT> setting can be used to change
+the filename and path of this file:</P>
+
+<PRE>relay-log-info-file = /home/mysql/logs/relay-log.info</PRE>
+
+<P class="docText">Again, you won't need to change the default.</P>
+
+
+
+<A NAME="hpmysql-CHP-7-SECT-3.3.4"></A>
+<H5 class="docSection3Title">7.3.3.4 Filtering</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-7-ITERM-1638"></A>There
+may be times when you don't need to replicate
+<span class="docEmphasis">everything</span> from the master to the slave. In such
+situations you can use the various replication filtering options to
+control what is replicated. This is well covered in the MySQL
+documentation, so we'll just recap the important
+parts.</P>
+
+<P class="docText">There are two sets of configuration options for filtering. The first
+set applies to the binary log on the master and provide per-database
+filtering:</P>
+
+<PRE>binlog-do-db=<TT><I>dbname</I></TT>
+binlog-ignore-<TT><I>db=dbname</I></TT></PRE>
+
+<P class="docText">Any queries filtered on the master aren't written to
+its binary log, so the slave never sees them either.</P>
+
+<P class="docText">The second set of options applies to the relay log on the slave. That
+means the slave still has to read each query from the
+master's binary log and make a decision about
+whether or not to keep the query. The CPU overhead involved in this
+work is minimal, but the network overhead may not be if the master
+records a high volume of queries.</P>
+
+<P class="docText">Here is the second set of options:</P>
+
+<PRE>replicate-do-table=<TT><I>dbname.tablename</I></TT>
+replicate-ignore-table=<TT><I>dbname.tablenam</I></TT>e
+replicate-wild-do-table=<TT><I>dbname.tablename</I></TT>
+replicate-wild-ignore-table=<TT><I>dbname.tablenam</I></TT>e
+replicate-do-db=<TT><I>dbname</I></TT>
+replicate-ignore-db=<TT><I>dbname</I></TT>
+replicate-rewrite-db=<TT><I>from_dbname</I></TT>-&gt;<TT><I>to_dbname</I></TT></PRE>
+
+<P class="docText">As you can see, the slave options are far more complete. They not
+only offer per-table filtering but also allow you to change the
+database or table names on the fly.<A NAME="hpmysql-CHP-7-ITERM-1639"></A></P>
+
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="hpmysql-CHP-7-SECT-2.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="hpmysql-CHP-7-SECT-4.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

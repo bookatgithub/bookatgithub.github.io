@@ -1,0 +1,356 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>4.3 Indexes and Table Types</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="hpmysql-CHP-4-SECT-2.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="hpmysql-CHP-4-SECT-4.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="hpmysql-CHP-4-SECT-3"></A>
+<H3 class="docSection1Title">4.3 Indexes and Table Types</H3>
+
+<P class="docText"><A NAME="hpmysql-CHP-4-ITERM-1343"></A>Now that we have discussed the
+common index types, terminology, and uses in relatively generic terms
+so far, let's look at the indexes implemented in
+each of MySQL's storage engines. Each engine
+implements a subset of the three index types we've
+looked at. They also provide different optimizations that you should
+be aware of.</P>
+
+<A NAME="hpmysql-CHP-4-SECT-3.1"></A>
+<H4 class="docSection2Title">4.3.1 MyISAM Tables</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-4-ITERM-1344"></A><A NAME="hpmysql-CHP-4-ITERM-1345"></A>MySQL's default table
+type provides B-tree indexes, and as of Version 4.1.0, it provides
+R-tree indexes for spatial data. In addition to the standard benefits
+that come with a good B-tree implementation, MyISAM adds two other
+important but relatively unknown features <A NAME="hpmysql-CHP-4-ITERM-1346"></A>prefix compression and
+<A NAME="hpmysql-CHP-4-ITERM-1347"></A>packed keys.</P>
+
+<P class="docText"><A NAME="hpmysql-CHP-4-ITERM-1348"></A><A NAME="hpmysql-CHP-4-ITERM-1349"></A>Prefix
+compression is used to factor out common prefixes in string keys. In
+a table that stores URLs, it would be a waste of space for MySQL to
+store the "http://" in every node
+of the B-tree. Because it is common to large number of the keys, it
+will compress the common prefix so that it takes significantly less
+space.</P>
+
+<P class="docText">Packed keys are best thought of as prefix compression for integer
+keys. Because integer keys are stored with their high bytes first,
+it's common for a large group of keys to share a
+common prefix because the highest bits of the number change far less
+often. To enable packed keys, simply append:</P>
+
+<PRE>PACKED_KEY = 1</PRE>
+
+<P class="docText">to the <I>CREATE</I> <I>TABLE</I> statement.</P>
+
+<P class="docText">MySQL stores the indexes for a table in the table's
+<I>.MYI</I> file.</P>
+
+<A NAME="hpmysql-CHP-4-SECT-3.1.1"></A>
+<H5 class="docSection3Title">4.3.1.1 Delayed key writes</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-4-ITERM-1350"></A><A NAME="hpmysql-CHP-4-ITERM-1351"></A>One performance-enhancing feature of
+MyISAM tables is the ability to delay the writing of index data to
+disk. Normally, MySQL will flush modified key blocks to disk
+immediately after making changes to them, but you can override this
+behavior on a per-table basis or globally. Doing so provides a
+significant performance boost during heavy <TT>INSERT</TT>,
+<TT>UPDATE</TT>, and <TT>DELETE</TT> activity.</P>
+
+<P class="docText">MySQL's <TT>delay_key_write</TT> tristate
+setting controls this behavior. The default, <TT>ON</TT>,
+means that MySQL will honor the <TT>DELAY_KEY_WRITE</TT>
+option in <TT>CREATE</TT> <TT>TABLE</TT>. Setting
+it to <TT>OFF</TT> means that MySQL will never delay key
+writes. And setting it to <TT>ALL</TT> tells MySQL to delay
+key writes on all MyISAM tables regardless of the
+<TT>DELAY_KEY_WRITE</TT> used when the table was created.</P>
+
+<P class="docText">The downside of delayed key writes is that the indexes may be out of
+sync with the data if MySQL crashes and has unwritten data in its key
+buffer. A <TT>REPAIR</TT><A NAME="hpmysql-CHP-4-ITERM-1352"></A><A NAME="hpmysql-CHP-4-ITERM-1353"></A> <TT>TABLE</TT>, which
+rebuilds all indexes and may consume a lot of time, is necessary to
+correct the problem.</P>
+
+
+
+<A NAME="hpmysql-CHP-4-SECT-3.2"></A>
+<H4 class="docSection2Title">4.3.2 Heap Tables</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-4-ITERM-1354"></A><A NAME="hpmysql-CHP-4-ITERM-1355"></A>MySQL's only in-memory
+table type was originally built with support just for hash indexes.
+As of Version 4.1.0, however, you may choose between B-tree and hash
+indexes in Heap tables. The default is still to use a hash index, but
+specifying B-tree is simple:</P>
+
+<PRE>mysql&gt; <B>create table heap_test (</B>
+    -&gt; name varchar(50) not null,
+    -&gt; index using btree (name)
+    -&gt; ) type = HEAP;
+Query OK, 0 rows affected (0.00 sec)</PRE>
+
+<P class="docText">To verify that the index was created properly, use the <I>SHOW
+KEYS</I> command:</P>
+
+<PRE>mysql&gt; <B>show keys from heap_test \G</B>
+*************************** 1. row ***************************
+       Table: heap_test
+  Non_unique: 1
+    Key_name: name
+Seq_in_index: 1
+ Column_name: name
+   Collation: A
+ Cardinality: NULL
+    Sub_part: NULL
+      Packed: NULL
+        Null: 
+  Index_type: BTREE
+     Comment: 
+1 row in set (0.00 sec)</PRE>
+
+<P class="docText">By combining the flexibility of B-tree indexes and the raw speed of
+an in-memory table, query performance of the temp tables is hard to
+beat. Of course, if all you need are fast single-key lookups, the
+default hash indexes in Heap tables will serve you well. They are
+lightning fast and very space efficient.</P>
+
+<P class="docText">The index data for Heap tables is always stored in memory—just
+like the data.</P>
+
+
+<A NAME="hpmysql-CHP-4-SECT-3.3"></A>
+<H4 class="docSection2Title">4.3.3 BDB Tables</H4>
+
+<P class="docText">MySQL's
+<A NAME="hpmysql-CHP-4-ITERM-1356"></A><A NAME="hpmysql-CHP-4-ITERM-1357"></A>Berkeley DB
+(BDB) tables provide only B-tree indexes. This may come as a surprise
+to long-time BDB users who may be familiar with its underlying
+hash-based indexes. The indexes are stored in the same file as the
+data itself.</P>
+
+<P class="docText">BDB's indexes, like those in MyISAM, also provide
+prefix compression. Like InnoDB, BDB also uses clustered indexes, and
+BDB tables require a primary key. If you don't
+supply one, MySQL creates a hidden primary key it uses internally for
+locating rows. The requirement exists because BDB always uses the
+primary key to locate rows. Index entries always refer to rows using
+the primary key rather than the record's physical
+location. This means that record lookups on secondary indexes are
+slightly slower then primary-key lookups.</P>
+
+
+<A NAME="hpmysql-CHP-4-SECT-3.4"></A>
+<H4 class="docSection2Title">4.3.4 InnoDB Tables</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-4-ITERM-1358"></A><A NAME="hpmysql-CHP-4-ITERM-1359"></A>InnoDB tables provide B-tree indexes.
+The indexes provide no packing or prefix compression. In addition,
+InnoDB also requires a primary key for each table. As with BDB,
+though, if you don't provide a primary key, MySQL
+will supply a 64-bit value for you.</P>
+
+<P class="docText">The indexes are stored in the InnoDB tablespace, just like the data
+and data dictionary (table definitions, etc.). Furthermore, InnoDB
+uses clustered indexes. That is, the primary key's
+value directly affects the physical location of the row as well as
+its corresponding index node. Because of this, lookups based on
+primary key in InnoDB are very fast. Once the index node is found,
+the relevant records are likely to already be cached in
+InnoDB's buffer pool.</P>
+
+
+<A NAME="hpmysql-CHP-4-SECT-3.5"></A>
+<H4 class="docSection2Title">4.3.5 Full-Text Indexes</H4>
+
+<P class="docText">A <A NAME="hpmysql-CHP-4-ITERM-1360"></A><A NAME="hpmysql-CHP-4-ITERM-1361"></A><A NAME="hpmysql-CHP-4-ITERM-1362"></A>full-text index is a special type of
+index that can quickly retrieve the locations of every distinct word
+in a field. MySQL's provides full-text indexing
+support in MyISAM tables. Full-text indexes are built against one or
+more text fields (<TT>VARCHAR</TT>,
+<TT>TEXT</TT>, etc.) in a table.</P>
+
+<P class="docText">The full-text index is also stored in a table's
+<I>.MYI</I> file. It is implemented by creating a
+normal two-part MyISAM B-tree index in which the first field is a
+<TT>VARCHAR</TT>, and the second is a
+<TT>FLOAT</TT>. The first field contains the indexed word,
+and the <TT>FLOAT</TT> is its local weight in the row.</P>
+
+<P class="docText">Because they generally contain one record for each word in each
+indexed field, full-text indexes can get large rather quickly.
+Luckily, MySQL's B-tree indexes are quite efficient,
+so space consumed by full-text is well worth the performance boost.</P>
+
+<P class="docText">It's not uncommon for a query like:</P>
+
+<PRE>select * from articles where body = "%database%"</PRE>
+
+<P class="docText">to run thousands of times faster when a full-text index is added and
+the query is re-written as:</P>
+
+<PRE>select * from articles (body) match against ('database')</PRE>
+
+<P class="docText">As with all index types, it's a matter of trading
+space for speed.</P>
+
+
+<A NAME="hpmysql-CHP-4-SECT-3.6"></A>
+<H4 class="docSection2Title">4.3.6 Index Limitations</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-4-ITERM-1363"></A>There
+are many times when MySQL simply can't use an index
+to satisfy a query. To help you recognize these limitations (and
+hopefully avoid them), let's look at the four main
+impediments to using an index.</P>
+
+<A NAME="hpmysql-CHP-4-SECT-3.6.1"></A>
+<H5 class="docSection3Title">4.3.6.1 Wildcard matches</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-4-ITERM-1364"></A><A NAME="hpmysql-CHP-4-ITERM-1365"></A>A query to locate all records that
+contain the word "buffy":</P>
+
+<PRE>select * from pages where page_text like "%buffy%"</PRE>
+
+<P class="docText">is bound to be slow. It requires MySQL to scan every row in the
+table. And it won't even find all occurrences,
+because "buffy" may be followed by
+some form of punctuation. The solution, of course, is to build a
+full-text index on the <TT>page_text</TT> field and query
+using MySQL's <TT>MATCH</TT>
+<TT>AGAINST</TT> syntax.</P>
+
+<P class="docText">When you're dealing with partial words, however,
+things degenerate quickly. Imagine trying to find the phone number
+for everyone whose last name contains the string
+"son", such as Johnson, Ansona, or
+Bronson. That query would look like this:</P>
+
+<PRE>select phone_number from phone_book where last_name like "%son%"</PRE>
+
+<P class="docText">That seems suspiciously similar to the
+"buffy" example, and it is. Because
+you are performing a wildcard search on the field, MySQL will need to
+read every row, but switching to a full-text index
+won't help. Full-text indexes deal with complete
+words, so they're of no help in this situation.</P>
+
+<P class="docText">If that's surprising, consider how
+you'd attempt to locate all those names in a normal
+phone book. Can you think of an efficient approach?
+There's really no simple change that can be made to
+the printed phone book that will facilitate this type of query.</P>
+
+
+
+<A NAME="hpmysql-CHP-4-SECT-3.6.2"></A>
+<H5 class="docSection3Title">4.3.6.2 Regular expressions</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-4-ITERM-1366"></A><A NAME="hpmysql-CHP-4-ITERM-1367"></A>Using a regular expression has
+similar problems. Imagine trying to find all last names that end with
+either "ith," such as Smith, or
+"son" as in Johnson. As any Perl
+hacker would tell you, that's easy. Build a regular
+expression that looks something like <TT>(son|ith)$</TT>.</P>
+
+<P class="docText">Translating that into MySQL, you might write this query:</P>
+
+<PRE>select last_name from phone_book where last_name rlike "(son|ith)$"</PRE>
+
+<P class="docText">However, you'd find that it runs slowly, and it does
+so for the same reasons that wildcard searches are slow.
+There's simply no generalized and efficient way to
+build an index that facilitates running arbitrary wildcard or
+regular-expression searches.</P>
+
+<P class="docText">In this specific case, you can work around this limitation by storing
+reversed last names in a second field. Then you can reverse the sense
+of the search and use a query like this:</P>
+
+<PRE>select last_name from phone_book where rev_last_name like "thi%"
+union
+select last_name from phone_book where rev_last_name like "nos%"</PRE>
+
+<P class="docText">But that's efficient only because
+you're starting at the beginning of the string,
+which is really the end of the real string before it is reversed.
+Again, there's no general solution to this problem.</P>
+
+<P class="docText">Note that a regular expression still isn't efficient
+in this case. You might be tempted to write this query:</P>
+
+<PRE>select last_name from phone_book where rev_last_name rlike "^(thi|nos)"</PRE>
+
+<P class="docText">You would be disappointed by its performance. The MySQL optimizer
+simply never tries to optimize regex-based queries.</P>
+
+
+
+<A NAME="hpmysql-CHP-4-SECT-3.6.3"></A>
+<H5 class="docSection3Title">4.3.6.3 Poor statistics or corruption</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-4-ITERM-1368"></A><A NAME="hpmysql-CHP-4-ITERM-1369"></A>If MySQL's internal
+index statistics become corrupted or otherwise incorrect (possibly as
+the result of a crash or accidental server shutdown), MySQL may begin
+to exhibit very strange behavior. If the statistics are simply wrong,
+you may find that it no longer uses an index for your query. Or it
+may use an index only some of the time.</P>
+
+<P class="docText">What's likely happened is that MySQL believes that
+the number of rows that match your query is so high that it would
+actually be more efficient to perform a full table scan. Because
+table scans are primarily sequential reads, they're
+faster than reading a large percentage of the records using an index,
+which requires far more disk seeks.</P>
+
+<P class="docText">If this happens (or you suspect it has), try the index repair and
+analysis commands explained in the "Index
+Maintenance" section later in this chapter.</P>
+
+
+
+<A NAME="hpmysql-CHP-4-SECT-3.6.4"></A>
+<H5 class="docSection3Title">4.3.6.4 Too many matching rows</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-4-ITERM-1370"></A>Similarly, if a table
+actually does have too many rows that really do match your query,
+performance can be quite slow. How many rows are too many for MySQL?
+It depends. But a good rule of thumb is that when MySQL believes more
+than about 30% of the rows are likely matches, it will resort to a
+table scan rather than using the index. There are a few exceptions to
+this rule. You'll find a more detailed discussion of
+this problem in <A class="docLink" HREF="hpmysql-CHP-5.html#hpmysql-CHP-5">Chapter 5</A>.<A NAME="hpmysql-CHP-4-ITERM-1371"></A><A NAME="hpmysql-CHP-4-ITERM-1372"></A></P>
+
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="hpmysql-CHP-4-SECT-2.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="hpmysql-CHP-4-SECT-4.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

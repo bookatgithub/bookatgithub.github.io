@@ -1,0 +1,459 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>4.1 Indexing Basics</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="hpmysql-CHP-4.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="hpmysql-CHP-4-SECT-2.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="hpmysql-CHP-4-SECT-1"></A>
+<H3 class="docSection1Title">4.1 Indexing Basics</H3>
+
+<P class="docText">To understand how MySQL uses indexes, it's best
+first to understand the basic workings and features of indexes. Once
+you have a basic understanding of their characteristics, you can
+start to make more intelligent choices about the right way to use
+them.</P>
+
+<A NAME="hpmysql-CHP-4-SECT-1.1"></A>
+<H4 class="docSection2Title">4.1.1 Index Concepts</H4>
+
+<P class="docText">To understand what indexes allow MySQL to do, it's
+best to think about how MySQL works to answer a query. Imagine that
+<TT>phone_book</TT> is a table containing an aggregate
+phone book for the state of California, with roughly 35 million
+entries. And keep in mind that records within tables
+aren't inherently sorted. Consider a query like this
+one:</P>
+
+<PRE>SELECT * FROM phone_book WHERE last_name = 'Zawodny'</PRE>
+
+<P class="docText">Without any sort of index to consult, MySQL must read all the records
+in the <TT>phone_book</TT> table and compare the
+<TT>last_name</TT> field with the string
+"Zawodny" to see whether they
+match. Clearly that's not efficient. As the number
+of records increases, so does the effort necessary to find a given
+record. In computer science, we call that an <A NAME="hpmysql-CHP-4-ITERM-1294"></A>O(<span class="docEmphasis">n</span>) problem.</P>
+
+<P class="docText">But given a real phone book, we all know how to quickly locate anyone
+named Zawodny: flip to the Zs at the back of book and start there.
+Since the second letter is "a," we
+know that any matches will be at or near the front of the list of all
+names starting with Z. The method used is based on knowledge of the
+data and how it is sorted.</P>
+
+<P class="docText">That's cheating, isn't it? Not at
+all. The reason you can find the Zawodnys so quickly is that
+they're sorted alphabetically by last name. So
+it's easy to find them, provided you know your ABCs,
+of course.</P>
+
+<P class="docText">Most technical books (like this one) provide an index at the back. It
+allows you to find the location of important terms and concepts
+quickly because they're listed in sorted order along
+with the corresponding page numbers. Need to know where
+<span class="docEmphasis">mysqlhotcopy</span> is discussed? Just look up the page
+number in the index.</P>
+
+<P class="docText"><A NAME="hpmysql-CHP-4-ITERM-1295"></A>Database indexes are similar. Just as
+the book author or publisher may choose to create an index of the
+important concepts and terms in the book, you can choose to create an
+index on a particular column of a database table. Using the previous
+example, you might create an index on the last name to make looking
+up phone numbers faster:</P>
+
+<PRE>ALTER TABLE phone_book ADD INDEX (last_name)</PRE>
+
+<P class="docText">In doing so, you're asking MySQL to create an
+ordered list of all the last names in the
+<TT>phone_book</TT> table. Along with each name, it notes
+the positions of the matching records—just as the index at the
+back of this book lists page numbers for each entry.<sup class="docFootnote"><A class="docLink" HREF="#hpmysql-CHP-4-FNOTE-1">[1]</A></sup></P><blockquote><p class="docFootnote"><sup><A NAME="hpmysql-CHP-4-FNOTE-1">[1]</A></sup> That's a bit of a lie. MySQL
+doesn't always store the position of the matching
+records. We'll see why soon enough.</p></blockquote>
+
+<P class="docText">From the database server's point of view, indexes
+exist so that the database can quickly eliminate possible rows from
+the result set when executing a query. Without any indexes, MySQL
+(like any database server) must examine every row in a table. Not
+only is that time consuming, it uses a lot of disk I/O and can
+effectively pollute the disk cache.</P>
+
+<P class="docText">In the real world, it's rare to find dynamic data
+that just happens to be sorted (and stays sorted). Books are a
+special case; they tend to remain static.</P>
+
+<P class="docText"><A NAME="hpmysql-CHP-4-ITERM-1296"></A>Because MySQL needs to
+maintain a separate list of indexes' values and keep
+them updated as your data changes, you really don't
+want to index every column in a table. Indexes are a trade-off
+between space and time. You're sacrificing some
+extra disk space and a bit of CPU overhead on each
+<TT>INSERT</TT>, <TT>UPDATE</TT>, and
+<TT>DELETE</TT> query to make most (if not all) your
+queries much faster.</P>
+
+<P class="docText">Much of the MySQL documentation uses the terms
+<I>index</I><A NAME="hpmysql-CHP-4-ITERM-1297"></A><A NAME="hpmysql-CHP-4-ITERM-1298"></A> and <I>key</I>
+interchangeably. Saying that <TT>last_name</TT> is a key in
+the <TT>phone_book</TT> table is the same as saying that
+the <TT>last_name</TT> field of the
+<TT>phone_book</TT> table is indexed.</P>
+
+<A NAME="hpmysql-CHP-4-SECT-1.1.1"></A>
+<H5 class="docSection3Title">4.1.1.1 Partial indexes</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-4-ITERM-1299"></A><A NAME="hpmysql-CHP-4-ITERM-1300"></A>Indexes trade space for performance.
+But sometimes you'd rather not trade too much space
+for the performance you're after. Luckily, MySQL
+gives you a lot of control over how much space is used by the
+indexes. Maybe you have a <TT>phone_book</TT> table with 2
+billion rows in it. Adding an index on <TT>last_name</TT>
+will require a lot of space. If the average
+<TT>last_name</TT> is 8 bytes long, you're
+looking at roughly 16 GB of space for the data portion of the index;
+the row pointers are there no matter what you do, and they add
+another 4-8 bytes per record.<sup class="docFootnote"><A class="docLink" HREF="#hpmysql-CHP-4-FNOTE-2">[2]</A></sup></P><blockquote><p class="docFootnote"><sup><A NAME="hpmysql-CHP-4-FNOTE-2">[2]</A></sup> That's
+a bit of an oversimplification, too. MySQL has some strategies for
+reducing the size of the index, but they also come at a price.</p></blockquote>
+
+<P class="docText">Instead of indexing the entire last name, you might index only the
+first 4 bytes:</P>
+
+<PRE>ALTER TABLE phone_book ADD INDEX (last_name(4))</PRE>
+
+<P class="docText">In doing so, you've reduced the space requirements
+for the data portion of the index by roughly half. The trade-off is
+that MySQL can't eliminate quite as many rows using
+this index. A query such as:</P>
+
+<PRE>SELECT * FROM phone_book WHERE last_name = 'Smith'</PRE>
+
+<P class="docText">retrieves all fields beginning with <TT>Smit</TT>,
+including all people with name <TT>Smith</TT>,
+<TT>Smitty</TT>, and so on. The query must then discard
+<TT>Smitty</TT> and all other irrelevant rows.</P>
+
+
+
+<A NAME="hpmysql-CHP-4-SECT-1.1.2"></A>
+<H5 class="docSection3Title">4.1.1.2 Multicolumn indexes</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-4-ITERM-1301"></A><A NAME="hpmysql-CHP-4-ITERM-1302"></A>Like many relational database engines,
+MySQL allows you to create indexes that are composed of multiple
+columns:</P>
+
+<PRE>ALTER TABLE phone_book ADD INDEX (last_name, first_name)</PRE>
+
+<P class="docText">Such indexes can improve the query speed if you often query all
+columns together in the <TT>WHERE</TT> clause or if a
+single column doesn't have sufficient variety. Of
+course, you can use partial indexes to reduce the space required:</P>
+
+<PRE>ALTER TABLE phone_book ADD INDEX (last_name(4), first_name(4))</PRE>
+
+<P class="docText">In either case, a query to find Josh Woodward executes quickly:</P>
+
+<PRE>SELECT * FROM phone_book
+ WHERE last_name = 'Woodward'
+   AND first_name = 'Josh'</PRE>
+
+<P class="docText">Having the last name and first name indexed together means that MySQL
+can eliminate rows based on both fields, thereby greatly reducing the
+number of rows it must consider. After all, there are a lot more
+people in the phone book whose last name starts with
+"Wood" than there are folks whose
+last name starts with "Wood" and
+whose first name also starts with
+"Josh."</P>
+
+<P class="docText">When discussing multicolumn indexes, you may see the individual
+indexed columns referred to as <I>key
+parts</I><A NAME="hpmysql-CHP-4-ITERM-1303"></A> or "parts of the
+key." Multicolumn indexes are also referred to as
+composite indexes or compound indexes.</P>
+
+<P class="docText">So why not just create two indexes, one on
+<TT>last_name</TT> and one on
+<TT>first_name</TT>? You could do that, but MySQL
+won't use them both at the same time. In fact, MySQL
+will only ever use one index per table per query—except for
+<TT>UNION</TT>s.<sup class="docFootnote"><A class="docLink" HREF="#hpmysql-CHP-4-FNOTE-3">[3]</A></sup> This fact is important
+enough to say again: <span class="docEmphasis">MySQL will only ever use one index per
+table per query</span>.</P><blockquote><p class="docFootnote"><sup><A NAME="hpmysql-CHP-4-FNOTE-3">[3]</A></sup> In a
+<TT>UNION</TT>, each logical query is run separately, and
+the results are merged.</p></blockquote>
+
+<P class="docText">With separate indexes on <TT>first_name</TT> and
+<TT>last_name</TT>, MySQL will choose one or the other. It
+does so by making an educated guess about which index allows it to
+match fewer rows. We call it an educated guess because MySQL keeps
+track of some index statistics that allow it to infer what the data
+looks like. The statistics, of course, are generalizations. While
+they often let MySQL make smart decisions, if you have very clumpy
+data, MySQL may make suboptimal choices about index use. We call data
+<I>clumpy</I><A NAME="hpmysql-CHP-4-ITERM-1304"></A><A NAME="hpmysql-CHP-4-ITERM-1305"></A> if the key being indexed is sparse in some
+areas (such as names beginning with X) and highly concentrated in
+others (such as the name <TT>Smith</TT> in English-speaking
+countries). This is an important topic that we'll
+revisit later in this book.</P>
+
+
+
+<A NAME="hpmysql-CHP-4-SECT-1.1.3"></A>
+<H5 class="docSection3Title">4.1.1.3 Index order</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-4-ITERM-1306"></A>How does MySQL order values in the
+index? If you've used another RDBMS, you might
+expect MySQL to have syntax for specifying that an index be sorted in
+ascending, descending, or some other order. MySQL gives you no
+control over its internal sorting of index values. It has little
+reason to. As of Version 4.0, it does a good job of optimizing cases
+that cause slower performance for other database systems.</P>
+
+<P class="docText">For example, some database products may execute this query quickly:</P>
+
+<PRE>SELECT * FROM phone_book WHERE last_name = 'Zawodny'
+ORDER BY first_name DESC</PRE>
+
+<P class="docText">And this query slowly:</P>
+
+<PRE>SELECT * FROM phone_book WHERE last_name = 'Zawodny'
+ORDER BY first_name ASC</PRE>
+
+<P class="docText">Why? Because some databases store the indexes in descending order and
+are optimized for reading them in that order. In the first case, the
+database uses the multicolumn index to locate all the matching
+records. Since the records are already stored in descending order,
+there's no need to sort them. But in the second
+case, the server finds all matching records and then performs a
+second pass over those rows to sort them.</P>
+
+<P class="docText">MySQL is smart enough to "traverse the index
+backwards" when necessary. It will execute both
+queries very quickly. In neither case does it need to sort the
+records.</P>
+
+
+
+<A NAME="hpmysql-CHP-4-SECT-1.1.4"></A>
+<H5 class="docSection3Title">4.1.1.4 Indexes as constraints</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-4-ITERM-1307"></A>Indexes aren't always used
+to locate matching rows for a query. A <I>unique
+index</I><A NAME="hpmysql-CHP-4-ITERM-1308"></A><A NAME="hpmysql-CHP-4-ITERM-1309"></A> specifies that a particular value may
+only appear once in a given column.<sup class="docFootnote"><A class="docLink" HREF="#hpmysql-CHP-4-FNOTE-4">[4]</A></sup> In the
+phone book example, you might create a unique index on
+<TT>phone_number</TT> to ensure that each phone number
+appears only once: <sup class="docFootnote"><A class="docLink" HREF="#hpmysql-CHP-4-FNOTE-5">[5]</A></sup></P><blockquote><p class="docFootnote"><sup><A NAME="hpmysql-CHP-4-FNOTE-4">[4]</A></sup> Except for NULL,
+of course. NULL is always a special case.</p></blockquote><blockquote><p class="docFootnote"><sup><A NAME="hpmysql-CHP-4-FNOTE-5">[5]</A></sup> In the real world, however, this
+would be a very bad practice, as anyone who has shared a phone with
+several housemates can tell you.</p></blockquote>
+
+<PRE>ALTER TABLE phone_book ADD UNIQUE (phone_number)</PRE>
+
+<P class="docText">The unique index serves a dual purpose. It functions just like any
+other index when you perform a query based on a phone number:</P>
+
+<PRE>SELECT * FROM phone_book WHERE phone_number = '555-7271'</PRE>
+
+<P class="docText">However, it also checks every value when attempting to insert or
+update a record to ensure that the value doesn't
+already exist. In this way, the unique index acts as a constraint.</P>
+
+<P class="docText">Unique indexes use as much space as nonunique indexes do. The value
+of every column as well as the record's location is
+stored. This can be a waste if you use the unique index as a
+constraint and never as an index. Put another way, you may rely on
+the unique index to enforce uniqueness but never write a query that
+uses the unique value. In this case, there's no need
+for MySQL to store the locations of every record in the index:
+you'll never use them.</P>
+
+<P class="docText">Unfortunately, there's no way to signal your
+intentions to MySQL. In the future, we'll likely
+find a feature introduced for this specific case. The MyISAM storage
+engine already has support for unique columns without an index (it
+uses a hash-based system), but the mechanism isn't
+exposed at the SQL level yet.</P>
+
+
+
+<A NAME="hpmysql-CHP-4-SECT-1.1.5"></A>
+<H5 class="docSection3Title">4.1.1.5 Clustered and secondary indexes</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-4-ITERM-1310"></A><A NAME="hpmysql-CHP-4-ITERM-1311"></A><A NAME="hpmysql-CHP-4-ITERM-1312"></A><A NAME="hpmysql-CHP-4-ITERM-1313"></A>With <A NAME="hpmysql-CHP-4-ITERM-1314"></A>MyISAM tables, the indexes are kept in a
+completely separate file that contains a list of primary (and
+possibly secondary) keys and a value that represents the byte offset
+for the record. These ensure MySQL can find and then quickly skip to
+that point within the database to locate the record. MySQL has to
+store the indexes this way because the records are stored in
+essentially random order.</P>
+
+<P class="docText">With <A NAME="hpmysql-CHP-4-ITERM-1315"></A><I>clustered
+indexes</I>, the primary key and the record itself are
+"clustered" together, and the
+records are all stored in primary-key order.
+<A NAME="hpmysql-CHP-4-ITERM-1316"></A>InnoDB uses clustered indexes. In the
+Oracle world, clustered indexes are known as
+"<A NAME="hpmysql-CHP-4-ITERM-1317"></A>index-organized
+tables," which may help you remember the
+relationship between the primary key and row ordering.</P>
+
+<P class="docText">When your data is almost always searched on via its primary key,
+clustered indexes can make lookups incredibly fast. With a standard
+MyISAM index, there are two lookups, one to the index, and a second
+to the table itself via the location specified in the index. With
+clustered indexes, there's a single lookup that
+points directly to the record in question.</P>
+
+<P class="docText">Some operations render clustered indexes less effective. For
+instance, consider when a secondary index is in use. Going back to
+our phone book example, suppose you have <TT>last_name</TT>
+set as the primary index and <TT>phone_number</TT> set as a
+secondary index, and you perform the following query:</P>
+
+<PRE>SELECT * FROM phone_book WHERE phone_number = '555-7271'</PRE>
+
+<P class="docText">MySQL scans the <TT>phone_number</TT> index to find the
+entry for <TT>555-7271</TT>, which contains the primary key
+entry <TT>Zawodny</TT> because
+<TT>phone_book</TT>'s primary index is the
+last name. MySQL then skips to the relevant entry in the database
+itself.</P>
+
+<P class="docText">In other words, lookups based on your primary key happen exceedingly
+fast, and lookups based on secondary indexes happen at essentially
+the same speed as MyISAM index lookups would.</P>
+
+<P class="docText">But under the right (or rather, the wrong) circumstances, the
+<A NAME="hpmysql-CHP-4-ITERM-1318"></A><A NAME="hpmysql-CHP-4-ITERM-1319"></A>clustered index can actually
+degrade performance. When you use one together with a secondary
+index, you have to consider the combined impact on storage. Secondary
+indexes point to the primary key rather than the row. Therefore, if
+you index on a very large value and have several secondary indexes,
+you will end up with many duplicate copies of that primary index,
+first as the clustered index stored alongside the records themselves,
+but then again for as many times as you have secondary indexes
+pointing to those clustered indexes. With a small value as the
+primary key, this may not be so bad, but if you are using something
+potentially long, such as a URL, this repeated storage of the primary
+key on disk may cause storage issues.</P>
+
+<P class="docText">Another less common but equally problematic condition happens when
+the data is altered such that the primary key is changed on a record.
+This is the most costly function of clustered indexes. A number of
+things can happen to make this operation a more severe performance
+hit:</P>
+
+<UL><LI><P class="docList">Alter the record in question according to the query that was issued.</P></LI><LI><P class="docList">Determine the new primary key for that record, based on the altered
+data record.</P></LI><LI><P class="docList">Relocate the stored records so that the record in question is moved
+to the proper location in the tablespace.</P></LI><LI><P class="docList">Update any secondary indexes that point to that primary key.</P></LI></UL>
+<P class="docText">As you might imagine, if you're altering the primary
+key for a number of records, that <TT>UPDATE</TT> command
+might take quite some time to do its job, especially on larger
+tables. Choose your primary keys wisely. Use values that are unlikely
+to change, such as a Social Security account number instead of a last
+name, serial number instead of a product name, and so on.</P>
+
+
+
+<A NAME="hpmysql-CHP-4-SECT-1.1.6"></A>
+<H5 class="docSection3Title">4.1.1.6 Unique indexes versus primary keys</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-4-ITERM-1320"></A><A NAME="hpmysql-CHP-4-ITERM-1321"></A><A NAME="hpmysql-CHP-4-ITERM-1322"></A><A NAME="hpmysql-CHP-4-ITERM-1323"></A>If you're coming from
+other relational databases, you might wonder what the difference
+between a primary key and a unique index is in MySQL. As usual, it
+depends. In MyISAM tables, there's almost no
+difference. The only thing special about a primary key is that it
+can't contain NULL values. The primary key is simply
+a <TT>NOT</TT> <TT>NULL</TT>
+<TT>UNIQUE</TT> <TT>INDEX</TT> named
+<TT>PRIMARY</TT>. MyISAM tables don't
+require that you declare a primary key.</P>
+
+<P class="docText"><A NAME="hpmysql-CHP-4-ITERM-1324"></A><A NAME="hpmysql-CHP-4-ITERM-1325"></A>InnoDB and BDB tables require primary keys
+for every table. There's no requirement that you
+specify one, however. If you don't, the storage
+engine automatically adds a hidden primary key for you. In both
+cases, the primary keys are simply incrementing numeric values,
+similar to an <TT>AUTO-INCREMENT</TT> column. If you decide
+to add your own primary key at a later time, simply use
+<TT>ALTER</TT> <TT>TABLE</TT> to add one. Both
+storage engines will discard their internally generated keys in favor
+of yours. <A NAME="hpmysql-CHP-4-ITERM-1326"></A>Heap tables don't
+require a primary key but will create one for you. In fact, you can
+create Heap tables with no indexes at all.</P>
+
+
+
+<A NAME="hpmysql-CHP-4-SECT-1.1.7"></A>
+<H5 class="docSection3Title">4.1.1.7 Indexing NULLs</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-4-ITERM-1327"></A><A NAME="hpmysql-CHP-4-ITERM-1328"></A>It
+is often difficult to remember that SQL uses tristate logic when
+performing logical operations. Unless a column is declared
+<TT>NOT</TT> <TT>NULL</TT>, there are three
+possible outcomes in a logical comparison. The comparison may be true
+because the values are equivalent; it may be false because the values
+aren't equivalent; or it may not match because one
+of the values is NULL. Whenever one of the values is NULL, the
+outcome is also NULL.</P>
+
+<P class="docText">Programmers often think of NULL as undefined or unknown.
+It's a way of telling the database server
+"an unknown value goes here." So
+how do NULL values affect indexes?</P>
+
+<P class="docText">NULL values may be used in normal (nonunique) indexes. This is true
+of all database servers. However, unlike many database servers, MySQL
+allows you to use NULL values in unique indexes.<sup class="docFootnote"><A class="docLink" HREF="#hpmysql-CHP-4-FNOTE-6">[6]</A></sup> You can store as many
+NULL values as you'd like in such an index. This may
+seem a bit counterintuitive, but that's the nature
+of NULL. Because NULL represents an undefined value, MySQL needs to
+assert that all NULL values are the same if it allowed only a single
+value in a unique index.</P><blockquote><p class="docFootnote"><sup><A NAME="hpmysql-CHP-4-FNOTE-6">[6]</A></sup> MySQL Version 3.23 and older don't allow this,
+Versions 4.0 and newer do.</p></blockquote>
+
+<P class="docText">To make things just a bit more interesting, a
+<A NAME="hpmysql-CHP-4-ITERM-1329"></A>NULL value may appear only once as a
+primary key. Why? The SQL standard dictates this behavior. It is one
+of the few ways in which primary keys are different from unique
+indexes in MySQL. And, in case you're wondering,
+allowing NULL values in the index really doesn't
+impact performance.</P>
+
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="hpmysql-CHP-4.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="hpmysql-CHP-4-SECT-2.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

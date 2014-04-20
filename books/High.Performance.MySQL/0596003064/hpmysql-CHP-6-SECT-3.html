@@ -1,0 +1,407 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>6.3 Operating System</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="hpmysql-CHP-6-SECT-2.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="hpmysql-CHP-6-SECT-4.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="hpmysql-CHP-6-SECT-3"></A>
+<H3 class="docSection1Title">6.3 Operating System</H3>
+
+<P class="docText"><A NAME="hpmysql-CHP-6-ITERM-1514"></A>From an operating system point of view,
+there are several things to consider when building a fast MySQL
+server. We'll discuss numerous filesystem issues,
+swap configuration, and threading performance.</P>
+
+<A NAME="hpmysql-CHP-6-SECT-3.1"></A>
+<H4 class="docSection2Title">6.3.1 Filesystems</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-6-ITERM-1515"></A><A NAME="hpmysql-CHP-6-ITERM-1516"></A>The
+proliferation of freely available filesystems in the Linux world has
+lead to a regular stream of questions about the best filesystem
+choice for MySQL on Linux. In a way, it's not all
+that different from choosing the right storage engine for your
+tables. You need to consider the benefits and drawbacks of each, as
+well as your needs. Unlike switching table types, however, you
+can't change filesystems on the fly. And without
+creating a bit of a maintenance nightmare, you can't
+easily use one filesystem for some tables and another for the
+remaining ones.</P>
+
+<P class="docText">It's worth pointing out that filesystem performance
+is a relatively minor issue most of the time. If switching
+filesystems gives you your largest performance gains,
+you've done so many other things right, you deserve
+a reward.</P>
+
+<P class="docText">This section is admittedly Linux-centric. That's
+primarily because Linux is the operating system with the widest
+variety of choices, and it's also because Linux
+happens to be what the authors are most experienced with.</P>
+
+<A NAME="hpmysql-CHP-6-SECT-3.1.1"></A>
+<H5 class="docSection3Title">6.3.1.1 Journaling</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-6-ITERM-1517"></A><A NAME="hpmysql-CHP-6-ITERM-1518"></A>The
+biggest difference among the filesystems is journaling. Journaling
+filesystems maintain a log (or journal) that is never cached. The
+journal is similar in concept to a write-ahead transaction log.
+Whenever the filesystem is updated, a record describing the
+transaction is appended to the log. Another idle thread actually
+processes these transactions by writing the new data to the
+filesystem and flagging each processed transaction as it is
+completed.</P>
+
+<P class="docText">If the machine crashes, the filesystem performs a roll-forward
+recovery, much as InnoDB would. Upon reboot, it simply finishes
+processing updates from the journal. Incomplete transactions in the
+journal are discarded, so the filesystem's internal
+consistency is guaranteed. This significantly decreases the
+complexity of running a filesystem check, meaning much shorter reboot
+times in the event of a crash. Even though InnoDB provides its own
+journaling (in the form of a transaction log), using a journaling
+filesystem with InnoDB is still worthwhile because of the time saved
+during an unexpected reboot.</P>
+
+<P class="docText">Older filesystems such as
+<A NAME="hpmysql-CHP-6-ITERM-1519"></A>Linux's ext2 and
+<A NAME="hpmysql-CHP-6-ITERM-1520"></A>Windows FAT16/FAT32
+provide no journaling. In the event of an unclean shutdown, they need
+to perform consistency checks upon reboot. On Linux, you must wait
+for <span class="docEmphasis">fsck</span> to do the job. On Windows,
+<I>scandisk</I> is what you end up waiting for. Luckily
+Microsoft's NTFS does provide journaling and
+it's the standard filesystem on
+Microsoft's server operating systems, Windows NT,
+2000, and XP. In the Macintosh world, OS X provides a journaling
+option for its HFS filesystem. Tru64 and AIX also provide their own
+journaling filesystem implementations.</P>
+
+<P class="docText">FreeBSD currently has no journaling filesystems available, but it
+does offer an alternative to journaling, known as <I>soft
+updates</I><A NAME="hpmysql-CHP-6-ITERM-1521"></A><A NAME="hpmysql-CHP-6-ITERM-1522"></A>. Developed by BSD hacker
+<A NAME="hpmysql-CHP-6-ITERM-1523"></A>Kirk
+McKusick, soft updates ensure that metadata changes are written to
+disk in such an order that the data is always consistent. Doing this
+eliminates the need for a separate log and most synchronous disk
+operations while boosting performance through aggregated disk
+operations. More information is available on Kirk's
+web site (<A class="docLink" target="_blank" HREF="http://www.mckusick.com/softdep/">http://www.mckusick.com/softdep/</A>) and in the
+FreeBSD manual pages for <span class="docEmphasis">newfs</span> and
+<span class="docEmphasis">tunefs</span>.</P>
+
+<P class="docText">Solaris users who need journaling have traditionally purchased a
+filesystem product from Veritas, but newer versions of Solaris
+provide a journaling filesystem that eliminates the need for
+third-party software.</P>
+
+
+
+<A NAME="hpmysql-CHP-6-SECT-3.1.2"></A>
+<H5 class="docSection3Title">6.3.1.2 Other features and tweaks</H5>
+
+<P class="docText">Many of the newer filesystems (those designed in the past 10 years or
+so) have other important features that affect performance. Their
+designers realized that disk sizes were steadily increasing, and
+intensive new applications (high-volume databases, streaming video,
+etc.) could benefit from rethinking filesystem design. As a result,
+we have a good selection of high performance filesystems to choose
+from today. See <A class="docLink" HREF="#hpmysql-CHP-6-SECT-3.1.3">Section 6.3.1.3</A> for more details.</P>
+
+<P class="docText">The two most notable enhancements in these newer filesystems are
+support for large directories and better management of fragmentation
+and free space. Large directory support means that operations on
+directories that contain thousands of files aren't
+appreciably slower than operations on smaller directories. This
+becomes an issue for MySQL only when you have a MySQL database that
+contains a large number of MyISAM tables. Since each table is
+composed of three files, the number of files can grow quickly.</P>
+
+<P class="docText">Free-space management and fragmentation affect systems on which there
+are lots of MyISAM tables that change frequently (lots of deletes,
+inserts, and updates). Some filesystems are smarter than others about
+allocating contiguous blocks of disk space for files. This helps to
+reduce fragmentation, which means fewer disk seek operations when
+operating on the tables.</P>
+
+
+
+<A NAME="hpmysql-CHP-6-SECT-3.1.3"></A>
+<H5 class="docSection3Title">6.3.1.3 Choosing a filesystem</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-6-ITERM-1524"></A>Choosing
+a filesystem for MySQL is a matter of considering your needs, the
+available filesystems, and your comfort level with them. Here we
+present a brief description of the options on modern
+<A NAME="hpmysql-CHP-6-ITERM-1525"></A>Linux
+systems:</P>
+
+<A NAME="hpmysql-CHP-6-ITERM-1526"></A><A NAME="hpmysql-CHP-6-ITERM-1527"></A><A NAME="hpmysql-CHP-6-ITERM-1528"></A><A NAME="hpmysql-CHP-6-ITERM-1529"></A><A NAME="hpmysql-CHP-6-ITERM-1530"></A><A NAME="hpmysql-CHP-6-ITERM-1531"></A><DL class="docList"><br><p><DT><I><span class="docPubcolor">ext2</span></I></DT></p>
+<DD>
+<P class="docList">The <A NAME="hpmysql-CHP-6-ITERM-1526"></A>ext2 filesystem has been around
+Linux since the early days. It doesn't offer many
+advanced features, but it is time-tested and known for being very
+lightweight and reliable.</P>
+</DD>
+<br><p><DT><I><span class="docPubcolor">ext3</span></I></DT></p>
+<DD>
+<P class="docList">ext3 evolved out of a desire to add journaling support to the ext2
+filesystem. You can think of ext3 as simply that—ext2 with
+journaling added on. Most of ext2's limitations
+(such as poor performance with large directories) still exist in
+ext3.</P>
+<P class="docList">One interesting byproduct of the ext3 implementation is that you can
+actually switch the ext3 journal on and off using
+<span class="docEmphasis">tunefs</span><A NAME="hpmysql-CHP-6-ITERM-1527"></A>. With the journal disabled, an ext3
+filesystem effectively becomes an ext2 filesystem again.</P>
+</DD>
+<br><p><DT><I><span class="docPubcolor">ReiserFS</span></I></DT></p>
+<DD>
+<P class="docList"><A NAME="hpmysql-CHP-6-ITERM-1528"></A>ReiserFS, originally created by
+<A NAME="hpmysql-CHP-6-ITERM-1529"></A>Hans Reiser,
+has proven to be quite popular in the Linux world. It was built from
+the ground up as a modern filesystem. It handles large directories
+exceptionally well and has a very reliable journaling implementation.
+As of this writing, ReiserFS Version 3 is in widespread use, and
+ReiserFS Version 4 is being tested among kernel developers and other
+adventurous souls.</P>
+</DD>
+<br><p><DT><I><span class="docPubcolor">XFS</span></I></DT></p>
+<DD>
+<P class="docList"><A NAME="hpmysql-CHP-6-ITERM-1530"></A>Ported by SGI
+from their IRIX operating system, XFS was designed to handle large
+filesystems with an emphasis on consistent performance. SGI was
+interested in creating a filesystem that held up under the type of
+heavy loads that are generated by high-end streaming media
+applications.</P>
+</DD>
+<br><p><DT><I><span class="docPubcolor">JFS</span></I></DT></p>
+<DD>
+<P class="docList"><A NAME="hpmysql-CHP-6-ITERM-1531"></A>Like SGI, JFS
+came from another large technology company. IBM has been shipping JFS
+on their AIX platform for many years. Like SGI, IBM focused on
+performance and reliability when building JFS.</P>
+</DD>
+</DL>
+
+<P class="docText"><A class="docLink" HREF="#hpmysql-CHP-6-TABLE-2">Table 6-2</A> summarizes the features implemented by
+various Linux filesystems.</P>
+
+<A NAME="hpmysql-CHP-6-TABLE-2"></A><P><TABLE CELLSPACING="0" BORDER="1" RULES="all" CELLPADDING="4" WIDTH="100%"><CAPTION><h5 class="docTableTitle">Table 6-2. Linux filesystem features</h5></CAPTION><COLGROUP span="3"><THEAD><TR><TH class="docTableHeader">
+<P class="docText">Filesystem</P>
+</TH><TH class="docTableHeader">
+<P class="docText">Journaling</P>
+</TH><TH class="docTableHeader">
+<P class="docText">Large directories</P>
+</TH></TR></THEAD><TR><TD class="docTableCell">
+<P class="docText">ext2</P>
+</TD><TD class="docTableCell">
+<P class="docText">No</P>
+</TD><TD class="docTableCell">
+<P class="docText">No</P>
+</TD></TR><TR><TD class="docTableCell">
+<P class="docText">ext3</P>
+</TD><TD class="docTableCell">
+<P class="docText">Yes (optional)</P>
+</TD><TD class="docTableCell">
+<P class="docText">No (patch available)</P>
+</TD></TR><TR><TD class="docTableCell">
+<P class="docText">ReiserFS</P>
+</TD><TD class="docTableCell">
+<P class="docText">Yes</P>
+</TD><TD class="docTableCell">
+<P class="docText">Yes</P>
+</TD></TR><TR><TD class="docTableCell">
+<P class="docText">XFS</P>
+</TD><TD class="docTableCell">
+<P class="docText">Yes</P>
+</TD><TD class="docTableCell">
+<P class="docText">Yes</P>
+</TD></TR><TR><TD class="docTableCell">
+<P class="docText">JFS</P>
+</TD><TD class="docTableCell">
+<P class="docText">Yes</P>
+</TD><TD class="docTableCell">
+<P class="docText">No</P>
+</TD></TR></COLGROUP></TABLE></P>
+
+
+
+<A NAME="hpmysql-CHP-6-SECT-3.1.4"></A>
+<H5 class="docSection3Title">6.3.1.4 FreeBSD</H5>
+
+<P class="docText">On <A NAME="hpmysql-CHP-6-ITERM-1532"></A><A NAME="hpmysql-CHP-6-ITERM-1533"></A><A NAME="hpmysql-CHP-6-ITERM-1534"></A>FreeBSD,
+there are really only two filesystem types to choose from: UFS and
+UFS2. The main difference between them is that UFS2 can handle over 1
+TB of data, and it has built-in access control list (ACL) and
+extended attribute support. Aside from the size differences, none of
+the differences really affect database users. If you have large
+directories, the <TT>UFS_DIRHASH</TT> kernel option may
+help. It creates in-memory hash tables for large directories, and it
+doesn't affect the on-disk layout.</P>
+
+
+
+<A NAME="hpmysql-CHP-6-SECT-3.1.5"></A>
+<H5 class="docSection3Title">6.3.1.5 Do you need a filesystem at all?</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-6-ITERM-1535"></A>Traditional high-end database servers
+often don't use a filesystem at all. Instead, the
+database server bypasses the filesystem interface entirely and
+communicates directly with the disks. This raw access method puts the
+burden of managing space, fragmentation, and read/write requests on
+the database server itself.</P>
+
+<P class="docText">The historical rationale for bypassing the filesystem is that early
+operating systems didn't place much emphasis on
+filesystem performance. As long as they stored and retrieved data
+reliably, most people were happy. Another reason is that volume
+managers didn't really exist, so the operating
+systems of the day had no good way to combine the
+server's whopping 10-MB disks into a single, larger
+disk. When databases routinely exceeded the size of a single disk,
+vendors had little choice but to implement their own low-level
+storage.</P>
+
+<P class="docText">Nowadays, modern disks are orders of magnitude larger, modern servers
+provide RAID, and modern operating systems often have volume managers
+that make adding more space a trivial operation. Despite these
+advances, many DBAs still use raw partitions rather than filesystems.
+Users coming from other database systems often ask about
+MySQL's ability to use raw disks, expecting it to
+boost performance even more. Not to be outdone,
+MySQL's InnoDB storage engine can use raw partitions
+for its tablespaces.</P>
+
+<P class="docText">To take advantage of this capability, you must leave
+InnoDB's home directory unset and specify that the
+data-file paths point to raw devices:</P>
+
+<PRE>innodb_data_home_dir=
+innodb_data_file_path=/dev/sdb1:18Graw;/dev/sdc1:18Graw</PRE>
+
+<P class="docText">However, you must first initialize the partitions. To do so, use
+<TT>newraw</TT> instead of <TT>raw</TT> the first
+time and start MySQL. InnoDB will the initialize the partitions.
+Watch the MySQL log file for completion, shut down MySQL, change
+<TT>newraw</TT> to <TT>raw</TT>, and start MySQL
+again.</P>
+
+<P class="docText">From a performance standpoint, tests have shown a very small (2-5%)
+performance improvement using raw partitions. When you use raw
+partitions, you can no longer use any of your favorite command-line
+tools (<span class="docEmphasis">ls</span>, <span class="docEmphasis">du</span>, etc.) to
+investigate the storage. Furthermore, backups are more complicated
+when using raw disks. Your choice of backup tools is greatly reduced
+because most deal with filesystems rather than raw disk
+partitions.<A NAME="hpmysql-CHP-6-ITERM-1536"></A><A NAME="hpmysql-CHP-6-ITERM-1537"></A><A NAME="hpmysql-CHP-6-ITERM-1538"></A></P>
+
+
+
+<A NAME="hpmysql-CHP-6-SECT-3.2"></A>
+<H4 class="docSection2Title">6.3.2 Swap</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-6-ITERM-1539"></A><A NAME="hpmysql-CHP-6-ITERM-1540"></A>In an ideal
+world, your server would never swap. Swapping is usually an
+indication that you don't have enough memory or that
+things are configured improperly—maybe MySQL's
+key buffer is too large, or you're starting too many
+unused services at boot time. Maybe it's the
+operating system itself. Some operating systems make a habit of
+swapping when there's still free memory available.</P>
+
+<P class="docText">Some versions of the 2.4
+<A NAME="hpmysql-CHP-6-ITERM-1541"></A>Linux kernel, for example, are known
+for being a bit too aggressive with swapping. Linux has generally
+tried to use all available free memory for caching disk access. From
+the virtual memory subsystem's point of view, free
+memory is wasted memory. Early versions (2.4.0-2.4.9) were okay, as
+are later versions (2.4.18 onward). But the middle versions
+(2.4.10-2.4.17) were known for being a bit too aggressive. On a
+dedicated MySQL server, with a key buffer of 1 GB and 2 GB of total
+RAM, it was not uncommon to see Linux swap out parts of the key
+buffer while performing a table scan, only to swap it back in moments
+later. Needless to say, this had a very negative affect on
+performance. The only solution in such a case is to turn off swap
+entirely or upgrade to a newer kernel. Luckily, most other operating
+systems haven't suffered from this problem. Even
+though most systems are well behaved, some MySQL administrators
+advocate turning swap off as a preventative measure.</P>
+
+
+<A NAME="hpmysql-CHP-6-SECT-3.3"></A>
+<H4 class="docSection2Title">6.3.3 Threading</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-6-ITERM-1542"></A><A NAME="hpmysql-CHP-6-ITERM-1543"></A>As a
+multithreaded server, MySQL is most efficient on an operating system
+that has a well implemented threading system. Windows and Solaris are
+excellent in this respect. Linux, as usual, is a bit different.
+Traditionally, Linux has had a slightly unusual threading
+implementation—using cloned processes as threads. It performs
+well under most circumstances, but in situations with thousands of
+active client connections, it imposes a bit of overhead.</P>
+
+<P class="docText">More recent work on the Linux scheduler and alternative threading
+libraries have improved the situation. The <A NAME="hpmysql-CHP-6-ITERM-1544"></A><A NAME="hpmysql-CHP-6-ITERM-1545"></A>Native POSIX Thread Library
+(NPTL) is shipped by default in RedHat Linux Version 9.0. Other
+distributions have just begun adopting it as well.</P>
+
+<P class="docText">Another popular free operating system,
+<A NAME="hpmysql-CHP-6-ITERM-1546"></A>FreeBSD,
+has threading problems that are much worse. Versions prior to 5.2
+provide rather weak native threading. In some circumstances,
+I/O-intensive threads are able to get an unfair amount of CPU time,
+thus keeping other threads from executing as quickly as they should.
+Given the I/O-intensive nature of some database queries, this has a
+rather devastating affect on MySQL.</P>
+
+<P class="docText">If upgrading isn't an option, build MySQL from the
+FreeBSD ports collection, and be sure to enable support for
+LinuxThreads. Doing so causes MySQL to use an alternative threading
+that's more like that available in Linux 2.4. Each
+thread is actually a process that, thanks to
+FreeBSD's <TT>rfork( )</TT> call, has
+shared access to MySQL's global buffers. The
+overhead of this approach may sound like an issue, but
+it's really quite efficient. Many of
+Yahoo's hundreds of MySQL servers are using
+LinuxThreads on FreeBSD quite effectively.</P>
+
+<P class="docText"><A class="docLink" HREF="hpmysql-CHP-6-SECT-4.html#hpmysql-CHP-6-SECT-4.4">Section 6.4.4</A> later in
+this chapter discusses how MySQL's thread cache can
+help reduce the overhead associated with creating and destroying
+threads.<A NAME="hpmysql-CHP-6-ITERM-1547"></A></P>
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="hpmysql-CHP-6-SECT-2.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="hpmysql-CHP-6-SECT-4.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

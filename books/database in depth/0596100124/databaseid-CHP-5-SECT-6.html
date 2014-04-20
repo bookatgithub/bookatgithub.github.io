@@ -1,0 +1,73 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>Expression Transformation</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="databaseid-CHP-5-SECT-5.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="databaseid-CHP-5-SECT-7.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><a name="databaseid-CHP-5-SECT-6"></a>
+<h3 class="docSection1Title">Expression Transformation</h3>
+<a name="IDX-CHP-5-0424"></a><a name="IDX-CHP-5-0425"></a><a name="IDX-CHP-5-0426"></a>
+<p class="docText">I've now covered all of the algebraic operators I want to discuss in any detail, but there are some related topics that merit attention in this chapter. The first is the possibility of transforming a given relational expression into another, logically equivalent expression. I mentioned this possibility in <a class="docLink" href="databaseid-CHP-3.html#databaseid-CHP-3">Chapter 3</a>, in the section "<a class="docLink" href="databaseid-CHP-3-SECT-5.html#databaseid-CHP-3-SECT-5">Why Duplicate Tuples Are Prohibited</a>," where I explained that such transformations are one of the things the optimizer does; in fact, such transformations constitute one of the two great ideas at the heart of relational optimization (the other, beyond the scope of this book, is the use of "database statistics<a name="IDX-CHP-5-0427"></a>" to do what's called <span class="docEmphasis">cost-based optimizing</span><a name="IDX-CHP-5-0428"></a>). In this section, I want to say a little more about the process of expression transformation<a name="IDX-CHP-5-0429"></a> (or <span class="docEmphasis">query rewrite</span><a name="IDX-CHP-5-0430"></a>, as it's sometimes called). I'll start with a trivial example. Consider the following expression (the query is "Get suppliers who supply part P2, together with the corresponding quantities"):</p>
+<pre>
+  ( ( S JOIN SP ) WHERE PNO = PNO('P2') ) { ALL BUT PNO }
+</pre><br>
+
+<p class="docText">Suppose there are 100 suppliers and 1,000,000 shipments, of which 500 are for part P2. If the expression is simply evaluated by brute force, as it were, without any optimization at all, the sequence of events is:</p>
+<div style="font-weight:bold"><ol class="docList" type="1"><li><div style="font-weight:normal"><p class="docList"><span class="docEmphasis">Join S and SP:</span> This step involves reading the 100 supplier tuples; reading the 1,000,000 shipment tuples 100 times each, once for each of the 100 suppliers; constructing an intermediate result consisting of 1,000,000 tuples; and writing those 1,000,000 tuples back out to the disk. (I'm assuming for simplicity that tuples are physically stored as such, and I'm also assuming I can take "number of tuple I/O's" as a reasonable measure of performance. Neither of these assumptions is realistic, but this fact doesn't materially affect my argument.)</p></div></li><li><div style="font-weight:normal"><p class="docList"><span class="docEmphasis">Restrict the result of Step 1:</span> This step involves reading 1,000,000 tuples but produces a result containing only 500 tuples, which I'll assume can be kept in main memory.</p></div></li><LI><div style="font-weight:normal"><p class="docList"><span class="docEmphasis">Project the result of Step 2:</span> This step involves no tuple I/O's at all, so we can ignore it.</p></div></li></ol></div>
+<p class="docText">The following procedure is equivalent to the one just described, in the sense that it produces the same final result, but is obviously much more efficient:</p>
+<div style="font-weight:bold"><ol class="docList" type="1"><li><div style="font-weight:normal"><p class="docList"><span class="docEmphasis">Restrict SP to just the tuples for part P2:</span> This step involves reading 1,000,000 shipment tuples but produces a result containing only 500 tuples, which can be kept in main memory.</P></div></LI><li><div style="font-weight:normal"><p class="docList"><span class="docEmphasis">Join S and the result of Step 1:</span> This step involves reading 100 supplier tuples (once only, not once per P2 shipment, because all the P2 shipments are in memory). The result contains 500 tuples (still in main memory).</P></div></LI><LI><div style="font-weight:normal"><p class="docList"><span class="docEmphasis">Project the result of Step 2:</span> Again we can ignore this step.</p></div></LI></ol></div>
+<p class="docText">The first of these two procedures involves a total of 102,000,100 tuple I/O's, whereas the second involves only 1,000,100; thus, it's clear that the second procedure is over 100 times faster than the first. It's also clear that we'd like the implementation to use the second procedure rather than the first! If it does, then it is (in effect) transforming the original expression:</P>
+<pre>
+  ( S JOIN SP ) WHERE PNO = PNO('P2')
+</pre><BR>
+
+<p class="docText">(I'm ignoring the final projection now, since it isn't really relevant to the argument) into the expression:</P>
+<pre>
+  S JOIN ( SP WHERE PNO = PNO('P2') )
+</pre><BR>
+
+<p class="docText">These two expressions are logically equivalent, but they have very different performance characteristics, as we've seen. If the system is presented with the first expression, therefore, we'd like it to transform it into the second before evaluating it—and of course it can. The point is that the relational algebra, being a high-level formalism, is subject to various formal <span class="docEmphasis">transformation laws</span>; for example, there's a law that says a join followed by a restriction can be transformed into a restriction followed by a join (I was using that particular law in the example). <span class="docEmphasis">And a good optimizer will know those laws</span>, and will apply them—because, of course, the performance of a query shouldn't depend on the specific syntax used to express that query in the first place. (Of course, it's an immediate consequence of the fact that not all of the algebraic operators are primitive that certain expressions can be transformed into others—for example, an expression involving intersect can be transformed into one involving join instead—but there's much more to it than that, as we'll quickly see.)</P>
+<p class="docText">Now, there are many possible transformation laws, and this isn't the place for an exhaustive discussion. All I want to do is highlight a few important cases and key points. First, the law mentioned in the previous paragraph is actually a special case of a more general law, called the <span class="docEmphasis">distributive</span> law. In general, the monadic operator <span class="docEmphasis">f distributes</span> over the dyadic operator <span class="docEmphasis">g</span> if <span class="docEmphasis">f(g(a,b))</span> = <span class="docEmphasis">g(f(a),f(b))</span> for all <span class="docEmphasis">a</span> and <span class="docEmphasis">b</span>. In ordinary arithmetic, for example, SQRT (square root) distributes over multiplication, because:</p>
+<pre>
+  SQRT ( <span class="docEmphasis">a</span> * <span class="docEmphasis">b</span> ) = SQRT ( <span class="docEmphasis">a</span> ) * SQRT ( <span class="docEmphasis">b</span>)
+</pre><br>
+
+<p class="docText">for all <span class="docEmphasis">a</span> and <span class="docEmphasis">b</span> (take <span class="docEmphasis">f</span> as SQRT and <span class="docEmphasis">g</span> as "*"); thus, a numeric expression optimizer can always replace either of these expressions by the other when doing numeric expression transformation. As a counterexample, SQRT does <span class="docEmphasis">not</span> distribute over addition, because the square root of <span class="docEmphasis">a+b</span> is not equal to the sum of the square roots of <span class="docEmphasis">a</span> and <span class="docEmphasis">b</span>, in general.</P>
+<p class="docText">In relational algebra, restrict distributes over intersect, union, and difference. It also distributes over join, provided the restriction condition consists at its most complex of the AND of two separate conditions, one for each of the two join operands. In the case of the example discussed above, this requirement was satisfied—in fact, the restriction condition was very simple and applied to just one of the operands—and so we were able to use the distributive law to replace the expression with a more efficient equivalent. The net effect was that we were able to "do the restriction early." Doing restrictions early is almost always a good idea, because it serves to reduce the number of tuples to be scanned in the next operation in sequence, and probably reduces the number of tuples in the output from that operation too.</P>
+<p class="docText">Here are some other specific cases of the distributive law, this time involving projection. First, project distributes over intersect and union, though not difference. Second, it also distributes over join, so long as all of the joining attributes are included in the projection. These laws can be used to "do projections early," which again is usually a good idea, for reasons similar to those given earlier for restrictions.</p>
+<p class="docText">Two more important general laws are the laws of <span class="docEmphasis">commutativity</span><a name="IDX-CHP-5-0431"></a> and <span class="docEmphasis">associativity</span>:</p>
+<ul><li><p class="docList">The dyadic operator <span class="docEmphasis">g</span> is <span class="docEmphasis">commutative</span> if <span class="docEmphasis">g(a,b)</span> = <span class="docEmphasis">g(b,a)</span> for all <span class="docEmphasis">a</span> and <span class="docEmphasis">b</span>. In ordinary arithmetic, for example, addition and multiplication are commutative, but division and subtraction aren't. In relational algebra, intersect, union, and join are all commutative,<sup class="docFootnote"><a class="docLink" href="#databaseid-CHP-5-FNOTE-11">[*]</a></sup> but difference and division aren't. So, for example, if a query involves a join of two relations <span class="docEmphasis">r</span> and <span class="docEmphasis">s</span>,the commutative law tells us it doesn't matter which of <span class="docEmphasis">r</span> and <span class="docEmphasis">s</span> is taken as the "outer" relation and which the "inner." The system is therefore free to choose (say) the smaller relation as the "outer" one in computing the join.</P><blockquote><p class="docFootnote"><sup><a name="databaseid-CHP-5-FNOTE-11">[*]</a></sup> Strictly speaking, join is <span class="docEmphasis">not</span> commutative in SQL, because SQL attaches significance to the left-to-right ordering of columns, and <span class="docEmphasis">r</span> JOIN <span class="docEmphasis">s</span> and <span class="docEmphasis">s</span> JOIN <span class="docEmphasis">r</span> thus differ in their result column orderings.</p></blockquote></LI><li><p class="docList">The dyadic operator <span class="docEmphasis">g</span> is <span class="docEmphasis">associative</span> if <span class="docEmphasis">g(a,g(b,c))</span> = <span class="docEmphasis">g(g(a,b),c)</span> for all <span class="docEmphasis">a, b, c</span>. In arithmetic, addition and multiplication are associative, but subtraction and division aren't. In relational algebra, intersect, union, and join are all associative, but difference and division aren't. So, for example, if a query involves a join of three relations <span class="docEmphasis">r, s</span>, and <span class="docEmphasis">u</span>, the associative and commutative laws together tell us we can join the relations pairwise in any order we like. (They also tell us it's legitimate to define an <span class="docEmphasis">n</span>-adic or prefix version of the operator, as <span class="docEmphStrong">Tutorial D</span> does.) The system is thus free to decide which of the various possible sequences is most efficient.</P></LI></UL>
+<p class="docText">Observe that all of these transformations can be performed without any regard for either actual data values or actual storage structures (indexes and the like) in the database as physically stored. In other words, such transformations represent optimizations that are virtually guaranteed to be good, regardless of what the database looks like physically.</P>
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="databaseid-CHP-5-SECT-5.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="databaseid-CHP-5-SECT-7.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

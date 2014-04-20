@@ -1,0 +1,293 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>9.2 Considerations and Tradeoffs</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="hpmysql-CHP-9-SECT-1.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="hpmysql-CHP-9-SECT-3.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="hpmysql-CHP-9-SECT-2"></A>
+<H3 class="docSection1Title">9.2 Considerations and Tradeoffs</H3>
+
+<P class="docText"><A NAME="hpmysql-CHP-9-ITERM-1785"></A>We
+considered calling this section "Things You Really
+Need To Think About" because backing up a running
+database is more complex than it may first appear to be. This
+isn't because backups are inherently difficult;
+it's because MySQL is a bit more complex that you
+might think.</P>
+
+<P class="docText">When it comes to actually performing the backups, you can script the
+process yourself, use one of the prebuilt tools, or both. It all
+depends on your needs. In this section, we'll
+examine the major decisions you'll need to make and
+how they influence the backup techniques you can use. Then in the
+next section we'll look at the most popular tools.</P>
+
+<A NAME="hpmysql-CHP-9-SECT-2.1"></A>
+<H4 class="docSection2Title">9.2.1 Dump or Raw Backup?</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-9-ITERM-1786"></A>One of the first decisions
+to make is the format of the backups you'd like to
+create. The result of a database
+<I>dump</I><A NAME="hpmysql-CHP-9-ITERM-1787"></A><A NAME="hpmysql-CHP-9-ITERM-1788"></A>
+is one or more files that contain the SQL statements (mostly
+<TT>INSERT</TT> and <TT>CREATE</TT>
+<TT>TABLE</TT>) necessary to re-create the data. Dumps are
+produced using
+<span class="docEmphasis">mysqldump</span><A NAME="hpmysql-CHP-9-ITERM-1789"></A>,
+described in more detail in <A class="docLink" HREF="hpmysql-CHP-9-SECT-3.html#hpmysql-CHP-9-SECT-3">Section 9.3</A>, later in this chapter. You
+can perform dumps over the network so that your backups are created
+on a host other than your database server. It's
+possible to produce dumps of any MySQL table type.</P>
+
+<P class="docText">Having the contents of the tables as SQL files provides a lot of
+flexibility. If you simply need to look for a few records, you can
+load the file in your favorite editor or use a tool such as
+<span class="docEmphasis">grep</span> or <span class="docEmphasis">less</span> to locate the
+data. The dumped data is quite readable.</P>
+
+<P class="docText"><A NAME="hpmysql-CHP-9-ITERM-1790"></A><A NAME="hpmysql-CHP-9-ITERM-1791"></A>Restoring a dump is easy.
+Because the dump file contains all the necessary information to
+re-create the table, you simply need to feed that file back into the
+<span class="docEmphasis">mysql</span> command-line tool. And if you need to
+restore only some of the records, you can directly edit the file
+directly or write a script to prefilter out the records you
+don't need. Raw backups don't
+provide this flexibility. You can't easily filter
+out records from a table when using a raw backup; you can operate
+only on whole tables.</P>
+
+<P class="docText"><A NAME="hpmysql-CHP-9-ITERM-1792"></A>There
+are some downsides to using dumps. A dump file consumes far more disk
+space than the table or database it represents. Not only are there a
+lot of <TT>INSERT</TT> statements in the file, all numeric
+data (which MySQL stores quite efficiently) becomes ASCII, using
+quite a bit more space. Dumps are more CPU-intensive to produce, so
+they'll take longer than other methods. Dump files
+compress rather well using tools such as <span class="docEmphasis">gzip</span> or
+<span class="docEmphasis">bzip2</span>. Also, reloading a dump requires that
+MySQL spend considerable CPU time to rebuild all the indexes.</P>
+
+<P class="docText">Because there's often a fair amount of unused space
+and overhead in InnoDB's data files,
+you'll find that InnoDB tables often take far less
+space that you might expect when backed up.</P>
+
+<P class="docText">While dumps have a lot of advantages, the extra space, time, and CPU
+power they require are often not worth expending—especially as
+your databases get larger and larger. It's more
+efficient to use a <I>raw
+backup</I><A NAME="hpmysql-CHP-9-ITERM-1793"></A><A NAME="hpmysql-CHP-9-ITERM-1794"></A> technique rather than using dumps. A
+raw backup is a direct copy of MySQL's data files as
+they exist on disk. Because the records aren't
+converted from their native format to ASCII, raw backups are much
+faster and more efficient than dumps. For ISAM and MyISAM tables,
+this means copying the data, index, and table definition files. For
+BDB and InnoDB tables, it also involves preserving the transaction
+logs and the data.</P>
+
+<P class="docText">Both
+<span class="docEmphasis">mysqlhotcopy</span><A NAME="hpmysql-CHP-9-ITERM-1795"></A>
+and
+<span class="docEmphasis">mysqlsnapshot</span><A NAME="hpmysql-CHP-9-ITERM-1796"></A>,
+which we describe in some detail later, can be used to produce raw
+backups of ISAM and MyISAM tables. They do so by locking and flushing
+the tables before copying the underlying files. The tables may not be
+written to during the backup process. The InnoDB Hot Backup tool,
+also discussed later in this chapter, provides a raw backup of your
+InnoDB data without the need for downtime or locking. There is no
+equivalent tool for BDB tables.</P>
+
+<P class="docText">Raw backups are most often used to back up a live server. To get a
+consistent backup, ISAM and MyISAM tables need to be locked so that
+no changes can occur until the backup completes. InnoDB tables have
+no such restriction.</P>
+
+<P class="docText">Restoring a raw backup is relatively easy. For ISAM and MyISAM
+tables, you simply put the data files in MySQL's
+data directory. Unless you're using
+InnoDB's multiple-tablespace support in Version 4.1
+or newer, InnoDB tables can't be restored
+individually from a raw backup because they are stored in shared
+tablespace files rather than individually. Instead,
+you'll need to shut down MySQL and restore the
+tablespace files.</P>
+
+<P class="docText">If you have the luxury of shutting down MySQL to perform backups, the
+backup and restore processes can be greatly simplified. In fact,
+that's the next decision to consider.</P>
+
+
+<A NAME="hpmysql-CHP-9-SECT-2.2"></A>
+<H4 class="docSection2Title">9.2.2 Online or Offline?</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-9-ITERM-1797"></A>Being able to shut down MySQL during
+backups means not having to worry about consistency problems
+(discussed in the next section), locking out changes from live
+applications, or degrading server performance. A nonrunning MySQL
+instance can be backed up using standard backup software.
+There's no danger of files changing. If MySQL
+isn't running, the backup process will likely be
+faster too; it won't be competing with MySQL for I/O
+and CPU cycles.</P>
+
+<P class="docText">If you're planning to shut down MySQL during
+backups, make sure that your backup software is configured to back up
+all of the MySQL-related data. Ideally, you'd back
+up the entire system, but there may be cases when that
+isn't feasible. Large MySQL installations often span
+several filesystems. The binaries may be in one place, config files
+in another, and the data files elsewhere. Having them on different
+backup schedules could leave you with a difficult problem if you need
+to restore just after a major upgrade. The config files may not match
+the data file locations, for example.</P>
+
+
+<A NAME="hpmysql-CHP-9-SECT-2.3"></A>
+<H4 class="docSection2Title">9.2.3 Table Types and Consistency</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-9-ITERM-1798"></A>Maintaining consistency is one of
+the most tricky and often overlooked issues in database backups. You
+need to ensure that you're getting a consistent
+snapshot of your data. Doing so requires an understanding of the
+types of tables you need to back up and how MySQL handles them.</P>
+
+<P class="docText">If you're using MyISAM tables, simply making copies
+of the various data files isn't sufficient. You must
+guarantee that all changes have been flushed to disk and that MySQL
+won't be making changes to any of the tables during
+the backup process. The obvious solution is to obtain a read lock on
+each table before it is backed up. That will prevent anyone from
+making changes to the table while still allowing them to read from
+it.</P>
+
+<P class="docText">That technique works well for a single table, but in a relational
+database, tables are often related to each other. Records inserted
+into one table depend on those in another. If that's
+not accounted for, you can end up with an inconsistent
+backup—records may exist in one table but have no counterparts
+in another. It all depends on the order in which the tables were
+copied and the likelihood that changes were made to one while the
+other was backed up.</P>
+
+<P class="docText">So a good backup program needs to lock groups of related tables
+before they are copied. Rather than deal with that complexity, the
+popular solutions for MySQL give you the option of either locking all
+tables and keeping them locked until the backup is done, or locking
+and backing up tables one at a time.<sup class="docFootnote"><A class="docLink" HREF="#hpmysql-CHP-9-FNOTE-3">[3]</A></sup> If neither option appeals to you,
+there's a good chance that you need to script your
+own solution. See <A class="docLink" HREF="hpmysql-CHP-9-SECT-4.html#hpmysql-CHP-9-SECT-4">Section 9.4</A>,
+later in this chapter, for details.</P><blockquote><p class="docFootnote"><sup><A NAME="hpmysql-CHP-9-FNOTE-3">[3]</A></sup> Ideally,
+we'd have the option to unlock each table
+selectively after it is copied, but MySQL doesn't
+allow that yet.</p></blockquote>
+
+
+<A NAME="hpmysql-CHP-9-SECT-2.4"></A>
+<H4 class="docSection2Title">9.2.4 Storage Requirements</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-9-ITERM-1799"></A>The amount of space required to store
+backups must factor into the decision-making process. How much room
+does your backup media have? Tape, CD, DVD, and hard disks all have
+capacity limits, costs, and lifetimes.<sup class="docFootnote"><A class="docLink" HREF="#hpmysql-CHP-9-FNOTE-4">[4]</A></sup></P><blockquote><p class="docFootnote"><sup><A NAME="hpmysql-CHP-9-FNOTE-4">[4]</A></sup> But hard disks
+seem to be growing in capacity without bound. It
+shouldn't be long before you can buy a tera-byte
+hard disk.</p></blockquote>
+
+<P class="docText">After you've determined how much space you can
+afford and manage effectively, you need to consider how frequently
+you really need to perform backups. Do you need to back up all your
+data every day? Can you get by with backing up only your most active
+tables or databases daily and performing a full backup on the
+weekend? That will save a lot of space if much of your data changes
+infrequently.</P>
+
+<P class="docText"><A NAME="hpmysql-CHP-9-ITERM-1800"></A>When dealing with backups,
+it's a good idea to consider compression. If
+you're backing up to a tape drive with hardware
+compression, it's handled for you automatically.
+Otherwise, you can choose any compression scheme
+you'd like. Most dump files and raw backups compress
+rather well. However, if a lot of your data is already compressed
+(either compressed MyISAM tables or tables with
+<TT>BLOB</TT> fields that contain compressed data), there
+will be little benefit in further compression attempts.</P>
+
+<P class="docText">If you have more than a few compressed MyISAM tables, not only should
+you avoid trying to compress them further, but you should also
+consider backing them up less frequently. Compressed MyISAM tables
+are read-only; by definition, they don't change
+often. You'd have to uncompress the table, make
+changes, and recompress it. That's rare.</P>
+
+<P class="docText"><A NAME="hpmysql-CHP-9-ITERM-1801"></A>The final issue to think about is
+retention. How long do you need to keep backups around? Rather than
+simply throwing out backups when you begin to run out of space,
+it's best to plan ahead. By taking into account the
+amount of data you must back up, the amount of space you need, and
+how long you want to keep data around, you won't run
+into surprises.</P>
+
+<P class="docText">If you find yourself running out of space, consider staggering the
+backups that you do save. Rather than always deleting the oldest
+backups, you can use an alternative approach such as removing backups
+that fall on odd-numbered days. That would allow you to double the
+age of your oldest backup.</P>
+
+
+<A NAME="hpmysql-CHP-9-SECT-2.5"></A>
+<H4 class="docSection2Title">9.2.5 Replication</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-9-ITERM-1802"></A><A NAME="hpmysql-CHP-9-ITERM-1803"></A>If you're using
+MySQL's replication features (described in <A class="docLink" HREF="hpmysql-CHP-7.html#hpmysql-CHP-7">Chapter 7</A>), you can be a lot more flexible in your
+approach to backups. In fact, you may want to set up a slave just to
+simplify backups.</P>
+
+<P class="docText">By performing backups on a slave, you eliminate the need ever to
+interrupt systems that may need to make changes on the master. In a
+24 x 7 x 365 operation, this is an excellent
+way to ensure that you always have a copy of your data on another
+machine (this method is commonly used at Yahoo!). And since you can
+switch to the slave if the master dies, it significantly reduces the
+downtime when something does go wrong.</P>
+
+<P class="docText">When backing up a slave, it's important always to
+save the replication files as well. That includes the
+<I>master.info</I> file, relay logs, relay index, and
+so on. Without them, you can't easily restore a
+slave that has suffered a failure. The files contain information
+about where the slave left off in the replication process. See <A class="docLink" HREF="hpmysql-CHP-7.html#hpmysql-CHP-7">Chapter 7</A> for more information.<A NAME="hpmysql-CHP-9-ITERM-1804"></A></P>
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="hpmysql-CHP-9-SECT-1.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="hpmysql-CHP-9-SECT-3.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

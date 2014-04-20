@@ -1,0 +1,328 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>2.2 Locking and Concurrency</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="hpmysql-CHP-2-SECT-1.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="hpmysql-CHP-2-SECT-3.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="hpmysql-CHP-2-SECT-2"></A>
+<H3 class="docSection1Title">2.2 Locking and Concurrency</H3>
+
+<P class="docText"><A NAME="hpmysql-CHP-2-ITERM-1082"></A><A NAME="hpmysql-CHP-2-ITERM-1083"></A>The first of those problems is how
+to deal with concurrency and locking. In any data repository you have
+to be careful when more than one person, process, or client needs to
+change data at the same time. Consider, for example, a classic email
+box on a Unix system. The popular <I>mbox</I> file
+format is incredibly simple. Email messages are simply concatenated
+together, one after another. This simple format makes it very easy to
+read and parse mail messages. It also makes mail delivery easy: just
+append a new message to the end of the file.</P>
+
+<P class="docText">But what happens when two processes try to deliver messages at the
+same time to the same mailbox? Clearly that can corrupt the mailbox,
+leaving two interleaved messages at the end of the mailbox file. To
+prevent corruption, all well-behaved mail delivery systems implement
+a form of locking to prevent simultaneous delivery from occurring. If
+a second delivery is attempted while the mailbox is locked, the
+second process must wait until it can acquire the lock before
+delivering the message.</P>
+
+<P class="docText">This scheme works reasonably well in practice, but it provides rather
+poor concurrency. Since only a single program may make any changes to
+the mailbox at any given time, it becomes problematic with a
+high-volume mailbox, one that receives thousands of messages per
+minute. This exclusive locking makes it difficult for mail delivery
+not to become backlogged if someone attempts to read, respond to, and
+delete messages in that same mailbox. Luckily, few mailboxes are
+actually that busy.</P>
+
+<A NAME="hpmysql-CHP-2-SECT-2.1"></A>
+<H4 class="docSection2Title">2.2.1 Read/Write Locks</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-2-ITERM-1084"></A>Reading
+from the mailbox isn't as troublesome.
+There's nothing wrong with multiple clients reading
+the same mailbox simultaneously. Since they aren't
+making changes, nothing is likely to go wrong. But what happens if
+someone tries to delete message number 25 while programs are reading
+the mailbox? It depends. A reader could come away with a corrupted or
+inconsistent view of the mailbox. So to be safe, even reading from a
+mailbox requires special care.</P>
+
+<P class="docText">Database tables are no different. If you think of each mail message
+as a record and the mailbox itself as a table, it's
+easy to see that the problem is the same. In many ways, a mailbox is
+really just a simple database table. Modifying records in a database
+table is very similar to removing or changing the content of messages
+in a mailbox file.</P>
+
+<P class="docText">The solution to this classic problem is rather simple. Systems that
+deal with concurrent read/write access typically implement a
+<A NAME="hpmysql-CHP-2-ITERM-1085"></A>locking system that consists of two lock
+types. These locks are usually known as <I>shared
+locks</I><A NAME="hpmysql-CHP-2-ITERM-1086"></A> and <I>exclusive
+locks</I><A NAME="hpmysql-CHP-2-ITERM-1087"></A>, or <I>read
+locks</I><A NAME="hpmysql-CHP-2-ITERM-1088"></A>
+and <I>write locks</I><A NAME="hpmysql-CHP-2-ITERM-1089"></A>.</P>
+
+<P class="docText">Without worrying about the actual locking technology, we can describe
+the concept as follows. Read locks on a resource are shared: many
+clients may read from the resource at the same time and not interfere
+with each other. Write locks, on the other hand, are exclusive,
+because it is safe to have only one client writing to the resource at
+given time and to prevent all reads when a client is writing. Why?
+Because the single writer is free to make any changes to the
+resource—even deleting it entirely.</P>
+
+<P class="docText">In the database world, locking happens all the time. MySQL has to
+prevent one client from reading a piece of data while another is
+changing it. It performs this lock management internally in a way
+that is transparent much of the time.</P>
+
+
+<A NAME="hpmysql-CHP-2-SECT-2.2"></A>
+<H4 class="docSection2Title">2.2.2 Lock Granularity</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-2-ITERM-1090"></A>One way to improve the concurrency
+of a shared resource is to be more selective about what is locked.
+Rather than locking the entire resource, lock only the part that
+contains the data you need to change. Better yet, lock only the exact
+piece of data you plan to change. By decreasing the amount of data
+that is locked at any one time, more changes can occur
+simultaneously—as long as they don't conflict
+with each other.</P>
+
+<P class="docText">The downside of this is that locks aren't free.
+There is overhead involved in obtaining a lock, checking to see
+whether a lock is free, releasing a lock, and so on. All this
+business of lock management can really start to eat away at
+performance because the system is spending its time performing lock
+management instead of actually storing and retrieving data. (Similar
+things happen when too many managers get involved in a software
+project.)</P>
+
+<P class="docText">To achieve the best performance overall, some sort of balance is
+needed. Most commercial database servers don't give
+you much choice: you get what is known as row-level locking in your
+tables. MySQL, on the other hand, offers a choice in the matter.
+Among the storage engines you can choose from in MySQL,
+you'll find three different granularities of
+locking. Let's have a look at them.</P>
+
+<A NAME="hpmysql-CHP-2-SECT-2.2.1"></A>
+<H5 class="docSection3Title">2.2.2.1 Table locks</H5>
+
+<P class="docText">The most basic and low-overhead locking strategy available is a
+<I>table lock</I>, which is analogous to the mailbox
+locks described earlier. The table as a whole is locked on an
+all-or-nothing basis. When a client wishes to write to a table
+(insert, delete, or update, etc.), it obtains a write lock that keeps
+all other read or write operations at bay for the duration of the
+operation. Once the write has completed, the table is unlocked to
+allow those waiting operations to continue. When nobody is writing,
+readers obtain read locks that allow other readers to do the same.</P>
+
+<P class="docText">For a long time, MySQL provided only table locks, and this caused a
+great deal of concern among database geeks. They warned that MySQL
+would never scale up beyond toy projects and work in the real world.
+However, MySQL is so much faster than most commercial databases that
+table locking doesn't get in the way nearly as much
+as the naysayers predicted it would.</P>
+
+<P class="docText">Part of the reason MySQL doesn't suffer as much as
+expected is because the majority of applications for which it is used
+consist primarily of read queries. In fact, the
+<A NAME="hpmysql-CHP-2-ITERM-1091"></A>MyISAM engine
+(MySQL's default) was built assuming that 90% of all
+queries run against it will be reads. As it turns out, MyISAM tables
+perform very well as long as the ratio of reads to writes is very
+high or very low.</P>
+
+
+
+<A NAME="hpmysql-CHP-2-SECT-2.2.2"></A>
+<H5 class="docSection3Title">2.2.2.2 Page locks</H5>
+
+<P class="docText">A slightly more expensive form of locking that offers greater
+concurrency than table locking, a <I>page
+lock</I><A NAME="hpmysql-CHP-2-ITERM-1092"></A><A NAME="hpmysql-CHP-2-ITERM-1093"></A> is a lock applied to a portion of a table
+known as a page. All the records that reside on the same page in the
+table are affected by the lock. Using this scheme, the main factor
+influencing concurrency is the page size; if the pages in the table
+are large, concurrency will be worse than with smaller pages.
+MySQL's BDB (Berkeley DB) tables use page-level
+locking on 8-KB pages.</P>
+
+<P class="docText">The only hot spot in page locking is the last page in the table. If
+records are inserted there at regular intervals, the last page will
+be locked frequently.</P>
+
+
+
+<A NAME="hpmysql-CHP-2-SECT-2.2.3"></A>
+<H5 class="docSection3Title">2.2.2.3 Row locks</H5>
+
+<P class="docText">The locking style that offers the greatest concurrency (and carries
+the greatest overhead) is the <I>row
+lock</I><A NAME="hpmysql-CHP-2-ITERM-1094"></A><A NAME="hpmysql-CHP-2-ITERM-1095"></A>. In most applications,
+it's relatively rare for several clients to need to
+update the exact same row at the same time. Row-level locking, as
+it's commonly known, is available in
+MySQL's InnoDB tables. InnoDB
+doesn't use a simple row locking mechanism, however.
+Instead it uses row-level locking in conjunction with a
+multiversioning scheme, so let's have a look at
+that.</P>
+
+
+
+<A NAME="hpmysql-CHP-2-SECT-2.3"></A>
+<H4 class="docSection2Title">2.2.3 Multi-Version Concurrency Control</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-2-ITERM-1096"></A>There is
+a final technique for increasing concurrency: Multi-Version
+Concurrency Control (MVCC). Often referred to simply as
+<I>versioning</I><A NAME="hpmysql-CHP-2-ITERM-1097"></A><A NAME="hpmysql-CHP-2-ITERM-1098"></A>,
+MVCC is used by Oracle, by PostgreSQL, and by
+MySQL's InnoDB storage engine. MVCC can be thought
+of as a new twist on row-level locking. It has the added benefit of
+allowing nonlocking reads while still locking the necessary records
+only during write operations. Some of MVCC's other
+properties will be of particular interest when we look at
+transactions in the next section.</P>
+
+<P class="docText">So how does this scheme work? Conceptually, any query against a table
+will actually see a snapshot of the data as it existed at the time
+the query began—no matter how long it takes to execute. If
+you've never experienced this before, it may sound a
+little crazy. But give it a chance.</P>
+
+<P class="docText">In a versioning system, each row has two additional, hidden values
+associated with it. These values represent when the row was created
+and when it was expired (or deleted). Rather than storing the actual
+time at which these events occur, the database stores the version
+number at the time each event occurred. The <I>database
+version</I><A NAME="hpmysql-CHP-2-ITERM-1099"></A> (or <I>system
+version</I><A NAME="hpmysql-CHP-2-ITERM-1100"></A>) is a number that increments each time
+a query<sup class="docFootnote"><A class="docLink" HREF="#hpmysql-CHP-2-FNOTE-1">[1]</A></sup> begins. We'll
+call these two values the <I>creation
+id</I><A NAME="hpmysql-CHP-2-ITERM-1101"></A>
+and the <I>deletion
+id</I><A NAME="hpmysql-CHP-2-ITERM-1102"></A>.</P><blockquote><p class="docFootnote"><sup><A NAME="hpmysql-CHP-2-FNOTE-1">[1]</A></sup> That's not quite true. As
+you'll see when we start talking about transactions
+later, the version number is incremented for each transaction rather
+than each query.</p></blockquote>
+
+<P class="docText">Under MVCC, a final duty of the database server is to keep track of
+all the running queries (with their associated version numbers).
+Let's see how this applies to particular operations:</P>
+
+<DL class="docList"><br><p><DT><I><span class="docPubcolor">SELECT</span></I></DT></p>
+<DD>
+<P class="docList">When records are selected from a table, the server must examine each
+row to ensure that it meets several criteria:</P>
+
+<UL><LI><P class="docList">Its creation id must be less than or equal to the system version
+number. This ensures that the row was created before the current
+query began.</P></LI><LI><P class="docList">Its deletion id, if not null, must be greater than the current system
+version. This ensures that the row wasn't deleted
+before the current query began.</P></LI><LI><P class="docList">Its creation id can't be in the list of running
+queries. This ensures that the row wasn't added or
+changed by a query that is still running.</P></LI><LI><P class="docList">Rows that pass all of these tests may be returned as the result of
+the query.</P></LI></UL>
+</DD>
+<br><p><DT><I><span class="docPubcolor">INSERT</span></I></DT></p>
+<DD>
+<P class="docList">When a row is added to a table, the database server records the
+current version number along with the new row, using it as the
+row's creation id.</P>
+</DD>
+<br><p><DT><I><span class="docPubcolor">DELETE</span></I></DT></p>
+<DD>
+<P class="docList">To delete a row, the database server records the current version
+number as the row's deletion id.</P>
+</DD>
+<br><p><DT><I><span class="docPubcolor">UPDATE</span></I></DT></p>
+<DD>
+<P class="docList">When a row is modified, the database server writes a new copy of the
+row, using the version number as the new row's
+creation id. It also writes the version number as the old
+row's deletion id.</P>
+</DD>
+</DL>
+
+<P class="docText">The result of all this extra record keeping is that read queries
+never lock tables, pages, or rows. They simply read data as fast as
+they can, making sure to select only rows that meet the criteria laid
+out earlier. The drawbacks are that the server has to store a bit
+more data with each row and do a bit more work when examining rows.
+<A class="docLink" HREF="#hpmysql-CHP-2-TABLE-1">Table 2-1</A> summarizes the various locking models
+and concurrency in MySQL.</P>
+
+<A NAME="hpmysql-CHP-2-TABLE-1"></A><P><TABLE CELLSPACING="0" BORDER="1" RULES="all" CELLPADDING="4" WIDTH="100%"><CAPTION><h5 class="docTableTitle">Table 2-1. Locking models and concurrency in MySQL</h5></CAPTION><COLGROUP span="4"><THEAD><TR><TH class="docTableHeader">
+<P class="docText">Locking strategy</P>
+</TH><TH class="docTableHeader">
+<P class="docText">Concurrency</P>
+</TH><TH class="docTableHeader">
+<P class="docText">Overhead</P>
+</TH><TH class="docTableHeader">
+<P class="docText">Engines</P>
+</TH></TR></THEAD><TR><TD class="docTableCell">
+<P class="docText">Table socks</P>
+</TD><TD class="docTableCell">
+<P class="docText">Lowest</P>
+</TD><TD class="docTableCell">
+<P class="docText">Lowest</P>
+</TD><TD class="docTableCell">
+<P class="docText">MyISAM, Heap, Merge</P>
+</TD></TR><TR><TD class="docTableCell">
+<P class="docText">Page locks</P>
+</TD><TD class="docTableCell">
+<P class="docText">Modest</P>
+</TD><TD class="docTableCell">
+<P class="docText">Modest</P>
+</TD><TD class="docTableCell">
+<P class="docText">BDB</P>
+</TD></TR><TR><TD class="docTableCell">
+<P class="docText">Multiversioning</P>
+</TD><TD class="docTableCell">
+<P class="docText">Highest</P>
+</TD><TD class="docTableCell">
+<P class="docText">High</P>
+</TD><TD class="docTableCell">
+<P class="docText">InnoDB<A NAME="hpmysql-CHP-2-ITERM-1103"></A><A NAME="hpmysql-CHP-2-ITERM-1104"></A><A NAME="hpmysql-CHP-2-ITERM-1105"></A></P>
+</TD></TR></COLGROUP></TABLE></P>
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="hpmysql-CHP-2-SECT-1.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="hpmysql-CHP-2-SECT-3.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

@@ -1,0 +1,323 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>8.2 Configuration Issues</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="hpmysql-CHP-8-SECT-1.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="hpmysql-CHP-8-SECT-3.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="hpmysql-CHP-8-SECT-2"></A>
+<H3 class="docSection1Title">8.2 Configuration Issues</H3>
+
+<P class="docText"><A NAME="hpmysql-CHP-8-ITERM-1740"></A>To
+route the connection to a server, the load balancer must select a
+target server. To do this, it takes two pieces of information into
+account. First, it needs to know which servers are available. At any
+time, one or more of the backend servers can be offline (for
+maintenance, as the result of a crash, etc.). To keep track of the
+servers, the load balancer periodically checks each
+one's health.</P>
+
+<P class="docText">Once the load balancer has a list of candidate servers, it must
+decide which should get the next connection. This process can take a
+number of factors into account, including past performance, load,
+client address, and so on. Let's look at both issues
+in more detail.</P>
+
+<A NAME="hpmysql-CHP-8-SECT-2.1"></A>
+<H4 class="docSection2Title">8.2.1 Health Checks</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-8-ITERM-1741"></A><A NAME="hpmysql-CHP-8-ITERM-1742"></A><A NAME="hpmysql-CHP-8-ITERM-1743"></A>Load balancers need to perform a health
+check for each real server to ensure that it's still
+alive, well, and willing to accept new connections. When
+load-balancing a web server, this is often a trivial matter. The load
+balancer is configured to connect to TCP port 80 and request a
+<I>status file</I><A NAME="hpmysql-CHP-8-ITERM-1744"></A> such as
+<span class="docEmphasis">/health.html</span>. If the server gets a 2xx response
+code back, it assumes the server is fine. If not, it may stop sending
+new requests to the server until it becomes healthy again.</P>
+
+<P class="docText">A nice side benefit of asking for a specific file, rather than simply
+looking for any response on port 80, is that a server can be removed
+from the cluster without taking it offline: simply remove or rename
+the file.</P>
+
+<P class="docText">Most load balancers provide a great deal of control over the
+parameters used when testing cluster hosts. Options may include the
+frequency of checks, the duration of check timeouts, and the number
+of unhealthy responses required to remove a server from the cluster.
+See your load balancer's documentation for details.</P>
+
+<A NAME="hpmysql-CHP-8-SECT-2.1.1"></A>
+<H5 class="docSection3Title">8.2.1.1 Determining health</H5>
+
+<P class="docText">So what constitutes a good health check for MySQL? Unfortunately,
+there's no single answer to that question.</P>
+
+<P class="docText">It depends on how sophisticated your load balancer is. Some load
+balancers can verify only that each server is responding on the
+necessary TCP port. They'll generally connect to TCP
+port 3306 (or whichever port you're using) and
+assume the server is unhealthy if the connection is refused or if it
+has to wait too long for a response.</P>
+
+<P class="docText">Some load balancers are more flexible. They might give you the option
+of scripting a complicated health check or of running the health
+check against a different port than normal. This provides a lot of
+flexibility and control. For example, you can run a web server (such
+as Apache) on the server and configure the load balancer to check a
+status file, just as you would for standard HTTP load balancing. You
+can exploit this indirect kind of check by making the status file a
+script (PHP, Perl, etc.) or Java servlet that performs arbitrarily
+complex logic to decide whether the server is really
+healthy.<sup class="docFootnote"><A class="docLink" HREF="#hpmysql-CHP-8-FNOTE-2">[2]</A></sup> The arbitrarily complex logic can be as
+simple as running a <TT>SELECT</TT> <TT>1</TT>
+query, or as complicated as parsing the output of <TT>SHOW SLAVE
+STATUS</TT> to verify that the slave is reasonably up to date.</P><blockquote><p class="docFootnote"><sup><A NAME="hpmysql-CHP-8-FNOTE-2">[2]</A></sup> Provided, of course, that the arbitrarily
+complex logic doesn't take arbitrarily long to
+execute. The load balancer won't wait
+forever.</p></blockquote>
+
+<P class="docText">If your load balancer offers this degree of flexibility, we highly
+recommend taking advantage of it. By taking control over the
+decision-making process, you'll have a better idea
+of how your cluster will respond in various situations. And after
+testing, if you're not happy with the results,
+simply adjust the logic and try again.</P>
+
+<P class="docText">What types of things might you check for? This goes back to the
+question we're trying to answer: what makes a
+healthy MySQL server, from the load balancer's point
+of view?</P>
+
+<P class="docText">A good health check also depends on your application needs and
+what's most important. For example, on a nearly
+real-time dynamic web site like Yahoo! News, you might put more
+emphasis on replication. If a slave gets busy enough handling regular
+queries that it becomes sluggish and ends up more than 30 seconds
+behind on replication, your code can return an unhealthy status code.
+The load balancer then removes the slave from the list of available
+servers until the health check passes again. Presumably the reduced
+demand on the server will allow it to quickly catch up and rejoin the
+cluster. (See the "Monitoring"
+section in <A class="docLink" HREF="hpmysql-CHP-7.html#hpmysql-CHP-7">Chapter 7</A> for ideas about detecting
+slow slaves.)</P>
+
+<P class="docText">Of course, the success of this algorithm depends on how smart your
+scripts are. What if the slow server doesn't get
+caught up? And what if the additional demand that the remaining
+servers must bear causes them to fall behind?
+There's a very real chance that one by one,
+they'll start deciding they too are unhealthy.
+Before long, the problem cascades until you're left
+with a cluster of unhealthy servers sitting behind a load balancer
+that doesn't know where to send connections anymore.</P>
+
+<P class="docText">At Yahoo! Finance, we've seen individual servers
+that try to be smart and end up creating even bigger problems because
+they didn't have the whole picture. Anticipating the
+problem mentioned in the previous paragraph, the code that performed
+health checks introduced yet another level of checking. Each server
+knew all the other members of the cluster. The health check included
+code to make sure that there were enough servers left. If a server
+determined that too many other servers were already down, it would
+elect to keep handling requests. After all, a slow site is better
+than no site at all.</P>
+
+<P class="docText">But our implementation still wasn't smart enough;
+the servers still went down in a cascade. The reason turned out to be
+a simple race condition. The code performed a series of checks, but
+it did them in the wrong order. The code first checked to see that a
+sufficient number of other servers were healthy. It then went on to
+make sure MySQL wasn't too far behind on
+replication. The problem was that several servers could be doing the
+health check at exactly the same time. If that happened, it was
+possible for all servers to believe that all other servers were
+healthy and proceed to declare themselves unhealthy.</P>
+
+<P class="docText">There are numerous solutions to the problem. One is to add a simple
+sanity check. Each server can, after declaring itself unhealthy,
+check to make sure that the situation hasn't
+radically changed. Another option is to appoint a single server in
+each cluster as the authority for determining who is and
+isn't healthy. While it introduces a single point of
+failure (what if this server dies?), it means there are fewer chances
+for race conditions and similar problems.</P>
+
+<P class="docText">To summarize, some load balancers provide you with a lot of
+flexibility and power. Be careful how you use it. If you elect to
+take control of the decision-making process (and add complexity to
+it), be sure that the code is well tested. Ask a few peers to review
+it for you. Consider what will happen in unusual situations.</P>
+
+
+
+<A NAME="hpmysql-CHP-8-SECT-2.1.2"></A>
+<H5 class="docSection3Title">8.2.1.2 Connection limits</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-8-ITERM-1745"></A>In normal operations, the load balancer
+should distribute connections relatively evenly among your severs. If
+you have eight backend servers, any one of them will handle roughly
+one eighth of the connections at a given time. But what happens when
+several backend servers go down at the same time? Because the rest of
+the cluster must bear the load, you need to ensure that the se
+servers are configured to handle it.</P>
+
+<P class="docText">The most important setting to check is
+<TT>max_connections</TT><A NAME="hpmysql-CHP-8-ITERM-1746"></A>.
+In this circumstance, you'll find that if
+<TT>max_connections</TT> is set too low, otherwise healthy
+MySQL servers start refusing connections even if
+they're powerful enough to handle the load. Many
+installations don't set the
+<TT>max_connections</TT> option, so MySQL uses its built-in
+default of 100. Instead, set <TT>max_connections</TT> high
+enough that this problem can't happen. For example,
+if you find that each server typically handles 75 connections, a
+reasonable value for <TT>max_connections</TT> might be 150
+or more. That way, even if half the backend servers failed,
+you're application won't fail to
+connect.<A NAME="hpmysql-CHP-8-ITERM-1747"></A><A NAME="hpmysql-CHP-8-ITERM-1748"></A><A NAME="hpmysql-CHP-8-ITERM-1749"></A></P>
+
+
+
+<A NAME="hpmysql-CHP-8-SECT-2.2"></A>
+<H4 class="docSection2Title">8.2.2 Next-Connection Algorithms</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-8-ITERM-1750"></A><A NAME="hpmysql-CHP-8-ITERM-1751"></A>Different load balancers implement
+different algorithms to decide which server should receive the next
+connection. Some call these scheduling algorithms. Each vendor has
+different terminology, but this list should provide an idea of
+what's available:</P>
+
+<DL class="docList"><br><p><DT><I><span class="docPubcolor">Random</span></I></DT></p>
+<DD>
+<P class="docList">Each request is directed to a backend server selected at random from
+the pool of available servers.</P>
+</DD>
+<br><p><DT><I><span class="docPubcolor">Round-robin</span></I></DT></p>
+<DD>
+<P class="docList">Requests are sent to servers in a repeating sequence: A, B, C, A, B,
+C, etc.</P>
+</DD>
+<br><p><DT><I><span class="docPubcolor">Least connections</span></I></DT></p>
+<DD>
+<P class="docList">The next connection goes to the server with the fewest active
+connections.</P>
+</DD>
+<br><p><DT><I><span class="docPubcolor">Fastest response</span></I></DT></p>
+<DD>
+<P class="docList">The server that has been handling requests the fastest receives the
+next connection. This tends to work well when the backend servers are
+a mix of fast and slow machines.</P>
+</DD>
+<br><p><DT><I><span class="docPubcolor">Hashed</span></I></DT></p>
+<DD>
+<P class="docList">The source IP address of the connection is hashed, thereby mapping it
+to one of the backend servers. Each time a connection request comes
+from the same client IP address, it is sent to the same backend
+server. The bindings change only when the number of machines in the
+cluster does.</P>
+</DD>
+<br><p><DT><I><span class="docPubcolor">Weighted</span></I></DT></p>
+<DD>
+<P class="docList">Several of the other algorithms can be weighted. For example, you may
+have four single-CPU machines and four dual-CPU machines. The
+dual-CPU machines are roughly twice as powerful as the single-CPU
+machines, so you tell the load balancer to send them twice as many
+requests—on average.</P>
+</DD>
+</DL>
+
+<P class="docText">Which algorithm is right for MySQL? Again, it depends. There are
+several factors to consider and some pitfalls to avoid. One of the
+pitfalls is best illustrated with an example.</P>
+
+<A NAME="hpmysql-CHP-8-SECT-2.2.1"></A>
+<H5 class="docSection3Title">8.2.2.1 The consequences of poor algorithm choice</H5>
+
+<P class="docText">In September 2002, Yahoo! launched a one-week memorial site for those
+affected by the September 11, 2001 terrorist attacks. This site was
+described in <A class="docLink" HREF="hpmysql-CHP-6.html#hpmysql-CHP-6">Chapter 6</A>. The
+<span class="docEmphasis">remember.yahoo.com</span> site was heavily promoted on
+the Yahoo! home page and elsewhere. The entire site was built by a
+small group of Yahoo! employees in the two weeks before the
+site's launch on September 9.</P>
+
+<P class="docText">Needless to say, the site got a lot of traffic. So much, in fact,
+that Jeremy spent a couple of sleepless nights working to optimize
+the SQL queries and bring new MySQL servers online to handle the
+load. During that time the MySQL servers were running red hot. They
+weren't handling many queries per second (because
+they are poorly optimized) but they were either disk-bound,
+CPU-bound, or both. A server was slowest when it first came online
+because MySQL's key buffer hadn't
+yet been populated, and the operating system's disk
+cache didn't have any of the relevant disk blocks
+cached. They needed several minutes to warm up before taking their
+full query load.</P>
+
+<P class="docText">The situation was made worse by the fact that the load balancer
+hadn't been configured with this in mind, and nobody
+realized it until very late in the process. When a server was
+reconfigured and brought back online, it was immediately pounded with
+30-50 new queries. The machine became completely saturated and needed
+several minutes to recover. During the recovery time, it was nearly
+unresponsive, with the CPU at 100%, a load average over 25, and the
+disk nearly maxed out.</P>
+
+<P class="docText">After quite a bit of theorizing and poking around, someone thought to
+question the load-balancer configuration. It turned out that it was
+set on a least-connections scheduling algorithm. That clearly
+explained why a new machine was bombarded with new connections and
+rendered useless for several minutes. Once the load balancer was
+switched to a random scheduling algorithm, it became much easier to
+bring down a slave, adjust the configuration, and put it back online
+without becoming completely overwhelmed.</P>
+
+<P class="docText">The moral of the story is that the connection algorithm you select
+may come back to bite you when you least expect it (and can least
+afford it). Consider how your algorithm will work in day-to-day
+operations as well as when you're under an unusually
+high load or have a higher than normal number of backend servers
+offline for some reason.</P>
+
+<P class="docText">We can't recommend the right configuration for your
+needs. You need to think about what will work best for your hardware,
+network, and applications. Furthermore, your algorithm choices are
+limited by the load balancing hardware or software
+you're using. When in doubt, test.<A NAME="hpmysql-CHP-8-ITERM-1752"></A><A NAME="hpmysql-CHP-8-ITERM-1753"></A><A NAME="hpmysql-CHP-8-ITERM-1754"></A></P>
+
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="hpmysql-CHP-8-SECT-1.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="hpmysql-CHP-8-SECT-3.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

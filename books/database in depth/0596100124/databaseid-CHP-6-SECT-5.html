@@ -1,0 +1,85 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>But Doesn't Some Checking Have to Be Deferred?</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="databaseid-CHP-6-SECT-4.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="databaseid-CHP-6-SECT-6.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><TD valign="top"><a name="databaseid-CHP-6-SECT-5"></a>
+<H3 class="docSection1Title">But Doesn't Some Checking Have to Be Deferred?</h3>
+<p class="docText">As I've said, the conventional wisdom is that multi-relvar constraint checking, at least, has to be deferred to commit time (the arguments of the previous section notwithstanding). By way of example, suppose the suppliers-and-parts database is subject to the following constraint:</p>
+<pre>
+  CONSTRAINT C7
+    COUNT ( ( S WHERE SNO = SNO('S1') ) { CITY }
+        UNION
+        ( P WHERE PNO = PNO('P1') ) { CITY } ) &lt; 2 ;
+</pre><br>
+
+<p class="docText">This constraint says that supplier S1 and part P1 must never be in different cities. To elaborate: if relvars S and P contain tuples for supplier S1 and part P1, respectively, then those tuples must contain the same CITY value (if they didn't, the COUNT invocation would return the value two). However, it's legal for relvar S to contain no tuple for S1, or relvar P to contain no tuple for P1, or both (in which case the COUNT invocation will return either one or zero). Given our usual sample values, then, each of the following SQL UPDATEs will fail under immediate checking:<sup class="docFootnote"><a class="docLink" href="#databaseid-CHP-6-FNOTE-5">[*]</a></sup></p><blockquote><p class="docFootnote"><sup><a name="databaseid-CHP-6-FNOTE-5">[*]</a></sup> I show those UPDATEs in SQL precisely because checking <span class="docEmphasis">is</span> immediate in <span class="docEmphStrong">Tutorial D</span> and the conventional solution I'll be discussing in a moment therefore doesn't work in <span class="docEmphStrong">Tutorial D</span>.</P></blockquote>
+<pre>
+  UPDATE S SET CITY = 'Paris' WHERE SNO = SNO('S1') ;
+
+  UPDATE P SET CITY = 'Paris' WHERE PNO = PNO('P1') ;
+</pre><br>
+
+<p class="docText">Now, the conventional solution to this problem is to defer the checking and to bundle up the two UPDATEs into a transaction, like this:</P>
+<pre>
+  BEGIN TRANSACTION ;
+  UPDATE S SET CITY = 'Paris' WHERE SNO = SNO('S1') ;
+  UPDATE P SET CITY = 'Paris' WHERE PNO = PNO('P1') ;
+  COMMIT ;
+</pre><br>
+
+<p class="docText">In this conventional solution, the constraint is checked at commit time, and the database is inconsistent between the two UPDATEs. In particular, if the transaction were to ask the question "Are supplier S1 and part P1 in different cities?" between the two UPDATEs (and if we assume that tuples for S1 and P1 do exist), it would get the answer <span class="docEmphasis">yes</span>.</P>
+<a name="databaseid-CHP-6-SECT-5.1"></a>
+<H4 class="docSection2Title">Multiple Assignment</H4>
+<p class="docText">A better solution to the foregoing problem is to support a <I>multiple</i> form of assignment, which allows any number of individual assignments to be performed "simultaneously." For example (switching back now to <span class="docEmphStrong">Tutorial D</span>):</p>
+<pre>
+  UPDATE S WHERE SNO = SNO('S1') ( CITY := 'Paris' ) ,
+  UPDATE P WHERE PNO = PNO('P1') ( CITY := 'Paris' ) ;
+</pre><br>
+
+<p class="docText"><span class="docEmphasis">Explanation:</span> First, note the comma separator, which means the two UPDATEs are part of the same overall statement. Second, UPDATE is really assignment, of course, and the foregoing "double UPDATE" is thus just shorthand for a double assignment of the following general form:</p>
+<pre>
+  S := ... , P := ... ;
+</pre><br>
+
+<p class="docText">This double assignment assigns one value to relvar S and another to relvar P, all as part of the same overall operation. In general, the semantics of multiple assignment<a name="IDX-CHP-6-0495"></a> are as follows:</p>
+<ul><li><p class="docList">First, all of the expressions on the right sides are evaluated.</p></li><li><p class="docList">Second, all of the constituent assignments are then executed in sequence as written.<sup class="docFootnote"><a class="docLink" href="#databaseid-CHP-6-FNOTE-6">[*]</a></sup></p><blockquote><p class="docFootnote"><sup><a name="databaseid-CHP-6-FNOTE-6">[*]</a></sup> This definition requires some slight refinement in the case where two or more of the individual assignments specify the same target. The details are beyond the scope of this book.</p></blockquote></li></UL>
+<p class="docText">Observe that, precisely because the expressions on the right sides are evaluated before any constituent assignment is executed, none of those constituent assignments can depend on the result of any other. Moreover, since multiple assignment is considered to be a single operation, no integrity checking is performed "in the middle of" any such assignment. (Indeed, this fact is the major rationale for supporting multiple assignment in the first place.) In the example, therefore, the double assignment succeeds where the two separate single assignments failed.</p>
+<p class="docText">Note in particular in the example that there's now no way for the transaction to see an inconsistent state of the database between the two UPDATEs, because the notion of "between the two UPDATEs" now has no meaning. Note further that there's now no need for deferred checking at all.</p>
+<p class="docText">By the way, SQL does have some support for multiple assignment; in fact, it's had <span class="docEmphasis">some</span> support for many years. First, referential actions such as CASCADE imply, in effect, that a single DELETE or UPDATE statement can cause several tables to be updated "at the same time," as part of a single operation. Second, the ability to update (for example) certain join views implies the same thing. Third, FETCH INTO and SELECT INTO are both multiple assignment operations, of a kind. Fourth, SQL:2003 introduced a multiple-assignment form of the SET statement. And so on (this isn't an exhaustive list). However, the one kind of multiple assignment that SQL doesn't currently support is an explicit assignment to several different tables (precisely the case illustrated by the foregoing example, of course).</p>
+<p class="docText">One last point: please understand that support for multiple assignment doesn't mean we can discard support for transactions; transactions are still necessary for recovery and concurrency purposes, at least. All I'm saying is that transactions aren't the "unit of integrity" they're usually supposed to be.</p>
+
+
+<UL></UL></td></TR></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="databaseid-CHP-6-SECT-4.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="databaseid-CHP-6-SECT-6.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

@@ -1,0 +1,203 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>9.4 Rolling Your Own Backup Script</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="hpmysql-CHP-9-SECT-3.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="hpmysql-CHP-10.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="hpmysql-CHP-9-SECT-4"></A>
+<H3 class="docSection1Title">9.4 Rolling Your Own Backup Script</H3>
+
+<P class="docText"><A NAME="hpmysql-CHP-9-ITERM-1831"></A>There are always
+circumstances in which the standard tools aren't
+enough to get the job done. Perhaps they're not
+flexible enough, they're too slow, or they just
+don't work the way you'd like. The
+solution, of course, is to build your own tool. In doing so, you may
+decide to use the existing utilities or to just do your own thing.</P>
+
+<P class="docText">Let's look at writing a simple MySQL backup script
+in Perl. While it isn't the most powerful or
+flexible script in the world, it can serve as a starting point for
+building a custom solution.</P>
+
+<P class="docText">The script
+(<I>mysnap.pl</I><A NAME="hpmysql-CHP-9-ITERM-1832"></A>)
+solves the following problem. You have a MySQL server that keeps all
+its data on a volume with snapshot capabilities. Every 12 hours,
+you'd like to perform the following tasks to make a
+good snapshot and gather a list of tables and their sizes:</P>
+
+<span style="font-weight:bold"><OL class="docList" TYPE="1"><LI><span style="font-weight:normal"><P class="docList">Flush and lock all MyISAM tables.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">Assemble a list of every table and its size.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">Initiate a snapshot.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">Unlock the tables.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">Output the list of table sizes.</P></span></LI></OL></span>
+<P class="docText">The script's output can be captured and
+automatically mailed to a backup administrator. A
+<span class="docEmphasis">cron</span> entry like this does the job nicely if
+you're using Vixie <span class="docEmphasis">cron</span> (common
+on Linux and FreeBSD):</P>
+
+<PRE>MAILTO=backup-admin@example.com
+00 */12 * * * /usr/local/bin/mysnap.pl</PRE>
+
+<P class="docText">Otherwise, you can use the more traditional format:</P>
+
+<PRE>00 0,12 * * * /usr/local/bin/mysnap.pl | mail backup-admin@example.com</PRE>
+
+<P class="docText">You'll find the complete script listed here.</P>
+
+<PRE>#!/usr/bin/perl -w
+#
+# mysnap.pl - snapshot mysql and mail stats to backup admins
+
+use strict;
+use DBIx::DWIW;
+
+$|=1;  # unbuffer output
+
+my $db_user = 'backup_user';
+my $db_pass = 'backup_pass';
+my $db_name = 'mysql';
+my $db_host = 'localhost';
+my $command = '/usr/local/bin/snapshot';
+my $conn    = DBIx::DWIW-&gt;Connect(DB =&gt; $db_name, User =&gt; $db_user,
+                                  Pass =&gt; $db_pass, Host =&gt; $db_host);
+
+my @table_sizes;
+
+# flush and lock all tables
+$conn-&gt;Execute("FLUSH TABLES WITH READ LOCK");
+
+# gather stats on the tables
+my @db_list = $conn-&gt;FlatArray("SHOW DATABASES");
+
+for my $db (@db_list)
+{
+    $conn-&gt;Execute("USE $db") or die "$!";
+    my @table_info = $conn-&gt;Hashes("SHOW TABLE STATUS");
+
+    for my $table (@table_info)
+    {
+        my $name = $table-&gt;{Name};
+        my $size = $table-&gt;{Data_length};
+        push @table_sizes, ["$db.$name", $size];
+    }
+}
+
+# run the snapshot
+system($command);
+
+# unlock the tables
+$conn-&gt;Execute("UNLOCK TABLES");
+$conn-&gt;Disconnect;
+
+# sort by size and print
+for my $info (sort { $b-&gt;[1] cmp $a-&gt;[1] } @table_sizes)
+{
+    printf "%-10s  %s\n", $info-&gt;[1], $info-&gt;[0];
+}
+
+exit;
+
+_ _END_ _</PRE>
+
+<P class="docText">Let's walk through the basic flow. The first thing
+to notice is that the script requires a module from CPAN.
+<TT>DBIx::DWIW</TT> simplifies most Perl work with
+MySQL.<sup class="docFootnote"><A class="docLink" HREF="#hpmysql-CHP-9-FNOTE-7">[7]</A></sup> After
+using the necessary modules, define the necessary variables for the
+connection to MySQL. Then you execute a <TT>FLUSH</TT>
+<TT>TABLES</TT> <TT>WITH</TT>
+<TT>READ</TT> <TT>LOCK</TT> to make sure all
+changes are on disk and that no further changes will happen.</P><blockquote><p class="docFootnote"><sup><A NAME="hpmysql-CHP-9-FNOTE-7">[7]</A></sup> The DWIW stands for Do What I Want, a play on
+Perl's Do What I Mean.</p></blockquote>
+
+<P class="docText">Once the tables have all been flushed and locked, the script collects
+a list of all the databases on the server and iterates through them.
+In each database, the script gets the status of all the tables using
+<TT>SHOW</TT> <TT>TABLE</TT>
+<TT>STATUS</TT>, which produces records that look like
+this:</P>
+
+<PRE>mysql&gt; <B>SHOW TABLE STATUS \G</B>
+*************************** 1. row ***************************
+           Name: journal
+           Type: MyISAM
+     Row_format: Dynamic
+           Rows: 417
+ Avg_row_length: 553
+    Data_length: 230848
+Max_data_length: 4294967295
+   Index_length: 5120
+      Data_free: 0
+ Auto_increment: NULL
+    Create_time: 2001-12-09 23:18:06
+    Update_time: 2002-06-16 22:20:13
+     Check_time: 2002-05-19 17:03:35
+ Create_options:
+        Comment:</PRE>
+
+<P class="docText">The script grabs the <TT>Name</TT> and
+<TT>Data_length</TT> fields for each table and stores them
+in the <TT>@table_sizes</TT> list. Once that data has been
+gathered, the script calls the <TT>snapshot</TT> command.
+Finally, it unlocks the tables and prints the list of tables and
+sizes (sorted by size).</P>
+
+<P class="docText">Running
+<I>mysnap.pl</I><A NAME="hpmysql-CHP-9-ITERM-1833"></A>
+produces output like this:</P>
+
+<PRE>$ <B>mysnap.pl</B>
+9300388448  Datascope.SymbolHistory
+1458868716  Chart.SymbolHistory
+773481608   logs.pfs
+749644404   IDX.LinkLog
+457454228   SEC.SEC_Filings
+442951712   IDX.BusinessWireArticles
+343099968   Datascope.Symbols
+208388096   IDX.Headlines
+...</PRE>
+
+<P class="docText">As expected, the largest tables are listed first—regardless of
+which databases they reside in.</P>
+
+<P class="docText">There are many ways <I>mysnap.pl</I> can be improved or
+enhanced. It could:</P>
+
+<UL><LI><P class="docList">Perform more error checking.</P></LI><LI><P class="docList">Compare the current table sizes with those from the previous run.</P></LI><LI><P class="docList">Notice whether a table has grown beyond a preset threshold.</P></LI><LI><P class="docList">Ignore Heap tables, since they don't reside on disk.</P></LI></UL>
+<P class="docText">None of those enhancements are particularly difficult. With even a
+basic grasp of Perl and a bit of time, you can transform that script
+to something custom-tailored for your needs.<A NAME="hpmysql-CHP-9-ITERM-1834"></A><A NAME="hpmysql-CHP-9-ITERM-1835"></A></P>
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="hpmysql-CHP-9-SECT-3.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="hpmysql-CHP-10.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

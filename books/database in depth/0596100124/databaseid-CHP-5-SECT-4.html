@@ -1,0 +1,171 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>Extend and Summarize</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="databaseid-CHP-5-SECT-3.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="databaseid-CHP-5-SECT-5.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><a name="databaseid-CHP-5-SECT-4"></a>
+<h3 class="docSection1Title" >Extend and Summarize</h3>
+<p class="docText">As you might have noticed, the algebra as I've described it so far has no conventional computational capabilities. Now, SQL does; for example, we can write queries along the lines of SELECT A+B AS . . . or SELECT SUM(C) AS . . . (and so on). However, as soon as we write that "+" or that SUM, we've gone beyond the bounds of the relational algebra as originally defined. So we need to add some new operators to the algebra in order to provide this kind of functionality. That's what extend and summarize are for. Loosely, extend supports computation "across tuples," and summarize supports computation "down attributes." Let's take a closer look.</p>
+<a name="databaseid-CHP-5-SECT-4.1"></a>
+<h4 class="docSection2Title">Extend</h4>
+<a name="IDX-CHP-5-0412"></a>
+<p class="docText">I'll start with an example, since this operator might be new to you. Suppose part weights are given in pounds, and we want to see those weights in grams. There are 454 grams to a pound, and so we can write:</p>
+<pre>
+  EXTEND<a name="IDX-CHP-5-0413"></a> P ADD              | SELECT P.*,
+  ( WEIGHT * 454 AS GMWT )  |    ( P.WEIGHT * 454 ) AS GMWT
+                            | FROM   P
+</pre><br>
+
+<p class="docText">Given our usual sample values, the result looks like this:</p>
+<a name="databaseid-CHP-5-FIG-u3"></a><p><center>
+<h5 class="docFigureTitle"></h5>
+<img border="0" alt=""  width="321" height="119" SRC="images/0596100124/figs/databaseid_05_u03.gif"></center></P><br>
+<a name="databaseid-CHP-5-NOTE-17"></a><div class="docNote"><p class="docNormalTitle">NOTE</p><p><p class="docText"><span class="docEmphasis">Important:</span> Relvar P is <span class="docEmphasis">not</span> changed in the database! EXTEND is <span class="docEmphasis">not</span> an SQL-style ALTER TABLE; the EXTEND expression is just an expression, and like any expression it simply denotes a value.</p></P></div>
+<p class="docText">To continue with the example, consider now the query "Get part number and gram weight for parts with gram weight greater than 7000 grams." Here's a <span class="docEmphStrong">Tutorial D</span> formulation:</P>
+<pre>
+  ( ( EXTEND P
+       ADD ( WEIGHT * 454 AS GMWT ) )
+         WHERE GMWT &gt; 7000.0 ) { PNO, GMWT }
+</pre><br>
+
+<p class="docText">SQL analog:</P>
+<pre>
+  SELECT P.*, ( P.WEIGHT * 454 ) AS GMWT
+  FROM   P
+  WHERE  ( P.WEIGHT * 454 ) &gt; 7000.0
+</pre><BR>
+
+<p class="docText">As you can see, the expression P.WEIGHT * 454 appears twice in the SQL formulation, and we have to hope the implementation will be smart enough to recognize that it need evaluate that expression just once per tuple instead of twice. In <span class="docEmphStrong">Tutorial D</span>, by contrast, the expression appears only once.</P>
+<p class="docText">The problem this example illustrates is that SQL's SELECT - FROM - WHERE template is simply too rigid. What we need to do, as the <span class="docEmphStrong">Tutorial D</span> formulation makes clear, is perform a restriction of an extension; in SQL terms, we need to apply the WHERE clause to the result of the SELECT clause, as it were. But the SELECT - FROM - WHERE template forces the WHERE clause to apply to the result of the <span class="docEmphasis">FROM</span> clause, not the SELECT clause. To put it another way: in many respects, it's the whole point of the algebra that (thanks to closure) relational operations can be combined in arbitrary ways; but SQL's SELECT - FROM - WHERE template effectively means that queries <span class="docEmphasis">must</span> be expressed as a cartesian product,<sup class="docFootnote"><a class="docLink" href="#databaseid-CHP-5-FNOTE-8">[*]</a></sup> followed by a restrict, followed by some combination of project and/or extend and/or rename—and many queries just don't fit this pattern.</p><blockquote><p class="docFootnote"><sup><a name="databaseid-CHP-5-FNOTE-8">[*]</a></sup> It's true—thanks to, among other things, the ability to nest subqueries in the FROM clause—that the operands to that cartesian product aren't limited to being named tables (base tables or views), but the FROM clause as such still basically means cartesian product.</P></blockquote>
+<p class="docText">Incidentally, you might be wondering why I didn't formulate the SQL query like this:</P>
+<pre>
+  SELECT P.*, ( P.WEIGHT * 454 ) AS GMWT
+  FROM   P
+  WHERE  GMWT &gt; 7000.0
+</pre><BR>
+
+<p class="docText">(The change is in the last line.) The reason is that GMWT is the name of a column of <span class="docEmphasis">the final result</span>; table P has no such column, the WHERE clause thus makes no sense, and the expression fails on a syntax error.</P>
+<p class="docText">Actually, the SQL standard does allow the query under discussion to be formulated in a style that's a little closer to that of <span class="docEmphStrong">Tutorial D</span>:</P>
+<pre>
+  SELECT TEMP.PNO, TEMP.GMWT
+  FROM ( SELECT P.PNO, ( P.WEIGHT * 454 ) AS GMWT
+         FROM P ) AS TEMP
+  WHERE  TEMP.GMWT &gt; 7000.0
+</pre><BR>
+
+<p class="docText">As noted earlier, however, not all SQL products allow nested subqueries to appear in the FROM clause in this manner.</p>
+<p class="docText">Here now is a definition. Let <span class="docEmphasis">r</span> be a relation. Then the <span class="docEmphasis">extension:</span></p>
+<pre>
+  EXTEND <span class="docEmphasis">r</span> ADD ( <span class="docEmphasis">exp</span> AS <span class="docEmphasis">X</span> )
+</pre><BR>
+
+<p class="docText">is a relation with (a) heading equal to the heading of <span class="docEmphasis">r</span> extended with attribute <span class="docEmphasis">X</span>, and (b) body consisting of all tuples <span class="docEmphasis">t</span> such that <span class="docEmphasis">t</span> is a tuple of <span class="docEmphasis">r</span> extended with a value for attribute <span class="docEmphasis">X</span> that is computed by evaluating <span class="docEmphasis">exp</span> on that tuple of <span class="docEmphasis">r</span>. Relation <span class="docEmphasis">r</span> must not have an attribute called <span class="docEmphasis">X</span>, and <span class="docEmphasis">exp</span> must not refer to <span class="docEmphasis">X</span>. Observe that the result has cardinality equal to that of <span class="docEmphasis">r</span> and degree equal to that of <span class="docEmphasis">r</span> plus one. The type of <span class="docEmphasis">X</span> in that result is the type of <span class="docEmphasis">exp</span>.</P>
+
+<a name="databaseid-CHP-5-SECT-4.2"></a>
+<h4 class="docSection2Title">Summarize</h4>
+<a name="IDX-CHP-5-0414"></a><a name="IDX-CHP-5-0415"></a><a name="IDX-CHP-5-0416"></a><a name="IDX-CHP-5-0417"></a>
+<p class="docText">Again I'll start with an example (the query is "For each supplier, get the supplier number and a count of the number of parts that supplier supplies"):</p>
+<pre>
+  SUMMARIZE SP PER ( S { SNO } ) ADD ( COUNT ( ) AS P_COUNT )
+</pre><br>
+
+<p class="docText">Given our usual sample values, the result looks like this:</P>
+<a name="databaseid-CHP-5-FIG-u4"></a><p><center>
+<H5 class="docFigureTitle"></h5>
+<img border="0" alt=""  width="105" height="106" SRC="images/0596100124/figs/databaseid_05_u04.gif"></center></P><BR>
+<p class="docText">Note the tuple for supplier S5 in particular; the PER specification indicates that the summarizing is to be done "per the projection of S on SNO," which means it produces a result with five tuples (one for each tuple in that projection). By contrast, the following SQL expression (which might be thought to be equivalent to the <span class="docEmphStrong">Tutorial D</span> formulation):</P>
+<pre>
+  SELECT SP.SNO, COUNT(*) AS P_COUNT
+  FROM   SP
+  GROUP  BY SP.SNO
+</pre><BR>
+
+<p class="docText">produces a result containing tuples for suppliers S1, S2, S3, and S4 only. The reason is, of course, that it extracts supplier numbers from SP, and supplier S5 doesn't appear in SP at all. An SQL expression that <span class="docEmphasis">is</span> equivalent to the <span class="docEmphStrong">Tutorial D</span> formulation is:</p>
+<pre>
+  SELECT S.SNO, TEMP.P_COUNT
+  FROM   S, LATERAL ( SELECT COUNT(*) AS P_COUNT
+            FROM   SP
+            WHERE  SP.SNO = S.SNO ) AS TEMP
+</pre><br>
+
+<p class="docText">As I've already pointed out, however, not all SQL products support this kind of expression.</p>
+<a name="databaseid-CHP-5-NOTE-18"></a><div class="docNote"><p class="docNormalTitle">NOTE</p><p><p class="docText">The standard requires the keyword LATERAL here because the subquery refers "laterally" to another element in the same FROM clause.</p></p></div>
+<p class="docText">Here now is the definition. Let <span class="docEmphasis">r</span> and <span class="docEmphasis">s</span> be relations such that <span class="docEmphasis">s</span> is of the same type as some projection of <span class="docEmphasis">r</span>, and let the attributes of <span class="docEmphasis">s</span> be <span class="docEmphasis">A1, A2, . . ., An</span>. Then the <span class="docEmphasis">summarization:</span></p>
+<pre>
+  SUMMARIZE <span class="docEmphasis">r</span> PER ( <span class="docEmphasis">s</span> ) ADD ( <span class="docEmphasis">summary</span> AS <span class="docEmphasis">X</span> )
+</pre><br>
+
+<p class="docText">is a relation with (a) heading equal to the heading of <span class="docEmphasis">s</span> extended with attribute <span class="docEmphasis">X</span>, and (b) body consisting of all tuples <span class="docEmphasis">t</span> such that <span class="docEmphasis">t</span> is a tuple of <span class="docEmphasis">s</span> extended with a value for attribute <span class="docEmphasis">X</span>. That <span class="docEmphasis">X</span> value is computed by evaluating <span class="docEmphasis">summary</span> over all tuples of <span class="docEmphasis">r</span> that have the same value for attributes <span class="docEmphasis">A1, A2, . . . , An</span> as tuple <span class="docEmphasis">t</span> does. Relation <span class="docEmphasis">s</span> must not have an attribute called <span class="docEmphasis">X</span>, and <span class="docEmphasis">summary</span> must not refer to <span class="docEmphasis">X</span>. Observe that the result has cardinality equal to that of <span class="docEmphasis">s</span> and degree equal to that of <span class="docEmphasis">s</span> plus one. The type of <span class="docEmphasis">X</span> in that result is the type of <span class="docEmphasis">summary</span>.</p>
+<p class="docText">What "summaries" are supported? Well, the set is open-ended but certainly includes the usual COUNT, SUM, AVG, MAX, and MIN. Here's an example involving MAX and MIN:</p>
+<pre>
+  SUMMARIZE SP PER ( SP { SNO } ) ADD ( MAX ( QTY ) AS MAXQ ,
+                                        MIN ( QTY ) AS MINQ )
+</pre><br>
+
+<p class="docText">This example illustrates two further points:</p>
+<ul><LI><p class="docList">It's possible to perform "multiple summarizations" within a single SUMMARIZE. (I didn't mention the point earlier, but analogous remarks apply to RENAME and EXTEND as well.)</p></li><li><p class="docList">The PER operand in this example isn't just "of the same type as" some projection of the relation to be summarized, it actually is such a projection. In such cases the expression can be simplified slightly, as here:</p></LI></UL>
+<pre>
+  SUMMARIZE SP BY { SNO } ADD ( MAX ( QTY ) AS MAXQ ,
+                                MIN ( QTY ) AS MINQ )
+</pre><br>
+
+<p class="docText">Other legal "summaries" include COUNTD, SUMD, and AVGD (where "D" stands for "distinct" and means "eliminate redundant duplicate values before summarizing"); AND, OR, and XOR (for attributes of type BOOLEAN); INTERSECT, UNION, and D_UNION (for relation-valued attributes); and so on.</P>
+<p class="docText">By the way, COUNT and the rest here are <span class="docEmphasis">not</span> aggregate operators<a name="IDX-CHP-5-0418"></a>, though most of them do have the same names as aggregate operators (SQL confuses these two notions, with unfortunate results). An aggregate operator invocation is a scalar<a name="IDX-CHP-5-0419"></a> expression, and it returns a scalar value.<sup class="docFootnote"><a class="docLink" href="#databaseid-CHP-5-FNOTE-9">[*]</a></sup> Here's an example:</P><blockquote><p class="docFootnote"><sup><a name="databaseid-CHP-5-FNOTE-9">[*]</a></sup> Nonscalar aggregate operators can be defined too, but they're beyond the scope of this book.</P></blockquote>
+<pre>
+  VAR N INTEGER ;
+
+  N := COUNT ( S WHERE CITY = 'London' ) ;
+</pre><br>
+
+<p class="docText">Summaries, by contrast, are merely operands to SUMMARIZE invocations; they have no meaning outside that context, and in fact can't be used outside that context.</P>
+<p class="docText">Here's one more SUMMARIZE example ("How many suppliers are there in London?"):</P>
+<pre>
+  SUMMARIZE ( S WHERE CITY = 'London' ) ADD ( COUNT ( ) AS N )
+</pre><BR>
+
+<p class="docText">Again, this example illustrates two points:</P>
+<UL><LI><p class="docList">This SUMMARIZE has no PER specification. By default, therefore, the summarizing is done <span class="docEmphasis">per TABLE_DEE<a name="IDX-CHP-5-0420"></a>—</span> that is, the expression shown is shorthand for:</p><pre>
+  SUMMARIZE ( S WHERE CITY = 'London' )
+            PER ( TABLE_DEE ) ADD ( COUNT ( ) AS N )
+</pre><br>
+<p class="docList">I remind you again that TABLE_DEE is the relation that has no attributes and one tuple (and is thus certainly of the same type as "some projection of" every possible relation!—namely, the projection of the relation in question on the empty set of attributes). The output from this SUMMARIZE therefore has <span class="docEmphasis">one</span> attribute and one tuple, and given our usual sample data values it looks like this:<sup class="docFootnote"><a class="docLink" href="#databaseid-CHP-5-FNOTE-10">[*]</a></sup></P><blockquote><p class="docFootnote"><sup><a name="databaseid-CHP-5-FNOTE-10">[*]</a></sup> The fact that the picture involves no double underlining is <span class="docEmphasis">not</span> a mistake. See <a class="docLink" href="databaseid-CHP-4-SECT-8.html#databaseid-CHP-4-SECT-8.1.28">Exercise 4-28</a> in <a class="docLink" href="databaseid-CHP-4.html#databaseid-CHP-4">Chapter 4</a>.</P></blockquote><a name="databaseid-CHP-5-FIG-u5"></a><p><center>
+<h5 class="docFigureTitle"></h5>
+<img border="0" alt=""  width="25" height="45" SRC="images/0596100124/figs/databaseid_05_u05.gif"></center></p><BR></li><LI><p class="docList">I said a moment ago that aggregate operator invocations and summaries were different things, and you might be wondering what the difference is between the SUMMARIZE example under discussion and the COUNT operator invocation we saw a few paragraphs back:</p><pre>
+  COUNT ( S WHERE CITY = 'London' )
+</pre><BR>
+<p class="docList">The overriding difference is, of course, that SUMMARIZE returns a relation and aggregate operators return a scalar. For further discussion, see <a class="docLink" href="databaseid-CHP-5-SECT-11.html#databaseid-CHP-5-SECT-11.1.11">Exercise 5-11</a> at the end of this chapter.</P></LI></UL>
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="databaseid-CHP-5-SECT-3.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="databaseid-CHP-5-SECT-5.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

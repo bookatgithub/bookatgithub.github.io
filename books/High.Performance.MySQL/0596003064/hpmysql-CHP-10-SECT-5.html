@@ -1,0 +1,541 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>10.5 Network Security</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="hpmysql-CHP-10-SECT-4.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="hpmysql-CHP-10-SECT-6.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="hpmysql-CHP-10-SECT-5"></A>
+<H3 class="docSection1Title">10.5 Network Security</H3>
+
+<P class="docText"><A NAME="hpmysql-CHP-10-ITERM-1926"></A>We'd
+love to say simply, "Don't ever put
+a MySQL server on the Internet." Period. End of
+story. But the fact is that you may need to have a MySQL server that
+is accessible on the Internet. To help keep your server secure,
+we'll look at several techniques you can use to
+limit its exposure.</P>
+
+<P class="docText">Even if your server is used only on an internal network at your
+organization, there are steps you should take to keep data away from
+prying eyes. After all, some of the most serious security threats in
+a company come from the inside, not Joe Random Hacker.</P>
+
+<P class="docText">Keep in mind that this information is only a starting point in the
+process of ensuring your MySQL servers are well protected. There are
+numerous good network security books available, including
+<span class="docEmphasis">Building Internet Firewalls</span> by Elizabeth D.
+Zwicky, Simon Cooper, D. Brent Chapman, and <span class="docEmphasis">TCP/IP Network
+Administration</span> by Craig Hunt, both from
+O'Reilly. If you're serious about
+network security, do yourself a favor and pick up a book on the topic
+(after you finish this one!).</P>
+
+<P class="docText">As with operating-system security, having a third-party audit of your
+network can be quite helpful in spotting weaknesses before they are
+exploited.</P>
+
+<A NAME="hpmysql-CHP-10-SECT-5.1"></A>
+<H4 class="docSection2Title">10.5.1 Localhost-Only Connections</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-10-ITERM-1927"></A><A NAME="hpmysql-CHP-10-ITERM-1928"></A>If your MySQL server is used in an
+application that resides on the same host (common with small and
+mid-sized web sites), there's a good chance you
+won't need to allow any access to MySQL over the
+network. By eliminating the need to accept external connections, you
+dramatically reduce the number of ways in which a hacker can get data
+from your MySQL server.</P>
+
+<P class="docText">Disabling network access limits your ability to make administrative
+changes remotely (add users, rotate logs, etc.). So
+you'll need to either log in to the MySQL server
+using SSH or install a web-based application that allows you to make
+those changes. The remote login requirement can be difficult on some
+Windows systems, but there are other remote-access alternatives on
+the market. One solution to the problem might be to install
+<I>phpMyAdmin</I> (discussed in <A class="docLink" HREF="hpmysql-APP-C.html#hpmysql-APP-C">Appendix C</A>).</P>
+
+<P class="docText">The <TT>skip-networking</TT> option tells MySQL not to
+listen on any TCP socket. It will, however, listen for connections on
+a Unix socket. Starting MySQL without networking support can be
+accomplished using the following very simple command:</P>
+
+<PRE>$ <B>mysqld_safe --skip-networking</B></PRE>
+
+<P class="docText">You can instead put the <TT>skip-networking</TT> option in
+the <TT>[mysqld]</TT> section of your
+<I>my.cnf</I> file:</P>
+
+<PRE>[mysqld]
+skip-networking</PRE>
+
+<P class="docText">No matter which option you use, the result is the same. MySQL
+won't accept any TCP connections.<sup class="docFootnote"><A class="docLink" HREF="#hpmysql-CHP-10-FNOTE-6">[6]</A></sup></P><blockquote><p class="docFootnote"><sup><A NAME="hpmysql-CHP-10-FNOTE-6">[6]</A></sup> You can end up with an interesting configuration if you have a
+MySQL slave server configured with
+<TT>skip-networking</TT>. Because it initiates its
+connection to the master, the slave still gets all its data updates,
+but because no remote connections are permitted, you can have a more
+secured "backup replica" that
+can't be remotely tainted. It should be noted,
+though, that obviously you can't use such a replica
+in a failover configuration: no other client could connect to
+it.</p></blockquote>
+
+<P><A NAME="hpmysql-CHP-10-SIDEBAR-3"></A><TABLE CELLSPACING="0" WIDTH="90%" BORDER="1"><TR><TD>
+<H2 class="docSidebarTitle">localhost's Special Meaning in MySQL</H2>
+
+<P class="docText"><A NAME="hpmysql-CHP-10-ITERM-1929"></A><A NAME="hpmysql-CHP-10-ITERM-1930"></A>Sometimes even the best tools just
+don't do what you'd expect, and
+MySQL is no exception. The hostname <span class="docEmphasis">localhost</span>
+has special meaning to the MySQL client library. And because most
+other languages' APIs (Perl, Python, PHP, etc.)
+build on that library, they're all affected by this
+"feature."</P>
+
+<P class="docText">To the client library, a hostname of <span class="docEmphasis">localhost</span>
+means "connect using the local socket (not TCP)
+because we know the server is on the local machine."
+(Note that because it doesn't have Unix Sockets
+available to it, the Windows version of MySQL treats
+<span class="docEmphasis">localhost</span> no differently from any other host and
+connects to 127.0.0.1 via TCP sockets.)</P>
+
+<P class="docText">The practical effects of this occur in two circumstances:</P>
+
+<span style="font-weight:bold"><OL class="docList" TYPE="1"><LI><span style="font-weight:normal"><P class="docList">When dealing with <TT>GRANT</TT> commands, if a user is
+connecting from <span class="docEmphasis">localhost</span>, the
+<TT>GRANT</TT> command must specify
+<span class="docEmphasis">localhost</span> as the hostname. MySQL
+won't match <span class="docEmphasis">localhost</span> when
+given a <TT>%</TT> wildcard. In other words, by specifying
+permissions for <span class="docEmphasis">user@%</span> and
+<span class="docEmphasis">user@localhost</span>, you're not
+being redundant.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">When setting up tunneling using SSH, if you attempt to connect to the
+forwarded TCP port on <span class="docEmphasis">localhost</span>,
+you'll be surprised that it doesn't
+work. You must use the IP address 127.0.0.1 instead.</P></span></LI></OL></span></TD></TR></TABLE></P><br>
+
+
+<A NAME="hpmysql-CHP-10-SECT-5.2"></A>
+<H4 class="docSection2Title">10.5.2 Firewalling</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-10-ITERM-1931"></A><A NAME="hpmysql-CHP-10-ITERM-1932"></A>As
+with any other network-based service, it is important that you allow
+connections only from authorized hosts. As we showed earlier, you can
+use MySQL's <TT>GRANT</TT> command to
+restrict the hosts from which users can connect, but
+it's a good idea to have a dual protection. By
+filtering connections at the network level using a firewall, you gain
+additional security.<sup class="docFootnote"><A class="docLink" HREF="#hpmysql-CHP-10-FNOTE-7">[7]</A></sup></P><blockquote><p class="docFootnote"><sup><A NAME="hpmysql-CHP-10-FNOTE-7">[7]</A></sup> For our purposes, a firewall is
+simply a device that network traffic passes through for the purposes
+of filtering and possibly routing. Whether it's a
+"real" firewall, a router, or an
+old 486 PC doesn't matter.</p></blockquote>
+
+<P class="docText">Having multiple ways to filter connections means that a single
+mistake, such as a typo in a <TT>GRANT</TT> command,
+won't allow connections from unauthorized hosts. In
+many organizations, network security is administered by a group of
+people that is separate from those developing applications. This
+further helps reduce the possibility that a single
+person's change can expose a server.</P>
+
+<P class="docText">The most secure approach to use when firewalling a machine is to deny
+all connections by default. Then you can add rules that allow access
+to the few services that other hosts may need access to. For a system
+limited to providing a MySQL server, you should allow connections
+only to TCP port 3306 (MySQL's default) and possibly
+a remote login service such as SSH (typically on TCP port 22).</P>
+
+<A NAME="hpmysql-CHP-10-SECT-5.2.1"></A>
+<H5 class="docSection3Title">10.5.2.1 No default route</H5>
+
+<P class="docText">Consider not having a default route configured on your firewalled
+MySQL servers. That way, even if the firewall configuration is
+compromised, and someone tries to contact your MySQL server from the
+outside, the packets will never get back to them.
+They'll never leave your local network.</P>
+
+<P class="docText">Let's say your MySQL server is 192.168.0.10, and the
+local network has a 255.255.255.0 netmask. In this configuration, any
+packet from 192.168.0.0/24 is considered
+"local" because it can be reached
+directly via the attached network interface (probably
+<span class="docEmphasis">eth0</span> or the host operating
+system's equivalent). Traffic from any other address
+would have to be directed to a gateway to reach its final
+destination, and since there is no default route, there is no way for
+those packets to find their gateway and get to their destination.</P>
+
+<P class="docText">If you must allow a select few outside hosts to access your otherwise
+firewalled server, add static routes for those hosts. Doing so
+ensures that the server responds to as few outside hosts as
+possible.<A NAME="hpmysql-CHP-10-ITERM-1933"></A><A NAME="hpmysql-CHP-10-ITERM-1934"></A></P>
+
+
+
+<A NAME="hpmysql-CHP-10-SECT-5.3"></A>
+<H4 class="docSection2Title">10.5.3 MySQL in a DMZ</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-10-ITERM-1935"></A><A NAME="hpmysql-CHP-10-ITERM-1936"></A>Simply firewalling MySQL servers often
+isn't secure enough for some installations. If one
+of your web or application servers is compromised, an attacker could
+use the server to attack a MySQL server directly. Once the attacker
+has access to a single computer on the firewalled network, she has
+relatively unrestricted access to all the other servers on that
+network.<sup class="docFootnote"><A class="docLink" HREF="#hpmysql-CHP-10-FNOTE-8">[8]</A></sup></P><blockquote><p class="docFootnote"><sup><A NAME="hpmysql-CHP-10-FNOTE-8">[8]</A></sup> That's not entirely true.
+Many modern network switches allow you to configure multiple Virtual
+LANs (VLANs) on a single physical network. Machines that
+aren't on the same VLAN may not be able to talk to
+each other.</p></blockquote>
+
+<P class="docText">By moving the MySQL servers to their own separate network segment
+that isn't accessible from the outside, you can
+greatly improve security. For instance, imagine a LAN containing the
+web or other application servers and a firewall. Behind the firewall,
+on a different physical network segment and a different logical
+subnet, is one or more MySQL servers. The application servers have
+restricted access to the MySQL servers: all of their traffic must
+first pass through the firewall, which can be configured in a very
+restrictive way.</P>
+
+<P class="docText">Taking things a step further, you can argue that the application
+servers should be either in the DMZ or in their own separate DMZ. Is
+that going too far? Maybe. As is always the case in security matters,
+you may need to trade security for convenience and should be aware of
+the risks you're taking in doing so.</P>
+
+
+<A NAME="hpmysql-CHP-10-SECT-5.4"></A>
+<H4 class="docSection2Title">10.5.4 Connection Encryption and Tunneling</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-10-ITERM-1937"></A>Any time you need to
+communicate with a MySQL server across a network that is public (such
+as the Internet) or otherwise open to traffic sniffing (many wireless
+networks), consider using some form of encryption. By doing so, you
+can make it far more difficult for anyone who might try to intercept
+the connection and either sniff or spoof the data.</P>
+
+<P class="docText">As an added benefit, many encryption algorithms result in a
+compressed data stream. So not only is your data more secure, but
+you're also better using the available network
+bandwidth.</P>
+
+<P class="docText">While this discussion is focused on a client accessing a MySQL
+server, the client could be another MySQL server. This is common when
+using MySQL's built-in replication. Each slave
+server connects to the master using the exact same protocol that
+normal MySQL clients use.</P>
+
+<A NAME="hpmysql-CHP-10-SECT-5.4.1"></A>
+<H5 class="docSection3Title">10.5.4.1 Virtual private networks</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-10-ITERM-1938"></A><A NAME="hpmysql-CHP-10-ITERM-1939"></A><A NAME="hpmysql-CHP-10-ITERM-1940"></A>A company with two or
+more offices in distant locations may set up a virtual private
+network (VPN) between them using a variety of technologies. A common
+solution is for the external routers at each office to encrypt all
+traffic destined for another office. In such a situation,
+there's little to worry about. All the traffic is
+already being encrypted as it is sent out over whichever public or
+private network happens to connect the offices.</P>
+
+<P class="docText">Does the existence of the VPN mean that there is no benefit to
+applying a MySQL-specific solution? Not necessarily. In the event
+that the VPN must be disabled for some reason, it would be nice if
+MySQL's network traffic remained secret. Also, there
+may be a benefit to restricting access to the data to prevent it from
+being viewed by the prying eyes of the network administrator, who can
+easily watch it flow across the network, if he so desired.</P>
+
+
+
+<A NAME="hpmysql-CHP-10-SECT-5.4.2"></A>
+<H5 class="docSection3Title">10.5.4.2 SSL in MySQL</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-10-ITERM-1941"></A><A NAME="hpmysql-CHP-10-ITERM-1942"></A>As of Version 4.1, MySQL has
+native support for Secure Sockets Layer (SSL)—the same
+technology that keeps your credit card number safe when
+you're buying books on Amazon or airline tickets on
+your favorite travel site. Specifically, MySQL uses the freely
+available OpenSSL library.</P>
+
+<P class="docText">Unfortunately, the binary versions of MySQL that ship with most Linux
+distributions (and those available for download from the MySQL.com
+web site) don't have SSL enabled by
+default.<sup class="docFootnote"><A class="docLink" HREF="#hpmysql-CHP-10-FNOTE-9">[9]</A></sup> To check your server, simply inspect
+the value of the <TT>have_openssl</TT> variable:</P><blockquote><p class="docFootnote"><sup><A NAME="hpmysql-CHP-10-FNOTE-9">[9]</A></sup> SSL can be compiled into the Windows version
+of MySQL after you download OpenSSL for Windows. If you
+aren't in a situation in which you can recompile
+MySQL using the OpenSSL libraries, another solution might be to use
+STunnel, located at <A class="docLink" target="_blank" HREF="http://www.stunnel.org">http://www.stunnel.org</A>. It
+won't be nearly as fully featured as actually using
+the OpenSSL hooks directly, but at least you can encrypt your client
+connections.</p></blockquote>
+
+<PRE>mysql&gt; <B>SHOW VARIABLES LIKE 'have_openssl';</B>
++---------------+-------+
+| Variable_name | Value |
++---------------+-------+
+| have_openssl  | NO    |
++---------------+-------+
+1 row in set (0.00 sec)</PRE>
+
+<P class="docText">If it says <TT>NO</TT>, you'll need to
+compile your own MySQL server.</P>
+
+<P class="docText">If it says <TT>YES</TT>, whole new levels of security in
+database access are opened to the administrator, depending on the
+security needs of your particular application.</P>
+
+<P class="docText">At its most basic, you may wish to allow only encrypted sessions,
+relying on the SSL protocol to protect the user's
+password. You can require a user to connect via SSL using optional
+arguments to the <TT>GRANT</TT> command:</P>
+
+<PRE>mysql&gt; <B>GRANT ALL PRIVILEGES ON ssl_only_db.* to 'raymond'@'%'</B>
+    -&gt; <B>IDENTIFIED BY "FooBar!" REQUIRE SSL;</B></PRE>
+
+<P class="docText">That <TT>GRANT</TT>, however, doesn't
+place any restrictions on the SSL certificate being used by the
+connecting client. As long as the client and the MySQL server can
+negotiate an SSL session, the validity of the client certificate
+won't be checked.</P>
+
+<P class="docText">Minimal checking of the client certificate can be performed by using
+the <TT>REQUIRE</TT> <TT>x509</TT> option:</P>
+
+<PRE>mysql&gt; <B>GRANT ALL PRIVILEGES ON ssl_only_db.* to raymond@%</B>
+    -&gt; <B>IDENTIFIED BY "FooBar!" REQUIRE x509;</B></PRE>
+
+<P class="docText">This requires that the client certificate be at least verifiable
+against the CA certificates the MySQL server has been set up to
+recognize.</P>
+
+<P class="docText">One step up might be to permit only a specific client certificate to
+access the database. You can do that using the <TT>REQUIRE
+SUBJECT</TT> syntax:</P>
+
+<PRE>mysql&gt; <B>GRANT ALL PRIVILEGES ON ssl_only_db.* to 'raymond'@'%'</B>
+    -&gt; <B>IDENTIFIED BY "FooBar!"</B>
+    -&gt; <B>REQUIRE SUBJECT "/C=US/ST=New York/L=Albany/O=Widgets Inc./CN=client-ray.
+example.com/emailAddress=raymond@example.com";</B></PRE>
+
+<P class="docText">Maybe you don't care specifically what client
+license is used, but only that it be one issued using your
+organization's CA certificate. In this case, you
+might use the <TT>REQUIRE ISSUER</TT> syntax to do
+something like the following:</P>
+
+<PRE>mysql&gt; <B>GRANT ALL PRIVILEGES ON ssl_only_db.* to 'raymond'@'%'</B>
+    -&gt; <B>IDENTIFIED BY "FooBar!"</B>
+    -&gt; <B>REQUIRE ISSUER "/C=US/ST=New+20York/L=Albany/O=Widgets Inc./CN=cacert.example.
+com/emailAddress=admin@example.com";</B></PRE>
+
+<P class="docText">For the ultimate in authentication, you can require both the issuer
+and subject to be predefined values, requiring Raymond to use the
+specific certificate issued using your
+organization's CA certificate, for example, by
+combining the two syntaxes:</P>
+
+<PRE>mysql&gt; <B>GRANT ALL PRIVILEGES ON ssl_only_db.* to 'raymond'@'%'</B>
+    -&gt; <B>IDENTIFIED BY "FooBar!"</B>
+    -&gt; <B>REQUIRE SUBJECT "/C=US/ST=New York/L=Albany/O=Widgets Inc./CN=client-ray.
+example.com/emailAddress=raymond@example.com"</B>
+    -&gt; <B>AND ISSUER "/C=US/ST=New+20York/L=Albany/O=Widgets Inc./CN=cacert.example.com/
+emailAddress=admin@example.com";</B></PRE>
+
+<P class="docText">One other minor SSL-related option is the <TT>CIPHER</TT>
+requirement option, which allows the administrator to permit only
+"trusted" (strong) encryption
+ciphers to be used. SSL is cipher-independent, and the potentially
+strong SSL encryption can be invalidated if a really weak cipher is
+used to protect the data being transferred. You can restrict the
+choice of protocols to a set you consider to be secure by issuing a
+command like the following:</P>
+
+<PRE>mysql&gt; <B>GRANT ALL PRIVILEGES ON ssl_only_db.* to 'raymond'@'%'</B>
+    -&gt; <B>IDENTIFIED BY "FooBar!"</B>
+    -&gt; <B>REQUIRE CIPHER "EDH-RSA-DES-CBC3-SHA";</B></PRE>
+
+<P class="docText">It should be noted that managing individual client certificates may
+seem like excellent security, but it can be an administrative
+nightmare. When you create a client certificate, you have to assign
+it an expiration date, preferably something not too long in duration.
+You want it to be long enough in life so that you're
+not constantly having to regenerate a new certificate, but short
+enough in life that if the certificate holder leaves the company, or
+the certificate falls into the hands of a hostile entity, it
+doesn't give them access to your data forever.</P>
+
+<P class="docText">In a small environment of a couple of employees, it may be very easy
+to keep track of individual certificate ownership. When your
+organization scales upward to hundreds or thousands of employees with
+certificates, keeping track of which certificates expire when and
+making sure that client certificates don't expire
+before they've been replaced can become quite
+cumbersome.</P>
+
+<P class="docText">For some organizations this problem is solved using a combination of
+<TT>REQUIRE</TT> <TT>ISSUER</TT> and a series of
+monthly client certificates that are distributed via a trusted
+distribution path, such as a company intranet. Clients can download
+and connect to the MySQL server using certificates that are good for
+a month or two. This way, if an employee loses access to the company
+intranet, or a partner is no longer given access to the monthly key,
+then even if the administrator isn't told to remove
+their access, their ability to connect naturally expires in a
+predetermined schedule.<A NAME="hpmysql-CHP-10-ITERM-1943"></A><A NAME="hpmysql-CHP-10-ITERM-1944"></A></P>
+
+
+
+<A NAME="hpmysql-CHP-10-SECT-5.4.3"></A>
+<H5 class="docSection3Title">10.5.4.3 SSH tunneling</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-10-ITERM-1945"></A><A NAME="hpmysql-CHP-10-ITERM-1946"></A>If you're using an
+older version of MySQL or simply don't want to
+hassle with setting up SSL support, consider using SSH instead. If
+you use Linux or Unix, there's a good chance
+you're already using SSH to log in to remote
+machines.<sup class="docFootnote"><A class="docLink" HREF="#hpmysql-CHP-10-FNOTE-10">[10]</A></sup> What a lot of people don't know is that
+SSH can be used to establish an encrypted tunnel between two hosts.</P><blockquote><p class="docFootnote"><sup><A NAME="hpmysql-CHP-10-FNOTE-10">[10]</A></sup> A variant of OpenSSH is also available for
+Windows clients. There is a full tutorial on how to set up SSH
+tunnels to connect to MySQL machines at <A class="docLink" target="_blank" HREF="http://www.vbmysql.com/articles/security/sshtunnel.html">http://www.vbmysql.com/articles/security/sshtunnel.html</A>.</p></blockquote>
+
+<P class="docText">SSH tunneling is best illustrated with an example.
+Let's suppose that we want an encrypted connection
+from a Linux workstation to the MySQL server running on
+<I>db.example.com.</I> On the workstation, you execute
+the following command:<sup class="docFootnote"><A class="docLink" HREF="#hpmysql-CHP-10-FNOTE-11">[11]</A></sup></P><blockquote><p class="docFootnote"><sup><A NAME="hpmysql-CHP-10-FNOTE-11">[11]</A></sup> Assuming SSH Version 2 is
+installed. SSH Version 1 has no <TT>-N</TT> option. See
+your SSH documentation for details.</p></blockquote>
+
+<PRE>$ <B>ssh -N -f -L 4406:db.example.com:3306</B></PRE>
+
+<P class="docText">This establishes a tunnel between TCP port 4406 on the workstation
+and port 3306 on <I>db.example.com.</I> You could
+connect to MySQL through the tunnel from the workstation by doing
+this:</P>
+
+<PRE>$ <B>mysql -h 127.0.0.1 -P 4406</B></PRE>
+
+<P class="docText">SSH is a very powerful tool that can do far more than this simple
+example illustrates. We suggest reading
+O'Reilly's <span class="docEmphasis">SSH, The
+Secure Shell: The Definitive Guide</span> by Daniel J. Barrett
+and Richard E. Silverman if you'd like to learn more
+about SSH.<A NAME="hpmysql-CHP-10-ITERM-1947"></A></P>
+
+
+
+<A NAME="hpmysql-CHP-10-SECT-5.5"></A>
+<H4 class="docSection2Title">10.5.5 TCP Wrappers</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-10-ITERM-1948"></A><A NAME="hpmysql-CHP-10-ITERM-1949"></A>MySQL can be compiled with support for
+TCP wrappers on Unix systems. If a full-blown firewall
+isn't an option, TCP wrappers provide a basic level
+of defense. You'll gain additional control over
+which hosts MySQL will or will not talk to without having to change
+your grant tables.</P>
+
+<P class="docText">To use TCP wrappers, you need to build MySQL from source and pass the
+<TT>--with-libwrap</TT> option to
+<I>configure</I> so that it will know where to find the
+proper header files on your operating system:</P>
+
+<PRE>$ <B>./configure --with-libwrap=/usr/local/tcp_wrappers</B></PRE>
+
+<P class="docText">Assuming you have an entry in your
+<I>/etc/hosts.deny</I> file that denies all connections
+by default:</P>
+
+<PRE># deny all connections
+ALL: ALL</PRE>
+
+<P class="docText">you can explicitly add MySQL to your
+<I>/etc/hosts.allow</I> file:</P>
+
+<PRE># allow mysql connections from hosts on the local network
+mysqld: 192.168.1.0/255.255.0.0 : allow</PRE>
+
+<P class="docText">The only other catch is that you need an appropriate entry in
+<I>/etc/services</I> for MySQL. If you
+don't already have one, add a line such as the
+following:</P>
+
+<PRE>mysql    3306/tcp  # MySQL Server</PRE>
+
+<P class="docText">Of course, if you are running MySQL on a nonstandard port, use that
+number instead of 3306.</P>
+
+
+<A NAME="hpmysql-CHP-10-SECT-5.6"></A>
+<H4 class="docSection2Title">10.5.6 Automatic Host Blocking</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-10-ITERM-1950"></A><A NAME="hpmysql-CHP-10-ITERM-1951"></A>MySQL provides some help in
+preventing network-based attacks. If MySQL notices too many bad
+connections (those that don't result in a valid
+MySQL session) from a particular host, it starts blocking connections
+from that host. The server variable
+<TT>max_connection_errors</TT> determines how many bad
+connections MySQL will allow before it begins blocking.</P>
+
+<P class="docText">When a host is blocked, MySQL records in the error log a message that
+looks like this:</P>
+
+<PRE>Host 'host.badguy.com' blocked because of many connection errors.
+Unblock with 'mysqladmin flush-hosts'</PRE>
+
+<P class="docText">As that message indicates, you can use the <I>mysqladmin
+flush-hosts</I> command to unblock the host, presumably after
+you have figured out why that host was having problems connecting and
+have addressed whatever issue is relevant. The
+<I>mysqladmin</I> <span class="docEmphasis">flush_hosts</span>
+command simply executes a <TT>FLUSH HOSTS</TT> SQL command,
+which empties MySQL's host cache tables. The result
+is that <span class="docEmphasis">all</span> blocked hosts are unblocked;
+there's no way to unblock a single host.</P>
+
+<P class="docText">If you find that this becomes a common problem for some reason, you
+can set the <TT>max_connection_errors</TT> variable to a
+relatively high number to avoid the problem.</P>
+
+<PRE>$ <B>mysqld_safe -O max_connection_errors=999999999</B></PRE>
+
+<P class="docText">It's currently not possible to set
+<TT>max_connection_errors</TT> to zero and disable the
+check entirely. The only way to do that is to remove the check from
+the source code.<A NAME="hpmysql-CHP-10-ITERM-1952"></A></P>
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="hpmysql-CHP-10-SECT-4.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="hpmysql-CHP-10-SECT-6.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

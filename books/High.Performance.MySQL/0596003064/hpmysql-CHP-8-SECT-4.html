@@ -1,0 +1,222 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>8.4 High Availability</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="hpmysql-CHP-8-SECT-3.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="hpmysql-CHP-9.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="hpmysql-CHP-8-SECT-4"></A>
+<H3 class="docSection1Title" id="251590-833">8.4 High Availability</H3>
+
+<P class="docText"><A NAME="hpmysql-CHP-8-ITERM-1764"></A>So far we've
+concerned ourselves with the slaves. Using a proper heartbeat setup
+and load balancer, you can achieve a high degree of availability and
+transparency for MySQL-based applications. In its current state,
+MySQL doesn't offer a lot in the way of high
+availability support on the master, but that doesn't
+mean all hope is lost.</P>
+
+<P class="docText">In this section, we'll look at several
+high-availability solutions (both commercial and free). Each of the
+options considered has pros and cons, which we've
+done our best to document.</P>
+
+<P><A NAME="hpmysql-CHP-8-SIDEBAR-3"></A><TABLE CELLSPACING="0" WIDTH="90%" BORDER="1"><TR><TD>
+<H2 class="docSidebarTitle">NDB Cluster</H2>
+
+<P class="docText"><A NAME="hpmysql-CHP-8-ITERM-1765"></A><A NAME="hpmysql-CHP-8-ITERM-1766"></A>As we were putting
+the finishing touches on this book, MySQL AB was completing the
+initial integration work on the newest storage engine: NDB. In 2003,
+MySQL AB acquired Alzato, a company started by Ericsson in 2000. The
+company developed NDB Cluster, a clustered database system designed
+for both high availability and scalability.</P>
+
+<P class="docText">When the integration is complete, MySQL's NDB
+storage engine will provide an interface to a backend NDB cluster.
+For the first time, MySQL will have built-in clustering with
+automatic failover capabilities. See the MySQL web site and manual
+for more details on the NDB technology.</P>
+</TD></TR></TABLE></P><br>
+
+<A NAME="hpmysql-CHP-8-SECT-4.1"></A>
+<H4 class="docSection2Title">8.4.1 Dual-Master Replication</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-8-ITERM-1767"></A>We looked at
+dual-master replication back in <A class="docLink" HREF="hpmysql-CHP-7.html#hpmysql-CHP-7">Chapter 7</A>.
+While it doesn't help in scaling an application
+(both servers must handle the full write load), you can achieve much
+improved availability and transparency by putting a load balancer in
+the mix. <A class="docLink" HREF="#hpmysql-CHP-8-FIG-5">Figure 8-5</A> illustrates this arrangement.</P>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="hpmysql-CHP-8-FIG-5"></A>Figure 8-5. Dual-master replication for high availability</H5>
+<IMG BORDER="0" WIDTH="218" HEIGHT="124" SRC="images/0596003064/figs/hpsql_0805.gif" ALT="figs/hpsql_0805.gif"></CENTER>
+
+<P class="docText">Aside from the downsides mentioned in <A class="docLink" HREF="hpmysql-CHP-7.html#hpmysql-CHP-7">Chapter 7</A>
+(mostly a lack of conflict resolution), there isn't
+a lot that can go wrong with this setup. The worst problem is the
+potential for data loss, but that's really no
+different from master/slave replication. After a query writes a
+record to <span class="docEmphasis">master 1</span>, MySQL records the query in
+the binary log, and the other master has a chance to read it. If
+<span class="docEmphasis">master 1</span> happens to crash between the time that
+the record is written and when the binary log is updated, however,
+the other master (and any slaves) will never know about the query. As
+far as <span class="docEmphasis">master 2</span> is concerned, the query never
+happened. The solution would be for MySQL to provide synchronous
+replication with two-phase commit, but it doesn't.</P>
+
+<P class="docText">On the plus side, this solution is relatively easy to set up and
+understand. If you already know how to configure replication and have
+a working load balancer set up with good health checks, dual-master
+replication isn't much extra work. If you need to
+perform maintenance on the masters, you can simply take
+<span class="docEmphasis">master 1</span> offline, do the work, bring it back
+online, and repeat the process on the other as soon as the first has
+caught up. Of course, it's best to do this
+gracefully. Set the health check to fail, and wait until clients are
+no longer accessing the master before shutting it down. Otherwise you
+risk interrupting in-progress transactions.</P>
+
+<P class="docText">If your load balancer is sophisticated enough, you can virtually
+eliminate the problem of conflict resolution. Here's
+how it works: rather than having both masters active, configure the
+load balancer so that <span class="docEmphasis">master 1</span> is active, and
+<span class="docEmphasis">master 2</span> is on standby. Only when
+<span class="docEmphasis">master 1</span> goes down should the load balancer send
+any traffic to <span class="docEmphasis">master 2</span>. Most load balancers
+provide a mechanism for doing this.</P>
+
+<P class="docText">However, a wrinkle occurs when <span class="docEmphasis">master 1</span> comes
+back online. What should the load balancer do? If it begins sending
+connections to <span class="docEmphasis">master 1</span> again,
+you'll have a situation in which writes could be
+occurring to both masters at the same time. That's a
+recipe for conflict. Remember, MySQL connections can be long-running,
+so the load balancer can't assume that clients will
+suddenly disconnect from <span class="docEmphasis">master 2</span>. The load
+balancer needs to be configured so that the notion of the
+"live master" changes only when the
+current live master goes down.</P>
+
+
+<A NAME="hpmysql-CHP-8-SECT-4.2"></A>
+<H4 class="docSection2Title">8.4.2 Shared Storage with Standby</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-8-ITERM-1768"></A>By increasing the cost
+and complexity of your infrastructure, you can eliminate the problem
+of lost updates described previously. Instead of two servers with
+their own copies of the data using replication to stay in sync, you
+can configure the active and standby masters to use shared
+storage.<sup class="docFootnote"><A class="docLink" HREF="#hpmysql-CHP-8-FNOTE-3">[3]</A></sup> It's very important to realize that the
+standby master shouldn't mount the filesystem or
+start MySQL until the first is offline.</P><blockquote><p class="docFootnote"><sup><A NAME="hpmysql-CHP-8-FNOTE-3">[3]</A></sup> The exact type of shared storage
+isn't terribly important. You see greater
+performance from directly attached systems than network attached
+storage, however, due mainly to the reduced latency.</p></blockquote>
+
+<P class="docText"><A class="docLink" HREF="#hpmysql-CHP-8-FIG-6">Figure 8-6</A> shows one implementation of shared
+storage. It's worth pointing out that a load
+balancer isn't strictly necessary in this scenario.
+All you really need is an agent running on each node to monitor the
+other. If the agent running on <span class="docEmphasis">master 2</span> finds
+that <span class="docEmphasis">master 1</span> is unavailable, it takes over
+<span class="docEmphasis">master</span> <span class="docEmphasis">1</span>'s
+IP address and starts up MySQL with an identical configuration (same
+data directory, log filenames, etc.). If the configuration is truly
+identical, starting up MySQL on <span class="docEmphasis">master</span>
+<span class="docEmphasis">2</span> is logically no different from fixing
+<span class="docEmphasis">master 1</span> and bringing MySQL up there. However,
+in reality there is an important difference: time. <I>Master
+2</I> is already booted and ready to go. Starting up MySQL
+takes a matter of seconds. The only delay is imposed by consistency
+checks on the data. Shared storage means the possibility of share
+corruption if you're not using InnoDB or BDB tables.</P>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="hpmysql-CHP-8-FIG-6"></A>Figure 8-6. A live master and a warm standby master using shared storage</H5>
+<IMG BORDER="0" WIDTH="218" HEIGHT="188" SRC="images/0596003064/figs/hpsql_0806.gif" ALT="figs/hpsql_0806.gif"></CENTER>
+
+<P class="docText">Writing such an agent is a tricky undertaking. We
+don't recommend you try it unless you have a lot of
+time available for testing all the possible edge cases
+you're likely to encounter with flaky network
+equipment. Instead, spend some time looking at existing tools. There
+are numerous open source projects that can be adapted to do this for
+MySQL. The best candidate is
+<span class="docEmphasis">keepalived</span><A NAME="hpmysql-CHP-8-ITERM-1769"></A><A NAME="hpmysql-CHP-8-ITERM-1770"></A>
+(<A class="docLink" target="_blank" HREF="http://keepalived.sourceforge.net/">http://keepalived.sourceforge.net/</A>), a
+keep-alive health check facility written to work in conjunction with
+LVS. There are also two commercial solutions on the market today,
+described in the next section.</P>
+
+
+<A NAME="hpmysql-CHP-8-SECT-4.3"></A>
+<H4 class="docSection2Title">8.4.3 Commercial Solutions</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-8-ITERM-1771"></A>As of this writing, there are two
+commercial products worthy of consideration for high availability.
+Each takes a completely different approach to solving the problem, so
+different sites may find one or the other suitable, or neither. Keep
+an eye on this market: we expect to see a lot of new development in
+this area in the next year or so.</P>
+
+<A NAME="hpmysql-CHP-8-SECT-4.3.1"></A>
+<H5 class="docSection3Title">8.4.3.1 Veritas cluster a        gent</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-8-ITERM-1772"></A><A NAME="hpmysql-CHP-8-ITERM-1773"></A>Veritas
+has a well established reputation for providing the technology
+necessary to build many sorts of clusters. Their MySQL offering
+builds on the shared storage with standby model we just looked at.
+The cluster agent runs on both the active and standby nodes,
+monitoring the health of the primary master. When the agent detects a
+problem on the master, it brings the standby instance online and
+takes over the primary master's functionality.</P>
+
+
+
+<A NAME="hpmysql-CHP-8-SECT-4.3.2"></A>
+<H5 class="docSection3Title">8.4.3.2 EMIC Networks</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-8-ITERM-1774"></A><A NAME="hpmysql-CHP-8-ITERM-1775"></A>EMIC Networks provides a full-blown
+clustering solution for MySQL. By combining a number of relatively
+inexpensive servers running EMIC's version of MySQL,
+you can create incredibly robust MySQL clusters without needing to
+worry about the single point of failure most other architectures
+have.<A NAME="hpmysql-CHP-8-ITERM-1776"></A></P>
+
+
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="hpmysql-CHP-8-SECT-3.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="hpmysql-CHP-9.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

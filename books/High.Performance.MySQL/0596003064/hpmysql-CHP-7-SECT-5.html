@@ -1,0 +1,765 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>7.5 Administration and Maintenance</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="hpmysql-CHP-7-SECT-4.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="hpmysql-CHP-7-SECT-6.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="hpmysql-CHP-7-SECT-5"></A>
+<H3 class="docSection1Title">7.5 Administration and Maintenance</H3>
+
+<P class="docText"><A NAME="hpmysql-CHP-7-ITERM-1655"></A>Configuring replication
+isn't something you do every day (unless
+you're writing a book about MySQL, of course.) Once
+replication is set up and running, you're likely
+just to let it run. But there are a few administrative tasks
+you'll likely need to deal with at some point. You
+should, of course, consider automating them as much as possible.</P>
+
+<A NAME="hpmysql-CHP-7-SECT-5.1"></A>
+<H4 class="docSection2Title">7.5.1 Monitoring</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-7-ITERM-1656"></A>Replication
+increases the complexity of monitoring MySQL's
+health. Are all the slaves replicating? Have the slaves encountered
+errors? How far behind is the slowest slave?</P>
+
+<P class="docText">As you may have come to expect, MySQL provides all the data necessary
+to answer those questions (and many questions you probably
+haven't even considered), but extracting and
+understanding the data is something it won't do for
+you. In <A class="docLink" HREF="#hpmysql-CHP-7-SECT-5.4">Section 7.5.4</A>,
+later in this chapter, we'll try to provide some
+details to help you make sense of all the data MySQL provides, which
+should help you understand the tools that are helpful in processing
+that data.</P>
+
+<A NAME="hpmysql-CHP-7-SECT-5.1.1"></A>
+<H5 class="docSection3Title">7.5.1.1 Master status</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-7-ITERM-1657"></A>Using the
+<TT>SHOW</TT><A NAME="hpmysql-CHP-7-ITERM-1658"></A> <TT>MASTER</TT>
+<TT>STATUS</TT> command, the master will tell you about its
+replication status:</P>
+
+<PRE>mysql&gt; <B>SHOW MASTER STATUS \G</B>
+*************************** 1. row ***************************
+            File: binary-log.004
+        Position: 635904327
+    Binlog_do_db:
+Binlog_ignore_db:
+1 row in set (0.00 sec)</PRE>
+
+<P class="docText">The output includes the current binary log filename and the position
+(or offset) into the binary log where the next query will be written.
+The other two fields correspond to the
+<TT>binlog-do-db</TT> and
+<TT>binlog-ignore-db</TT> filtering options in the
+server's <I>my.cnf</I> file. If you
+are filtering binary log records on the master, one or both of these
+will list the database names affected by your filters.</P>
+
+<P class="docText">You can also ask the master which binary logs still exist on disk:</P>
+
+<PRE>mysql&gt; <B>SHOW MASTER LOGS;</B>
++----------------+
+| Log_name       |
++----------------+
+| binary-log.001 |
+| binary-log.002 |
+| binary-log.003 |
+| binary-log.004 |
++----------------+
+4 rows in set (0.02 sec)</PRE>
+
+<P class="docText">But the output is quite limited. It would be helpful to know the
+sizes and ages of the files as well. MySQL is doing little more than
+reading and displaying the contents of the
+<I>log-bin.index</I> file. To get more information, you
+need to log on to the server and examine the files by hand.</P>
+
+
+
+<A NAME="hpmysql-CHP-7-SECT-5.1.2"></A>
+<H5 class="docSection3Title">7.5.1.2 Slave status</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-7-ITERM-1659"></A>There is significantly more information
+available on the slave side of replication, mostly because the slaves
+have more information to keep track of. To start, the
+<TT>SHOW</TT><A NAME="hpmysql-CHP-7-ITERM-1660"></A> <TT>SLAVE</TT>
+<TT>STATUS</TT> command provides a good summary of the
+information from both the <I>master.info</I> and
+<I>relay-log.info</I> files:</P>
+
+<PRE>mysql&gt; <B>SHOW SLAVE STATUS \G</B>
+*************************** 1. row ***************************
+          Master_Host: master.example.com
+          Master_User: repl
+          Master_Port: 3306
+        Connect_retry: 15
+      Master_Log_File: binary-log.004
+  Read_Master_Log_Pos: 635904807
+       Relay_Log_File: relay-log.004
+        Relay_Log_Pos: 846096118
+Relay_Master_Log_File: binary-log.004
+     Slave_IO_Running: Yes
+    Slave_SQL_Running: Yes
+      Replicate_do_db:
+  Replicate_ignore_db:
+           Last_errno: 0
+           Last_error:
+         Skip_counter: 0
+  Exec_master_log_pos: 635904807
+      Relay_log_space: 846096122
+1 row in set (0.00 sec)</PRE>
+
+<P class="docText">In addition, there is some other metadata in the output. The
+<TT>Last_errno</TT> and <TT>Last_error</TT>
+fields provide information about the most recent replication-related
+error, if any. The <TT>Relay_log_space</TT> tells you how
+much space the relay log is consuming.</P>
+
+<P class="docText">The two most important fields are <TT>Slave_IO_Running</TT>
+and <TT>Slave_SQL_Running</TT>. They tell you if the IO and
+slave threads are running.</P>
+
+
+
+<A NAME="hpmysql-CHP-7-SECT-5.1.3"></A>
+<H5 class="docSection3Title">7.5.1.3 Replication heartbeat</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-7-ITERM-1661"></A>Watching the values produced by
+<TT>SHOW</TT> <TT>MASTER</TT>
+<TT>STATUS</TT> and <TT>SHOW</TT>
+<TT>SLAVE</TT> <TT>STATUS</TT> can give you a
+rough idea of how up to date a slave is. The trouble with relying on
+that information is that you're only looking at
+bytes. You can determine how many more bytes of log data the slave
+needs to execute before it is current. However, that
+doesn't tell you how many queries need to be
+executed. There's no good way to figure that out,
+short of running the binary log through
+<span class="docEmphasis">mysqlbinlog</span> and counting queries.</P>
+
+<P class="docText">It is possible to determine how out of date the slave is with some
+degree of accuracy by implementing a simple heartbeat system. The
+heartbeat principle is easy. At a fixed interval, say 20 seconds, a
+process on the master inserts a record with the latest timestamp into
+a table. On the slave, a corresponding process reads the most recent
+record every 20 seconds. Assuming that the system clocks on both
+machines are in sync, you can tell how far behind the slave is to
+within 20 seconds of accuracy.</P>
+
+<P class="docText">See the <I>write_heartbeat</I> and
+<I>read_heartbeat</I> scripts in <A class="docLink" HREF="#hpmysql-CHP-7-SECT-5.4">Section 7.5.4</A> for a sample
+implementation.</P>
+
+
+
+<A NAME="hpmysql-CHP-7-SECT-5.2"></A>
+<H4 class="docSection2Title">7.5.2 Log Rotation</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-7-ITERM-1662"></A>Binary log files accumulate on the
+server until they are explicitly removed. The
+<TT>SHOW</TT><A NAME="hpmysql-CHP-7-ITERM-1663"></A>
+<TT>MASTER</TT> <TT>LOGS</TT> command tells you
+how many logs there are at any given time. To remove one or more
+logs, use the <TT>PURGE</TT><A NAME="hpmysql-CHP-7-ITERM-1664"></A>
+<TT>MASTER</TT> <TT>LOGS</TT>
+<TT>TO</TT> <TT>.</TT>.. command. It removes all
+the logs up to but not including the given log name.</P>
+
+<P class="docText">Here's an example:</P>
+
+<PRE>mysql&gt; <B>SHOW MASTER LOGS;</B>
++----------------+
+| Log_name       |
++----------------+
+| binary-log.001 |
+| binary-log.002 |
+| binary-log.003 |
+| binary-log.004 |
++----------------+
+4 rows in set (0.02 sec)
+
+mysql&gt; <B>PURGE MASTER LOGS TO 'binary-log.004';</B></PRE>
+
+<P class="docText">The command tells MySQL to remove
+<I>binary-log.001</I>,
+<I>binary-log.002</I>, and
+<I>binary-log.003</I>. Be careful not to remove logs
+too quickly. If a slave is offline for a significant period of time,
+there's a chance that it still needs one or more of
+the logs you removed. If you're in doubt, run
+<TT>SHOW</TT> <TT>SLAVE</TT>
+<TT>STATUS</TT> on each slave to verify which log it is
+using.</P>
+
+<P class="docText">To automate this process, see the
+<I>purge_binary_logs</I> script in <A class="docLink" HREF="#hpmysql-CHP-7-SECT-5.4">Section 7.5.4</A>.</P>
+
+
+<A NAME="hpmysql-CHP-7-SECT-5.3"></A>
+<H4 class="docSection2Title">7.5.3 Changing Masters</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-7-ITERM-1665"></A>Sooner or later
+you'll need to point your slaves at a new master.
+Maybe the old one is being replaced with a newer, faster computer;
+perhaps there was a failure, and you are promoting a slave to master.
+In MySQL 3.23 and 4.0, you need to inform the slaves about their new
+master. A future version of MySQL is supposed to include a fail-safe
+replication feature that automates the process.</P>
+
+<P class="docText">A planned changing of masters is a straightforward process. (In the
+event of a master failure, it may not be so easy.) You simply need to
+issue the <TT>CHANGE</TT><A NAME="hpmysql-CHP-7-ITERM-1666"></A> <TT>MASTER</TT>
+<TT>TO</TT> <TT>.</TT>.. command on each slave.
+In doing so, you inform the slave of the new
+master's parameters—the same ones specified in
+the <I>my.cnf</I> file. The slave will begin
+replicating from its new master, and MySQL will also update the
+<I>master.info</I> with the new information.</P>
+
+<A NAME="hpmysql-CHP-7-SECT-5.3.1"></A>
+<H5 class="docSection3Title">7.5.3.1 Using the right values</H5>
+
+<P class="docText">As usual, the devil is in the details. How do you decide which values
+to use? What if you get them wrong?</P>
+
+<P class="docText">First, let's consider the easy case. If you are in
+control of the situation, the process is easy. Follow these steps:</P>
+
+<span style="font-weight:bold"><OL class="docList" TYPE="1"><LI><span style="font-weight:normal"><P class="docList">Disconnect all clients (not slaves) from the master.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">Make sure the new master is completely caught up.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">Execute <TT>RESET MASTER</TT> on the new master.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">Make sure each slave is caught up.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">Shut down the old master.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">Let all clients connect to the new master.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">Issue a <TT>CHANGE</TT> <TT>MASTER</TT>
+<TT>TO</TT> <TT>.</TT>.. command on each slave,
+pointing it to the new master.</P></span></LI></OL></span>
+<P class="docText">The <TT>RESET</TT><A NAME="hpmysql-CHP-7-ITERM-1667"></A> <TT>MASTER</TT> command tells
+the master to flush all its binary logs and start fresh. By starting
+with a clean slate on the new master, there's no
+guesswork involved in determining the right log position. Since
+it's a brand new log, we know the position is 4,
+because each binary log has a 4-byte header that consumes positions
+0-3.</P>
+
+<P class="docText">The complete <TT>CHANGE</TT> <TT>MASTER</TT>
+<TT>TO</TT> <TT>.</TT>.. command looks like this:</P>
+
+<PRE>mysql&gt; <B>CHANGE MASTER TO</B>
+    -&gt; <B>MASTER_HOST='newmaster.example.com',</B>
+    -&gt; <B>MASTER_USER='repl',</B>
+    -&gt; <B>MASTER_PASSWORD='MySecret!',</B>
+    -&gt; <B>MASTER_PORT=3306,</B>
+    -&gt; <B>MASTER_LOG_FILE='log-bin.001',</B>
+    -&gt; <B>MASTER_LOG_POS=4;</B></PRE>
+
+<P class="docText">If, on the other hand, the master crashes and you
+can't bring it back online in a reasonable amount of
+time, things aren't so clear-cut. If you have only
+one slave, of course, there's no decision to make.
+You use the slave. But if you have multiple slaves, you need to
+determine which one is the most up to date.</P>
+
+<P class="docText">By examining the output of <TT>SHOW</TT>
+<TT>SLAVE</TT> <TT>STATUS</TT> on each slave, you
+can easily determine which one is closest to matching the master at
+the time it crashed. Once you know the log name and position, you can
+construct a <TT>CHANGE</TT> <TT>MASTER</TT>
+<TT>TO</TT> <TT>.</TT>.. command to run on the
+remaining slaves.</P>
+
+<P class="docText">In doing so, however, you'll likely cause some the
+slaves to be slightly out of sync with their new master. To
+illustrate why, assume that each query is assigned an increasing
+unique ID number. The original master had just executed query 500
+when it crashed. The "most
+up-to-date" slave, the new master, had executed
+query 496. That means that your best slave is missing four queries,
+and there's no way to recover them unless your
+application logs every query it writes, which is unlikely.</P>
+
+<P class="docText">Now, let's assume that there are two more slaves,
+<span class="docEmphasis">slave2</span> and <span class="docEmphasis">slave3</span>;
+<span class="docEmphasis">slave2</span> executed query 490, and
+<span class="docEmphasis">slave3</span> executed query 493. You have a choice.
+You can either point both slaves at the new master's
+current position (query 496) or you can try to figure the
+corresponding offsets for each slave in the new
+master's binary log. That will take more time, but
+it means you lose less data.</P>
+
+<P class="docText">To find the matching log position for each slave, you need to have
+the binary log enabled on each slave. Use the
+<span class="docEmphasis">mysqlbinlog</span> command (described in <A class="docLink" HREF="#hpmysql-CHP-7-SECT-5.4">Section 7.5.4</A>) to locate the last
+query executed. Then locate exactly the same query in the new
+master's binary log. Once you find the query,
+you'll have the offset you need. The output of
+<span class="docEmphasis">mysqlbinlog</span> always includes the offset in a
+comment right before the query. For example:</P>
+
+<PRE>$ <B>mysqlbinlog log-bin.001</B>
+...
+# at 683
+#021103 18:36:33 server id 1  log_pos 683   Query  thread_id=288 exec_time=0 
+error_code=0
+SET TIMESTAMP=1036377393;
+insert into test1 values (8);</PRE>
+
+<P class="docText">The <TT>#</TT> <TT>at</TT> <TT>683</TT>
+line lists the position of the <TT>insert</TT>
+<TT>into</TT> <TT>test1</TT>
+<TT>values</TT> <TT>(8)</TT> query in the
+log.<A NAME="hpmysql-CHP-7-ITERM-1668"></A></P>
+
+
+
+<A NAME="hpmysql-CHP-7-SECT-5.4"></A>
+<H4 class="docSection2Title">7.5.4 Tools</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-7-ITERM-1669"></A>In
+this section, we'll look at some tools that can make
+dealing with replication a bit easier. A couple of the tools come
+straight out of the MySQL distribution, while others are home-grown
+and often ripe for improvement. The home-grown tools can serve as a
+starting point for solving your specific needs; such tools are
+available (and kept up to date) at
+<A class="docLink" target="_blank" HREF="http://highperformancemysql.com">http://highperformancemysql.com</A>.</P>
+
+<A NAME="hpmysql-CHP-7-SECT-5.4.1"></A>
+<H5 class="docSection3Title">7.5.4.1 mysqlbinlog: Viewing data in logs</H5>
+
+<P class="docText">The
+<span class="docEmphasis">mysqlbinlog</span><A NAME="hpmysql-CHP-7-ITERM-1670"></A><A NAME="hpmysql-CHP-7-ITERM-1671"></A> utility has been mentioned several
+times in this chapter. It is used to decode the binary formats used
+by the binary log and relay log. Given a log file, it outputs the SQL
+queries contained in the log. Furthermore, it precedes each query
+with several pieces of metadata as comments.</P>
+
+<PRE>$ <B>mysql log-bin.001</B>
+...
+# at 683
+#021103 18:36:33 server id 1  log_pos 683   Query  thread_id=288 exec_time=0 
+error_code=0
+SET TIMESTAMP=1036377393;
+insert into test1 values (8);</PRE>
+
+<P class="docText">The first line contains the offset (or position) of the query in the
+log. The second line begins with a date and timestamp followed by the
+server ID of the server that first executed the query. The log
+position is repeated on this line and followed by the event type.</P>
+
+<P class="docText">Finally, there's the ID of the thread that executed
+the query, followed by the time the query took to execute (in
+seconds) and the error code generated by the query.</P>
+
+<P class="docText">You can use <span class="docEmphasis">mysqlbinlog</span> to pull the logs from a
+remote server by specifying a hostname, username, and password. Using
+the <I>-o</I> command-line option, you can specify the
+offset from which you'd like to start reading. For
+example:</P>
+
+<PRE>$ <B>mysqlbinlog -h slave3.example.com -u root -p -o 35532 log-bin.032</B></PRE>
+
+
+
+<A NAME="hpmysql-CHP-7-SECT-5.4.2"></A>
+<H5 class="docSection3Title">7.5.4.2 check_repl: Ensuring that replication takes place</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-7-ITERM-1672"></A><A NAME="hpmysql-CHP-7-ITERM-1673"></A>As discussed earlier,
+it's important to check that your slaves are
+replicating properly when you expect them to. The following script
+connects to the local MySQL server and makes sure that replication is
+running by examining the output of <TT>SHOW</TT>
+<TT>SLAVE STATUS</TT> and checking for the both the 3.23.xx
+and 4.x values:</P>
+
+<PRE>#!/usr/bin/perl -w
+
+## On a slave server, check to see that the slave hasn't stopped.
+
+use strict;
+use DBIx::DWIW;
+
+my $conn = DBIx::DWIW-&gt;Connect(
+    DB      =&gt; "mysql",
+    User    =&gt; "root",
+    Pass    =&gt; "password",
+    Host    =&gt; "localhost",
+) or exit;
+
+my $info = $conn-&gt;Hash("SHOW SLAVE STATUS");
+
+if (exists $info-&gt;{Slave_SQL_Running} and $info-&gt;{Slave_SQL_Running} eq 'No')
+{
+    warn "slave SQL thread has stopped\n";
+}
+elsif (exists $info-&gt;{Slave_IO_Running} and $info-&gt;{Slave_IO_Running} eq 'No')
+{
+    warn "slave IO thread has stopped\n";
+}
+elsif (exists $info-&gt;{Slave_Running} and $info-&gt;{Slave_Running} eq 'No')
+{
+    warn "slave has stopped\n";
+}</PRE>
+
+<P class="docText">This script makes no effort to repair a problem; it simply reports
+when something is wrong. Without knowing why the failure occurred,
+it's probably not wise to blindly restart
+replication. To skip the problem query and restart replication, see
+the next section.</P>
+
+
+
+<A NAME="hpmysql-CHP-7-SECT-5.4.3"></A>
+<H5 class="docSection3Title">7.5.4.3 fix_repl: Skipping a bad query to continue replication</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-7-ITERM-1674"></A><A NAME="hpmysql-CHP-7-ITERM-1675"></A>In the event that replication has stopped
+on a slave, you should tell the slave to skip the problem query and
+continue, unless the problem warrants further investigation. No
+restart of MySQL is necessary.</P>
+
+<P class="docText">In MySQL 3.23.xx, execute:</P>
+
+<PRE>SET SQL_SLAVE_SKIP_COUNTER=1
+SLAVE START</PRE>
+
+<P class="docText">In Versions 4.0.0-4.0.2, execute:</P>
+
+<PRE>SET SQL_SLAVE_SKIP_COUNTER=1
+SLAVE START SQL_THREAD</PRE>
+
+<P class="docText">In Version 4.0.3 and beyond, execute:</P>
+
+<PRE>SET GLOBAL SQL_SLAVE_SKIP_COUNTER=1
+SLAVE START SQL_THREAD</PRE>
+
+<P class="docText">Yuck. If you're using a mixture of 3.23.xx and 4.0.x
+servers, it may be difficult to remember the exact syntax for each
+version. It's much easier to have a copy of the
+following <I>fix_repl</I> script on hand to do the hard
+work for you:</P>
+
+<PRE>#!/usr/local/bin/perl -w
+#
+# fix mysql replication if it encounters a problem
+
+$|=1;      # unbuffer stdout
+
+use strict;
+use DBIx::DWIW;
+
+my $host = shift || 'localhost';
+my $conn = DBIx::DWIW-&gt;Connect(
+    DB   =&gt; "mysql",
+    User =&gt; "root",
+    Pass =&gt; "pa55word",
+    Host =&gt; $host,
+) or die "Couldn't connect to database!";
+
+print "checking $host ... ";
+
+my $info = $conn-&gt;Hash("SHOW SLAVE STATUS");
+my $version = $conn-&gt;Scalar("SHOW VARIABLES LIKE 'Version'");
+my $fix_cmd;
+my $start_cmd;
+
+# 3.23
+if ($version =~ /^3\.23/ and $info-&gt;{Slave_Running} eq 'No')
+{
+    $fix_cmd = "SET SQL_SLAVE_SKIP_COUNTER = 1";
+    $start_cmd = "SLAVE START";
+}
+
+# 4.0.0 - 4.0.2
+elsif ($version =~ /^4\.0\.[012]/ and $info-&gt;{Slave_SQL_Running} eq 'No')
+{
+    $fix_cmd = "SET SQL_SLAVE_SKIP_COUNTER = 1";
+    $start_cmd = "SLAVE START SQL_THREAD";
+}
+
+# 4.0.3 - 4.0.xx, 4.1.xx.  Don't know what 5.0 will be like.
+elsif ($version =~ /^4\.[01]\./ and $info-&gt;{Slave_SQL_Running} eq 'No')
+{
+    $fix_cmd = "SET GLOBAL SQL_SLAVE_SKIP_COUNTER = 1";
+    $start_cmd = "SLAVE START SQL_THREAD";
+}
+
+# things are okay or unknown version?
+else
+{
+    print "GOOD\n";
+    exit;
+}
+
+print "FIXING ... ";
+$conn-&gt;Execute($fix_cmd);
+$conn-&gt;Execute($start_cmd);
+print "DONE\n";
+
+exit;</PRE>
+
+<P class="docText">Be careful with this technique. Blindly skipping queries on a slave
+may cause it to become out of sync with the master. If the query is
+failing due to a duplicate key error, it's probably
+safe, but you should investigate how that happened in the first
+place.</P>
+
+
+
+<A NAME="hpmysql-CHP-7-SECT-5.4.4"></A>
+<H5 class="docSection3Title">7.5.4.4 purge_binary_logs: Reclaiming space used by binary logs</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-7-ITERM-1676"></A><A NAME="hpmysql-CHP-7-ITERM-1677"></A>To make log rotation easier, you can use
+something like the following <I>purge_binary_logs</I>
+Perl script. It connects to the specified server and checks to see
+how many binary logs are sitting around. If there are more than the
+specified threshold, it removes any extras.</P>
+
+<PRE>#!/usr/bin/perl -w
+
+## On a slave server, purge the replication logs if there are too many
+## sitting around sucking up disk space.
+
+use strict;
+use DBIx::DWIW;
+
+my $MIN_LOGS = 4; ## keep main log plus three old binary logs around
+
+my $conn = DBIx::DWIW-&gt;Connect(
+    DB   =&gt; "mysql",
+    User =&gt; "root",
+    Pass =&gt; "password",
+    Host =&gt; 'localhost',
+);
+
+die "Couldn't connect to database!" if not $conn;
+
+## see if there are enough to bother, exit if not
+my @logs = $conn-&gt;FlatArray("SHOW MASTER LOGS");
+exit if (@logs &lt; $MIN_LOGS);
+
+## if so, figure out what the last one we want to keep is, then purge
+## the rest
+my $last_log = $logs[-$MIN_LOGS];
+print "last log is $last_log\n" unless $ENV{CRON};
+$conn-&gt;Execute("PURGE MASTER LOGS TO '$last_log'");
+
+exit;</PRE>
+
+<P class="docText">Depending on your needs, there's a lot of room for
+improvement in this script. It would be nice if the script took
+command-line arguments so you wouldn't need to
+hardcode the hostname, password, and so on. It would also be nice if
+the script could check the sizes of the log files. If a master is
+restarted very frequently, using the number of log files as a metric
+probably isn't as useful as checking the volume of
+log data. However, the script can't be run remotely
+if it checked log file sizes, because it needs to examine the files
+directly.</P>
+
+<P class="docText">A valuable but difficult addition would be for the script to remove
+logs only if it can tell that all slaves had already read them. That
+requires knowing all the slaves and contacting each one to verify its
+progress in the replication process.</P>
+
+
+
+<A NAME="hpmysql-CHP-7-SECT-5.4.5"></A>
+<H5 class="docSection3Title">7.5.4.5 mysqldiff: Replication sanity checks</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-7-ITERM-1678"></A><A NAME="hpmysql-CHP-7-ITERM-1679"></A>As with anything new, you may not trust
+replication right away. To help convince yourself that it is really
+doing what it should do, it's good to perform spot
+checks on the data, making sure that the slaves have exactly the data
+they should have.</P>
+
+<P class="docText">This checking can be done to varying degrees of paranoia:</P>
+
+<UL><LI><P class="docList">Simple metadata checks: make sure each table on the slaves contains
+the same number of rows that the same master table does.</P></LI><LI><P class="docList">Verify all or some of the data by comparing rows on the master and
+slaves.</P></LI><LI><P class="docList">Perform application-specific checks by running custom queries and
+comparing the results across servers.</P></LI></UL>
+<P class="docText">The first check is quite easy to implement with a bit of Perl code:</P>
+
+<PRE>#!/usr/bin/perl -w
+
+use strict;
+use DBIx::DWIW;
+
+$|=1;       # unbuffer stdout
+
+my $db_user = 'root';
+my $db_pass = 'password';
+my $db_name = 'test';
+my $master  = 'master.example.com';
+
+my @slaves = qw(
+    slave1.example.com
+    slave2.example.com
+    slave3.example.com
+);
+
+my %master_count;
+
+for my $server ($master)
+{
+    print "Checking master... ";
+    my $conn = DBIx::DWIW-&gt;Connect(User =&gt; $db_user, Host =&gt; $server,
+        Pass =&gt; $db_pass, DB =&gt; $db_name) or die "$!";
+
+    for my $table ($conn-&gt;FlatArray("SHOW TABLES"))
+    {
+        my $count = $conn-&gt;Scalar("SELECT COUNT(*) FROM '$table'");
+        $master_count{$table} = $count;
+    }
+    print "OK\n";
+}
+
+for my $server (@slaves)
+{
+    print "Checking $server... ";
+    my $conn = DBIx::DWIW-&gt;Connect(User =&gt; $db_user, Host =&gt; $server,
+        Pass =&gt; $db_pass, DB =&gt; $db_name) or die "$!";
+
+    for my $table ($conn-&gt;FlatArray("SHOW TABLES"))
+    {
+        my $count = $conn-&gt;Scalar("SELECT COUNT(*) FROM '$table'");
+
+        if ($count != $master_count{$table})
+        {
+           print "MISMATCH (got $count on $table, expecting $master_count{$table}\n";
+        }
+    }
+    print "OK\n";
+}
+
+exit;</PRE>
+
+<P class="docText">The script connects to the master and gets the number of rows in each
+table of the given database. Then it connects to each slave and
+checks to see that the counts match. If they don't,
+it issues a <TT>MISMATCH</TT> warning.</P>
+
+<P class="docText">This framework can easily be extended to handle multiple databases,
+perform more specific checks, and even attempt to take corrective
+action. It is even ready to handle multiple masters.</P>
+
+
+
+<A NAME="hpmysql-CHP-7-SECT-5.4.6"></A>
+<H5 class="docSection3Title">7.5.4.6 write_heartbeat: Generating a periodic health check heartbeat</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-7-ITERM-1680"></A><A NAME="hpmysql-CHP-7-ITERM-1681"></A>The following script can implement a
+heartbeat monitoring system as described earlier. To use it, create a
+database named <TT>MySQL_Admin</TT> and a table named
+<TT>Heartbeat</TT> with the following structure:</P>
+
+<PRE>CREATE TABLE Heartbeat
+(
+    unix_time    INTEGER   NOT NULL,
+    db_time      TIMESTAMP NOT NULL,
+    INDEX        time_idx(unix_time)
+)</PRE>
+
+<P class="docText">The <TT>unix_time</TT> field holds the timestamp that is
+explicitly inserted into the table. The <TT>db_time</TT>
+field is set automatically by MySQL. By keeping track of both times
+and inserting new records instead of simply running an
+<TT>UPDATE</TT> on a single record, you maintain historical
+data in the event someone wants to graph or analyze it.</P>
+
+<P class="docText">Let's look the script to add records:</P>
+
+<PRE>#!/usr/bin/perl -w
+
+use strict;
+use DBIx::DWIW;
+
+my $conn = DBIx::DWIW-&gt;Connect(
+    DB   =&gt; "MySQL_Admin",
+    User =&gt; "root",
+    Pass =&gt; "password",
+    Host =&gt; 'localhost',
+) or die;
+
+my $unix_time = time( );
+my $sql = "INSERT INTO Heartbeat (unix_time, db_time) VALUES ($unix_time, NULL)";
+$conn-&gt;Execute($sql);
+
+exit;</PRE>
+
+<P class="docText">Running the script at a fixed interval generates a heartbeat that can
+be used by the <I>read_heartbeat</I> script to monitor
+replication latency.</P>
+
+
+
+<A NAME="hpmysql-CHP-7-SECT-5.4.7"></A>
+<H5 class="docSection3Title">7.5.4.7 read_heartbeat: Measuring replication log using heartbeat</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-7-ITERM-1682"></A><A NAME="hpmysql-CHP-7-ITERM-1683"></A>The companion to
+<I>write_heartbeat</I> reads the most recent timestamp
+from the database and computes how far behind the slave might be.
+Remember that we can't know this time exactly unless
+the heartbeat records are generated every second, which is probably
+overkill for most installations.</P>
+
+<PRE>#!/usr/bin/perl -w
+
+use strict;
+use DBIx::DWIW;
+
+my $conn = DBIx::DWIW-&gt;Connect(
+    DB   =&gt; "MySQL_Admin",
+    User =&gt; "root",
+    Pass =&gt; "password",
+    Host =&gt; 'localhost',
+) or die;
+
+my $sql = "SELECT unix_time, db_time FROM Heartbeat
+           ORDER BY unix_time DESC LIMIT 1";
+
+my $info = $conn-&gt;Hash($sql);
+my $time = $info-&gt;{unix_time};
+my $delay = time( ) - $time;
+
+print "slave is $delay seconds behind\n";
+
+exit;</PRE>
+
+<P class="docText">This script can also be extended to do far more than report on
+latency. If the latency is too great, it can send email or page a
+DBA.<A NAME="hpmysql-CHP-7-ITERM-1684"></A><A NAME="hpmysql-CHP-7-ITERM-1685"></A></P>
+
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="hpmysql-CHP-7-SECT-4.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="hpmysql-CHP-7-SECT-6.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

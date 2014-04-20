@@ -1,0 +1,263 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>4.2 Index Structures</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="hpmysql-CHP-4-SECT-1.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="hpmysql-CHP-4-SECT-3.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="hpmysql-CHP-4-SECT-2"></A>
+<H3 class="docSection1Title">4.2 Index Structures</H3>
+
+<P class="docText"><A NAME="hpmysql-CHP-4-ITERM-1330"></A>Having covered some of the basic
+ideas behind indexing, let's turn to the various
+types (or structures) of indexes in MySQL. None of the index types
+are specific to MySQL. You'll find similar indexes
+in PostgreSQL, DB2, Oracle, etc.</P>
+
+<P class="docText">Rather than focus too much on the implementation details,<sup class="docFootnote"><A class="docLink" HREF="#hpmysql-CHP-4-FNOTE-7">[7]</A></sup>
+we'll look at the types of data or applications each
+type was designed to handle and find answers to questions like these:
+Which index types are the fastest? Most flexible? Use the most or
+least space?</P><blockquote><p class="docFootnote"><sup><A NAME="hpmysql-CHP-4-FNOTE-7">[7]</A></sup> As with many products, the specific implementation details are
+subject to change over time. By trying to take advantage of
+what's under the hood, you're
+inviting future problems when it does change.</p></blockquote>
+
+<P class="docText">If this were a general-purpose textbook for a computer science class,
+we might delve deeper into the specific data structures and
+algorithms that are employed under the hood. Instead,
+we'll try to limit our scope to the practical. If
+you're especially curious about the under-the-hood
+magic, there are plenty of excellent computer science books available
+on the topic.</P>
+
+<A NAME="hpmysql-CHP-4-SECT-2.1"></A>
+<H4 class="docSection2Title">4.2.1 B-Tree Indexes</H4>
+
+<P class="docText">The <A NAME="hpmysql-CHP-4-ITERM-1331"></A><A NAME="hpmysql-CHP-4-ITERM-1332"></A>B-tree, or <A NAME="hpmysql-CHP-4-ITERM-1333"></A>balanced tree, is the most
+common types of index. Virtually all database servers and embedded
+database libraries offer B-tree indexes, often as the default index
+type. They are usually the default because of their unique
+combination of flexibility, size, and overall good performance.</P>
+
+<P class="docText">As the name implies, a B-tree is a tree structure. The nodes are
+arranged in sorted order based on the key values. A B-tree is said to
+be balanced because it will never become lopsided as new nodes are
+added and removed. The main benefit of this balance is that the
+worst-case performance of a B-tree is always quite good. B-trees
+offer O(log <span class="docEmphasis">n</span>) performance for single-record
+lookups. Unlike binary trees, in which each node has at most two
+children, B-trees have many keys per node and don't
+grow "tall" or
+"deep" as quickly as a binary tree.</P>
+
+<P class="docText">B-tree indexes offer a lot of flexibility when you need to resolve
+queries. Range-base queries such as the following can be resolved
+very quickly:</P>
+
+<PRE>SELECT * FROM phone_book WHERE last_name
+BETWEEN 'Marten' and 'Mason'</PRE>
+
+<P class="docText">The server simply finds the first
+"Marten" record and the last
+"Mason" record. It then knows that
+everything in between are also matches. The same is true of virtually
+any query that involves understanding the range of values, including
+<TT>MIN( )</TT> and <TT>MAX( )</TT> and even an
+open-ended range query such as the following:</P>
+
+<PRE>SELECT COUNT(*) FROM phone_book WHERE last_name &gt; 'Zawodny'</PRE>
+
+<P class="docText">MySQL will simply find the last Zawodny and count all the records
+beyond it in the index tree.</P>
+
+
+<A NAME="hpmysql-CHP-4-SECT-2.2"></A>
+<H4 class="docSection2Title">4.2.2 Hash Indexes</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-4-ITERM-1334"></A><A NAME="hpmysql-CHP-4-ITERM-1335"></A>The second most popular indexes are
+hash-based. These <I>hash indexes</I> resemble a hash
+table rather than a tree. The structure is very flat compared to a
+tree. Rather than ordering index records based on a comparison of the
+key value with similar key values, hash indexes are based on the
+result of running each key through a <I>hash
+function</I>. The hash function's job is to
+generate a semiunique hash value (usually numeric) for any given key.
+That value is then used to determine which bucket to put the key in.</P>
+
+<P class="docText">Consider a common hashing function such as <TT>MD5( )</TT>.
+Given similar strings as input, it produces wildly different results:</P>
+
+<PRE>mysql&gt; <B>SELECT MD5('Smith');</B>
++----------------------------------+
+| MD5('Smith')                     |
++----------------------------------+
+| e95f770ac4fb91ac2e4873e4b2dfc0e6 |
++----------------------------------+
+1 row in set (0.46 sec)
+
+mysql&gt; <B>SELECT MD5('Smitty');</B>
++----------------------------------+
+| MD5('Smitty')                    |
++----------------------------------+
+| 6d6f09a116b2eded33b9c871e6797a47 |
++----------------------------------+
+1 row in set (0.00 sec)</PRE>
+
+<P class="docText">However, the MD5 algorithm produces 128-bit values (represented as
+base-64 by default), which means there are just over 3.4 x
+10<SUP>38</SUP> possible values. Because most
+computers don't have nearly enough disk space (let
+alone memory) to contain that many slots, hash tables are always
+governed by the available storage space.</P>
+
+<P class="docText">A common technique that reduces the possible key space of the hash
+table is to allocate a fixed number of buckets, often a relatively
+large prime number such as 35,149. You then divide the result of the
+hash function by the prime number and use the remainder to determine
+which bucket the value falls into.</P>
+
+<P class="docText">That's the theory. The implementation details,
+again, can be quite a bit more complex, and knowing them tends not to
+help much. The end result is that the hash index provides very fast
+lookups, generally O(1) unless you're dealing with a
+hash function that doesn't produce a good spread of
+values for your particular data.</P>
+
+<P class="docText">While hash-based indexes generally provide some of the fastest key
+lookups, they are also less flexible and less predictable than other
+indexes. They're less flexible because range-based
+queries can't use the index. Good hash functions
+generate very different values for similar values, so the server
+can't make any assumptions about the ordering of the
+data within the index structure. Records that are near each other in
+the hash table are rarely similar. Hash indexes are less predictable
+because the wrong combination of data and hash function can result in
+a hash table in which most of the records are clumped into just a few
+buckets. When that happens, performance suffers quite a bit. Rather
+than sifting through a relatively small list of keys that share the
+same hash value, the computer must examine a large list.</P>
+
+<P class="docText">Hash indexes work relatively well for most text and numeric data
+types. Because hash functions effectively reduce arbitrarily sized
+keys to a small hash value, they tend not to use as much space as
+many tree-based indexes.</P>
+
+
+<A NAME="hpmysql-CHP-4-SECT-2.3"></A>
+<H4 class="docSection2Title">4.2.3 R-Tree Indexes</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-4-ITERM-1336"></A><A NAME="hpmysql-CHP-4-ITERM-1337"></A>R-tree indexes are used for
+<A NAME="hpmysql-CHP-4-ITERM-1338"></A>spatial or
+N-dimensional data. They are quite popular in mapping and geoscience
+applications but work equally well in other situations in which
+records are often queried based on two axes or dimensions: length and
+width, height and weight, etc.</P>
+
+<P class="docText">Having been added for Version 4.1, R-tree indexes are relatively new
+to MySQL. MySQL's implementation is based on the
+<A NAME="hpmysql-CHP-4-ITERM-1339"></A>OpenGIS specifications, available
+online at <A class="docLink" target="_blank" HREF="http://www.opengis.org/">http://www.opengis.org/</A>. The spatial data
+support in other popular database servers is often based on the
+OpenGIS specifications, so the syntax should be familiar if
+you've similar products.</P>
+
+<P class="docText">Spatial indexes may be unfamiliar to many long-time MySQL users, so
+let's look at a simple example.
+We'll create a table to contain spatial data, add
+several points using X, Y coordinates, and ask MySQL which points
+fall within the bounds of some polygons.</P>
+
+<P class="docText">First, create the table with a small <TT>BLOB</TT> field to
+contain the spatial data:</P>
+
+<PRE>mysql&gt; <B>create table map_test</B>
+    -&gt; (
+    -&gt;   <B>name varchar(100) not null primary key,</B>
+    -&gt;   <B>loc  geometry,</B>
+    -&gt;   <B>spatial index(loc)</B>
+    -&gt; <B>);</B>
+Query OK, 0 rows affected (0.00 sec)</PRE>
+
+<P class="docText">Then add some points:</P>
+
+<PRE>mysql&gt; <B>insert into map_test values ('One Two', point(1,2));</B>
+Query OK, 1 row affected (0.00 sec)
+
+mysql&gt; <B>insert into map_test values ('Two Two', point(2,2));</B>
+Query OK, 1 row affected (0.00 sec)
+
+mysql&gt; <B>insert into map_test values ('Two One', point(2,1));</B>
+Query OK, 1 row affected (0.00 sec)</PRE>
+
+<P class="docText">Now, ensure that it looks right in the table:</P>
+
+<PRE>mysql&gt; select name, AsText(loc) from map_test;
++---------+-------------+
+| name    | AsText(loc) |
++---------+-------------+
+| One Two | POINT(1 2)  |
+| Two Two | POINT(2 2)  |
+| Two One | POINT(2 1)  |
++---------+-------------+
+3 rows in set (0.00 sec)</PRE>
+
+<P class="docText">Finally, ask MySQL which points fall within a polygon:</P>
+
+<PRE>mysql&gt; <B>SELECT name FROM map_test WHERE</B>
+    -&gt; <B>Contains(GeomFromText('POLYGON((0 0, 0 3, 3 3, 3 0, 0 0))'), loc);</B>
++---------+
+| name    |
++---------+
+| One Two |
+| Two Two |
+| Two One |
++---------+
+3 rows in set (0.00 sec)</PRE>
+
+<P class="docText"><A class="docLink" HREF="#hpmysql-CHP-4-FIG-1">Figure 4-1</A> shows the points and polygon on a graph.</P>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="hpmysql-CHP-4-FIG-1"></A>Figure 4-1. 2-D points and a polygon that contains them</H5>
+<IMG BORDER="0" WIDTH="159" HEIGHT="157" SRC="images/0596003064/figs/hpsql_0401.gif" ALT="figs/hpsql_0401.gif"></CENTER>
+
+<P class="docText">MySQL indexes the various shapes that can be represented (points,
+lines, polygons) using the shape's minimum bounding
+rectangle (MBR). To do so, it computes the smallest rectangle you can
+draw that completely contains the shape. MySQL stores the coordinates
+of that rectangle and uses them when trying to find shapes in a given
+area.<A NAME="hpmysql-CHP-4-ITERM-1340"></A><A NAME="hpmysql-CHP-4-ITERM-1341"></A><A NAME="hpmysql-CHP-4-ITERM-1342"></A></P>
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="hpmysql-CHP-4-SECT-1.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="hpmysql-CHP-4-SECT-3.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

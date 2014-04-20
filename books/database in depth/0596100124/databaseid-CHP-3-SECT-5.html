@@ -1,0 +1,192 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>Why Duplicate Tuples Are Prohibited</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="databaseid-CHP-3-SECT-4.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="databaseid-CHP-3-SECT-6.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><TD valign="top"><a name="databaseid-CHP-3-SECT-5"></a>
+<H3 class="docSection1Title">Why Duplicate Tuples Are Prohibited</h3>
+<a name="IDX-CHP-3-0285"></a><a name="IDX-CHP-3-0286"></a><a name="IDX-CHP-3-0287"></a><a name="IDX-CHP-3-0288"></a>
+<p class="docText">There are numerous practical arguments in support of the position that duplicate tuples ("duplicates" for short) should be prohibited. Here I have room for just one—but I think it's a powerful one. However, it does rely on certain notions I haven't discussed yet in this book, so I need to make a couple of preliminary assumptions:</p>
+<ul><li><p class="docList">I assume you know that relational DBMSs include a component called the <span class="docEmphasis">optimizer</span><a name="IDX-CHP-3-0289"></a>, whose job is to try to figure out the best way to implement user queries and the like (where "best" basically means best-performing).</P></li><LI><p class="docList">I assume you also know that one of the things optimizers do is what's sometimes called <span class="docEmphasis">query rewrite</span><a name="IDX-CHP-3-0290"></a>. Query rewrite is the process of transforming some relational expression <span class="docEmphasis">X1</span>—representing some user query, say—into another such expression <span class="docEmphasis">X2</span>, such that <span class="docEmphasis">X1</span> and <span class="docEmphasis">X2</span> are guaranteed to produce the same result when evaluated, but where <span class="docEmphasis">X2</span> has better performance characteristics than <span class="docEmphasis">X1</span> (at least, we hope it does).</p></LI></UL>
+<p class="docText">Now I can present my argument. The fundamental point I want to make is that certain expression transformations, and hence certain optimizations, that are valid in a relational context are <span class="docEmphasis">not</span> valid in the presence of duplicates. By way of example, consider the (nonrelational) database shown in <a class="docLink" href="#databaseid-CHP-3-FIG-1">Figure 3-1</a>.</P>
+<a name="databaseid-CHP-3-FIG-1"></a><P><center>
+<h5 class="docFigureTitle">Figure 3-1. A nonrelational database, with duplicates</h5>
+<img border="0" alt="" width="203" height="93" SRC="images/0596100124/figs/databaseid_03_01.gif"></center></p><br>
+<p class="docText">Before going any further, perhaps I should ask the question: what does it mean to have three &lt;P1,Screw&gt; rows in table P and not two, or four, or seventeen?<sup class="docFootnote"><a class="docLink" href="#databaseid-CHP-3-FNOTE-4">[<img src=images/ent/U2020.GIF border=0>]</a></sup> It must mean something, for if it means nothing, then why are the duplicates there in the first place? As I once heard Ted Codd say, "If something is true, saying it twice doesn't make it any more true."</p><blockquote><p class="docFootnote"><sup><a name="databaseid-CHP-3-FNOTE-4">[<img src=images/ent/U2020.GIF border=0>]</a></sup> I use table terminology in this section because the things we're talking about are certainly neither relations nor relvars; in particular, they have no keys (observe that there's no double underlining in <a class="docLink" href="#databaseid-CHP-3-FIG-1">Figure 3-1</a>).</p></blockquote>
+<p class="docText">So I have to assume there's some meaning attached to the duplication, even though that meaning, whatever it is, is hardly very explicit. (I note in passing, therefore, that duplicates contravene one of the original objectives of the relational model: <span class="docEmphasis">explicitness</span>. The meaning of the data should be as obvious and explicit as possible, since we're supposed to be talking about a shared database. The presence of duplicates implies that part of the meaning is hidden.) In other words, given that duplicates do have some meaning, there are presumably going to be business decisions made on the basis of the fact that, for example, there are three &lt;P1,Screw&gt; rows in table P and not two or four or seventeen. If not, then why are the duplicates there in the first place?</p>
+<p class="docText">Now consider the following query: "Get part numbers for parts that either are screws or are supplied by supplier S1, or both." Here are some candidate SQL formulations for this query, together with the output produced in each case:</p>
+<pre>
+    1  SELECT P.PNO
+       FROM   P
+       WHERE  P.PNAME = NAME('Screw')
+       OR     P.PNO IN
+            ( SELECT SP.PNO
+              FROM   SP
+              WHERE  SP.SNO = SNO('S1') )
+
+       Result: P1 * 3, P2 * 1.
+
+    2   SELECT SP.PNO
+       FROM   SP
+       WHERE  SP.SNO = SNO('S1')
+       OR     SP.PNO IN
+            ( SELECT P.PNO
+              FROM   P
+              WHERE  P.PNAME = NAME('Screw') )
+
+       Result: P1 * 2, P2 * 1.
+
+    3   SELECT P.PNO
+       FROM   P, SP
+       WHERE  ( SP.SNO = SNO('S1') AND
+                SP.PNO = P.PNO )
+       OR     P.PNAME = NAME('Screw')
+
+       Result: P1 * 9, P2 * 3.
+
+    4   SELECT SP.PNO
+       FROM   P, SP
+       WHERE  ( SP.SNO = SNO('S1') AND
+                SP.PNO = P.PNO )
+       OR     P.PNAME = NAME('Screw')
+
+       Result: P1 * 8, P2 * 4.
+
+    5   SELECT P.PNO
+       FROM   P
+       WHERE  P.PNAME = NAME('Screw')
+    
+       UNION  ALL
+       SELECT SP.PNO
+       FROM   SP
+       WHERE  SP.SNO = SNO('S1')
+
+       Result: P1 * 5, P2 * 2.
+
+    6   SELECT DISTINCT P.PNO
+       FROM   P
+       WHERE  P.PNAME = NAME('Screw')
+       UNION  ALL
+       SELECT SP.PNO
+       FROM   SP
+       WHERE  SP.SNO = SNO('S1')
+
+       Result: P1 * 3, P2 * 2.
+
+    7   SELECT P.PNO
+       FROM   P
+       WHERE  P.PNAME = NAME('Screw')
+       UNION  ALL
+       SELECT DISTINCT SP.PNO
+       FROM   SP
+       WHERE  SP.SNO = SNO('S1')
+
+       Result: P1 * 4, P2 * 2.
+
+    8   SELECT DISTINCT P.PNO
+       FROM   P
+       WHERE  P.PNAME = NAME('Screw')
+       OR     P.PNO IN
+            ( SELECT SP.PNO
+              FROM   SP
+              WHERE  SP.SNO = SNO('S1') )
+
+       Result: P1 * 1, P2 * 1.
+
+    9   SELECT DISTINCT SP.PNO
+       FROM   SP
+       WHERE  SP.SNO = SNO('S1')
+       OR     SP.PNO IN
+            ( SELECT P.PNO
+              FROM   P
+              WHERE  P.PNAME = NAME('Screw') )
+
+       Result: P1 * 1, P2 * 1.
+
+    10   SELECT P.PNO
+       FROM   P
+       GROUP  BY P.PNO, P.PNAME
+       HAVING P.PNAME = NAME('Screw')
+       OR     P.PNO IN
+            ( SELECT SP.PNO
+              FROM   SP
+              WHERE  SP.SNO = SNO('S1') )
+
+       Result: P1 * 1, P2 * 1.
+
+    
+    11   SELECT P.PNO
+       FROM   P, SP
+       GROUP  BY P.PNO, P.PNAME, SP.SNO, SP.PNO
+       HAVING ( SP.SNO = SNO('S1') AND
+                SP.PNO = P.PNO )
+       OR     P.PNAME = NAME('Screw')
+
+       Result: P1 * 2, P2 * 2.
+
+    12   SELECT P.PNO
+       FROM   P
+       WHERE  P.PNAME = NAME('Screw')
+       UNION
+       SELECT SP.PNO
+       FROM   SP
+       WHERE  SP.SNO = SNO('S1')
+
+       Result: P1 * 1, P2 * 1.</pre><br>
+
+<a name="databaseid-CHP-3-NOTE-10"></a><div class="docNote"><p class="docNormalTitle">NOTE</p><p><p class="docText">Actually, certain of the foregoing formulations—which?—are a little suspect, because they assume that every screw is supplied by at least one supplier. But this fact has no material effect on the argument that follows.</p></p></div>
+<p class="docText">The obvious first point is that the twelve different formulations produce nine different results—different, that is, with respect to their <span class="docEmphasis">degree of duplication</span>. (I make no claim, incidentally, that the twelve different formulations and the nine different results are the only ones possible; indeed, they aren't, in general.) Thus, if the user really cares about duplicates, he or she needs to be <span class="docEmphasis">extremely</span> careful in formulating the query in such a way as to obtain exactly the desired result.</p>
+<p class="docText">Furthermore, of course, analogous remarks apply to the system itself: because different formulations can produce different results, the optimizer too has to be extremely careful in its task of expression transformation. For example, the optimizer isn't free to transform, say, formulation 1 into formulation 3 or the other way around, even if it would like to. In other words, duplicate rows act as a significant <span class="docEmphasis">optimization inhibitor</span>. Here are some implications of this fact:</P>
+<ul><li><p class="docList">The optimizer code itself is harder to write, harder to maintain, and probably more buggy—all of which combines to make the product simultaneously more expensive and less reliable, as well as late in delivery to the marketplace.</p></li><LI><p class="docList">System performance is likely to be worse than it might be.</P></li><LI><p class="docList">Users are going to have to get involved in performance issues. To be more specific, they're going to have to spend time and effort in figuring out how to formulate a given query in order to get the best performance—a state of affairs the relational model was expressly meant to avoid!</P></LI></ul>
+<a name="databaseid-CHP-3-SIDEBAR-5.1"></a><P><table cellspacing="0" width="90%" border="1" cellpadding="5"><TR><TD>
+<H2 class="docSidebarTitle">USING SELECT DISTINCT</H2>
+<p class="docText">At this point in the original draft, I said that if you find the discipline of always specifying DISTINCT annoying, don't complain to me-complain to the SQL vendors instead. But my reviewers reacted with almost unanimous horror to my suggestion that you should always specify DISTINCT. One wrote: "Those who really know SQL well will be shocked at the thought of coding SELECT DISTINCT by default." Well, I'd like to suggest, politely, that (a) those who are "shocked at the thought" probably know the implementa-tions well, not SQL, and (b) their shock is probably due to their recognition that those implementations do such a poor job of optimizing away unnecessary DISTINCTs. If I write SELECT DISTINCT S.SNO FROM S ..., that DISTINCT can safely be ignored. If I write EXISTS (SELECT DISTINCT ...) or IN (SELECT DISTINCT ...), that DISTINCT can safely be ignored. If I write SELECT DISTINCT SP.SNO FROM SP ... GROUP BY SP.SNO, that DISTINCT can safely be ignored. If I write SELECT DISTINCT ... UNION SELECT DISTINCT ..., those DISTINCTs can safely be ignored. And so on. Why should I, as a user, have to devote time and effort to figuring out whether some DISTINCT is going to be a performance hit and whether it's logically safe to omit it, and to remembering all of the details of SQL's inconsistent rules for when duplicates are automatically eliminated and when they're not? Well, I could go on. However, I decided- against my own better judgment, but in the interests of maintaining good relations (with myreviewers, I mean)-not to follow myown advice in the remainder of this book but only to request duplicate elimination explicitly whenit seemedlogically necessary to doso. It wasn't always easy to decide when that was, either. But at least now I can add my voice to those complaining to the vendors, I suppose.</P></td></tr></table></P><BR>
+<p class="docText">The fact that duplicates serve as an optimization inhibitor is particularly frustrating in view of the fact that, in most cases, users probably <span class="docEmphasis">don't</span> care how many duplicates appear in the result. In other words:</p>
+<ul><li><p class="docList">Different formulations produce different results.</p></LI><li><p class="docList">But the differences are probably irrelevant from the user's point of view.</P></li><LI><p class="docList"><span class="docEmphasis">But</span> the optimizer is unaware of this latter fact and is therefore prevented, unnecessarily, from performing the transformations it might like to perform.</P></LI></UL>
+<p class="docText">On the basis of examples like the foregoing, I'm tempted to conclude among other things that you should always ensure that query results contain no duplicates—for example, by always specifying DISTINCT in your SQL queries—and thus simply forget about the whole problem. And if you follow this advice, of course, then there's no good reason for allowing duplicates in the first place . . . .</p>
+<p class="docText">There's much more that could be said on this issue, but I have room for just four more points. First, the alternative to SELECT DISTINCT in SQL is SELECT ALL—and SELECT ALL is unfortunately the default. The trouble is, however, SELECT DISTINCT might take longer to execute than SELECT ALL, even if the DISTINCT is effectively a "no op." I don't want to discuss this one any further, except to note that the reason SQL systems are typically unable to optimize properly over duplicate elimination is their lack of knowledge of <span class="docEmphasis">key inheritance</span> (that is, their inability to figure out the keys for the result of an arbitrary relational expression).</p>
+<p class="docText">Second, you might object, not unreasonably, that base tables in practice never do include duplicates, and my example therefore intuitively fails. True enough; but the trouble is, SQL can <span class="docEmphasis">generate</span> duplicates in query results. Indeed, different formulations of the same query can produce results with different degrees of duplication, as we've already seen, even if the input tables themselves have no duplicates at all. For example, consider the following formulations of the query "Get supplier numbers for suppliers who supply at least one part" on the usual suppliers-and-parts database:</p>
+<pre>
+    SELECT S.SNO           |    SELECT S.SNO
+    FROM   S               |    FROM   S, SP
+    WHERE  S.SNO IN        |    WHERE  S.SNO = SP.SNO
+         ( SELECT SP.SNO
+           FROM   SP )</pre><br>
+
+<p class="docText">(Given our usual sample data values, what results do these two expressions produce?) So if you don't want to think of the tables in <a class="docLink" href="#databaseid-CHP-3-FIG-1">Figure 3-1</a> as base tables specifically, that's fine: just take them to be the output from previous queries, and the rest of the analysis goes through unchanged.</p>
+<p class="docText">Third, there's another at least psychological argument against duplicates that I think is quite persuasive (thanks to Jonathan Gennick for this one): if, in accordance with the <span class="docEmphasis">n</span>-dimensional perspective on relations introduced in the previous section, you think of a table as a plot of points in some <span class="docEmphasis">n</span>-dimensional space, then duplicate rows clearly don't add anything; they simply amount to plotting the same point twice.</p>
+<p class="docText">My last point is this. Suppose table <span class="docEmphasis">T</span> does permit duplicates. Then we can't tell the difference between "genuine" duplicates in <span class="docEmphasis">T</span> and duplicates that arise from errors in data entry on <span class="docEmphasis">T!</span> For example, what happens if the person responsible for data entry unintentionally—that is, <span class="docEmphasis">by mistake</span>—enters the very same row into <span class="docEmphasis">T</span> twice? (Easily done, by the way.) Is there a way to delete just the "second" row and not the "first"? Note that we presumably do want to delete that "second" row, since it shouldn't have been entered in the first place.</p>
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="databaseid-CHP-3-SECT-4.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="databaseid-CHP-3-SECT-6.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

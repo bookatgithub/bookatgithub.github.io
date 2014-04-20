@@ -1,0 +1,71 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>Why Database Constraint Checking Must Be Immediate</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="databaseid-CHP-6-SECT-3.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="databaseid-CHP-6-SECT-5.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><TD valign="top"><a name="databaseid-CHP-6-SECT-4"></a>
+<H3 class="docSection1Title" >Why Database Constraint Checking Must Be Immediate</h3>
+<a name="IDX-CHP-6-0491"></a><a name="IDX-CHP-6-0492"></a>
+<p class="docText">I have at least five reasons for taking the position that database constraints must be satisfied at statement boundaries. The first and biggest one is as follows. As we know from <a class="docLink" href="databaseid-CHP-4.html#databaseid-CHP-4">Chapter 4</a>, a database can be regarded as a collection of propositions, propositions that we believe are true. And if that collection is ever allowed to include any inconsistencies, then <span class="docEmphasis">all bets are off</span>. As I'll show in the section "<a class="docLink" href="databaseid-CHP-6-SECT-6.html#databaseid-CHP-6-SECT-6">Constraints and Predicates</a>," later in this chapter, we can never trust the answers we get from an inconsistent database! While it might be true, thanks to the isolation property, that no more than one transaction ever sees any particular inconsistency, the fact remains that that particular transaction does see the inconsistency and can therefore produce wrong answers.</p>
+<p class="docText">Now, I think this first argument is strong enough to stand on its own, but I'll give the other four arguments as well, for purposes of reference if nothing else. Second, then, I don't agree that any given inconsistency can be seen by only one transaction, anyway; that is, I don't believe in the isolation<a name="IDX-CHP-6-0493"></a> property. Part of the problem here is that the word <span class="docEmphasis">isolation</span> doesn't mean the same in the world of transactions as it does in ordinary English—in particular, it doesn't mean that transactions can't communicate with one another. For if transaction <span class="docEmphasis">T1</span> produces some result, in the database or elsewhere, that's subsequently read by transaction <span class="docEmphasis">T2</span>, then <span class="docEmphasis">T1</span> and <span class="docEmphasis">T2</span> aren't truly isolated from each other (and this remark applies regardless of whether <span class="docEmphasis">T1</span> and <span class="docEmphasis">T2</span> run concurrently or otherwise). In particular, therefore, if (a) <span class="docEmphasis">T1</span> sees an inconsistent state of the database and therefore produces an incorrect result, and (b) that result is then seen by <span class="docEmphasis">T2</span>, then (c) the inconsistency seen by <span class="docEmphasis">T1</span> has effectively been propagated to <span class="docEmphasis">T2</span>. In other words, it can't be guaranteed that a given inconsistency, if permitted, <span class="docEmphasis">will</span> be seen by just one transaction, anyway.</p>
+<p class="docText">Third, we surely don't want every program (or other "code unit") to have to cater for the possibility that the database might be inconsistent when it's invoked. There's a severe loss of orthogonality if a program that assumes consistency can't be used safely while constraint checking is deferred. In other words, I want to be able to specify code units independently of whether they're to be executed as a transaction as such or just as part of a transaction. (In fact, I'd like support for <i>nested transactions</I>, but that's a topic for another day.)</p>
+<p class="docText">Fourth, <span class="docEmphasis">The Principle of Interchangeability</span> (of base relvars and views—see <a class="docLink" href="databaseid-CHP-4.html#databaseid-CHP-4">Chapter 4</a>) implies that the very same constraint might be a single-relvar constraint with one design for the database and a multi-relvar constraint with another. For example, recall these two views from <a class="docLink" href="databaseid-CHP-4.html#databaseid-CHP-4">Chapter 4</a>:</P>
+<pre>
+    VAR LS  VIRTUAL ( S WHERE CITY = 'London' ) ;
+
+    VAR NLS VIRTUAL ( S WHERE CITY <img src=images/ent/U2260.GIF border=0> 'London' ) ;
+</pre><br>
+
+<p class="docText">These views satisfy the constraint that no supplier number appears in both. However, there's no need to state that constraint explicitly, because it's implied by the single-relvar constraint that {SNO} is a key for relvar S (along with the fact that every supplier has exactly one city, which is implicit in the design of relvar S). But suppose we made LS and NLS base relvars and defined their union as a view called S. Then the constraint would have to be stated explicitly:</P>
+<pre>
+    CONSTRAINT C6 IS_EMPTY   |  CREATE ASSERTION C6 CHECK
+     ( LS { SNO } JOIN       |  ( NOT EXISTS
+      NLS { SNO } ) ;        |    ( SELECT *
+                             |    FROM   LS, NLS
+                             |  WHERE  LS.SNO = NLS.SNO ) ) ;
+</pre><BR>
+
+<p class="docText">Now what was previously a single-relvar constraint has become a multi-relvar constraint instead. Thus, if we agree that single-relvar constraints must be checked immediately, we must surely agree that multi-relvar constraints must be checked immediately as well.</P>
+<p class="docText">Fifth and last, there's an optimization technique called <I>semantic optimization</i><a name="IDX-CHP-6-0494"></a> (it involves expression transformation, but I deliberately didn't discuss it in the section of that name in <a class="docLink" href="databaseid-CHP-5.html#databaseid-CHP-5">Chapter 5</a>). For example, consider the expression (SP JOIN S){PNO}. Clearly, the join here is a foreign-to-matching-primary-key join; as a consequence, every SP tuple does join to some S tuple and therefore contributes a part number to the overall result. So there's no need to do the join!—the expression can be simplified to just SP{PNO}. The point to note, however, is that this transformation is valid <span class="docEmphasis">only</span> because of the semantics of the situation; in general, each operand to a join will include some tuples that have no counterpart in the other operand and so don't contribute to the overall result, and transformations such as the one just shown therefore won't be valid. In the case at hand, however, every SP tuple <span class="docEmphasis">must</span> have a counterpart in S, because of the integrity constraint—actually a foreign key constraint—that says that every shipment must have a supplier, and so the transformation is valid after all. A transformation that's valid only because a certain integrity constraint is in effect is called a <i>semantic</i> transformation, and the resulting optimization is called a semantic optimization.</p>
+<p class="docText">In principle, any constraint whatsoever can be used in semantic optimization (we're not limited to foreign key constraints). For example, suppose the suppliers-and-parts database is subject to the constraint "All red parts must be stored in London," and consider the query:</p>
+<blockquote><p class="docText">Get suppliers who supply only red parts and are located in the same city as at least one of the parts they supply.</p></blockquote>
+<p class="docText">This is a fairly complex query. But thanks to the integrity constraint, we see that it can be transformed—transformed by the optimizer, I mean, not by the user—into this much simpler one:</p>
+<blockquote><p class="docText">Get London suppliers who supply only red parts.</p></blockquote>
+<p class="docText">We could easily be talking about several orders of magnitude improvement in performance here. And so, while few products do much in the way of semantic optimization at the time of writing (as far as I know), I certainly expect them to do more in the future, because the payoff is so dramatic.</p>
+<p class="docText">To get back to the main thread of the discussion, I now observe that if a given constraint is to be usable in semantic optimization, that constraint must be satisfied <span class="docEmphasis">at all times</span> (more precisely, at statement boundaries), not just at transaction boundaries. As we've seen, semantic optimization means using constraints to simplify queries in order to improve performance. Clearly, then, if some constraint is violated at some time, then any simplification based on that constraint won't be valid at that time, and query results based on that simplification will be wrong at that time (in general).</p>
+<a name="databaseid-CHP-6-NOTE-20"></a><div class="docNote"><p class="docNormalTitle">NOTE</p><p><p class="docText">Of course, we could adopt the weaker position that "deferred constraints" (meaning constraints for which the checking is deferred) just can't be used in semantic optimization—but I think such a position would effectively just mean we've shot ourselves in the foot, that's all.</p></p></div>
+<p class="docText">In sum, then, database constraints must be satisfied—that is, they must evaluate to TRUE, given the values currently appearing in the database—<span class="docEmphasis">at statement boundaries</span> (or, very informally, "at semicolons"); in other words, they must be checked at the end of any statement that might cause them to be violated. If any such check fails, the effects on the database of the offending statement are undone and an exception is raised.</P>
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="databaseid-CHP-6-SECT-3.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="databaseid-CHP-6-SECT-5.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

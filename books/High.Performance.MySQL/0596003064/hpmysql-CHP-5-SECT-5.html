@@ -1,0 +1,290 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>5.5 Stupid Query Tricks</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="hpmysql-CHP-5-SECT-4.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="hpmysql-CHP-6.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="hpmysql-CHP-5-SECT-5"></A>
+<H3 class="docSection1Title">5.5 Stupid Query Tricks</H3>
+
+<P class="docText"><A NAME="hpmysql-CHP-5-ITERM-1443"></A>We can't end a
+chapter on query optimization without looking at some common tricks
+that can increase performance of some queries. While these are all
+rather specific, you may find techniques that can be applied in other
+circumstances.</P>
+
+<A NAME="hpmysql-CHP-5-SECT-5.1"></A>
+<H4 class="docSection2Title">5.5.1 Two Is Better Than One</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-5-ITERM-1444"></A>Sometimes MySQL doesn't
+optimize a seemingly simple query the way you'd
+expect. A good example of this behavior occurred in a database used
+to track historical stock prices. There are two tables involved:
+<TT>SymbolHistory</TT> and <TT>Symbols</TT>.</P>
+
+<P class="docText">As far as we're concerned, the
+<TT>Symbols</TT> table contains two important fields:
+<TT>Id</TT> and <TT>Symbol</TT>. The
+<TT>Id</TT> is an <TT>auto_increment</TT> primary
+key. Here's the <TT>PriceHistory</TT>
+table:</P>
+
+<PRE>mysql&gt; <B>DESCRIBE PriceHistory;</B>
++----------+---------+------+-----+------------+-------+
+| Field    | Type    | Null | Key | Default    | Extra |
++----------+---------+------+-----+------------+-------+
+| SymbolID | int(11) |      | PRI | 0          |       |
+| Date     | date    |      | PRI | 0000-00-00 |       |
+| Open     | float   |      |     | 0          |       |
+| High     | float   |      |     | 0          |       |
+| Low      | float   |      |     | 0          |       |
+| Close    | float   |      |     | 0          |       |
+| Volume   | float   |      |     | 0          |       |
++----------+---------+------+-----+------------+-------+
+8 rows in set (0.01 sec)</PRE>
+
+<P class="docText">It has a two-part index on <TT>(SymbolID</TT>,
+<TT>Date)</TT>.</P>
+
+<P class="docText">The <TT>Symbols</TT> table maps stock tickers to numeric
+identifiers. It also contains various other bits of metadata about
+each security. The <TT>PriceHistory</TT> table contains the
+historical price data. One of the most common queries run against the
+data is, "Show me all closing prices for a given
+stock sorted from newest to oldest."</P>
+
+<P class="docText">To fetch the price history for IBM, the query looks like this:</P>
+
+<PRE>mysql&gt; <B>EXPLAIN SELECT date_format(Date,'%Y%m%d') as Day, Close</B>
+    -&gt; <B>FROM Symbols, PriceHistory</B>
+    -&gt; <B>WHERE Symbols.ID=PriceHistory.SymbolID AND Symbols.Symbol = 'ibm'</B>
+    -&gt; <B>ORDER BY Date DESC \G</B>
+*************************** 1. row ***************************
+        table: Symbols
+         type: const
+possible_keys: PRIMARY,Symbols_SymbolIDX
+          key: Symbols_SymbolIDX
+      key_len: 20
+          ref: const
+         rows: 1
+        Extra: Using filesort
+*************************** 2. row ***************************
+        table: PriceHistory
+         type: ref
+possible_keys: PriceHistory_IDX
+          key: PriceHistory_IDX
+      key_len: 4
+          ref: const
+         rows: 471
+        Extra: Using where
+2 rows in set (0.01 sec)</PRE>
+
+<P class="docText">Notice the <TT>Using filesort</TT> in the
+<TT>EXPLAIN</TT> output, which means MySQL will need to
+sort all the records based on the date. It turns out that the
+<TT>Date</TT> column is in the index, but MySQL
+can't use it directly for sorting because
+it's not the first part of a composite index. The
+result is a second pass over the rows to return them in the correct
+order. That sorting process can be slow when the query is run
+hundreds of times each minute on a large variety of stocks, some of
+which have thousands of records.</P>
+
+<P class="docText">To improve the performance, we need to arrange it so that MySQL can
+query the <TT>PriceHistory</TT> and use the index on the
+<TT>Date</TT> column. The easiest way to do so is to break
+it up into two queries using a temporary variable, just like we did
+earlier to work around the lack of subselects:</P>
+
+<PRE>mysql&gt; <B>SELECT @sid := Id FROM Symbols WHERE Symbol = 'ibm';</B>
++------------+
+| @sid := Id |
++------------+
+|     459378 |
++------------+
+1 row in set (0.02 sec)
+
+mysql&gt; <B>EXPLAIN SELECT date_format(Date,'%Y%m%d') as Day, Close</B>
+    -&gt; <B>FROM PriceHistory WHERE SymbolID = @sid ORDER BY Date DESC \G</B>
+*************************** 1. row ***************************
+        table: PriceHistory
+         type: ref
+possible_keys: PriceHistory_IDX
+          key: PriceHistory_IDX
+      key_len: 4
+          ref: const
+         rows: 7234
+        Extra: Using where
+1 row in set (0.00 sec)</PRE>
+
+<P class="docText">An improvement like this can often mean the difference between a
+CPU-bound server handling 200 queries per second and a partially idle
+server handling 700 queries per second. The overhead associated with
+performing two queries instead of one is still usually less than that
+extra sorting pass.<A NAME="hpmysql-CHP-5-ITERM-1445"></A></P>
+
+
+<A NAME="hpmysql-CHP-5-SECT-5.2"></A>
+<H4 class="docSection2Title">5.5.2 Unions Instead of ORs</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-5-ITERM-1446"></A>Earlier we used a query like this to
+demonstrate that MySQL handles the situation efficiently:</P>
+
+<PRE>mysql&gt; <B>EXPLAIN SELECT COUNT(*) FROM Headline</B>
+    -&gt; <B>WHERE ExpireTime &gt;= 1112201600 AND Id &lt;= 5000000 \G</B>
+*************************** 1. row ***************************
+           id: 1
+  select_type: SIMPLE
+        table: Headline
+         type: range
+possible_keys: PRIMARY,ExpireTime
+          key: ExpireTime
+      key_len: 4
+          ref: NULL
+         rows: 12009
+        Extra: Using where
+1 row in set (0.00 sec)</PRE>
+
+<P class="docText">In this example, MySQL uses the <TT>ExpireTime</TT> index
+to fetch a set of rows. It then applies the rest of the
+<TT>WHERE</TT> clause to eliminate those rows with ID
+values less than or equal to 5,000,000.</P>
+
+<P class="docText">But what if the <TT>AND</TT> is changed to an
+<TT>OR</TT> condition, and we change it from a
+<TT>COUNT(*)</TT> to something a bit more meaningful?</P>
+
+<PRE>mysql&gt; <B>EXPLAIN SELECT * FROM Headline</B>
+    -&gt; <B>WHERE ExpireTime &gt;= 1012201600 OR Id &lt;= 5000000</B>
+    -&gt; <B>ORDER BY ExpireTime ASC LIMIT 10\G</B>
+*************************** 1. row ***************************
+           id: 1
+  select_type: SIMPLE
+        table: Headline
+         type: ALL
+possible_keys: PRIMARY,ExpireTime
+          key: NULL
+      key_len: NULL
+          ref: NULL
+         rows: 302116
+        Extra: Using where
+1 row in set (0.00 sec)</PRE>
+
+<P class="docText">Uh oh. MySQL has decided to perform a full table scan. Actually
+executing the full query (rather than just explaining it) takes
+almost three seconds. Let's think about why MySQL
+made this choice.</P>
+
+<P class="docText">We know that MySQL will use only one index per table per query, and
+the <TT>Headline</TT> table has an index on
+<TT>Id</TT> as well as one on
+<TT>ExpireTime</TT>. So why didn't it pick
+either one?</P>
+
+<P class="docText">No matter which index MySQL selects, it has to perform a full table
+scan to satisfy the other condition. Queries using
+<TT>OR</TT> conditions prevent MySQL from easily
+eliminating candidate rows. So rather than use one index to find some
+of the rows and then perform the table scan, MySQL decides that
+it's faster to simply use a table scan. This is
+slated to be fixed in MySQL 5.0.</P>
+
+<P class="docText">In a well-normalized database, queries like the previous one tend not
+be very common. But when they do occur, they can be real performance
+killers. Luckily we can sometimes rewrite them using a
+<TT>UNION</TT>.</P>
+
+<P class="docText">To do this, we'll break the query into two queries
+that can each use a single index. Then we'll merge
+and sort the results. The result looks like this:</P>
+
+<PRE>(SELECT * FROM Headline WHERE ExpireTime &gt;= 1081020749
+ORDER BY ExpireTime ASC LIMIT 10)
+
+UNION
+
+(SELECT * FROM Headline WHERE Id &lt;= 50000
+ORDER BY ExpireTime ASC LIMIT 10)
+
+ORDER BY ExpireTime ASC LIMIT 10</PRE>
+
+<P class="docText">The first query should be able to use the
+<TT>ExpireTime</TT> index while the second one uses the
+<TT>Id</TT> index. We must make sure to ask for the total
+number of rows desired (10) in <span class="docEmphasis">both</span> queries. The
+outer <TT>ORDER BY</TT> and <TT>LIMIT</TT>
+clauses will take care of the final sorting and counting.</P>
+
+<P class="docText">It turns out that the <TT>UNION</TT>-based query runs in
+0.02 seconds. That's far faster than the query it
+replaces. Just to make sure we understand what MySQL does,
+let's explain it:</P>
+
+<PRE>mysql&gt; <B>EXPLAIN (SELECT * FROM Headline WHERE ExpireTime &gt;= 1081020749</B>
+    -&gt; <B>ORDER BY ExpireTime ASC LIMIT 10)</B>
+    -&gt; <B>UNION</B>
+    -&gt; <B>(SELECT * FROM Headline WHERE Id &lt;= 50000</B>
+    -&gt; <B>ORDER BY ExpireTime ASC LIMIT 10)</B>
+    -&gt; <B>ORDER BY ExpireTime ASC LIMIT 10 \G</B>
+*************************** 1. row ***************************
+           id: 1
+  select_type: PRIMARY
+        table: Headline
+         type: range
+possible_keys: ExpireTime
+          key: ExpireTime
+      key_len: 4
+          ref: NULL
+         rows: 40306
+        Extra: Using where
+*************************** 2. row ***************************
+           id: 2
+  select_type: UNION
+        table: Headline
+         type: range
+possible_keys: PRIMARY
+          key: PRIMARY
+      key_len: 4
+          ref: NULL
+         rows: 1
+        Extra: Using where; Using filesort
+2 rows in set (0.00 sec)</PRE>
+
+<P class="docText">Not bad at all. The second query needs a file sort operation, but at
+least it will use an index to locate all the rows.<A NAME="hpmysql-CHP-5-ITERM-1447"></A><A NAME="hpmysql-CHP-5-ITERM-1448"></A><A NAME="hpmysql-CHP-5-ITERM-1449"></A></P>
+
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="hpmysql-CHP-5-SECT-4.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="hpmysql-CHP-6.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

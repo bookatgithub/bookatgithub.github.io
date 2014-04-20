@@ -1,0 +1,643 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>2.3 Transactions</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="hpmysql-CHP-2-SECT-2.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="hpmysql-CHP-2-SECT-4.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="hpmysql-CHP-2-SECT-3"></A>
+<H3 class="docSection1Title">2.3 Transactions</H3>
+
+<P class="docText"><A NAME="hpmysql-CHP-2-ITERM-1106"></A><A NAME="hpmysql-CHP-2-ITERM-1107"></A>You can't examine
+the more advanced features of a database system for very long before
+transactions enter the mix. A
+<A NAME="hpmysql-CHP-2-ITERM-1108"></A>transaction is
+a group of SQL queries that are treated
+<I>atomically</I>, as a single unit of work. Either
+the entire group of queries is applied to a database, or none of them
+are. Little of this section is specific to MySQL. If
+you're already familiar with ACID transactions, feel
+free to skip ahead to the section "Transactions in
+MySQL."</P>
+
+<P class="docText">A banking application is the classic example of why transactions are
+necessary. Imagine a bank's database with a two
+tables: checking and savings. To move $200 from
+Jane's checking account to her savings account, you
+need to perform at least three steps:</P>
+
+<span style="font-weight:bold"><OL class="docList" TYPE="1"><LI><span style="font-weight:normal"><P class="docList">Make sure her checking account balance is greater than $200.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">Subtract $200 from her checking account balance.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">Add $200 to her savings account balance.</P></span></LI></OL></span>
+<P class="docText">The entire operation should be wrapped in a transaction so that if
+any one of the steps fails, they can all be rolled back.</P>
+
+<P class="docText">A transaction is initiated (or opened) with the
+<TT>BEGIN</TT><A NAME="hpmysql-CHP-2-ITERM-1109"></A> statement and applied with
+<TT>COMMIT</TT> or <I>rolled back</I>
+(undone) with <TT>ROLLBACK</TT><A NAME="hpmysql-CHP-2-ITERM-1110"></A>. So the SQL for the transaction might
+look like this:</P>
+
+<PRE>         BEGIN;
+[step 1] SELECT balance FROM checking WHERE customer_id = 10233276;
+[step 2] UPDATE checking SET balance = balance - 200.00 WHERE customer_id = 10233276;
+[step 3] UPDATE savings  SET balance = balance + 200.00 WHERE customer_id = 10233276;
+         COMMIT;</PRE>
+
+<P class="docText">But transactions alone aren't the whole story. What
+happens if the database server crashes while performing step 3? Who
+knows? The customer probably just lost $200. What if another process
+comes along between Steps 2 and 3 and removes the entire checking
+account balance? The bank has given the customer a $200 credit
+without even knowing it.</P>
+
+<P class="docText">Simply having transactions isn't sufficient unless
+the database server passes what is known as the <I>ACID
+test</I>. <A NAME="hpmysql-CHP-2-ITERM-1111"></A>ACID is an acronym
+for Atomicity, Consistency, Isolation, and Durability—four
+tightly related criteria that are required in a well-behaved
+transaction processing system. Transactions that meet those four
+criteria are often referred to as <I>ACID
+transactions</I>.</P>
+
+<DL class="docList"><br><p><DT><I><span class="docPubcolor">Atomicity</span></I></DT></p>
+<DD>
+<P class="docList">Transactions must function as a single indivisible unit of work. The
+entire transaction is either applied or rolled back. When
+transactions are atomic, there is no such thing as a partially
+completed transaction: it's all or nothing.</P>
+</DD>
+<br><p><DT><I><span class="docPubcolor">Consistency</span></I></DT></p>
+<DD>
+<P class="docList">The database should always move from one consistent state to the
+next. Consistency ensures that a crash between Steps 2 and 3
+doesn't result in $200 missing from the checking
+account. Because the transaction is never committed, none of the
+transaction's changes are ever reflected in the
+database.</P>
+</DD>
+<br><p><DT><I><span class="docPubcolor">Isolation</span></I></DT></p>
+<DD>
+<P class="docList">The results of a transaction are usually invisible to other
+transactions until the transaction is complete. This ensures that if
+a bank account summary runs after Step 2, but before Step 3, it still
+sees the $200 in the checking account. When we discuss isolation
+levels, you'll understand why we said
+<span class="docEmphasis">usually</span> invisible.</P>
+</DD>
+<br><p><DT><I><span class="docPubcolor">Durability</span></I></DT></p>
+<DD>
+<P class="docList">Once committed, the results of a transaction are permanent. This
+means that the changes must be recorded in such a way that system
+crashes won't lose the data. Of course, if the
+database server's disks fail, all bets are off.
+That's a hardware problem. We'll
+talk more about how you can minimize the effects of hardware failures
+in <A class="docLink" HREF="hpmysql-CHP-6.html#hpmysql-CHP-6">Chapter 6</A>.</P>
+</DD>
+</DL>
+
+<A NAME="hpmysql-CHP-2-SECT-3.1"></A>
+<H4 class="docSection2Title">2.3.1 Benefits and Drawbacks</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-2-ITERM-1112"></A>ACID transactions ensure
+that banks don't lose your money. By wrapping
+arbitrarily complex logic into single units of work, the database
+server takes some of the burden off application developers. The
+database server's ACID properties offer guarantees
+that reduce the need for code guarding against race conditions and
+handling crash recovery.</P>
+
+<P class="docText">The downside of this extra security is that the database server has
+to do more work. It also means that a database server with ACID
+transactions will generally require more CPU power, memory, and disk
+space than one without them. As mentioned earlier, this is where
+MySQL's modularity comes into play. Because you can
+decide on a per-table basis if you need ACID transactions or not, you
+don't need to pay the performance penalty on a table
+that really won't benefit from transactions.</P>
+
+
+<A NAME="hpmysql-CHP-2-SECT-3.2"></A>
+<H4 class="docSection2Title">2.3.2 Isolation Levels</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-2-ITERM-1113"></A><A NAME="hpmysql-CHP-2-ITERM-1114"></A>The previous description of isolation
+was a bit simplistic. Isolation is more complex than it might first
+appear because of some peculiar cases that can occur. The SQL
+standard defines four isolation levels with specific rules for which
+changes are and aren't visible inside and outside a
+transaction. Let's look at each isolation level and
+the type of problems that can occur.</P>
+
+<A NAME="hpmysql-CHP-2-SECT-3.2.1"></A>
+<H5 class="docSection3Title">2.3.2.1 Read uncommitted</H5>
+
+<P class="docText">In the <I>read
+uncommitted</I><A NAME="hpmysql-CHP-2-ITERM-1115"></A> isolation level, transactions can view
+the results of uncommitted transactions. At this level, many problems
+can occur unless you really, really know what you are doing and have
+a good reason for doing it. Read uncommitted is rarely used in
+practice. Reading uncommitted data is also known as a
+<I>dirty read</I><A NAME="hpmysql-CHP-2-ITERM-1116"></A>.</P>
+
+
+
+<A NAME="hpmysql-CHP-2-SECT-3.2.2"></A>
+<H5 class="docSection3Title">2.3.2.2 Read committed</H5>
+
+<P class="docText">The default isolation level for most database systems is
+<I>read committed</I><A NAME="hpmysql-CHP-2-ITERM-1117"></A>. It satisfies the
+simple definition of isolation used earlier. A transaction will see
+the results only of transactions that were already committed when it
+began, and its changes won't be visible to others
+until it's committed.</P>
+
+<P class="docText">However, there are problems that can occur using that definition. To
+visualize the problems, refer to the sample data for the
+<TT>Stock</TT> and <TT>StockPrice</TT> tables as
+shown in <A class="docLink" HREF="#hpmysql-CHP-2-TABLE-2">Table 2-2</A> and <A class="docLink" HREF="#hpmysql-CHP-2-TABLE-3">Table 2-3</A>.</P>
+
+<A NAME="hpmysql-CHP-2-TABLE-2"></A><P><TABLE CELLSPACING="0" BORDER="1" RULES="all" CELLPADDING="4" WIDTH="100%"><CAPTION><h5 class="docTableTitle">Table 2-2. The Stock table</h5></CAPTION><COLGROUP span="3"><THEAD><TR><TH class="docTableHeader">
+<P class="docText">id</P>
+</TH><TH class="docTableHeader">
+<P class="docText">Ticker</P>
+</TH><TH class="docTableHeader">
+<P class="docText">Name</P>
+</TH></TR></THEAD><TR><TD class="docTableCell">
+<P class="docText">1</P>
+</TD><TD class="docTableCell">
+<P class="docText">MSFT</P>
+</TD><TD class="docTableCell">
+<P class="docText">Microsoft</P>
+</TD></TR><TR><TD class="docTableCell">
+<P class="docText">2</P>
+</TD><TD class="docTableCell">
+<P class="docText">EBAY</P>
+</TD><TD class="docTableCell">
+<P class="docText">eBay</P>
+</TD></TR><TR><TD class="docTableCell">
+<P class="docText">3</P>
+</TD><TD class="docTableCell">
+<P class="docText">YHOO</P>
+</TD><TD class="docTableCell">
+<P class="docText">Yahoo!</P>
+</TD></TR><TR><TD class="docTableCell">
+<P class="docText">4</P>
+</TD><TD class="docTableCell">
+<P class="docText">AMZN</P>
+</TD><TD class="docTableCell">
+<P class="docText">Amazon</P>
+</TD></TR></COLGROUP></TABLE></P>
+
+<A NAME="hpmysql-CHP-2-TABLE-3"></A><P><TABLE CELLSPACING="0" BORDER="1" RULES="all" CELLPADDING="4" WIDTH="100%"><CAPTION><h5 class="docTableTitle">Table 2-3. The StockPrice table</h5></CAPTION><COLGROUP span="6"><THEAD><TR><TH class="docTableHeader">
+<P class="docText">stock_id</P>
+</TH><TH class="docTableHeader">
+<P class="docText">date</P>
+</TH><TH class="docTableHeader">
+<P class="docText">open</P>
+</TH><TH class="docTableHeader">
+<P class="docText">high</P>
+</TH><TH class="docTableHeader">
+<P class="docText">low</P>
+</TH><TH class="docTableHeader">
+<P class="docText">close</P>
+</TH></TR></THEAD><TR><TD class="docTableCell">
+<P class="docText">1</P>
+</TD><TD class="docTableCell">
+<P class="docText">2002-05-01</P>
+</TD><TD class="docTableCell">
+<P class="docText">21.25</P>
+</TD><TD class="docTableCell">
+<P class="docText">22.30</P>
+</TD><TD class="docTableCell">
+<P class="docText">20.18</P>
+</TD><TD class="docTableCell">
+<P class="docText">21.30</P>
+</TD></TR><TR><TD class="docTableCell">
+<P class="docText">2</P>
+</TD><TD class="docTableCell">
+<P class="docText">2002-05-01</P>
+</TD><TD class="docTableCell">
+<P class="docText">10.01</P>
+</TD><TD class="docTableCell">
+<P class="docText">10.20</P>
+</TD><TD class="docTableCell">
+<P class="docText">10.01</P>
+</TD><TD class="docTableCell">
+<P class="docText">10.18</P>
+</TD></TR><TR><TD class="docTableCell">
+<P class="docText">3</P>
+</TD><TD class="docTableCell">
+<P class="docText">2002-05-01</P>
+</TD><TD class="docTableCell">
+<P class="docText">18.23</P>
+</TD><TD class="docTableCell">
+<P class="docText">19.12</P>
+</TD><TD class="docTableCell">
+<P class="docText">18.10</P>
+</TD><TD class="docTableCell">
+<P class="docText">19.00</P>
+</TD></TR><TR><TD class="docTableCell">
+<P class="docText">4</P>
+</TD><TD class="docTableCell">
+<P class="docText">2002-05-01</P>
+</TD><TD class="docTableCell">
+<P class="docText">45.55</P>
+</TD><TD class="docTableCell">
+<P class="docText">46.99</P>
+</TD><TD class="docTableCell">
+<P class="docText">44.87</P>
+</TD><TD class="docTableCell">
+<P class="docText">45.71</P>
+</TD></TR><TR><TD class="docTableCell">
+<P class="docText">1</P>
+</TD><TD class="docTableCell">
+<P class="docText">2002-05-02</P>
+</TD><TD class="docTableCell">
+<P class="docText">21.30</P>
+</TD><TD class="docTableCell">
+<P class="docText">21.45</P>
+</TD><TD class="docTableCell">
+<P class="docText">20.02</P>
+</TD><TD class="docTableCell">
+<P class="docText">20.21</P>
+</TD></TR><TR><TD class="docTableCell">
+<P class="docText">2</P>
+</TD><TD class="docTableCell">
+<P class="docText">2002-05-02</P>
+</TD><TD class="docTableCell">
+<P class="docText">10.18</P>
+</TD><TD class="docTableCell">
+<P class="docText">10.55</P>
+</TD><TD class="docTableCell">
+<P class="docText">10.10</P>
+</TD><TD class="docTableCell">
+<P class="docText">10.35</P>
+</TD></TR><TR><TD class="docTableCell">
+<P class="docText">3</P>
+</TD><TD class="docTableCell">
+<P class="docText">2002-05-02</P>
+</TD><TD class="docTableCell">
+<P class="docText">19.01</P>
+</TD><TD class="docTableCell">
+<P class="docText">19.88</P>
+</TD><TD class="docTableCell">
+<P class="docText">19.01</P>
+</TD><TD class="docTableCell">
+<P class="docText">19.22</P>
+</TD></TR><TR><TD class="docTableCell">
+<P class="docText">4</P>
+</TD><TD class="docTableCell">
+<P class="docText">2002-05-02</P>
+</TD><TD class="docTableCell">
+<P class="docText">45.69</P>
+</TD><TD class="docTableCell">
+<P class="docText">45.69</P>
+</TD><TD class="docTableCell">
+<P class="docText">44.03</P>
+</TD><TD class="docTableCell">
+<P class="docText">44.30</P>
+</TD></TR></COLGROUP></TABLE></P>
+
+<P class="docText">Imagine you have a Perl script that runs nightly to fetch price data
+about your favorite stocks. For each stock, it fetches the data and
+adds a record to the <TT>StockPrice</TT> table with the
+day's numbers. So to update the information for
+Amazon.com, the transaction might look like this:</P>
+
+<PRE>BEGIN;
+SELECT @id := id FROM Stock WHERE ticker = 'AMZN';
+INSERT INTO StockPrice VALUES (@id, '2002-05-03', 20.50, 21.10, 20.08, 21.02);
+COMMIT;</PRE>
+
+<P class="docText">But what if, between the select and insert, Amazon's
+<TT>id</TT> changes from 4 to 17 and a new stock is added
+with <TT>id</TT> 4? Or what if Amazon is removed entirely?
+You'll end up inserting a record with the wrong
+<TT>id</TT> in the first case. And in the second case,
+you've inserted a record for which there is no
+longer a corresponding row in the <TT>Stock</TT> table.
+Neither of these is what you intended.</P>
+
+<P class="docText">The problem is that you have a <I>nonrepeatable
+read</I><A NAME="hpmysql-CHP-2-ITERM-1118"></A> in the query. That is, the data you read
+in the <TT>SELECT</TT> becomes invalid by the time you
+execute the <TT>INSERT</TT>. The repeatable read isolation
+level exists to solve this problem.</P>
+
+
+
+<A NAME="hpmysql-CHP-2-SECT-3.2.3"></A>
+<H5 class="docSection3Title">2.3.2.3 Repeatable read</H5>
+
+<P class="docText">At the <I>repeatable
+read</I><A NAME="hpmysql-CHP-2-ITERM-1119"></A> isolation level, any rows that are read
+during a transaction are locked so that they can't
+be changed until the transaction finishes. This provides the perfect
+solution to the problem mentioned in the previous section, in which
+Amazon's <TT>id</TT> can change or vanish
+entirely. However, this isolation level still leaves the door open to
+another tricky problem: phantom reads.</P>
+
+<P class="docText">Using the same data, imagine that you have a script that performs
+some analysis based on the data in the <TT>StockPrice</TT>
+table. And let's assume it does this while the
+nightly update is also running.</P>
+
+<P class="docText">The analysis script does something like this:</P>
+
+<PRE>BEGIN;
+SELECT * FROM StockPrice WHERE close BETWEEN 10 and 20;
+// think for a bit
+SELECT * FROM StockPrice WHERE close BETWEEN 10 and 20;
+COMMIT;</PRE>
+
+<P class="docText">But the nightly update script inserts between those two queries new
+rows that happen to match the <TT>close BETWEEN 10 and
+20</TT> condition. The second query will find more rows that the
+first one! These additional rows are known as <I>phantom
+rows</I><A NAME="hpmysql-CHP-2-ITERM-1120"></A> (or simply phantoms). They
+weren't locked the first time because they
+didn't exist when the query ran.</P>
+
+<P class="docText">Having said all that, we need to point out that this is a bit more
+academic than you might think. Phantom rows are such a common problem
+that InnoDB's locking (known as <I>next-key
+locking</I><A NAME="hpmysql-CHP-2-ITERM-1121"></A>) prevents this from happening. Rather
+than locking only the rows you've touched in a
+query, InnoDB actually locks the slot following them in the index
+structure as well.</P>
+
+
+
+<A NAME="hpmysql-CHP-2-SECT-3.2.4"></A>
+<H5 class="docSection3Title">2.3.2.4 Serializable</H5>
+
+<P class="docText">The highest level of isolation,
+<I>serializable</I><A NAME="hpmysql-CHP-2-ITERM-1122"></A>, solves the phantom read
+problem by ordering transactions so that they can't
+conflict. At this level, a lot of timeouts and lock contention may
+occur, but the needs of your application may bring you to accept the
+decreased performance in favor of the data stability that results.</P>
+
+<P class="docText"><A class="docLink" HREF="#hpmysql-CHP-2-TABLE-4">Table 2-4</A> summarizes the various isolation levels
+and the drawbacks associated with each one. Keep in mind that as you
+move down the list, you're sacrificing concurrency
+and performance for increased safety.</P>
+
+<A NAME="hpmysql-CHP-2-TABLE-4"></A><P><TABLE CELLSPACING="0" BORDER="1" RULES="all" CELLPADDING="4" WIDTH="100%"><CAPTION><h5 class="docTableTitle">Table 2-4. ANSI SQL isolation levels</h5></CAPTION><COLGROUP span="4"><THEAD><TR><TH class="docTableHeader">
+<P class="docText">Isolation level</P>
+</TH><TH class="docTableHeader">
+<P class="docText">Dirty reads possible</P>
+</TH><TH class="docTableHeader">
+<P class="docText">Non-repeatable reads possible</P>
+</TH><TH class="docTableHeader">
+<P class="docText">Phantom reads possible</P>
+</TH></TR></THEAD><TR><TD class="docTableCell">
+<P class="docText">Read uncommitted</P>
+</TD><TD class="docTableCell">
+<P class="docText">Yes</P>
+</TD><TD class="docTableCell">
+<P class="docText">Yes</P>
+</TD><TD class="docTableCell">
+<P class="docText">Yes</P>
+</TD></TR><TR><TD class="docTableCell">
+<P class="docText">Read committed</P>
+</TD><TD class="docTableCell">
+<P class="docText">No</P>
+</TD><TD class="docTableCell">
+<P class="docText">Yes</P>
+</TD><TD class="docTableCell">
+<P class="docText">Yes</P>
+</TD></TR><TR><TD class="docTableCell">
+<P class="docText">Repeatable read</P>
+</TD><TD class="docTableCell">
+<P class="docText">No</P>
+</TD><TD class="docTableCell">
+<P class="docText">No</P>
+</TD><TD class="docTableCell">
+<P class="docText">Yes</P>
+</TD></TR><TR><TD class="docTableCell">
+<P class="docText">Serializable</P>
+</TD><TD class="docTableCell">
+<P class="docText">No</P>
+</TD><TD class="docTableCell">
+<P class="docText">No</P>
+</TD><TD class="docTableCell">
+<P class="docText">No<A NAME="hpmysql-CHP-2-ITERM-1125"></A><A NAME="hpmysql-CHP-2-ITERM-1126"></A></P>
+</TD></TR></COLGROUP></TABLE></P>
+
+
+
+<A NAME="hpmysql-CHP-2-SECT-3.3"></A>
+<H4 class="docSection2Title">2.3.3 Deadlocks</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-2-ITERM-1127"></A><A NAME="hpmysql-CHP-2-ITERM-1128"></A>Whenever
+multiple transactions obtain locks, there is the danger of
+encountering a deadlock condition. Deadlocks occur when two
+transactions attempt to obtain conflicting locks in a different
+order.</P>
+
+<P class="docText">For example, consider these two transactions running against the
+<TT>StockPrice</TT> table:</P>
+
+<P class="docText">Transaction #1:</P>
+
+<PRE>BEGIN;
+UPDATE StockPrice SET close = 45.50 WHERE stock_id = 4 and date = '2002-05-01';
+UPDATE StockPrice SET close = 19.80 WHERE stock_id = 3 and date = '2002-05-02';
+COMMIT;</PRE>
+
+<P class="docText">Transaction #2:</P>
+
+<PRE>BEGIN;
+UPDATE StockPrice SET high  = 20.12 WHERE stock_id = 3 and date = '2002-05-02';
+UPDATE StockPrice SET high  = 47.20 WHERE stock_id = 4 and date = '2002-05-01';
+COMMIT;</PRE>
+
+<P class="docText">If you're unlucky, each transaction will execute its
+first query and update a row of data, locking it in the process. Each
+transaction will then attempt to update its second row only to find
+that it is already locked. Left unchecked, the two transactions will
+wait for each other to complete—forever.</P>
+
+<P class="docText">To combat this problem, database systems implement various forms of
+deadlock detection and timeouts. The more sophisticated systems, such
+as InnoDB, will notice circular dependencies like the previous
+example and return an error. Others will give up after the query
+exceeds a timeout while waiting for a lock. InnoDB's
+default timeout is 50 seconds. In either case, applications that use
+transactions need to be able to handle deadlocks and possibly retry
+transactions.</P>
+
+
+<A NAME="hpmysql-CHP-2-SECT-3.4"></A>
+<H4 class="docSection2Title">2.3.4 Transaction Logging</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-2-ITERM-1129"></A><A NAME="hpmysql-CHP-2-ITERM-1130"></A>Some of the overhead involved with
+transactions can be mitigated through the use of a transaction log.
+Rather than directly updating the tables on disk each time a change
+occurs, the system can update the in-memory copy of the data (which
+is very fast) and write a record of the change to a
+<I>transaction log</I><A NAME="hpmysql-CHP-2-ITERM-1131"></A> on disk. Then, at some later time, a
+process (or thread) can actually apply the changes that the
+transaction log recorded. The serial disk I/O required to append
+events to the log is much faster than the random seeks required to
+update data in various places on disk.</P>
+
+<P class="docText">As long as events are written to the transaction log before a
+transaction is considered committed, having the changes in a log will
+not affect the durability of the system. If the database server
+crashes before all changes have been applied from the transaction
+log, the database will continue applying changes from the transaction
+log when it is restarted and before it accepts new connections.</P>
+
+
+<A NAME="hpmysql-CHP-2-SECT-3.5"></A>
+<H4 class="docSection2Title">2.3.5 Transactions in MySQL</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-2-ITERM-1132"></A>MySQL provides two
+transaction-safe <A NAME="hpmysql-CHP-2-ITERM-1133"></A>storage engines: Berkeley DB (BDB) and
+InnoDB. Their specific properties are discussed in next section. Each
+one offers the basic
+<TT>BEGIN</TT>/<TT>COMMIT</TT>/<TT>ROLLBACK</TT>
+functionality. They differ in their supported isolation levels,
+locking characteristics, deadlock detection, and other features.</P>
+
+<A NAME="hpmysql-CHP-2-SECT-3.5.1"></A>
+<H5 class="docSection3Title">2.3.5.1 AUTOCOMMIT</H5>
+
+<P class="docText">By default MySQL operates in
+<TT>AUTOCOMMIT</TT><A NAME="hpmysql-CHP-2-ITERM-1134"></A><A NAME="hpmysql-CHP-2-ITERM-1135"></A> mode. This means that unless
+you've explicitly begun a transaction, it
+automatically executes each query in a separate transaction. You can
+enable <TT>AUTOCOMMIT</TT> for the current connection by
+running:</P>
+
+<PRE>SET AUTOCOMMIT = 1;</PRE>
+
+<P class="docText">Disable it by executing:</P>
+
+<PRE>SET AUTOCOMMIT = 0;</PRE>
+
+<P class="docText">Changing the value of <TT>AUTOCOMMIT</TT> has no effect on
+non-transaction-safe tables such as MyISAM or HEAP.</P>
+
+
+
+<A NAME="hpmysql-CHP-2-SECT-3.5.2"></A>
+<H5 class="docSection3Title">2.3.5.2 Implicit commits</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-2-ITERM-1136"></A><A NAME="hpmysql-CHP-2-ITERM-1137"></A>Certain commands, when issued during an
+open transaction, cause MySQL to commit the transaction before they
+execute. Typically these are commands that make significant changes,
+such as removing or renaming a table.</P>
+
+<P class="docText">Here is the list of commands for which MySQL implicitly commits a
+transaction:</P>
+
+<UL><LI><P class="docList"><TT>ALTER</TT> <TT>TABLE</TT></P></LI><LI><P class="docList"><TT>BEGIN</TT></P></LI><LI><P class="docList"><TT>CREATE</TT> <TT>INDEX</TT></P></LI><LI><P class="docList"><TT>DROP</TT> <TT>DATABASE</TT></P></LI><LI><P class="docList"><TT>DROP</TT> <TT>TABLE</TT></P></LI><LI><P class="docList"><TT>RENAME</TT> <TT>TABLE</TT></P></LI><LI><P class="docList"><TT>TRUNCATE</TT></P></LI><LI><P class="docList"><TT>LOCK</TT> <TT>TABLES</TT></P></LI><LI><P class="docList"><TT>UNLOCK</TT> <TT>TABLES</TT></P></LI></UL>
+<P class="docText">As additional features are added to MySQL, it is possible that other
+commands will be added to the list, so be sure to check the latest
+available documentation.</P>
+
+
+
+<A NAME="hpmysql-CHP-2-SECT-3.5.3"></A>
+<H5 class="docSection3Title">2.3.5.3 Isolation levels</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-2-ITERM-1138"></A><A NAME="hpmysql-CHP-2-ITERM-1139"></A>MySQL allows you to set the
+isolation level using the <TT>SET TRANSACTION
+ISOLATION</TT><A NAME="hpmysql-CHP-2-ITERM-1140"></A> <TT>LEVEL</TT> command.
+Unless otherwise specified, the isolation level is changed beginning
+with the next transaction.</P>
+
+<P class="docText">To set the level for the whole session (connection), use:</P>
+
+<PRE>SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED</PRE>
+
+<P class="docText">Here's how to set the global level:</P>
+
+<PRE>SET GLOBAL TRANSACTION ISOLATION LEVEL SERIALIZABLE</PRE>
+
+<P class="docText"><A NAME="hpmysql-CHP-2-ITERM-1141"></A>MySQL recognizes all four
+ANSI standard isolation levels, and as of Version 4.0.5 of MySQL,
+InnoDB supports all of them:</P>
+
+<UL><LI><P class="docList"><TT>READ</TT> <TT>UNCOMMITTED</TT></P></LI><LI><P class="docList"><TT>READ</TT> <TT>COMMITTED</TT></P></LI><LI><P class="docList"><TT>REPEATABLE</TT> <TT>READ</TT></P></LI><LI><P class="docList"><TT>SERIALIZABLE</TT></P></LI></UL>
+<P class="docText">The default isolation level can also be set using the
+<TT>--transaction-isolation</TT> command-line option when
+starting the server or set via <I>my.cnf</I>.</P>
+
+
+
+<A NAME="hpmysql-CHP-2-SECT-3.5.4"></A>
+<H5 class="docSection3Title">2.3.5.4 Mixing storage engines in transactions</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-2-ITERM-1142"></A><A NAME="hpmysql-CHP-2-ITERM-1143"></A>Transaction management in MySQL
+is currently handled by the underlying storage engines, not at a
+higher level. Thus, you can't reliably mix tables
+stored in transactional engines (such as InnoDB and BDB) in a single
+transaction. A higher-level transaction management service may
+someday be added to MySQL, making it safe to mix and match
+transaction-safe tables in a transaction. Until then,
+don't expect it to work.</P>
+
+<P class="docText">If you mix transaction-safe and non-transaction-safe tables (such as
+InnoDB and MyISAM) in a transaction, the transaction will work
+properly if all goes well. However, if a rollback is required, the
+changes to the non-transaction-safe table won't be
+undone. This leaves the database in an inconsistent state that may be
+difficult to recover from (and renders the entire point of
+transactions moot).</P>
+
+
+
+<A NAME="hpmysql-CHP-2-SECT-3.5.5"></A>
+<H5 class="docSection3Title">2.3.5.5 Simulating transactions</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-2-ITERM-1144"></A>At times you may
+need the behavior of transactions when you aren't
+using a transaction-safe table. You can achieve something like
+transactions using MySQL's
+<TT>LOCK</TT><A NAME="hpmysql-CHP-2-ITERM-1145"></A><A NAME="hpmysql-CHP-2-ITERM-1146"></A> <TT>TABLES</TT> and
+<TT>UNLOCK</TT> <TT>TABLES</TT> commands. If you
+lock the tables that will be involved in the transaction and keep
+track of any changes that you make (in case you need to simulate a
+rollback), you'll have something equivalent to
+running at the serializable isolation level. But the process is
+kludgy and error prone, so if you really need transactions, we
+recommend using a transactional storage engine.<A NAME="hpmysql-CHP-2-ITERM-1147"></A><A NAME="hpmysql-CHP-2-ITERM-1148"></A></P>
+
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="hpmysql-CHP-2-SECT-2.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="hpmysql-CHP-2-SECT-4.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

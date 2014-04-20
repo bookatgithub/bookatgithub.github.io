@@ -1,0 +1,397 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>6.1 Performance-Limiting Factors</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="hpmysql-CHP-6.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="hpmysql-CHP-6-SECT-2.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="hpmysql-CHP-6-SECT-1"></A>
+<H3 class="docSection1Title" id="162637-961">6.1 Performance-Limiting Factors</H3>
+
+<P class="docText"><A NAME="hpmysql-CHP-6-ITERM-1452"></A>Before we can begin to think
+about what to adjust on a busy MySQL server, it's
+best to get an understanding of the various factors that affect
+performance and, most importantly, <span class="docEmphasis">how</span> they can
+affect it. One of the single biggest problems that most MySQL users
+face is simply not understanding how to go about finding bottlenecks.</P>
+
+<A NAME="hpmysql-CHP-6-SECT-1.1"></A>
+<H4 class="docSection2Title">6.1.1 Disks</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-6-ITERM-1453"></A><A NAME="hpmysql-CHP-6-ITERM-1454"></A>The fundamental battle
+in a database server is usually between the CPU(s) and available disk
+I/O performance; we'll discuss memory momentarily.
+The CPU in an average server is orders of magnitude faster than the
+hard disks. If you can't get data to the CPU fast
+enough, it must sit idle while the disks locate the data and transfer
+it to main memory.</P>
+
+<P class="docText">The real problem is that a lot of the disk access is random rather
+than sequential: read 2 blocks from here, 10 from there, 4 from
+there, and so on. This means that even though your shiny new SCSI
+disks are rated at 80 MB/sec throughput, you'll
+rarely see values that high. Most of the time you'll
+be waiting for the disks to locate the data. The speed at which the
+heads move across the platter and fetch another piece of data is
+known as <I>seek
+time,</I><A NAME="hpmysql-CHP-6-ITERM-1455"></A><A NAME="hpmysql-CHP-6-ITERM-1456"></A><A NAME="hpmysql-CHP-6-ITERM-1457"></A> and it's often the
+governing factor in real-world disk performance.</P>
+
+<P class="docText">The seek time consists of two factors. First is the amount of time
+required to move the head from one location to the next. When the
+head arrives at the new location, it often needs to wait for the disk
+platter to rotate a bit more so that it can read the desired piece of
+information. The disk's rotation speed, measured in
+RPMs, is the second factor. Generally speaking, the faster the
+platters rotate, the lower the disk's seek time will
+be. When you're shopping for your database
+server's disks, it's usually better
+to spend the extra cash for the 15,000-RPM model rather than saving a
+bit with the cheaper 10,000-RPM model. As a bonus, higher RPM drives
+provide greater transfer rates because they're
+reading data from a faster moving platter.</P>
+
+<P class="docText">This all means that the first bottleneck you're
+likely to encounter is disk I/O. The disks are clearly the slowest
+part of the system. Like the CPU's caches,
+MySQL's various buffers and caches use main memory
+as a cache for data that's sitting on disk. If your
+MySQL server has sufficient disk I/O capacity, and MySQL has been
+configured to use the available memory efficiently, you can better
+use the CPU's power.</P>
+
+<P class="docText">A common complaint against MySQL is that it can't
+handle really large tables. Assuming the people making that statement
+have even used MySQL, they likely encountered an I/O bottleneck they
+didn't know how to fix. MySQL worked great with a
+few hundred megabytes of data, but once loaded up with 60 GB, it
+became slow. The conclusion drawn was that MySQL was somehow
+inadequate.</P>
+
+<P class="docText">Of course, there are some circumstances in which MySQL can become
+CPU-bound rather than I/O-bound: they're simply not
+as common. If you often ask MySQL to perform some computation on your
+data (math, string comparison, etc.), the CPU will work harder. When
+running a <TT>CHECK</TT> <TT>TABLE</TT> command,
+you'll likely find the CPU pegged. And, of course,
+queries that aren't using indexes really tax it as
+well.</P>
+
+
+<A NAME="hpmysql-CHP-6-SECT-1.2"></A>
+<H4 class="docSection2Title">6.1.2 Memory</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-6-ITERM-1458"></A><A NAME="hpmysql-CHP-6-ITERM-1459"></A>To bridge the gap
+between blazingly fast CPUs and comparatively slow disks, we have
+memory. With respect to performance, it's in the
+middle—significantly faster than disks but still much slower
+than the CPU. The underlying operating system generally uses free
+memory to cache data read from and written to disk. That means if you
+frequently query the same small MyISAM table over and over,
+there's a very good chance you'll
+never touch the disk. Even though MySQL doesn't
+cache row data for MyISAM tables (only the index blocks), the entire
+MyISAM table is likely in the operating system's
+disk cache.</P>
+
+<P class="docText">Modern <A NAME="hpmysql-CHP-6-ITERM-1460"></A>CPUs are even substantially faster than
+main memory. To combat this mismatch, chip makers have designed
+multilevel caching systems. It's common for a CPU to
+contain level 1, level 2, and even level 3 caches. The caches use
+significantly faster and more expensive memory, so
+they're generally a fraction of the size of main
+memory; a 512-KB L2 cache is generous.</P>
+
+<P class="docText">With that in mind, simply adding memory to your server will improve
+MySQL performance only if the operating system can make good use of
+it by caching even more disk blocks. If your database is 512 MB, and
+you already have 1 GB of memory, adding more memory probably
+won't help.</P>
+
+<P class="docText">On the other hand, if you run more than just MySQL on the server,
+adding memory may help. Maybe that Java application server
+you've been running is eating up a lot of the memory
+that could otherwise cache disk access. Keep in mind that Linux, like
+most modern operating systems, considers caching disk I/O an optional
+feature. It doesn't reserve any memory for it. So
+when free memory is low, MySQL can really suffer because MyISAM
+tables expect the OS to do some read caching.</P>
+
+<A NAME="hpmysql-CHP-6-SECT-1.2.1"></A>
+<H5 class="docSection3Title">6.1.2.1 MySQL's buffers and caches</H5>
+
+<P class="docText"><A NAME="hpmysql-CHP-6-ITERM-1461"></A>By
+<A NAME="hpmysql-CHP-6-ITERM-1462"></A>adjusting how much
+memory MySQL uses, you can often realize significant performance
+improvements. To do that effectively, you first need to understand
+how MySQL uses memory. Most of the memory MySQL allocates is used for
+various internal buffers and caches. These buffers fall into two
+major groups: <I>global
+buffers</I><A NAME="hpmysql-CHP-6-ITERM-1463"></A> and
+<I>per-connection</I> buffers. As their name implies,
+global buffers are shared among all the connections (or threads) in
+MySQL.</P>
+
+<P class="docText">The two most important global buffers are the
+<A NAME="hpmysql-CHP-6-ITERM-1464"></A>MyISAM key buffer
+(<TT>key_buffer_size</TT><A NAME="hpmysql-CHP-6-ITERM-1465"></A>)
+and <A NAME="hpmysql-CHP-6-ITERM-1466"></A>InnoDB's buffer pool
+(<TT>innodb_buffer_pool_size</TT><A NAME="hpmysql-CHP-6-ITERM-1467"></A>).
+The MyISAM key buffer is where MySQL caches frequently used blocks of
+index data for MyISAM tables. The less often MySQL needs to hit the
+disk to scan a table's index, the faster queries
+will be. If possible, consider making the key buffer large enough to
+hold the indexes for your most actively used tables—if not all
+your tables. By adding up the size of the <I>.MYI</I>
+files for the tables, you'll have a good idea how
+large to set the buffer.</P>
+
+<P class="docText">MySQL doesn't cache rows for MyISAM
+tables—only indexes. InnoDB, on the other hand, caches index
+and row data together in its buffer pool. As you'll
+recall from <A class="docLink" HREF="hpmysql-CHP-4.html#hpmysql-CHP-4">Chapter 4</A>, InnoDB uses clustered
+indexes. Because it stores the index and row data together,
+it's only natural to cache the index and row data in
+memory when possible.</P>
+
+<P><A NAME="hpmysql-CHP-6-SIDEBAR-1"></A><TABLE CELLSPACING="0" WIDTH="90%" BORDER="1"><TR><TD>
+<H2 class="docSidebarTitle">Buying Server Hardware</H2>
+
+<P class="docText"><A NAME="hpmysql-CHP-6-ITERM-1468"></A><A NAME="hpmysql-CHP-6-ITERM-1469"></A>When you shop for new database
+hardware, either with the intention to build yourself or to buy from
+a big-name vendor, there are many details to consider.
+What's the difference between the $4,000 server sold
+by a big name vendor such as IBM, HP, or Dell, and the seemingly
+equivalent $2,300 unit that your favorite "white
+box" company is selling? There are several, and some
+affect MySQL performance. Let's have a look.</P>
+
+<A NAME="hpmysql-CHP-6-ITERM-1470"></A><A NAME="hpmysql-CHP-6-ITERM-1471"></A><A NAME="hpmysql-CHP-6-ITERM-1472"></A><A NAME="hpmysql-CHP-6-ITERM-1473"></A><A NAME="hpmysql-CHP-6-ITERM-1474"></A><A NAME="hpmysql-CHP-6-ITERM-1475"></A><A NAME="hpmysql-CHP-6-ITERM-1476"></A><A NAME="hpmysql-CHP-6-ITERM-1477"></A><DL class="docList"><br><p><DT><I><span class="docPubcolor">Memory speed</span></I></DT></p>
+<DD>
+<P class="docList"><A NAME="hpmysql-CHP-6-ITERM-1470"></A>The
+CPU can access data faster if it's stored in PC3700
+memory than older PC133 memory. Be sure to get the fastest system bus
+you can and memory to match. The less time the CPU spends waiting for
+data to arrive, the more work it can get done in a given amount of
+time. Server-class hardware often uses Error Checking and Correcting
+(ECC) memory that can detect flaws in memory that result from aging
+and outside factors such as radiation and cosmic rays.</P>
+</DD>
+<br><p><DT><I><span class="docPubcolor">CPU cache</span></I></DT></p>
+<DD>
+<P class="docList"><A NAME="hpmysql-CHP-6-ITERM-1471"></A><A NAME="hpmysql-CHP-6-ITERM-1472"></A>Frequently accessed memory is cached by
+the CPU in its level 1, 2, or 3 cache. The larger cache you can get,
+the better.</P>
+</DD>
+<br><p><DT><I><span class="docPubcolor">Multiple I/O channels</span></I></DT></p>
+<DD>
+<P class="docList"><A NAME="hpmysql-CHP-6-ITERM-1473"></A>More
+expensive "server class" systems
+often have multiple, separate I/O channels rather than a single
+shared bus. That means the data moving between main memory and your
+disk controller doesn't interfere with the data path
+between the CPU and your network card. Again, this means the CPU
+spends less time waiting for data to arrive or depart.</P>
+
+<P class="docList">Unfortunately, this difference doesn't show up until
+a the system is under a fair amount of stress. If you take a normal
+white box system and a server class system and compare them with a
+simple benchmark, they may score the same. The white box might even
+score higher. But when they are under real-world production loads,
+the white box could perform miserably.</P>
+</DD>
+<br><p><DT><I><span class="docPubcolor">Redundant power</span></I></DT></p>
+<DD>
+<P class="docList"><A NAME="hpmysql-CHP-6-ITERM-1474"></A>Having multiple power supplies
+won't make your server any faster. It will, however,
+allow the server to keep running if the primary supply dies. Given
+the choice between good performance and no performance, choose
+wisely. And, if you plug them into different power sources,
+you're protected in case a fuse or circuit breaker
+dies.</P>
+</DD>
+<br><p><DT><I><span class="docPubcolor">Hot-swappable disks</span></I></DT></p>
+<DD>
+<P class="docList"><A NAME="hpmysql-CHP-6-ITERM-1475"></A><A NAME="hpmysql-CHP-6-ITERM-1476"></A>Hot-swappable RAID disks are a valuable
+feature not all servers provide. Not having them means that you can
+survive a disk failure, but you'll eventually need
+to shut down the machine to swap out the bad disk. The only way
+around this is if there's room for a spare disk (or
+<I>hot spare</I>) the RAID system can bring online in
+the event of a failure. When running a RAID array in
+"degraded" mode (missing a disk),
+you're either sacrificing performance, redundancy,
+or both. You probably don't want to do either one
+for very long!</P>
+<P class="docList">On a similar note, many name-brand servers provide battery-backed
+RAID controllers that ensure unwritten changes do get written to disk
+when power is restored. This boosts performance as well, because the
+writes can be considered completed when they are written to the
+controllers memory, rather than actually waiting for the physical
+disk writes to complete. Unfortunately, the caches provided by most
+vendors are relatively small.</P>
+</DD>
+<br><p><DT><I><span class="docPubcolor">Gigabit network or multiple network ports </span></I></DT></p>
+<DD>
+<P class="docList"><A NAME="hpmysql-CHP-6-ITERM-1477"></A>Server-class hardware typically comes
+with better networking options than your run-of-the-mill desktop or
+laptop. Specifically you'll either see gigabit
+Ethernet or dual Ethernet ports (often 100 Mbit). Having multiple
+network ports may be useful when setting up replication, as
+you'll see in <A class="docLink" HREF="hpmysql-CHP-7.html#hpmysql-CHP-7">Chapter 7</A>.</P>
+</DD>
+</DL>
+
+<P class="docText">It can be very tempting, especially if buying a number of servers for
+a cluster, to consider skimping on "the little
+things" like how much CPU cache is onboard, or the
+speed of the memory, because those little things, over the cost of a
+couple hundred machines, can add up. Resist that urge, when you are
+building a singer server or replication master. It is one of the few
+times that "throwing money at it"
+can make your life significantly more pleasant down the road.</P>
+
+<P class="docText">On the other hand, if you want to build the next Google, your goal is
+probably to buy the greatest number of inexpensive machines as
+possible and to scale by simply adding more of them later on.</P>
+</TD></TR></TABLE></P><br>
+
+
+
+<A NAME="hpmysql-CHP-6-SECT-1.3"></A>
+<H4 class="docSection2Title">6.1.3 Network</H4>
+
+<P class="docText"><A NAME="hpmysql-CHP-6-ITERM-1478"></A><A NAME="hpmysql-CHP-6-ITERM-1479"></A>The
+performance of your network usually doesn't have
+much bearing on MySQL. In most deployments, clients are very near the
+servers—often connected to the same switch—so latency is
+low, and available bandwidth is quite high. But there are less common
+circumstances in which the network can get in the way.</P>
+
+<P class="docText"><A NAME="hpmysql-CHP-6-ITERM-1480"></A><A NAME="hpmysql-CHP-6-ITERM-1481"></A>Duplex mismatch is a common network
+configuration problem that often goes unnoticed until load begins to
+increase. When it does, by all appearances MySQL is sending results
+very slowly to clients. But when you check the server, you find the
+CPU is nearly idle, and the disks aren't working
+very hard either. For whatever reason, there's a lot
+of 100-Mbit Ethernet equipment that has trouble auto-sensing the
+proper settings. Be sure your server and switch agree on either half
+or full duplex operation.</P>
+
+<P class="docText">Some MySQL deployments use <A NAME="hpmysql-CHP-6-ITERM-1482"></A>Network Attached Storage
+(NAS) devices, such as a Network Appliance filer, rather than local
+disks for MySQL's data. The idea is that if the
+server dies, you can simply swap in a new one without having to worry
+about copying data or dealing with synchronization issues. (See <A class="docLink" HREF="hpmysql-CHP-8.html#hpmysql-CHP-8">Chapter 8</A> for more on this topic.) While
+that's all true, in dealing with a configuration
+it's critical that your network be as uncongested as
+possible. Ideally, you'll want to have a fast
+dedicated network path between your MySQL server and the storage
+server. Typically that means installing a second Network Interface
+Card (NIC) that is connected to a private network with your storage
+server.</P>
+
+<P class="docText">In a <A NAME="hpmysql-CHP-6-ITERM-1483"></A>replication setup consisting of a single
+master and many slaves, it's quite possible to
+saturate a single network interface on the master with all the
+traffic generated by the slaves. This isn't because
+of something MySQL does horribly wrong. It's really
+just a matter of scale. Imagine that you have 50 slaves replicating
+from the master. Under normal circumstances, each slave uses a
+relatively small amount of bandwidth—say 100 KB/sec. That adds
+up to 5 Mbit/sec of bandwidth required for 50 slaves. If
+you're using 100-Mbit Ethernet,
+that's not a big deal. But what if your master
+begins getting more inserts per second, or large inserts that contain
+<TT>BLOB</TT> fields? You may reach the point that each
+slave needs 800 KB/sec of bandwidth to keep up with the
+master's data stream. At that point,
+you're looking at 40 Mbit/sec of data on your
+100-MBit network.</P>
+
+<P class="docText"><A NAME="hpmysql-CHP-6-ITERM-1484"></A>At that point you should begin to
+worry. One hundred Mbit/sec is the network's
+theoretical maximum bandwidth. In reality its capacity is quite a bit
+less that. Many network engineers use 50% utilization as a rule of
+thumb for capacity planning. Once they consistently see utilization
+that high, they begin thinking about how to break up the network to
+better isolate the traffic. The trouble is, that
+doesn't help much in this case. Because
+there's a single master, all slaves must read from
+it.</P>
+
+<P class="docText">There are three possible solutions to this problem. First, you can
+take a load off the master by introducing a second tier of slaves
+that replicate from the master. They, in turn, serve as masters for
+the 50 slaves. See <A class="docLink" HREF="hpmysql-CHP-7.html#hpmysql-CHP-7">Chapter 7</A> for more
+information about multitiered replication architectures.</P>
+
+<P class="docText">Another option is to add a second network card to the master and
+split the 50 slaves across multiple switches. Each of the
+master's NICs are connected to a different switch.
+The problem is that you'd need to remember which
+server is on which switch port and adjust the slave configuration
+appropriately.</P>
+
+<P class="docText">A final solution is to compress the data stream between the master
+and slaves. This assumes that the data isn't already
+compressed and that the master has sufficient CPU power to handle
+compressing 50 outbound data streams while handling a high rate of
+inserts. Given the rate at which CPUs are evolving, this will soon be
+feasible. <A class="docLink" HREF="hpmysql-CHP-7.html#hpmysql-CHP-7">Chapter 7</A> discusses options for
+encrypting and compressing replication.</P>
+
+<P class="docText">Performance can become an issue when your network links have
+relatively high latency. This is typically a problem when the client
+and server are separated by a great distance or by an inherently
+high-latency link, such as dial-up or satellite. Your goal should be
+to keep the clients and servers as close (in network sense) to each
+other as possible. If you can't do this, consider
+setting up slaves that are close to your most distant clients.</P>
+
+<P class="docText">At first glance, this may not seem like a server-performance issue,
+but a high-latency or low-bandwidth network can really slow things
+down on the server side. When a client performs a large
+<TT>SELECT</TT> on a MyISAM table, it obtains a read lock
+on the data. Until the <TT>SELECT</TT> completes, the
+server won't release the lock and service any
+pending write requests for the table. If the client asking for the
+data happens to be far away or on a flaky or congested network, it
+will take a long time to retrieve the data and release the lock. The
+end result is that things get backed up on the server side even
+though the server has sufficient CPU and disk I/O to do the
+work.<A NAME="hpmysql-CHP-6-ITERM-1485"></A><A NAME="hpmysql-CHP-6-ITERM-1486"></A><A NAME="hpmysql-CHP-6-ITERM-1487"></A></P>
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="hpmysql-CHP-6.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="hpmysql-CHP-6-SECT-2.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>
