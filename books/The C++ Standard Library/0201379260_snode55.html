@@ -1,0 +1,177 @@
+<HTML><HEAD><META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=iso-8859-1">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="6.8 Implementing Reference Semantics"-->
+<LINK REL="stylesheet" href="FILES/sbolM.css">
+</HEAD>
+<BODY link="#354278" vlink="#000066" alink="#000080" topmargin="0">
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right"><a href="0201379260_snode54.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a> <a href="0201379260_snode56.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a></td></table>
+<FONT><h3>6.8
+Implementing Reference Semantics</h3>
+			<p>In general, STL container classes provide value semantics and not reference semantics. Thus, they create internal copies of the elements they contain and return copies of those elements. <a href="0201379260_snode43.html#3">Section 5.10.2</a>, discusses the pros and cons of this approach and touches on its consequences. To summarize, if you want reference semantics in STL containers (whether because copying elements is expensive or because identical elements will be shared by different collections), you should use a smart pointer class that avoids possible errors. Here is one possible solution to the problem. It uses an auxiliary smart pointer class that enables reference counting for the objects to which the pointers refer<fonT SIZe="1"><sup><A HREf="#FOOTNOTE-33">[33]</a></sup></font>
+:</p>
+<blockquote><fONT SIZe="1">
+<P ClASs="footnote">
+<SUP><A NAme="FOOTNOTE-33">[33]</a></sUP>
+Many thanks to Greg Colvin and Beman Dawes for feedback on implementing this class.</P>
+</Font></bLOCKquotE>
+
+			<PRE>
+				
+   <i>// cont/countptr.hpp</i>
+
+   #ifndef COUNTED_PTR_HPP
+   #define COUNTED_PTR_HPP
+
+   /*<i>class for counted reference semantics</i>
+    *-<i>deletes the object to which it refers when the last</i> CountedPtr
+    * <i>that refers to it is destroyed</i>
+    */
+   template &lt;class T&gt;
+   class CountedPtr {
+     private:
+       T* ptr;        <i>// pointer to the value</i>
+       long* count;   <i>// shared number of owners</i>
+
+     public:
+       <i>//initialize pointer with existing pointer</i>
+       <i>//-requires that the pointer</i> p <i>is a return value of new</i>
+       explicit CountedPtr (T* p=0)
+        : ptr(p), count(new long(1)) {
+       }
+
+       <i>//copy pointer (one more owner)</i>
+       CountedPtr (const CountedPtr&lt;T&gt;&amp; p) throw()
+        : ptr(p.ptr), count(p.count) {
+           ++*count;
+       }
+
+       <i>//destructor (delete value if this was the last owner)</I>
+       ~CountedPtr () throw() {
+           dispose();
+       }
+
+       <I>//assignment (unshare old and share new value)</I>
+       CountedPtr&lt;T&gt;&amp; operator= (const CountedPtr&lt;T&gt;&amp; p) throw() {
+           if (this != &amp;p) {
+               dispose();
+               ptr = p.ptr;
+               count = p.count;
+               ++*count;
+           }
+           return *this;
+       }
+
+       <I>//access the value to which the pointer refers</I>
+       T&amp; operator*() const throw() {
+           return *ptr;
+       }
+       T* operator-&gt;() const throw() {
+           return ptr;
+       }
+
+     private:
+       void dispose() {
+           if (--*count == 0) {
+                delete count;
+                delete ptr;
+           }
+       }
+   };
+
+   #endif /*COUNTED_PTR_HPP*/
+
+			</PrE>
+
+			<P>This class resembles the standard <tT ClASS="monofont">auto_ptr</TT> class (see <A href="0201379260_snode27.html">Section 4.2</A>,). It expects that the values with which the smart pointers are initialized are return values of operator <TT Class="monofont">new.</TT> However, unlike <TT clasS="monofont">auto_ptr,</TT> it allows you to copy these smart pointers while retaining the validity of the original and the copy. Only if the last smart pointer to the object gets destroyed does the value to which it refers get <Tt class="monofont">deleted.</tt></p>
+
+			<p>You could improve the class to allow automatic <tt class="monofont">type</tt> conversions or the ability to transfer the ownership away from the smart pointers to the caller.</p>
+
+			<p>The following program demonstrates how to use this class:</P>
+
+			<PRE>
+				
+   <I>// cont/refsem1.cpp</I>
+
+   #include &lt;iostream&gt;
+   #include &lt;list&gt;
+   #include &lt;deque&gt;
+   #include &lt;algorithm&gt;
+   #include "countptr.hpp"
+   using namespace std;
+
+   void printCountedPtr (CountedPtr&lt;int&gt; elem)
+   {
+       cout &lt;&lt; *elem &lt;&lt; ' ';
+   }
+
+   int main()
+   {
+       <i>//array of integers (to share in different containers)</I>
+       static int values[] ={3, 5, 9, 1,6,4};
+
+       <I>//two different collections</i>
+       typedef CountedPtr&lt;int&gt; IntPtr;
+       deque&lt;IntPtr&gt; coll1;
+       list&lt;IntPtr&gt; coll2;
+
+       /*<I>insert shared objects into the collections</I>
+        *-<i>same order in</I> coll1
+        *-<I>reverse order in</I> coll2
+        */
+       for (int i=0; i&lt;sizeof(values)/sizeof(values[0] ); ++i) {
+           IntPtr ptr(new int(values[i]));
+           coll1.push_back(ptr);
+           coll2.push_front(ptr);
+       }
+
+       <I>//print contents of both collections</I>
+       for_each (coll1.begin(), coll1.end(),
+                 printCountedPtr);
+       cout &lt;&lt; endl;
+       for_each (coll2.begin(), coll2.end(),
+                 printCountedPtr);
+       cout &lt;&lt; endl &lt;&lt; endl;
+
+       /*<I>modify values at different places</i>
+        *-<i>square third value in</i> coll1
+        *-<i>negate first value in</I> coll1
+        *-<I>set first value in</I> coll2 <I>to</i> 0
+        */
+       *coll1[2] *= *coll1[2];
+       (**coll1.begin()) *= -1;
+       (**coll2.begin()) = 0;
+
+       <i>//print contents of both collections again</i>
+       for_each (coll1.begin(), coll1.end(),
+                 printCountedPtr);
+       cout &lt;&lt; endl;
+       for_each (coll2.begin(), coll2.end(),
+                 printCountedPtr);
+       cout &lt;&lt; endl;
+   }
+
+			</pRE>
+
+			<P>The program has the following output:</P>
+
+			<pre>
+				
+   3 5 9 1 6 4
+   4 6 1 9 5 3
+
+   -3 5 81 1 6 0
+   0 6 1 81 5 -3
+
+			</pRE>
+
+			<P>Note that if you call an auxiliary function that saves one element of the collections (an <Tt class="monofont">IntPtr</tt>) somewhere else, the value to which it refers stays valid even if the collections get destroyed or all of their elements are removed.</p>
+
+			<p>See the Boost repository for C++ libraries at <a target="_blank" href="http://www.boost.org/default.htm">http://www.boost.org/</A> for a collection of different smart pointer classes as an extension of the C++ standard library. (Class <TT CLAsS="monofont">CountedPtr&lt;&gt;</Tt> will probably be called <TT cLASS="monofont">shared_ptr&lt;&gt;.</TT>)</p>
+
+		</fonT>
+ 
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right"><a href="0201379260_snode54.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a> <a href="0201379260_snode56.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a></td></table>
+</BODY></HTML>

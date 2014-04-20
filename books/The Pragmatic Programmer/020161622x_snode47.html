@@ -1,0 +1,156 @@
+<HTML><HEAD><META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=iso-8859-1">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="How to Balance Resources"-->
+<LINK REL="stylesheet" href="FILES/proquestM.css">
+</HEAD>
+<BODY link="#354278" vlink="#000066" alink="#000080" topmargin="0">
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right"><a href="020161622x_snode46.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a> <a href="020161622x_snode48.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a></td></table>
+<FONT><h3>How to Balance Resources</h3>
+			<p><i>"I brought you into this world, " my father would say," and I can take you out. It don't make no difference to me. I'll just make another one like you."</I></P>
+
+			<P><B>Bill Cosby, <i>Fatherhood</i></b></p>
+
+			<P>We all manage resources whenever we code: memory, transactions, threads, flies, timers—all kinds of things with limited availability. Most of the time, resource usage follows a predictable pattern: you allocate the resource, use it, and then deallocate it.</P>
+
+			<P>However, many developers have no consistent plan for dealing with resource allocation and deallocation. So let us suggest a simple tip:</P>
+
+			<div cLASS="note"><p class="notetitle"><b>Tip 35</b></p><p>
+
+				<p>Finish What You Start</p>
+
+			</p></div>
+<br>
+<br>
+
+			<P>This tip is easy to apply in most circumstances. It simply means that the routine or object that allocates a resource should be responsible for deallocating it. Let's see how it applies by looking at an example of some bad code—an application that opens a file, reads customer information from it, updates a field, and writes the result back. We've eliminated error handling to make the example clearer.</P>
+
+			<PRe>
+				
+    <b>void</b> readCustomer(<b>const char</b> *fName, Customer *cRec) {
+
+      cFile = fopen(fName, "<I>r+</i>");
+      fread(cRec, <B>sizeof</b>(*cRec), 1, cFile);
+    }
+
+    <b>void</b> writeCustomer(Customer *cRec) {
+
+      rewind(cFile);
+      fwrite (cRec, <B>sizeof</B>(*cRec), 1, cFile);
+      fclose(cFile);
+    }
+
+    <B>void</B> updateCustomer(<B>const char</b> *fName, <b>double</b> newBalance) {
+
+      Customer cRec;
+
+      readCustomer(fName, &amp;cRec);
+
+      cRec.balance = newBalance;
+
+      writeCustomer(&amp;cRec);
+    }
+</pRE>
+
+			<P>At first sight, the routine <Tt claSS="monofont">updateCustomer</TT> looks pretty good. It seems to implement the logic we require—reading a record, updating the balance, and writing the record back out. However, this tidiness hides a major problem. The routines <tt clASS="monofont">readCustomer</Tt> and <tt class="monofont">writeCustomer</tt> are tightly coupled<font size="1"><suP><A HRef="#FOOTNOTE-3">[3]</a></suP></fOnt>
+—they share the global variable <tT CLASs="monofont">cFile.readCustomer</tt> opens the file and stores the file pointer in <tT CLAss="monofont">cFile,</tt> and <TT CLass="monofont">writeCustomer</tT> uses that stored pointer to close the file when it finishes. This global variable doesn't even appear in the <TT Class="monofont">updateCustomer</tt> routine.</p>
+<blockquote><fonT SIZe="1">
+<p claSs="footnote">
+<Sup><a NAME="FOOTNOTE-3">[3]</A></sup>
+For a discussion of the dangers of coupled code, see <a href="020161622x_snode55.html">Decoupling and the Law of Demeter</a>.</p>
+</foNT></BLockqUOTE>
+
+				
+			<p>Why is this bad? Let's consider the unfortunate maintenance programmer who is told that the specification has changed—the balance should be updated only if the new value is not negative. She goes into the source and changes <tt class="monofont">updateCustomer:</tt></p>
+
+			<pre>
+				
+    <b>void</b> updateCustomer(<b>const char</b> *fName, <b>double</b> newBalance) {
+
+      Customer cRec;
+
+      readCustomer(fName, &amp;cRec);
+
+      <B>if</B> (newBalance &gt;= 0.0) {
+        cRec.balance = newBalance;
+
+        writeCustomer(&amp;cRec);
+      }
+    }
+</PRe>
+
+			<p>All seems fine during testing. However, when the code goes into production, it collapses after several hours, complaining of <i>too many open files.</i> Because <tT cLass="monofont">writeBalance</TT> is not getting called in some circumstances, the file is not getting closed.</P>
+
+			<P>A very bad solution to this problem would be to deal with the special case in <Tt claSS="monofont">updateCustomer:</TT></p>
+
+			<pre>
+				
+    <B>void</B> updateCustomer(<B>const char</B> *fName, <b>double</b> newBalance) {
+
+      Customer cRec;
+
+      readCustomer(fName, &amp;cRec);
+
+      <b>if</b> (newBalance &gt;= 0.0) {
+        cRec.balance = newBalance;
+
+        writeCustomer(&amp;cRec);
+      }
+      <B>else</B>
+        fclose(cFile);
+    }
+</PRe>
+
+			<p>This will fix the problem—the file will now get closed regardless of the new balance—but the fix now means that <i>three</i> routines are coupled through the global <tt class="monofont">cFile.</tt> We're falling into a trap, and things are going to start going downhill rapidly if we continue on this course.</p>
+
+			<p>The <i>finish what you start</i> tip tells us that, ideally, the routine that allocates a resource should also free it. We can apply it here by refactoring the code slightly:</p>
+
+			<prE>
+				
+    <B>void</B> readCustomer(FILE *cFile, Customer *cRec) {
+      fread(cRec, <B>sizeof</b>(*cRec), 1, cFile);
+    }
+
+    <b>void</b> writeCustomer(FILE *cFile, Customer *cRec) {
+      rewind(cFile);
+      fwrite(cRec, <b>sizeof</b>(*cRec), 1, cFile);
+    }
+
+    <B>void</b> updateCustomer(<B>const char</b> *fName, <b>double</b> newBalance) {
+      FILE *cFile;
+      Customer cRec;
+
+      cFile = fopen(fName, <I>"r+");    </I>  // &gt;---
+      readCustomer(cFile, &amp;cRec);        //     /
+      <B>if</B> (newBalance &gt;= 0.0) {           //     /
+        cRec.balance = newBalance;       //     /
+        writeCustomer(cFile, &amp;cRec);     //     /
+      }                                  //     /
+      fclose(cFile);                     // &lt;---
+    }
+</Pre>
+
+			<p>Now all the responsibility for the file is in the <tT CLAss="monofont">updateCustomer</tt> routine. It opens the file and (finishing what it starts) closes it before exiting. The routine balances the use of the file: the open and close are in the same place, and it is apparent that for every open there will be a corresponding close. The refactoring also removes an ugly global variable.</P>
+
+			<H4>Nest Allocations</H4>
+				<P>The basic pattern for resource allocation can be extended for routines that need more than one resource at a time. There are just two more suggestions:</p>
+
+				<ol tYPE="1">
+<Li>
+<p>Deallocate resources in the opposite order to that in which you allocate them. That way you won't orphan resources if one resource contains references to another.</p>
+</li>
+<li>
+<p>When allocating the same set of resources in different places in your code, always allocate them in the same order. This will reduce the possibility of deadlock. (If process A claims <tt class="monofont">resource1</tt> and is about to claim <tt cLASS="monofont">resource2,</tt> while process B has claimed <tt cLaSs="monofont">resource2</tt> and is trying to get <TT CLAss="monofont">resource1,</tt> the two processes will wait forever.)</P>
+
+					</LI>
+</Ol>
+
+				<p>It doesn't matter what kind of resources we're using—transactions, memory, files, threads, windows—the basic pattern applies: whoever allocates a resource should be responsible for deallocating it. However, in some languages we can develop the concept further.</p>
+
+			
+		</fONT>
+ 
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right"><a href="020161622x_snode46.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a> <a href="020161622x_snode48.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a></td></table>
+</BODY></HTML>

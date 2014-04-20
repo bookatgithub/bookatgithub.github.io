@@ -1,0 +1,490 @@
+<HTML><HEAD><META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=iso-8859-1">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="13.12 Input/Output Operators for User-Defined Types"-->
+<LINK REL="stylesheet" href="FILES/sbolM.css">
+</HEAD>
+<BODY link="#354278" vlink="#000066" alink="#000080" topmargin="0">
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right"><a href="0201379260_snode111.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a> <a href="0201379260_snode113.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a></td></table>
+<FONT><h3>13.12
+Input/Output Operators for User-Defined Types</h3>
+			<p>As mentioned earlier in this chapter, a major advantage of streams over the old I/O mechanism of C is the possibility that the stream mechanism can be extended to user-defined types. To do this, you must overload operators <tT CLAss="monofont">&lt;&lt;</tt> and <TT CLass="monofont">&gt;&gt;.</tT> This is demonstrated using a class for fractions in the following subsection.</P>
+
+			<A Name="1"></a><h4>13.12.1
+Implementing Output Operators</h4>
+				<p>In an expression with the output operator, the left operand is a stream and the right operand is the object to be written:</p>
+
+				<pre>
+					
+   <i>stream &lt;&lt; object</i>
+
+				</pre>
+
+				<p>According to language rules this can be interpreted in two ways:</p>
+
+				<ol tYPE="1" STArT="restarts">
+<Li><P>As <I>stream.</i>
+							<TT CLASs="monofont">operator&lt;&lt;</tt>(<i>object</I>)</P>
+</LI>
+<li><p>As <tT CLAss="monofont">operator&lt;&lt;</tt>(<I>stream,object</I>)</P>
+
+					</Li>
+</ol>
+
+				<p>The first way is used for built-in types. For user-defined types you have to use the second way because the stream classes are closed for extensions. All you have to do is implement global operator <tt class="monofont">&lt;&lt;</tt> for your user-defined type. This is rather easy, unless access to private members of the objects is necessary (which I cover later).</p>
+
+				<p>For example, to print an object of class <tt clasS="monofont">Fraction</TT> with the format <I>numerator/denominator,</I> you can write the following function:</P>
+
+				<pRE>
+					
+   <i>// io/frac1out.hpp</I>
+
+   #include &lt;iostream&gt;
+
+
+   inline
+   std::ostream&amp; operator &lt;&lt; (std::ostream&amp; strm, const Fraction&amp; f)
+   {
+       strm &lt;&lt; f.numerator() &lt;&lt; '/' &lt;&lt; f.denominator();
+       return strm;
+   }
+
+				</PrE>
+
+				<P>The function writes the numerator and the denominator, separated by the character <TT CLass="monofont">'/',</tT> to the stream that is passed as the argument. The stream can be a file stream, a string stream, or some other stream. To support the chaining of write operations or the access to the streams state in the same statement, the stream is returned by the function.</P>
+
+				<P>This simple form has two drawbacks:</P>
+
+				<ol tyPE="1" STart="restarts">
+<lI><P>Because <TT class="monofont">ostream</tt> is used in the signature, the function applies only to streams with the character type <tt class="monofont">char.</tt> If the function is intended only for use in Western Europe or in North America, this is no problem. On the other hand, a more general version requires only a little extra work, so it should at least be considered.</p>
+</li>
+<li><P>Another problem arises if a field width is set. In this case, the result is probably not what might be expected. The field width applies to the immediately following write; in this case, to the numerator. Thus, the statements</P>
+
+						<PRE>
+							
+   Fraction vat(16,100);  <I>// I'm German and we have a uniform VAT of 16%...</i>
+   std::cout &lt;&lt; "VAT: \"" &lt;&lt; std::left &lt;&lt; std::setw(8)
+             &lt;&lt; vat &lt;&lt; '"' &lt;&lt; std::endl;
+
+						</PRe>
+
+						<P>result in this output:</P>
+
+						<pRE>
+							
+   VAT: "16    /100"
+
+						</PRE>
+
+					</Li>
+</ol>
+
+				<p>The next version solves both of these problems:</P>
+
+				<PRE>
+					
+   <i>// io/frac2out.hpp</i>
+
+   #include &lt;iostream&gt;
+   #include &lt;sstream&gt;
+
+   template &lt;class charT, class traits&gt;
+   inline
+   std::basic_ostream&lt;charT,traits&gt;&amp;
+   operator &lt;&lt; (std::basic_ostream&lt;charT,traits&gt;&amp; strm,
+                const Fraction&amp; f)
+   {
+      <i>/* string stream</i>
+       <I>* - with same format</I>
+       <I>* - without special field width</I>
+       <i>*/</i>
+      std::basic_ostringstream&lt;charT,traits&gt; s;
+      s.copyfmt(strm);
+      s.width(0);
+
+      <i>// fill string stream</i>
+      s &lt;&lt; f.numerator() &lt;&lt; '/' &lt;&lt; f.denominator();
+
+      <I>// print string stream</I>
+      strm &lt;&lt; s.str();
+
+      return strm;
+   }
+
+				</PRe>
+
+				<p>The operator has become a template function that is parameterized to suit all kinds of streams. The problem with the field width is addressed by writing the fraction first to a string stream without setting any specific width. The constructed string is then sent to the stream passed as the argument. This results in the characters representing the fraction being written with only one write operation, to which the field width is applied. Thus, the statements</p>
+
+				<pre>
+					
+   Fraction vat (16,100);   <i>// I'm German...</i>
+   std::cout &lt;&lt; "VAT: \"" &lt;&lt; std::left &lt;&lt; std::setw(8)
+             &lt;&lt; vat &lt;&lt; '"' &lt;&lt; std::endl;
+
+				</pre>
+
+				<p>now produce the following output:</p>
+
+				<pre>
+					
+   VAT: "15/100 "
+
+				</pre>
+
+			
+			<h4>13.12.2
+Implementing Input Operators</h4>
+				<P>Input operators are implemented according to the same principle as output operators (described in the previous subsection). However, input incurs the likely problem of read failures. Input functions normally need special handling of cases in which reading might fail.</P>
+
+				<P>When implementing a read function you can choose between simple or flexible approaches. For example, the following function uses a simple approach. It reads a fraction without checking for error situations:</P>
+
+				<PRe>
+					
+   <I>// io/frac1in.hpp</I>
+
+   #include &lt;iostream&gt;
+
+
+   inline
+   std::istream&amp; operator &gt;&gt; (std::istream&amp; strm, Fraction&amp; f)
+   {
+       int n, d;
+
+       strm &gt;&gt; n;      <i>// read value of the numerator</I>
+       strm.ignore();  <I>// skip '/'</i>
+       strm &gt;&gt; d;      <I>// read value of the denominator</I>
+
+       f = Fraction(n,d);   <I>// assign the whole fraction</I>
+
+       return strm;
+   }
+
+				</PRe>
+
+				<p>This implementation has the problem that it can be used only for streams with the character type <tt CLASs="monofont">char.</tt> In addition, whether the character between the two numbers is indeed the character <tT CLAss="monofont">'/'</tt> is not checked.</P>
+
+				<P>Another problem arises when undefined values are read. When reading a zero for the denominator, the value of the read fraction is not well-defined. This problem is detected in the constructor of the class <TT class="monofont">Fraction</tt> that is invoked by the expression <tt class="monofont">Fraction(n,d).</tt> However, handling inside class <tt claSS="monofont">Fraction</TT> means that a format error automatically results in an error handling of the class <TT cLAsS="monofont">Fraction.</Tt> Because it is common practice to record format errors in the stream, it might be better to set <TT CLASs="monofont">ios_base::failbit</tt> in this case.</p>
+
+				<P>Lastly, the fraction passed by reference might be modified even if the read operation is not successful. This can happen, for example, when the read of the numerator succeeds, but the read of the denominator fails. This behavior contradicts common conventions established by the predefined input operators, and thus is best avoided. A read operation should be successful or have no effect.</P>
+
+				<P>The following implementation is improved to avoid these problems. It is also more flexible because it is parameterized to be applicable to all stream types:</P>
+
+				<pre>
+					
+   <i>// io/frac2in.hpp</I>
+
+   #include &lt;iostream&gt;
+
+   template &lt;class charT, class traits&gt;
+   inline
+   std::basic_istream&lt;charT,traits&gt;&amp;
+   operator &gt;&gt; (std::basic_istream&lt;charT,traits&gt;&amp; strm, Fraction&amp; f)
+   {
+       int n, d;
+
+       <I>// read value of numerator</I>
+       strm &gt;&gt; n;
+
+       <I>/* if available</i>
+        <i>* - read '/' and value of demonimator</i>
+        <i>*/</I>
+       if (strm.peek() == '/' ) {
+           strm.ignore();
+           strm &gt;&gt; d;
+       }
+       else {
+           d = 1;
+       }
+
+       <I>/* if denominator is zero</I>
+        <I>* - set</i> failbit <i>as I/O format error</i>
+        <i>*/</i>
+       if (d == 0) {
+           strm.setstate(std::ios::failbit);
+           return strm;
+       }
+
+       <i>/* if everything is fine so far</i>
+        <i>* change the value of the fraction</i>
+        <i>*/</i>
+       if (strm) {
+           f = Fraction(n,d);
+       }
+
+       return strm;
+   }
+
+				</pre>
+
+				<p>Here the denominator is read only if the first number is followed by the character <tt clasS="monofont">'/';</TT> otherwise, a denominator of one is assumed and the integer read is interpreted as the whole fraction. Hence, the denominator is optional.</P>
+
+				<P>This implementation also tests whether a denominator with value <Tt CLaSS="monofont">0</tT> was read. In this case, the <TT CLAss="monofont">ios_base::failbit</tt> is set, which might trigger a corresponding exception (see <A href="0201379260_snode104.html#7">Section 13.4.4</a>). Of course, the behavior can be implemented differently if the denominator is zero. For example, an exception could be thrown directly, or the check could be skipped so that the fraction is initialized with zero, which would throw the appropriate exception by class <tt CLASs="monofont">Fraction.</tt></p>
+
+				<P>Lastly, the state of the stream is checked and the new value is assigned to the fraction only if no input error occurred. This final check should always be done to make sure that the value of an object is changed only if the read was successful.</P>
+
+				<P>Of course, it can be argued whether it is reasonable to read integers as fractions. In addition, there are other subtleties that may be improved. For example, the numerator must be followed by the character <Tt class="monofont">'/'</tt> without separating whitespaces. But the denominator may be preceded by arbitrary whitespaces because normally these are skipped. This hints at the complexity involved in reading nontrivial data structures.</p>
+
+			
+			<h4>13.12.3
+Input/Output Using Auxiliary Functions</h4>
+				<p>If the implementation of an I/O operator requires access to the private data of an object, the standard operators should delegate the actual work to auxiliary member functions. This technique also allows polymorphic read and write functions. This might look as follows:</p>
+
+				<pre>
+					
+   class Fraction {
+     ...
+     public:
+       virtual void printOn (std::ostream&amp; strm) const; <i>// output</i>
+       virtual void scanFrom (std::istream&amp; strm);      <i>// input</i>
+       ...
+   };
+
+   std::ostream&amp; operator &lt;&lt; (std::ostream&amp; strm, const Fraction&amp; f)
+   {
+       f.printOn (strm);
+       return strm;
+   }
+
+   std::istream&amp; operator &gt;&gt; (std::istream&amp; strm, Fraction&amp; f)
+   {
+       f.scanFrom (strm);
+       return strm;
+   }
+
+				</pRE>
+
+				<P>A typical example is the direct access to the numerator and denominator of a fraction during input:</P>
+
+				<PRe>
+					
+   void Fraction::scanFrom (std::istream&amp; strm)
+   {
+       ...
+       <I>// assign values directly to the components</I>
+       num = n;
+       denom = d;
+   }
+
+				</pRE>
+
+				<p>If a class is not intended to be used as a base class, the I/O operators can be made <TT CLASs="monofont">friends</tt> of the class. However, note that this approach reduces the possibilities significantly when inheritance is used. Friend functions cannot be virtual; so as a result, the wrong function might be called. For example, if a reference to a base class actually refers to an object of a derived class and is used as an argument for the input operator, the operator for the base class is called. To avoid this problem, derived classes should not implement their own I/O operators. Thus, the implementation sketched previously is more general than the use of friend functions. It should be used as a standard approach, although most examples use friend functions instead.</p>
+
+			
+			<A NAMe="4"></a><h4>13.12.4
+User-Defined Operators Using Unformatted Functions</h4>
+				<P>The I/O operators implemented in the previous subsections delegate most of the work to some predefined operators for formatted I/O. That is, operators <TT Class="monofont">&lt;&lt;</TT> and <TT class="monofont">&gt;&gt;</tt> are implemented in terms of the corresponding operators for more basic types.</p>
+
+				<p>The I/O operators defined in the C++ standard library are defined differently. The common scheme used for these operators is as follows: First, with some preprocessing the stream is prepared for actual I/O. Then the actual I/O is done, followed by some postprocessing. This scheme should be used for your own I/O operators, too, to provide consistency for I/O operators.</p>
+
+				<p>The classes <tt class="monofont">basic_istream</tt> and <tT CLASS="monofont">basic_ostream</tT> each define an auxiliary class <Tt CLaSS="monofont">sentry.</TT> The constructor of these classes does the preprocessing, and the destructor does the corresponding postprocessing. These classes replace the member functions that were used in former implementations of the IOStream library <TT clasS="monofont">(ipfx(), isfx(), opfx(),</TT> and <Tt claSS="monofont">osfx()</TT>). Using the new classes ensures that the postprocessing is invoked even if the I/O is aborted with an exception.</p>
+
+				<p>If an I/O operator uses a function for unformatted I/O or operates directly on the stream buffer, the first thing to be done should be the construction of a corresponding <tt CLASs="monofont">sentry</tt> object. The remaining processing should then depend on the state of this object, which indicates whether the stream is OK. This state can be checked using the conversion of the <tt class="monofont">sentry</tt> object to <tt class="monofont">bool.</tt> Thus, I/O operators generally look like this:</P>
+
+				<PRE>
+					
+   sentry se(strm);     <I>// indirect pre- and postprocessing</I>
+   if (se) {
+       ...              <i>// the actual processing</I>
+   }
+
+				</PrE>
+
+				<P>The <tT CLASS="monofont">sentry</tt> object takes the stream <tt CLASs="monofont">strm,</tt> on which the preprocessing and postprocessing should be done, as the constructor argument.</p>
+
+				<P>The additional processing is used to arrange general tasks of the I/O operators. These tasks include synchronizing several streams, checking whether the stream is OK, and skipping whitespaces, as well as possibly implementation-specific tasks. For example, in a multithreaded environment, the additional processing can be used for corresponding locking.</P>
+
+				<P>For input streams, the <Tt claSS="monofont">sentry</TT> object can be constructed with an optional Boolean value that indicates whether skipping of whitespace should be avoided even though the flag <tt class="monofont">skipws</tt> is set:</p>
+
+				<pre>
+					
+   sentry se(strm,true);    <i>// don't skip whitespaces during the additional processing</i>
+
+				</pre>
+
+				<p>The following examples demonstrate this for class Row, which is used to represent the lines in a text processor or editor:</p>
+
+				<uL>
+<LI><P>The output operator writes a line by using the stream buffer's member function <TT cLAsS="monofont">sputn():</Tt></P>
+
+						<PRE>
+							
+   std::ostream&amp; operator&lt;&lt; (std::ostream&amp; strm, const Row&amp; row)
+   {
+      <I>// ensure pre- and postprocessing</I>
+      std::ostream::sentry se(strm);
+      if (se) {
+          <i>// perform the output</i>
+          strm.write(row.c_str(),row.len());      
+      }
+      
+      return strm;
+   }
+
+						</prE>
+
+					</LI>
+<Li><p>The input operator reads a line character-by-character in a loop. The argument <tt CLASs="monofont">true</tt> is passed to the constructor of the <tT CLAss="monofont">sentry</tt> object to avoid the skipping of whitespaces:</p>
+
+						<pre>
+							
+   std::istream&amp; operator&gt;&gt; (std::istream&amp; strm, Row&amp; row)
+   {
+       <i>/* ensure pre- and postprocessing</i>
+       * - true: <i>Yes, don't ignore leading whitespaces</i>
+       <i>*/</i>
+       std::istream::sentry se(strm,true);
+       if (se) {
+           <i>// perform the input</i>
+           char c;
+           row.clear();
+           while (strm.get(c) &amp;&amp; c != '\n') {
+               row.append(c);
+           }
+       }
+
+       return strm;
+   }
+
+						</pre>
+
+					</li>
+</UL>
+				<P>Of course, it is also possible to use this framework even if functions do not use unformatted functions for their implementation but use I/O operators instead. However, using <TT ClASs="monofont">basic_istream</TT> or <tT CLASS="monofont">basic_ostream</tt> members for reading or writing characters within code guarded by <tt CLASs="monofont">sentry</tt> objects is unnecessarily expensive. Whenever possible, the corresponding <tT CLAss="monofont">basic_streambuf</tt> should be used instead.</P>
+
+			
+			<H4>13.12.5
+User-Defined Format Flags</H4>
+				<P>When user-defined I/O operators are being written, it is often desirable to have formatting flags specific to these operators, probably set by using a corresponding manipulator. For example, it would be nice if the output operator for fractions, shown previously, could be configured to place spaces around the slash that separates numerator and denominator.</p>
+
+				<p>The stream objects support this by providing a mechanism to associate data with a stream. This mechanism can be used to associate corresponding data (for example, using a manipulator), and later retrieve the data. The class <tt class="monofont">ios_base</tt> defines the two functions <tt class="monofont">iword()</tt> and <tT CLASS="monofont">pword(),</tT> each taking an <Tt CLaSS="monofont">int</TT> argument as the index, to access a specific long&amp; or <TT clasS="monofont">void*</TT>&amp; respectively. The idea is that <Tt claSS="monofont">iword()</TT> and <tt clASS="monofont">pword()</Tt> access <tt class="monofont">long</tt> or <tt class="monofont">void*</tt> objects in an array of arbitrary size stored with a stream object. Formatting flags to be stored for a stream are then placed at the same index for all streams. The static member function <tt CLASS="monofont">xalloc()</Tt> of the class <TT cLAsS="monofont">ios_base</TT> is used to obtain an index that is not yet used for this purpose.</P>
+
+				<P>Initially, the objects accessed with <Tt claSS="monofont">iword()</TT> or <tt clASS="monofont">pword()</Tt> are set to <tt cLASS="monofont">0.</tt> This value can be used to represent the default formatting or to indicate that the corresponding data was not yet accessed. Here is an example:</p>
+
+				<pre>
+					
+   <i>// get index for new ostream data</i>
+   static const int iword_index = std::ios_base::xalloc();
+
+   <i>// define manipulator that sets this data</i>
+   std::ostream&amp; fraction_spaces (std::ostream&amp; strm)
+   {
+       strm.iword(iword_index) = true;
+       return strm;
+   }
+   std::ostream&amp; operator&lt;&lt; (std::ostream&amp; strm, const Fraction&amp; f)
+   {
+       <i>/* query the ostream data</i>
+        <i>* - if</i> true, <i>use spaces between numerator and denominator</i>
+        <i>* - if</i> false, <i>use no spaces between numerator and denominator</i>
+        <i>*/</I>
+       if (strm.iword(iword_index)) {
+           strm &lt;&lt; f.numerator() &lt;&lt; " / " &lt;&lt; f.denominator();
+       }
+       else {
+           strm &lt;&lt; f.numerator() &lt;&lt; "/" &lt;&lt; f.denominator();
+       }
+       return strm;
+    }
+
+				</PRE>
+
+				<P>This example uses a simple approach to the implementation of the output operator because the main feature to be exposed is the use of the function <Tt CLaSS="monofont">iword().</tT> The format flag is considered to be a Boolean value that defines whether spaces between numerator and denominator should be written.</P>
+
+				<P>In the first line, the function <TT Class="monofont">ios_base::xalloc()</TT> is used to obtain an index that can be used to store the format flag. The result of this call is stored in a constant because it is never modified. The function <TT clasS="monofont">fraction_spaces()</TT> is a manipulator that sets the <Tt claSS="monofont">int</TT> value that is stored at the index <tt class="monofont">iword_index</tt> in the integer array associated with the stream <tt class="monofont">strm</tt> to <tt cLASS="monofont">true.</TT> The output operator retrieves that value and writes the fraction according the value stored. If the value is <tT ClASs="monofont">false,</TT> the default formatting using no spaces is used. Otherwise, spaces are placed around the slash.</P>
+
+				<P>When <TT clasS="monofont">iword()</TT> and <Tt claSS="monofont">pword()</TT> are used, references to int or <tt clASS="monofont">void*</Tt> objects are returned. These references stay valid only until the next call of <tt class="monofont">iword()</tt> or <tt class="monofont">pword()</tt> for the corresponding stream object or until the stream object is destroyed. Normally, the results from <tt CLASS="monofont">iword()</Tt> and <TT cLAsS="monofont">pword()</TT> should not be saved. It is assumed that the access is fast, although it is not required that the data is really represented by using an array.</P>
+
+				<P>The function <Tt claSS="monofont">copyfmt()</TT> copies all format information (see page 615). This includes the arrays accessed with <tt clASS="monofont">iword()</Tt> and <tt cLASS="monofont">pword().</tt> This may pose a problem for the objects stored with a stream using <tt class="monofont">pword().</tt> For example, if a value is the address of an object, the address is copied instead of the object. If you copy only the address, it may happen that if the format of one stream is changed, the format of other streams would be affected. In addition, it may be desirable that an object associated with a stream using <tt class="monofont">pword()</tt> is destroyed when the stream is destroyed. So, a deep copy rather than a shallow copy may be necessary for such an object.</p>
+
+				<P>A callback mechanism is defined by <TT CLAsS="monofont">ios_base</Tt> to support behavior, such as making a deep copy if necessary or deleting an object when destroying a stream. The function <TT cLASS="monofont">register_callback()</TT> can be used to register a function that is called if certain operations are performed on the <tt clASS="monofont">ios_base</Tt> object. It is declared as follows:</p>
+
+				<prE>
+					
+   namespace std {
+     class ios_base {
+       public:
+         <I>// kinds of callback events</I>
+         enum event { erase_event, imbue_event, copyfmt_event };
+         <I>// type of callbacks</i>
+         typedef void (*event_callback) (event e, ios_base&amp; strm,
+                                         int arg);
+         <i>// function to register callbacks</i>
+         void register_callback (event_callback cb, int arg);
+         ...
+      };
+   }
+
+				</pRE>
+
+				<P><Tt class="monofont">register_callback()</tt> takes a function pointer as the first argument and an <tt class="monofont">int</tt> argument as the second. The <tt clASS="monofont">int</TT> argument is passed as the third argument when a registered function is called. It can, for example, be used to identify an index for <Tt CLaSS="monofont">pword()</tT> to signal which member of the array has to be processed. The argument <TT CLAss="monofont">strm</tt> that is passed to the callback function is the <TT CLass="monofont">ios_base</tT> object that caused the call to the callback function. The argument <TT Class="monofont">e</TT> identifies the reason why the callback function was called. The reasons for calling the callback functions are listed in <A href="0201379260_snode112.html#6">Table 13.40</a>.</p>
+
+				<a name="6"></a><p><table bordER="1" CELLsPAcINg="0" CELLPAddinG="1" WIDth="100%">
+<caPTIOn><h5>Table 13.40. Reasons for Callback Events</h5></cAPTIon><colgroup align="left" span="2">
+<tr>
+<TH VALIgN="top">
+<FoNT sIZE="2"><B>Event</B>
+								</Font></tH>
+<TH ValigN="top">
+<FONt sizE="2"><B>Reason</B>
+								</Font></th>
+</tr>
+<tr>
+<td valign="top">
+<font SIZE="2"><TT cLAsS="monofont">ios_base::imbue_event</Tt>
+								</FONT></TD>
+<td vaLIGN="top">
+<font SIZE="2">A locale is set with <tt clASS="monofont">imbue()</Tt>
+								</font></td>
+</tr>
+<tr>
+<td valign="top">
+<foNT SIZE="2"><tT ClASs="monofont">ios_base::erase_event</TT>
+								</FONT></td>
+<td VALIgn="top">
+<foNT SIze="2">The stream is destroyed or <tt CLASs="monofont">copyfmt()</tt> is used
+</font></td>
+</tr>
+<tr>
+<td valign="top">
+<FONT SIzE="2"><Tt CLaSS="monofont">ios_base::copy_event</TT>
+								</FOnt></td>
+<TD VAlign="top">
+<FONT size="2"><TT CLass="monofont">copyfmt()</tt> is used
+</font></td>
+</tr>
+</colgroup>
+</TABLE></P>
+
+				<p>If <TT cLAsS="monofont">copyfmt()</TT> is used, the callbacks are called twice for the object on which <TT Class="monofont">copyfmt()</TT> is called. First, before anything is copied, the callbacks are invoked with the argument <TT clasS="monofont">erase_event</TT> to do all the cleanup necessary (for example, deleting objects stored in the <Tt claSS="monofont">pword()</TT> array). The callbacks called are those registered for the object. After the format flags are copied, which includes the list of callbacks from the argument stream, the callbacks are called again, this time with the argument <tt class="monofont">copy_event.</tt> This pass can, for example, be used to arrange for deep copying of objects stored in the <tt class="monofont">pword()</tt> array. Note that the callbacks are also copied and the original list of callbacks is removed. Thus, the callbacks invoked for the second pass are the callbacks just copied.</p>
+
+				<p>The callback mechanism is very primitive. It does not allow callback functions to be unregistered, except by using <tT CLASS="monofont">copyfmt()</tT> with an argument that has no callbacks registered. Also, registering a callback function twice, even with the same argument, results in calling the callback function twice. It is, however, guaranteed that the callbacks are called in the opposite order of registration. This has the effect that a callback function registered from within some other callback function is not called before the next time the callback functions are invoked.</P>
+
+			
+			<h4>13.12.6
+Conventions for User-Defined Input/Output Operators</H4>
+				<P>Several conventions that should be obeyed by the implementations of your own I/O operators have been presented. They correspond to the behavior that is typical for the predefined I/O operators. To summarize, these conventions are the following:</p>
+
+				<UL>
+<LI><P>The output format should allow an input operator that can read the data without loss of information. Especially for strings, this is close to impossible because a problem with spaces arises. A space character in the string cannot be distinguished from a space character between two strings.</P>
+</li>
+<li><P>The current formatting specification of the stream should be taken into account when doing I/O. This applies especially to the width for writing.</P>
+</LI>
+<li><p>If an error occurs, an appropriate state flag should be set.</p>
+</LI>
+<LI><p>The objects should not be modified in case of an error. If multiple data is read, the data should first be stored in auxiliary objects before the value of the object passed to the read operator is set.</p>
+</li>
+<LI><P>Output should not be terminated with a newline, mainly because it is otherwise impossible to write other objects on the same line.</P>
+</li>
+<li><p>Even values that are too large should be read completely. After the read, a corresponding error flag should be set, and the value returned should be some meaningful value, such as the maximum value.</p>
+</li>
+<li><p>If a format error is detected, no character should be read, if possible.</p>
+
+					</li>
+</ul>
+			
+		</font>
+ 
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right"><a href="0201379260_snode111.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a> <a href="0201379260_snode113.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a></td></table>
+</BODY></HTML>

@@ -1,0 +1,141 @@
+<html><head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="5.3 Application Protocol Design"-->
+<link rel="STYLESHEET" type="text/css" href="FILES/style.css">
+<link rel="STYLESHEET" type="text/css" href="FILES/docsafari.css">
+<style type="text/css">	.tt1    {font-size: 10pt;}</style>
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<td class="tt1"><a href="NFO/lib.html">[ Team LiB ]</a></td><td valign="top" class="tt1" align="right">
+	<a href="0131429019_ch05lev1sec2.html"><img src="FILES/btn_prev.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+	<a href="0131429019_ch05lev1sec4.html"><img src="FILES/btn_next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="ch05lev1sec3"></A>
+<H3 class="docSection1Title">5.3 Application Protocol Design</H3>
+<P class="docText"><A NAME="idd1e12682"></A><A NAME="idd1e12685"></A>In <A class="docLink" HREF="0131429019_ch07.html#ch07">Chapter 7</A>, we'll discuss the advantages of breaking complicated applications up into cooperating processes speaking an application-specific command set or protocol with each other. All the good reasons for data file formats to be textual apply to these application-specific protocols as well.</P>
+<P class="docText">When your application protocol is textual and easily parsed by eyeball, many good things become easier. Transaction dumps become much easier to interpret. Test loads become easier to write.</P>
+<P class="docText">Server processes are often invoked by harness programs such as <span class="docEmphasis">inetd</span>(8)<A NAME="idd1e12704"></A> in such a way that the server sees commands on standard input and ships responses to standard output. We describe this "CLI server" pattern in more detail in <A class="docLink" HREF="0131429019_ch11.html#ch11">Chapter 11</A>.</P>
+<P class="docText">A CLI server<A NAME="idd1e12721"></A> with a command set that is designed for simplicity has the valuable property that a human tester will be able to type commands direct to the server process to probe the software's behavior.</P>
+<P class="docText">Another issue to bear in mind is the end-to-end design principle. Every protocol designer should read the classic <span class="docEmphasis">End-to-End Arguments in System Design</span> <A class="docLink" HREF="0131429019_app02.html#biblio75">[Saltzer]</A>. There are often serious questions about which level of the protocol stack should handle features like security and authentication; this paper provides some good conceptual tools for thinking about them. Yet a third issue is designing application protocols for good performance. We'll cover that issue in more detail in <A class="docLink" HREF="0131429019_ch12.html#ch12">Chapter 12</A>.</P>
+<P class="docText">The traditions of Internet application protocol design evolved separately from Unix before 1980.<sup class="docFootnote"><A class="docLink" HREF="#ch05en04">[4]</A></sup> But since the 1980s these traditions have become thoroughly naturalized into Unix practice.</P><blockquote><p class="docFootnote"><sup><A NAME="ch05en04">[4]</A></sup> One relic of this pre-Unix history is that Internet protocols normally use CR-LF as a line terminator rather than Unix's bare LF.</p></blockquote>
+<P class="docText">We'll illustrate the Internet style by looking at three application protocols that are both among the most heavily used, and are widely regarded among Internet hackers<A NAME="idd1e12748"></A> as paradigmatic: SMTP<A NAME="idd1e12752"></A><A NAME="idd1e12757"></A>, POP3<A NAME="idd1e12761"></A><A NAME="idd1e12766"></A>, and IMAP<A NAME="idd1e12770"></A><A NAME="idd1e12775"></A>. All three address different aspects of mail transport (one of the net's two most important applications, along with the World Wide Web), but the problems they address (passing messages, setting remote state, indicating error conditions) are generic to non-email application protocols as well and are normally addressed using similar techniques.</P>
+<A NAME="ch05lev2sec12"></A>
+<H4 class="docSection2Title">5.3.1 Case Study: SMTP, a Simple Socket Protocol</H4>
+<P class="docText"><A NAME="idd1e12786"></A><A NAME="idd1e12793"></A><A NAME="idd1e12798"></A><A class="docLink" HREF="#ch05ex07">Example 5.7</A> is an example transaction in SMTP (Simple Mail Transfer Protocol), which is described by RFC 2821. In the example, <span class="docEmphasis">C:</span> lines are sent by a mail transport agent (MTA)<A NAME="idd1e12814"></A> sending mail, and <span class="docEmphasis">S:</span> lines are returned by the MTA receiving it. Text <span class="docEmphasis">emphasized like this</span> is comments, not part of the actual transaction.</P>
+
+<H5 class="docExampleTitle"><A NAME="ch05ex07"></A>Example 5.7 An SMTP session example.</H5>
+
+<PRE>
+<span class="docEmphasis">C: &lt;client connects to service port 25&gt;</span>
+<span class="docEmphasis">C:</span> HELO snark.thyrsus.com                <span class="docEmphasis">sending host identifies self</span>
+<span class="docEmphasis">S:</span> 250 OK Hello snark, glad to meet you  <span class="docEmphasis">receiver acknowledges</span>
+<span class="docEmphasis">C:</span> MAIL FROM: &lt;esr@thyrsus.com&gt;          <span class="docEmphasis">identify sending user</span>
+<span class="docEmphasis">S:</span> 250 &lt;esr@thyrsus.com&gt;... Sender ok    <span class="docEmphasis">receiver acknowledges</span>
+<span class="docEmphasis">C:</span> RCPT TO: cor@cpmy.com                 <span class="docEmphasis">identify target user</span>
+<span class="docEmphasis">S:</span> 250 root... Recipient ok              <span class="docEmphasis">receiver acknowledges</span>
+<span class="docEmphasis">C:</span> DATA
+<span class="docEmphasis">S:</span> 354 Enter mail, end with "." on a line by itself
+<span class="docEmphasis">C:</span> Scratch called.  He wants to share
+<span class="docEmphasis">C:</span> a room with us at Balticon.
+<span class="docEmphasis">C:</span> .                                     <span class="docEmphasis">end of multiline send</span>
+<span class="docEmphasis">S:</span> 250 WAA01865 Message accepted for delivery
+<span class="docEmphasis">C:</span> QUIT                                  <span class="docEmphasis">sender signs off</span>
+<span class="docEmphasis">S:</span> 221 cpmy.com closing connection       <span class="docEmphasis">receiver disconnects</span>
+<span class="docEmphasis">C: &lt;client hangs up&gt;</span>
+</PRE>
+
+<P class="docText">This is how mail is passed among Internet machines. Note the following features: command-argument format of the requests, responses consisting of a status code followed by an informational message, the fact that the payload of the DATA command is terminated by a line consisting of a single dot.</P>
+<P class="docText">SMTP is one of the two or three oldest application protocols still in use on the Internet. It is simple, effective, and has withstood the test of time. The traits we have called out here are tropes that recur frequently in other Internet protocols. If there is any single archetype of what a well-designed Internet application protocol looks like, SMTP is it.</P>
+
+<A NAME="ch05lev2sec13"></A>
+<H4 class="docSection2Title">5.3.2 Case Study: POP3, the Post Office Protocol</H4>
+<P class="docText"><A NAME="idd1e12925"></A><A NAME="idd1e12932"></A><A NAME="idd1e12937"></A>Another one of the classic Internet protocols is POP3, the Post Office Protocol. It is also used for mail transport, but where SMTP is a 'push' protocol with transactions initiated by the mail sender, POP3 is a 'pull' protocol with transactions initiated by the mail receiver. Internet users with intermittent access (like dial-up connections) can let their mail pile up on a mail-drop machine, then use a POP3 connection to pull mail up the wire to their personal machines.</P>
+<P class="docText"><A class="docLink" HREF="#ch05ex08">Example 5.8</A> is an example POP3 session. In the example, <span class="docEmphasis">C:</span> lines are sent by the client, and <span class="docEmphasis">S:</span> lines by the mail server. Observe the many similarities with SMTP. This protocol is also textual and line-oriented, sends payload message sections terminated by a line consisting of a single dot followed by line terminator, and even uses the same exit command, QUIT. Like SMTP, each client operation is acknowledged by a reply line that begins with a status code and includes an informational message meant for human eyes.</P>
+
+<H5 class="docExampleTitle"><A NAME="ch05ex08"></A>Example 5.8 A POP3 example session.</H5>
+
+<PRE>
+<span class="docEmphasis">C: &lt;client connects to service port 110&gt;</span>
+<span class="docEmphasis">S:</span> +OK POP3 server ready &lt;1896.6971@mailgate.dobbs.org&gt;
+<span class="docEmphasis">C:</span> USER bob
+<span class="docEmphasis">S:</span> +OK bob
+<span class="docEmphasis">C:</span> PASS redqueen
+<span class="docEmphasis">S:</span> +OK bob's maildrop has 2 messages (320 octets)
+<span class="docEmphasis">C:</span> STAT
+<span class="docEmphasis">S:</span> +OK 2 320
+<span class="docEmphasis">C:</span> LIST
+<span class="docEmphasis">S:</span> +OK 2 messages (320 octets)
+<span class="docEmphasis">S:</span> 1 120
+<span class="docEmphasis">S:</span> 2 200
+<span class="docEmphasis">S:</span> .
+<span class="docEmphasis">C:</span> RETR 1
+<span class="docEmphasis">S:</span> +OK 120 octets
+<span class="docEmphasis">S: &lt;the POP3 server sends the text of message 1&gt;</span>
+<span class="docEmphasis">S:</span> .
+<span class="docEmphasis">C:</span> DELE 1
+<span class="docEmphasis">S:</span> +OK message 1 deleted
+<span class="docEmphasis">C:</span> RETR 2
+<span class="docEmphasis">S:</span> +OK 200 octets
+<span class="docEmphasis">S: &lt;the POP3 server sends the text of message 2&gt;</span>
+<span class="docEmphasis">S:</span> .
+<span class="docEmphasis">C:</span> DELE 2
+<span class="docEmphasis">S:</span> +OK message 2 deleted
+<span class="docEmphasis">C:</span> QUIT
+<span class="docEmphasis">S:</span> +OK dewey POP3 server signing off (maildrop empty)
+<span class="docEmphasis">C: &lt;client hangs up&gt;</span>
+</PRE>
+
+<P class="docText">There are a few differences. The most obvious one is that POP3 uses status tokens rather than SMTP's 3-digit status codes. Of course the requests have different semantics. But the family resemblance (one we'll have more to say about when we discuss the generic Internet metaprotocol later in this chapter) is clear.</P>
+
+<A NAME="ch05lev2sec14"></A>
+<H4 class="docSection2Title">5.3.3 Case Study: IMAP, the Internet Message Access Protocol</H4>
+<P class="docText"><A NAME="idd1e13057"></A><A NAME="idd1e13064"></A><A NAME="idd1e13069"></A>To complete our triptych of Internet application protocol examples, we'll look at IMAP, another post office protocol designed in a slightly different style. See <A class="docLink" HREF="#ch05ex09">Example 5.9</A>; as before, <span class="docEmphasis">C:</span> lines are sent by the client, and <span class="docEmphasis">S:</span> lines by the mail server. Text <span class="docEmphasis">emphasized like this</span> is comments, not part of the actual transaction.</P>
+
+<H5 class="docExampleTitle"><A NAME="ch05ex09"></A>Example 5.9 An IMAP session example.</H5>
+
+<PRE>
+<span class="docEmphasis">C: &lt;client connects to service port 143&gt;</span>
+<span class="docEmphasis">S:</span> * OK example.com IMAP4rev1 v12.264 server ready
+<span class="docEmphasis">C:</span> A0001 USER "frobozz" "xyzzy"
+<span class="docEmphasis">S:</span> * OK User frobozz authenticated
+<span class="docEmphasis">C:</span> A0002 SELECT INBOX
+<span class="docEmphasis">S:</span> * 1 EXISTS
+<span class="docEmphasis">S:</span> * 1 RECENT
+<span class="docEmphasis">S:</span> * FLAGS (\Answered \Flagged \Deleted \Draft \Seen)
+<span class="docEmphasis">S:</span> * OK [UNSEEN 1] first unseen message in /var/spool/mail/esr
+<span class="docEmphasis">S:</span> A0002 OK [READ-WRITE] SELECT completed
+<span class="docEmphasis">C:</span> A0003 FETCH 1 RFC822.SIZE                   <span class="docEmphasis">Get message sizes</span>
+<span class="docEmphasis">S:</span> * 1 FETCH (RFC822.SIZE 2545)
+<span class="docEmphasis">S:</span> A0003 OK FETCH completed
+<span class="docEmphasis">C:</span> A0004 FETCH 1 BODY[HEADER]                  <span class="docEmphasis">Get first message header</span>
+<span class="docEmphasis">S:</span> * 1 FETCH (RFC822.HEADER {1425}
+<span class="docEmphasis">&lt;server sends 1425 octets of message payload&gt;</span>
+<span class="docEmphasis">S:</span> )
+<span class="docEmphasis">S:</span> A0004 OK FETCH completed
+<span class="docEmphasis">C:</span> A0005 FETCH 1 BODY[TEXT]                    <span class="docEmphasis">Get first message body</span>
+<span class="docEmphasis">S:</span> * 1 FETCH (BODY[TEXT] {1120}
+<span class="docEmphasis">&lt;server sends 1120 octets of message payload&gt;</span>
+<span class="docEmphasis">S:</span> )
+<span class="docEmphasis">S:</span> * 1 FETCH (FLAGS (\Recent \Seen))
+<span class="docEmphasis">S:</span> A0005 OK FETCH completed
+<span class="docEmphasis">C:</span> A0006 LOGOUT
+<span class="docEmphasis">S:</span> * BYE example.com IMAP4rev1 server terminating connection
+<span class="docEmphasis">S:</span> A0006 OK LOGOUT completed
+<span class="docEmphasis">C: &lt;client hangs up&gt;</span>
+</PRE>
+
+<P class="docText">IMAP delimits payloads in a slightly different way. Instead of ending the payload with a dot, the payload length is sent just before it. This increases the burden on the server a little bit (messages have to be composed ahead of time, they can't just be streamed up after the send initiation) but makes life easier for the client, which can tell in advance how much storage it will need to allocate to buffer the message for processing as a whole.</P>
+<P class="docText">Also, notice that each response is tagged with a sequence label supplied by the request; in this example they have the form A000n, but the client could have generated any token into that slot. This feature makes it possible for IMAP commands to be streamed to the server without waiting for the responses; a state machine in the client can then simply interpret the responses and payloads as they come back. This technique cuts down on latency.</P>
+<P class="docText">IMAP (which was designed to replace POP3) is an excellent example of a mature and powerful Internet application protocol design, one well worth study and emulation.</P>
+
+
+<a href="0131429019_18071533.html"><img src="FILES/pixel.gif" width="1" height="1" border="0"></a><ul></ul></td></tr></table>
+<td></td>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<td class="tt1"><a href="NFO/lib.html">[ Team LiB ]</a></td><td valign="top" class="tt1" align="right">
+          <a href="0131429019_ch05lev1sec2.html"><img src="FILES/btn_prev.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+          <a href="0131429019_ch05lev1sec4.html"><img src="FILES/btn_next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+</body></html>

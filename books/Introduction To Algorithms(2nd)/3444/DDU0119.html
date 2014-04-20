@@ -1,0 +1,407 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>20.2 Mergeable-heap operations</title>
+<link rel="STYLESHEET" type="text/css" href="images/xpolecat.css">
+<link rel="STYLESHEET" type="text/css" href="images/ie.content.books24x7.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td align="left" width="30%">
+<div STYLE="MARGIN-LEFT: 0.15in;">
+<a href="DDU0118.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</div></td>
+<td align="center" width="40%">
+<a href="toc.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td align="right" width="30%">
+<div STYLE="MARGIN-RIGHT: 0.15in"><a href="DDU0120.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr>
+</table>
+<hr size="1">
+<br>
+<div class="chapter">
+<a name="ch20"></a>
+<div class="section">
+<h2 class="first-section-title">
+<a name="1450"></a><a name="ch20lev1sec2"></a><span class="section-titlelabel">20.2 </span>Mergeable-heap operations</h2>
+<p class="first-para">In this section, we describe and analyze the mergeable-heap operations as implemented for Fibonacci heaps. If only these operations<span class="unicode">-</span>MAKE-HEAP, INSERT, MINIMUM, EXTRACT-MIN, and UNION<span class="unicode">-</span>are to be supported, each Fibonacci heap is simply a collection of "unordered" binomial trees. An <b class="bold"><i class="emphasis">unordered binomial tree</i></b> is like a binomial tree, and it, too, is defined recursively. The unordered binomial tree <i class="emphasis">U</i><sub>0</sub> consists of a single node, and an unordered binomial tree <i class="emphasis">U<sub>k</sub></i> consists of two unordered binomial trees <i class="emphasis">U</i><sub><i class="emphasis">k</i>-1</sub> for which the root of one is made into <i class="emphasis">any</i> child of the root of the other. <a href="DDU0114.html#1388" target="_parent" class="chapterjump">Lemma 19.1</a>, which gives properties of binomial trees, holds for unordered binomial trees as well, but with the following variation on property 4 (see <a class="internaljump" href="#ch20ex02">Exercise 20.2-2</a>):<a name="1451"></a><a name="IDX-480"></a>
+</p>
+<ul class="simple-list">
+<li class="first-listitem">&nbsp;<div class="informaltable">
+<table border="0">
+<tbody>
+<tr valign="top">
+<td class="td" align="left">
+<p class="table-para">4<span class="unicode">&prime;</span>.</p>
+</td><td class="td" align="left">
+<p class="table-para">For the unordered binomial tree <i class="emphasis">U<sub>k</sub></i>, the root has degree <i class="emphasis">k</i>, which is greater than that of any other node. The children of the root are roots of subtrees <i class="emphasis">U</i><sub>0</sub>, <i class="emphasis">U</i><sub>1</sub>, . . . , <i class="emphasis">U</i><sub><i class="emphasis">k</i>-1</sub> in some order.</p>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</li>
+</ul>
+<p class="para">Thus, if an <i class="emphasis">n</i>-node Fibonacci heap is a collection of unordered binomial trees, then <i class="emphasis">D</i>(<i class="emphasis">n</i>) = lg <i class="emphasis">n</i>.</p>
+<p class="para">The key idea in the mergeable-heap operations on Fibonacci heaps is to delay work as long as possible. There is a performance trade-off among implementations of the various operations. If the number of trees in a Fibonacci heap is small, then during an EXTRACT-MIN operation we can quickly determine which of the remaining nodes becomes the new minimum node. However, as we saw with binomial heaps in <a href="DDU0115.html#1433" target="_parent" class="chapterjump">Exercise 19.2-10</a>, we pay a price for ensuring that the number of trees is small: it can take up to <span class="unicode">&#8486;</span>(lg <i class="emphasis">n</i>) time to insert a node into a binomial heap or to unite two binomial heaps. As we shall see, we do not attempt to consolidate trees in a Fibonacci heap when we insert a new node or unite two heaps. We save the consolidation for the EXTRACT-MIN operation, which is when we really need to find the new minimum node.</p>
+<div class="section">
+<h4 class="sect4-title">
+<a name="1452"></a><a name="ch20lev3sec3"></a>Creating a new Fibonacci heap</h4>
+<p class="first-para">To make an empty Fibonacci heap, the MAKE-FIB-HEAP procedure allocates and returns the Fibonacci heap object <i class="emphasis">H</i> , where <i class="emphasis">n</i>[<i class="emphasis">H</i> ] = 0 and <i class="emphasis">min</i>[<i class="emphasis">H</i> ] = NIL; there are no trees in <i class="emphasis">H</i> . Because <i class="emphasis">t</i>(<i class="emphasis">H</i>) = 0 and <i class="emphasis">m</i>(<i class="emphasis">H</i>) = 0, the potential of the empty Fibonacci heap is <span class="unicode">&Phi;</span>(<i class="emphasis">H</i>) = 0. The amortized cost of MAKE-FIB-HEAP is thus equal to its <i class="emphasis">O</i>(1) actual cost.</p>
+
+</div>
+<div class="section">
+<h4 class="sect4-title">
+<a name="1453"></a><a name="ch20lev3sec4"></a>Inserting a node</h4>
+<p class="first-para">The following procedure inserts node <i class="emphasis">x</i> into Fibonacci heap <i class="emphasis">H</i> , assuming that the node has already been allocated and that <i class="emphasis">key</i>[<i class="emphasis">x</i>] has already been filled in.</p>
+<div class="informalexample">
+<pre class="literallayout-normal">
+FIB-HEAP-INSERT(<i class="emphasis">H</i>, <i class="emphasis">x</i>)
+ 1  <i class="emphasis">degree</i>[<i class="emphasis">x</i>] <span class="unicode">&larr;</span> 0
+ 2  <i class="emphasis">p</i>[<i class="emphasis">x</i>] <span class="unicode">&larr;</span> NIL
+ 3  <i class="emphasis">child</i>[<i class="emphasis">x</i>] <span class="unicode">&larr;</span> NIL
+ 4  <i class="emphasis">left</i>[<i class="emphasis">x</i>] <span class="unicode">&larr;</span> <i class="emphasis">x</i>
+ 5  <i class="emphasis">right</i>[<i class="emphasis">x</i>] <span class="unicode">&larr;</span> <i class="emphasis">x</i>
+ 6  <i class="emphasis">mark</i>[<i class="emphasis">x</i>] <span class="unicode">&larr;</span> FALSE
+ 7  concatenate the root list containing <i class="emphasis">x</i> with root list <i class="emphasis">H</i>
+ 8  <b class="bold">if</b> <i class="emphasis">min</i>[<i class="emphasis">H</i>] = NIL or <i class="emphasis">key</i>[<i class="emphasis">x</i>] <span class="unicode">&lt;</span> <i class="emphasis">key</i>[<i class="emphasis">min</i>[<i class="emphasis">H</i>]]
+ 9     <b class="bold">then</b> <i class="emphasis">min</i>[<i class="emphasis">H</i>] <span class="unicode">&larr;</span> <i class="emphasis">x</i>
+10  <i class="emphasis">n</i>[<i class="emphasis">H</i>] <span class="unicode">&larr;</span> <i class="emphasis">n</i>[<i class="emphasis">H</i>] + 1
+</pre>
+</div>
+<a name="1454"></a><a name="IDX-481"></a>
+<p class="para">After lines 1<span class="unicode">-</span>6 initialize the structural fields of node <i class="emphasis">x</i>, making it its own circular, doubly linked list, line 7 adds <i class="emphasis">x</i> to the root list of <i class="emphasis">H</i> in <i class="emphasis">O</i>(1) actual time. Thus, node <i class="emphasis">x</i> becomes a single-node min-heap-ordered tree, and thus an unordered binomial tree, in the Fibonacci heap. It has no children and is unmarked. Lines 8<span class="unicode">-</span>9 then update the pointer to the minimum node of Fibonacci heap <i class="emphasis">H</i> if necessary. Finally, line 10 increments <i class="emphasis">n</i>[<i class="emphasis">H</i>] to reflect the addition of the new node. <a class="internaljump" href="#ch20fig02">Figure 20.2</a> shows a node with key 21 inserted into the Fibonacci heap of <a href="DDU0118.html#1444" target="_parent" class="chapterjump">Figure 20.1</a>.</p>
+<div class="figure">
+<a name="1455"></a><a name="ch20fig02"></a><span class="figuremediaobject"><a href="images/fig503%5F01%5F0%2Ejpg" NAME="IMG_591" target="_parent"><img src="images/fig503_01.jpg" height="76" width="350" alt="Click To expand" border="0"></a></span>
+<br style="line-height: 1">
+<span class="figure-title"><span class="figure-titlelabel">Figure 20.2: </span>Inserting a node into a Fibonacci heap. <i class="emphasis">(a)</i> A Fibonacci heap <i class="emphasis">H</i>. <i class="emphasis">(b)</i> Fibonacci heap <i class="emphasis">H</i> after the node with key 21 has been inserted. The node becomes its own min-heap-ordered tree and is then added to the root list, becoming the left sibling of the root.</span>
+</div>
+<p class="para">Unlike the BINOMIAL-HEAP-INSERT procedure, FIB-HEAP-INSERT makes no attempt to consolidate the trees within the Fibonacci heap. If <i class="emphasis">k</i> consecutive FIB-HEAP-INSERT operations occur, then <i class="emphasis">k</i> single-node trees are added to the root list.</p>
+<p class="para">To determine the amortized cost of FIB-HEAP-INSERT, let <i class="emphasis">H</i> be the input Fibonacci heap and <i class="emphasis">H</i><span class="unicode">&prime;</span> be the resulting Fibonacci heap. Then, <i class="emphasis">t</i>(<i class="emphasis">H</i><span class="unicode">&prime;</span>) = <i class="emphasis">t</i>(<i class="emphasis">H</i>)+1 and <i class="emphasis">m</i>(<i class="emphasis">H</i><span class="unicode">&prime;</span>) = <i class="emphasis">m</i>(<i class="emphasis">H</i>), and the increase in potential is</p>
+<p class="para">((<i class="emphasis">t</i>(<i class="emphasis">H</i>) + 1) + 2 <i class="emphasis">m</i>(<i class="emphasis">H</i>)) - (<i class="emphasis">t</i>(<i class="emphasis">H</i>) + 2 <i class="emphasis">m</i>(<i class="emphasis">H</i>)) = 1.</p>
+<p class="last-para">Since the actual cost is <i class="emphasis">O</i>(1), the amortized cost is <i class="emphasis">O</i>(1) + 1 = <i class="emphasis">O</i>(1).</p>
+
+</div>
+<div class="section">
+<h4 class="sect4-title">
+<a name="1456"></a><a name="ch20lev3sec5"></a>Finding the minimum node</h4>
+<p class="first-para">The minimum node of a Fibonacci heap <i class="emphasis">H</i> is given by the pointer <i class="emphasis">min</i>[<i class="emphasis">H</i> ], so we can find the minimum node in <i class="emphasis">O</i>(1) actual time. Because the potential of <i class="emphasis">H</i> does not change, the amortized cost of this operation is equal to its <i class="emphasis">O</i>(1) actual cost.</p>
+
+</div>
+<div class="section">
+<h4 class="sect4-title">
+<a name="1457"></a><a name="ch20lev3sec6"></a>Uniting two Fibonacci heaps</h4>
+<p class="first-para">The following procedure unites Fibonacci heaps <i class="emphasis">H</i><sub>1</sub> and <i class="emphasis">H</i><sub>2</sub>, destroying <i class="emphasis">H</i><sub>1</sub> and <i class="emphasis">H</i><sub>2</sub> in the process. It simply concatenates the root lists of <i class="emphasis">H</i><sub>1</sub> and <i class="emphasis">H</i><sub>2</sub> and then determines the new minimum node.<a name="1458"></a><a name="IDX-482"></a>
+</p>
+<div class="informalexample">
+<pre class="literallayout-normal">
+FIB-HEAP-UNION(<i class="emphasis">H</i><sub>1</sub>, <i class="emphasis">H</i><sub>2</sub>)
+1  <i class="emphasis">H</i> <span class="unicode">&larr;</span> MAKE-FIB-HEAP()
+2  <i class="emphasis">min</i>[<i class="emphasis">H</i>] <span class="unicode">&larr;</span> <i class="emphasis">min</i>[<i class="emphasis">H</i><sub>1</sub>]
+3  concatenate the root list of <i class="emphasis">H</i><sub>2</sub> with the root list of <i class="emphasis">H</i>
+4  <b class="bold">if</b> (<i class="emphasis">min</i>[<i class="emphasis">H</i><sub>1</sub>] = NIL) or (<i class="emphasis">min</i>[<i class="emphasis">H</i><sub>2</sub>] <span class="unicode">&ne;</span> NIL and <i class="emphasis">min</i>[<i class="emphasis">H</i><sub>2</sub>] <span class="unicode">&lt;</span> <i class="emphasis">min</i>[<i class="emphasis">H</i><sub>1</sub>])
+5    <b class="bold">then</b> <i class="emphasis">min</i>[<i class="emphasis">H</i>] <span class="unicode">&larr;</span> <i class="emphasis">min</i>[<i class="emphasis">H</i><sub>2</sub>]
+6  <i class="emphasis">n</i>[<i class="emphasis">H</i>] <span class="unicode">&larr;</span> <i class="emphasis">n</i>[<i class="emphasis">H</i><sub>1</sub>] + <i class="emphasis">n</i>[<i class="emphasis">H</i><sub>2</sub>]
+7  free the objects <i class="emphasis">H</i><sub>1</sub> and <i class="emphasis">H</i><sub>2</sub>
+8  <b class="bold">return</b> <i class="emphasis">H</i>
+</pre>
+</div>
+<p class="para">Lines 1<span class="unicode">-</span>3 concatenate the root lists of <i class="emphasis">H</i><sub>1</sub> and <i class="emphasis">H</i><sub>2</sub> into a new root list <i class="emphasis">H</i>. Lines 2, 4, and 5 set the minimum node of <i class="emphasis">H</i> , and line 6 sets <i class="emphasis">n</i>[<i class="emphasis">H</i>] to the total number of nodes. The Fibonacci heap objects <i class="emphasis">H</i><sub>1</sub> and <i class="emphasis">H</i><sub>2</sub> are freed in line 7, and line 8 returns the resulting Fibonacci heap <i class="emphasis">H</i>. As in the FIB-HEAP-INSERT procedure, no consolidation of trees occurs.</p>
+<p class="para">The change in potential is</p>
+<div class="informaltable">
+<table border="0">
+<tbody>
+<tr valign="top">
+<td class="td" align="left">
+<p class="table-para">
+<span class="unicode">&Phi;</span>(<i class="emphasis">H</i>)</p>
+</td><td class="td" align="center">
+<p class="table-para">-</p>
+</td><td class="td" align="left">
+<p class="table-para">(<span class="unicode">&Phi;</span>(<i class="emphasis">H</i><sub>1</sub>) + <span class="unicode">&Phi;</span>(<i class="emphasis">H</i><sub>2</sub>))</p>
+</td>
+</tr>
+<tr valign="top">
+<td class="td" align="left">&nbsp;</td><td class="td" align="center">
+<p class="table-para">=</p>
+</td><td class="td" align="left">
+<p class="table-para">(<i class="emphasis">t</i>(<i class="emphasis">H</i>) + 2<i class="emphasis">m</i>(<i class="emphasis">H</i>)) - ((<i class="emphasis">t</i>(<i class="emphasis">H</i><sub>1</sub>) + 2 <i class="emphasis">m</i>(<i class="emphasis">H</i><sub>1</sub>)) + (<i class="emphasis">t</i>(<i class="emphasis">H</i><sub>2</sub>) + 2 <i class="emphasis">m</i>(<i class="emphasis">H</i><sub>2</sub>)))</p>
+</td>
+</tr>
+<tr valign="top">
+<td class="td" align="left">&nbsp;</td><td class="td" align="center">
+<p class="table-para">=</p>
+</td><td class="td" align="left">
+<p class="table-para">0,</p>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p class="last-para">because <i class="emphasis">t</i>(<i class="emphasis">H</i>) = <i class="emphasis">t</i>(<i class="emphasis">H</i><sub>1</sub>) + <i class="emphasis">t</i>(<i class="emphasis">H</i><sub>2</sub>) and <i class="emphasis">m</i>(<i class="emphasis">H</i>) = <i class="emphasis">m</i>(<i class="emphasis">H</i><sub>1</sub>) + <i class="emphasis">m</i>(<i class="emphasis">H</i><sub>2</sub>). The amortized cost of FIB-HEAP-UNION is therefore equal to its <i class="emphasis">O</i>(1) actual cost.</p>
+
+</div>
+<div class="section">
+<h4 class="sect4-title">
+<a name="1459"></a><a name="ch20lev3sec7"></a>Extracting the minimum node</h4>
+<p class="first-para">The process of extracting the minimum node is the most complicated of the operations presented in this section. It is also where the delayed work of consolidating trees in the root list finally occurs. The following pseudocode extracts the minimum node. The code assumes for convenience that when a node is removed from a linked list, pointers remaining in the list are updated, but pointers in the extracted node are left unchanged. It also uses the auxiliary procedure CONSOLIDATE, which will be presented shortly.<a name="1460"></a><a name="IDX-483"></a>
+</p>
+<div class="informalexample">
+<pre class="literallayout-normal">
+FIB-HEAP-EXTRACT-MIN(<i class="emphasis">H</i>)
+ 1  <i class="emphasis">z</i> <span class="unicode">&larr;</span> <i class="emphasis">min</i>[<i class="emphasis">H</i>]
+ 2  <b class="bold">if</b> <i class="emphasis">z</i> <span class="unicode">&ne;</span> NIL
+ 3     <b class="bold">then for</b> each child <i class="emphasis">x</i> of <i class="emphasis">z</i>
+ 4              <b class="bold">do</b> add <i class="emphasis">x</i> to the root list of <i class="emphasis">H</i>
+ 5                 <i class="emphasis">p</i>[<i class="emphasis">x</i>] <span class="unicode">&larr;</span> NIL
+ 6          remove <i class="emphasis">z</i> from the root list of <i class="emphasis">H</i>
+ 7          <b class="bold">if</b> <i class="emphasis">z</i> = <i class="emphasis">right</i>[<i class="emphasis">z</i>]
+ 8             <b class="bold">then</b> <i class="emphasis">min</i>[<i class="emphasis">H</i>] <span class="unicode">&larr;</span> NIL
+ 9             <b class="bold">else</b> <i class="emphasis">min</i>[<i class="emphasis">H</i>] <span class="unicode">&larr;</span> <i class="emphasis">right</i>[<i class="emphasis">z</i>]
+10                  CONSOLIDATE(<i class="emphasis">H</i>)
+11          <i class="emphasis">n</i>[<i class="emphasis">H</i>] <span class="unicode">&larr;</span> <i class="emphasis">n</i>[<i class="emphasis">H</i>] - 1
+12  <b class="bold">return</b> <i class="emphasis">z</i>
+</pre>
+</div>
+<p class="para">As shown in <a class="internaljump" href="#ch20fig03">Figure 20.3</a>, FIB-HEAP-EXTRACT-MIN works by first making a root out of each of the minimum node's children and removing the minimum node from the root list. It then consolidates the root list by linking roots of equal degree until at most one root remains of each degree.</p>
+<div class="figure">
+<a name="1461"></a><a name="ch20fig03"></a><span class="figuremediaobject"><a href="images/fig506%5F01%5F0%2Ejpg" NAME="IMG_592" target="_parent"><img src="images/fig506_01.jpg" height="214" width="350" alt="Click To expand" border="0"></a></span><span class="figurespace">&nbsp;</span><span class="figuremediaobject"><a href="images/fig507%5F01%5F0%2Ejpg" NAME="IMG_593" target="_parent"><img src="images/fig507_01.jpg" height="355" width="350" alt="Click To expand" border="0"></a></span>
+<br style="line-height: 1">
+<span class="figure-title"><span class="figure-titlelabel">Figure 20.3: </span>The action of FIB-HEAP-EXTRACT-MIN. <i class="emphasis">(a)</i> A Fibonacci heap <i class="emphasis">H</i>. <i class="emphasis">(b)</i> The situation after the minimum node <i class="emphasis">z</i> is removed from the root list and its children are added to the root list. <i class="emphasis">(c)</i><span class="unicode">-</span><i class="emphasis">(e)</i> The array <i class="emphasis">A</i> and the trees after each of the first three iterations of the <i class="emphasis">for</i> loop of lines 3<span class="unicode">-</span>13 of the procedure CONSOLIDATE. The root list is processed by starting at the node pointed to by <i class="emphasis">min</i>[<i class="emphasis">H</i> ] and following <i class="emphasis">right</i> pointers. Each part shows the values of <i class="emphasis">w</i> and <i class="emphasis">x</i> at the end of an iteration. <i class="emphasis">(f)</i><span class="unicode">-</span><i class="emphasis">(h)</i> The next iteration of the <i class="emphasis">for</i> loop, with the values of <i class="emphasis">w</i> and <i class="emphasis">x</i> shown at the end of each iteration of the <i class="emphasis">while</i> loop of lines 6<span class="unicode">-</span>12. Part (f) shows the situation after the first time through the <i class="emphasis">while</i> loop. The node with key 23 has been linked to the node with key 7, which is now pointed to by <i class="emphasis">x</i>. In part (g), the node with key 17 has been linked to the node with key 7, which is still pointed to by <i class="emphasis">x</i>. In part (h), the node with key 24 has been linked to the node with key 7. Since no node was previously pointed to by <i class="emphasis">A</i>[3], at the end of the <i class="emphasis">for</i> loop iteration, <i class="emphasis">A</i>[3] is set to point to the root of the resulting tree. <i class="emphasis">(i)</i><span class="unicode">-</span><i class="emphasis">(l)</i> The situation after each of the next four iterations of the <i class="emphasis">for</i> loop. <i class="emphasis">(m)</i> Fibonacci heap <i class="emphasis">H</i> after reconstruction of the root list from the array <i class="emphasis">A</i> and determination of the new <i class="emphasis">min</i>[<i class="emphasis">H</i>] pointer.</span>
+</div>
+<p class="para">We start in line 1 by saving a pointer <i class="emphasis">z</i> to the minimum node; this pointer is returned at the end. If <i class="emphasis">z</i> = NIL, then Fibonacci heap <i class="emphasis">H</i> is already empty and we are done. Otherwise, as in the BINOMIAL-HEAP-EXTRACT-MIN procedure, we delete node <i class="emphasis">z</i> from <i class="emphasis">H</i> by making all of <i class="emphasis">z</i>'s children roots of <i class="emphasis">H</i> in lines 3<span class="unicode">-</span>5 (putting them into the root list) and removing <i class="emphasis">z</i> from the root list in line 6. If <i class="emphasis">z</i> = <i class="emphasis">right</i>[<i class="emphasis">z</i>] after line 6, then <i class="emphasis">z</i> was the only node on the root list and it had no children, so all that remains is to make the Fibonacci heap empty in line 8 before returning <i class="emphasis">z</i>. Otherwise, we set the pointer <i class="emphasis">min</i>[<i class="emphasis">H</i>] into the root list to point to a node other than <i class="emphasis">z</i> (in this case, <i class="emphasis">right</i>[<i class="emphasis">z</i>]), which is not necessarily going to be the new minimum node when FIB-HEAP-EXTRACT-MIN is done. <a class="internaljump" href="#ch20fig03">Figure 20.3(b)</a> shows the Fibonacci heap of <a class="internaljump" href="#ch20fig03">Figure 20.3(a)</a> after line 9 has been performed.</p>
+<p class="para">The next step, in which we reduce the number of trees in the Fibonacci heap, is <i class="emphasis">consolidating</i> the root list of <i class="emphasis">H</i>; this is performed by the call CONSOLIDATE(<i class="emphasis">H</i>). Consolidating the root list consists of repeatedly executing the following steps until every root in the root list has a distinct <i class="emphasis">degree</i> value.</p>
+<ol class="orderedlist">
+<li class="first-listitem">
+<p class="first-para">Find two roots <i class="emphasis">x</i> and <i class="emphasis">y</i> in the root list with the same degree, where <i class="emphasis">key</i>[<i class="emphasis">x</i>] <span class="unicode">&le;</span> <i class="emphasis">key</i>[<i class="emphasis">y</i>].</p>
+</li>
+<li class="listitem">
+<p class="first-para">
+<b class="bold">Link</b> <i class="emphasis">y</i> to <i class="emphasis">x</i>: remove <i class="emphasis">y</i> from the root list, and make <i class="emphasis">y</i> a child of <i class="emphasis">x</i>. This operation is performed by the FIB-HEAP-LINK procedure. The field <i class="emphasis">degree</i>[<i class="emphasis">x</i>] is incremented, and the mark on <i class="emphasis">y</i>, if any, is cleared.</p>
+</li>
+</ol>
+<p class="para">The procedure CONSOLIDATE uses an auxiliary array <i class="emphasis">A</i>[0 <span class="unicode">&#8229;</span> <i class="emphasis">D</i>(<i class="emphasis">n</i>[<i class="emphasis">H</i>])]; if <i class="emphasis">A</i>[<i class="emphasis">i</i>] = <i class="emphasis">y</i>, then <i class="emphasis">y</i> is currently a root with <i class="emphasis">degree</i>[<i class="emphasis">y</i>] = <i class="emphasis">i</i>.<a name="1462"></a><a name="IDX-484"></a>
+</p>
+<a name="1463"></a><a name="IDX-485"></a><a name="1464"></a><a name="IDX-486"></a>
+<div class="informalexample">
+<pre class="literallayout-normal">
+CONSOLIDATE(<i class="emphasis">H</i>)
+ 1 <b class="bold">for</b> <i class="emphasis">i</i> <span class="unicode">&larr;</span> 0 <b class="bold">to</b> <i class="emphasis">D</i>(<i class="emphasis">n</i>[<i class="emphasis">H</i>])
+ 2      <b class="bold">do</b> <i class="emphasis">A</i>[<i class="emphasis">i</i>] <span class="unicode">&larr;</span> NIL
+ 3 <b class="bold">for</b> each node <i class="emphasis">w</i> in the root list of <i class="emphasis">H</i>
+ 4      <b class="bold">do</b> <i class="emphasis">x</i> <span class="unicode">&larr;</span> <i class="emphasis">w</i>
+ 5         <i class="emphasis">d</i> <span class="unicode">&larr;</span> <i class="emphasis">degree</i>[<i class="emphasis">x</i>]
+ 6         <b class="bold">while</b> <i class="emphasis">A</i>[<i class="emphasis">d</i>] <span class="unicode">&ne;</span> NIL
+ 7             <b class="bold">do</b> <i class="emphasis">y</i> <span class="unicode">&larr;</span> <i class="emphasis">A</i>[<i class="emphasis">d</i>]      <span class="unicode">&#9657;</span> Another node with the same degree as <i class="emphasis">x</i>.
+ 8                <b class="bold">if</b> <i class="emphasis">key</i>[<i class="emphasis">x</i>] <span class="unicode">&gt;</span> <i class="emphasis">key</i>[<i class="emphasis">y</i>]
+ 9                   <b class="bold">then</b> exchange <i class="emphasis">x</i> <span class="unicode">&harr;</span> <i class="emphasis">y</i>
+10                FIB-HEAP-LINK(<i class="emphasis">H</i>, <i class="emphasis">y</i>, <i class="emphasis">x</i>)
+11                <i class="emphasis">A</i>[<i class="emphasis">d</i>] <span class="unicode">&larr;</span> NIL
+12                <i class="emphasis">d</i> <span class="unicode">&larr;</span> <i class="emphasis">d</i> + 1
+13         <i class="emphasis">A</i>[<i class="emphasis">d</i>] <span class="unicode">&larr;</span> <i class="emphasis">x</i>
+14 <i class="emphasis">min</i>[<i class="emphasis">H</i>] <span class="unicode">&larr;</span> NIL
+15 <b class="bold">for</b> <i class="emphasis">i</i> <span class="unicode">&larr;</span> 0 <b class="bold">to</b> <i class="emphasis">D</i>(<i class="emphasis">n</i>[<i class="emphasis">H</i>])
+16      <b class="bold">do if</b> <i class="emphasis">A</i>[<i class="emphasis">i</i>] <span class="unicode">&ne;</span> NIL
+17            <b class="bold">then</b> add <i class="emphasis">A</i>[<i class="emphasis">i</i>] to the root list of <i class="emphasis">H</i>
+18                 <b class="bold">if</b> <i class="emphasis">min</i>[<i class="emphasis">H</i>] = NIL or <i class="emphasis">key</i>[<i class="emphasis">A</i>[<i class="emphasis">i</i>]] <span class="unicode">&lt;</span> <i class="emphasis">key</i>[<i class="emphasis">min</i>[<i class="emphasis">H</i>]]
+19                    <b class="bold">then</b> <i class="emphasis">min</i>[<i class="emphasis">H</i>] <span class="unicode">&larr;</span> <i class="emphasis">A</i>[<i class="emphasis">i</i>]
+</pre>
+</div>
+<div class="informalexample">
+<pre class="literallayout-normal">
+FIB-HEAP-LINK(<i class="emphasis">H</i>, <i class="emphasis">y</i>, <i class="emphasis">x</i>)
+1  remove <i class="emphasis">y</i> from the root list of <i class="emphasis">H</i>
+2  make <i class="emphasis">y</i> a child of <i class="emphasis">x</i>, incrementing <i class="emphasis">degree</i>[<i class="emphasis">x</i>]
+3  <i class="emphasis">mark</i>[<i class="emphasis">y</i>] <span class="unicode">&larr;</span> FALSE
+</pre>
+</div>
+<p class="para">In detail, the CONSOLIDATE procedure works as follows. Lines 1<span class="unicode">-</span>2 initialize <i class="emphasis">A</i> by making each entry NIL. The <b class="bold">for</b> loop of lines 3<span class="unicode">-</span>13 processes each root <i class="emphasis">w</i> in the root list. After processing each root <i class="emphasis">w</i>, it ends up in a tree rooted at some node <i class="emphasis">x</i>, which may or may not be identical to <i class="emphasis">w</i>. Of the processed roots, no others will have the same degree as <i class="emphasis">x</i>, and so we will set array entry <i class="emphasis">A</i>[<i class="emphasis">degree</i>[<i class="emphasis">x</i>]] to point to <i class="emphasis">x</i>. When this <b class="bold">for</b> loop terminates, at most one root of each degree will remain, and the array <i class="emphasis">A</i> will point to each remaining root.</p>
+<p class="para">The <b class="bold">while</b> loop of lines 6<span class="unicode">-</span>12 repeatedly links the root <i class="emphasis">x</i> of the tree containing node <i class="emphasis">w</i> to another tree whose root has the same degree as <i class="emphasis">x</i>, until no other root has the same degree. This <b class="bold">while</b> loop maintains the following invariant:</p>
+<ul class="simple-list">
+<li class="first-listitem">
+<p class="first-para">At the start of each iteration of the <b class="bold">while</b> loop, <i class="emphasis">d</i> = <i class="emphasis">degree</i>[<i class="emphasis">x</i>].</p>
+</li>
+</ul>
+<p class="para">We use this loop invariant as follows:</p>
+<ul class="simple-list">
+<li class="first-listitem">
+<p class="para">
+<b>Initialization:</b> Line 5 ensures that the loop invariant holds the first time we enter the loop.<a name="1465"></a><a name="IDX-487"></a>
+</p>
+</li>
+<li class="listitem">
+<p class="para">
+<b>Maintenance:</b> In each iteration of the <b class="bold">while</b> loop, <i class="emphasis">A</i>[<i class="emphasis">d</i>] points to some root <i class="emphasis">y</i>. Because <i class="emphasis">d</i> = <i class="emphasis">degree</i>[<i class="emphasis">x</i>] = <i class="emphasis">degree</i>[<i class="emphasis">y</i>], we want to link <i class="emphasis">x</i> and <i class="emphasis">y</i>. Whichever of <i class="emphasis">x</i> and <i class="emphasis">y</i> has the smaller key becomes the parent of the other as a result of the link operation, and so lines 8<span class="unicode">-</span>9 exchange the pointers to <i class="emphasis">x</i> and <i class="emphasis">y</i> if necessary. Next, we link <i class="emphasis">y</i> to <i class="emphasis">x</i> by the call FIB-HEAP-LINK(<i class="emphasis">H</i>, <i class="emphasis">y</i>, <i class="emphasis">x</i>) in line 10. This call increments <i class="emphasis">degree</i>[<i class="emphasis">x</i>] but leaves <i class="emphasis">degree</i>[<i class="emphasis">y</i>] as <i class="emphasis">d</i>. Because node <i class="emphasis">y</i> is no longer a root, the pointer to it in array <i class="emphasis">A</i> is removed in line 11. Because the call of FIB-HEAP-LINK increments the value of <i class="emphasis">degree</i>[<i class="emphasis">x</i>], line 12 restores the invariant that <i class="emphasis">d</i> = <i class="emphasis">degree</i>[<i class="emphasis">x</i>].</p>
+</li>
+<li class="listitem">
+<p class="para">
+<b>Termination:</b> We repeat the <b class="bold">while</b> loop until <i class="emphasis">A</i>[<i class="emphasis">d</i>] = NIL, in which case there is no other root with the same degree as <i class="emphasis">x</i>.</p>
+</li>
+</ul>
+<p class="para">After the <b class="bold">while</b> loop terminates, we set <i class="emphasis">A</i>[<i class="emphasis">d</i>] to <i class="emphasis">x</i> in line 13 and perform the next iteration of the <b class="bold">for</b> loop.</p>
+<p class="para">
+<a class="internaljump" href="#ch20fig03">Figures 20.3(c)<span class="unicode">-</span>(e)</a> show the array <i class="emphasis">A</i> and the resulting trees after the first three iterations of the <b class="bold">for</b> loop of lines 3<span class="unicode">-</span>13. In the next iteration of the <b class="bold">for</b> loop, three links occur; their results are shown in <a class="internaljump" href="#ch20fig03">Figures 20.3(f)<span class="unicode">-</span>(h)</a>. <a class="internaljump" href="#ch20fig03">Figures 20.3(i)<span class="unicode">-</span>(l)</a> show the result of the next four iterations of the <b class="bold">for</b> loop.</p>
+<p class="para">All that remains is to clean up. Once the <b class="bold">for</b> loop of lines 3<span class="unicode">-</span>13 completes, line 14 empties the root list, and lines 15<span class="unicode">-</span>19 reconstruct it from the array <i class="emphasis">A</i>. The resulting Fibonacci heap is shown in <a class="internaljump" href="#ch20fig03">Figure 20.3(m)</a>. After consolidating the root list, FIB-HEAP-EXTRACT-MIN finishes up by decrementing <i class="emphasis">n</i>[<i class="emphasis">H</i>] in line 11 and returning a pointer to the deleted node <i class="emphasis">z</i> in line 12.</p>
+<p class="para">Observe that if all trees in the Fibonacci heap are unordered binomial trees before FIB-HEAP-EXTRACT-MIN is executed, then they are all unordered binomial trees afterward. There are two ways in which trees are changed. First, in lines 3<span class="unicode">-</span>5 of FIB-HEAP-EXTRACT-MIN, each child <i class="emphasis">x</i> of root <i class="emphasis">z</i> becomes a root. By <a class="internaljump" href="#ch20ex02">Exercise 20.2-2</a>, each new tree is itself an unordered binomial tree. Second, trees are linked by FIB-HEAP-LINK only if they have the same degree. Since all trees are unordered binomial trees before the link occurs, two trees whose roots each have <i class="emphasis">k</i> children must have the structure of <i class="emphasis">U</i><sub><i class="emphasis">k</i></sub>. The resulting tree therefore has the structure of <i class="emphasis">U</i><sub><i class="emphasis">k</i>+1</sub>.</p>
+<p class="para">We are now ready to show that the amortized cost of extracting the minimum node of an <i class="emphasis">n</i>-node Fibonacci heap is <i class="emphasis">O</i>(<i class="emphasis">D</i>(<i class="emphasis">n</i>)). Let <i class="emphasis">H</i> denote the Fibonacci heap just prior to the FIB-HEAP-EXTRACT-MIN operation.</p>
+<p class="para">The actual cost of extracting the minimum node can be accounted for as follows. An <i class="emphasis">O</i>(<i class="emphasis">D</i>(<i class="emphasis">n</i>)) contribution comes from there being at most <i class="emphasis">D</i>(<i class="emphasis">n</i>) children of the minimum node that are processed in FIB-HEAP-EXTRACT-MIN and from the work in lines 1<span class="unicode">-</span>2 and 14<span class="unicode">-</span>19 of CONSOLIDATE. It remains to analyze the contribution from the <b class="bold">for</b> loop of lines 3<span class="unicode">-</span>13. The size of the root list upon calling CONSOLIDATE is at most <i class="emphasis">D</i>(<i class="emphasis">n</i>) + <i class="emphasis">t</i>(<i class="emphasis">H</i>) - 1, since it consists of the original <i class="emphasis">t</i>(<i class="emphasis">H</i>) root-list nodes, minus the extracted root node, plus the children of the extracted node, <a name="1466"></a><a name="IDX-488"></a>which number at most <i class="emphasis">D</i>(<i class="emphasis">n</i>). Every time through the <b class="bold">while</b> loop of lines 6<span class="unicode">-</span>12, one of the roots is linked to another, and thus the total amount of work performed in the <b class="bold">for</b> loop is at most proportional to <i class="emphasis">D</i>(<i class="emphasis">n</i>) + <i class="emphasis">t</i>(<i class="emphasis">H</i>). Thus, the total actual work in extracting the minimum node is <i class="emphasis">O</i>(<i class="emphasis">D</i>(<i class="emphasis">n</i>) + <i class="emphasis">t</i>(<i class="emphasis">H</i>)).</p>
+<p class="para">The potential before extracting the minimum node is <i class="emphasis">t</i>(<i class="emphasis">H</i>) + 2<i class="emphasis">m</i>(<i class="emphasis">H</i>), and the potential afterward is at most (<i class="emphasis">D</i>(<i class="emphasis">n</i>) + 1) + 2<i class="emphasis">m</i>(<i class="emphasis">H</i>), since at most <i class="emphasis">D</i>(<i class="emphasis">n</i>) + 1 roots remain and no nodes become marked during the operation. The amortized cost is thus at most</p>
+<div class="informaltable">
+<table border="0">
+<tbody>
+<tr valign="top">
+<td class="td" align="left" colspan="3">
+<p class="table-para">
+<i class="emphasis">O</i>(<i class="emphasis">D</i>(<i class="emphasis">n</i>) + <i class="emphasis">t</i>(<i class="emphasis">H</i>)) + ((<i class="emphasis">D</i>(<i class="emphasis">n</i>) + 1) + 2 <i class="emphasis">m</i>(<i class="emphasis">H</i>)) - (<i class="emphasis">t</i>(<i class="emphasis">H</i>) + 2 <i class="emphasis">m</i>(<i class="emphasis">H</i>))</p>
+</td>
+</tr>
+<tr valign="top">
+<td class="td" align="left">&nbsp;</td><td class="td" align="center">
+<p class="table-para">=</p>
+</td><td class="td" align="left">
+<p class="table-para">
+<i class="emphasis">O</i>(<i class="emphasis">D</i>(<i class="emphasis">n</i>)) + <i class="emphasis">O</i>(<i class="emphasis">t</i>(<i class="emphasis">H</i>)) - <i class="emphasis">t</i>(<i class="emphasis">H</i>)</p>
+</td>
+</tr>
+<tr valign="top">
+<td class="td" align="left">&nbsp;</td><td class="td" align="center">
+<p class="table-para">=</p>
+</td><td class="td" align="left">
+<p class="table-para">
+<i class="emphasis">O</i>(<i class="emphasis">D</i>(<i class="emphasis">n</i>)),</p>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p class="para">since we can scale up the units of potential to dominate the constant hidden in <i class="emphasis">O</i>(<i class="emphasis">t</i>(<i class="emphasis">H</i>). Intuitively, the cost of performing each link is paid for by the reduction in potential due to the link's reducing the number of roots by one. We shall see in <a href="DDU0121.html#1483" target="_parent" class="chapterjump">Section 20.4</a> that <i class="emphasis">D</i>(<i class="emphasis">n</i>) = <i class="emphasis">O</i>(lg <i class="emphasis">n</i>), so that the amortized cost of extracting the minimum node is <i class="emphasis">O</i>(lg <i class="emphasis">n</i>).</p>
+<div class="example">
+<span class="example-title"><span class="example-titlelabel">Exercises 20.2-1</span></span><a name="1467"></a><a name="ch20ex01"></a>
+<div class="formalbody">
+<table class="BlueLine" border="0" cellspacing="0" cellpadding="0" width="100%">
+<tr>
+<td bgcolor="000080" class="bluecell"><font size="2" face="Arial" color="010100"><b><img src="_.gif" width="1" height="2" alt="Start example" border="0"></b></font></td>
+</tr>
+</table>
+<p class="first-para">Show the Fibonacci heap that results from calling FIB-HEAP-EXTRACT-MIN on the Fibonacci heap shown in <a class="internaljump" href="#ch20fig03">Figure 20.3(m)</a>.</p>
+<table class="BlueLine" border="0" cellspacing="0" cellpadding="0" width="100%">
+<tr>
+<td bgcolor="000080" class="bluecell"><font size="2" face="Arial" color="010100"><b><img src="_.gif" width="1" height="2" alt="End example" border="0"></b></font></td>
+</tr>
+</table>
+<table class="BlankSpace" border="0" cellspacing="0" cellpadding="0" width="100%">
+<tr>
+<td height="16"></td>
+</tr>
+</table>
+</div>
+</div>
+<div class="example">
+<span class="example-title"><span class="example-titlelabel">Exercises 20.2-2</span></span><a name="1468"></a><a name="ch20ex02"></a>
+<div class="formalbody">
+<table class="BlueLine" border="0" cellspacing="0" cellpadding="0" width="100%">
+<tr>
+<td bgcolor="000080" class="bluecell"><font size="2" face="Arial" color="010100"><b><img src="_.gif" width="1" height="2" alt="Start example" border="0"></b></font></td>
+</tr>
+</table>
+<p class="first-para">Prove that <a href="DDU0114.html#1388" target="_parent" class="chapterjump">Lemma 19.1</a> holds for unordered binomial trees, but with property 4<span class="unicode">&prime;</span> in place of property 4.</p>
+<table class="BlueLine" border="0" cellspacing="0" cellpadding="0" width="100%">
+<tr>
+<td bgcolor="000080" class="bluecell"><font size="2" face="Arial" color="010100"><b><img src="_.gif" width="1" height="2" alt="End example" border="0"></b></font></td>
+</tr>
+</table>
+<table class="BlankSpace" border="0" cellspacing="0" cellpadding="0" width="100%">
+<tr>
+<td height="16"></td>
+</tr>
+</table>
+</div>
+</div>
+<div class="example">
+<span class="example-title"><span class="example-titlelabel">Exercises 20.2-3</span></span><a name="1469"></a><a name="ch20ex03"></a>
+<div class="formalbody">
+<table class="BlueLine" border="0" cellspacing="0" cellpadding="0" width="100%">
+<tr>
+<td bgcolor="000080" class="bluecell"><font size="2" face="Arial" color="010100"><b><img src="_.gif" width="1" height="2" alt="Start example" border="0"></b></font></td>
+</tr>
+</table>
+<p class="first-para">Show that if only the mergeable-heap operations are supported, the maximum degree <i class="emphasis">D</i>(<i class="emphasis">n</i>) in an <i class="emphasis">n</i>-node Fibonacci heap is at most <span class="unicode">&lfloor;</span>lg <i class="emphasis">n</i><span class="unicode">&rfloor;</span>.</p>
+<table class="BlueLine" border="0" cellspacing="0" cellpadding="0" width="100%">
+<tr>
+<td bgcolor="000080" class="bluecell"><font size="2" face="Arial" color="010100"><b><img src="_.gif" width="1" height="2" alt="End example" border="0"></b></font></td>
+</tr>
+</table>
+<table class="BlankSpace" border="0" cellspacing="0" cellpadding="0" width="100%">
+<tr>
+<td height="16"></td>
+</tr>
+</table>
+</div>
+</div>
+<div class="example">
+<span class="example-title"><span class="example-titlelabel">Exercises 20.2-4</span></span><a name="1470"></a><a name="ch20ex04"></a>
+<div class="formalbody">
+<table class="BlueLine" border="0" cellspacing="0" cellpadding="0" width="100%">
+<tr>
+<td bgcolor="000080" class="bluecell"><font size="2" face="Arial" color="010100"><b><img src="_.gif" width="1" height="2" alt="Start example" border="0"></b></font></td>
+</tr>
+</table>
+<p class="first-para">Professor McGee has devised a new data structure based on Fibonacci heaps. A McGee heap has the same structure as a Fibonacci heap and supports the mergeable-heap operations. The implementations of the operations are the same as for Fibonacci heaps, except that insertion and union perform consolidation as their last step. What are the worst-case running times of operations on McGee heaps? How novel is the professor's data structure?</p>
+<table class="BlueLine" border="0" cellspacing="0" cellpadding="0" width="100%">
+<tr>
+<td bgcolor="000080" class="bluecell"><font size="2" face="Arial" color="010100"><b><img src="_.gif" width="1" height="2" alt="End example" border="0"></b></font></td>
+</tr>
+</table>
+<table class="BlankSpace" border="0" cellspacing="0" cellpadding="0" width="100%">
+<tr>
+<td height="16"></td>
+</tr>
+</table>
+</div>
+</div>
+<a name="1471"></a><a name="IDX-489"></a>
+<div class="example">
+<span class="example-title"><span class="example-titlelabel">Exercises 20.2-5</span></span><a name="1472"></a><a name="ch20ex05"></a>
+<div class="formalbody">
+<table class="BlueLine" border="0" cellspacing="0" cellpadding="0" width="100%">
+<tr>
+<td bgcolor="000080" class="bluecell"><font size="2" face="Arial" color="010100"><b><img src="_.gif" width="1" height="2" alt="Start example" border="0"></b></font></td>
+</tr>
+</table>
+<p class="first-para">Argue that when the only operations on keys are comparing two keys (as is the case for all the implementations in this chapter), not all of the mergeable-heap operations can run in <i class="emphasis">O</i>(1) amortized time.</p>
+<table class="BlueLine" border="0" cellspacing="0" cellpadding="0" width="100%">
+<tr>
+<td bgcolor="000080" class="bluecell"><font size="2" face="Arial" color="010100"><b><img src="_.gif" width="1" height="2" alt="End example" border="0"></b></font></td>
+</tr>
+</table>
+<table class="BlankSpace" border="0" cellspacing="0" cellpadding="0" width="100%">
+<tr>
+<td height="16"></td>
+</tr>
+</table>
+</div>
+</div>
+
+</div>
+
+</div>
+</div>
+</div>
+</div>
+<br><hr size="1">
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td align="left" width="30%">
+<div STYLE="MARGIN-LEFT: 0.15in;">
+<a href="DDU0118.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</div></td>
+<td align="center" width="40%">
+<a href="toc.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td align="right" width="30%">
+<div STYLE="MARGIN-RIGHT: 0.15in"><a href="DDU0120.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr>
+</table>
+</body>
+</html>

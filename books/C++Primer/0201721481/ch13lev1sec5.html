@@ -1,0 +1,334 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Section 13.5.&nbsp; Managing Pointer Members</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=ch13lev1sec4.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=ch13lev1sec6.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><a name="ch13lev1sec5"></a>
+<h3 class="docSection1Title">13.5. Managing Pointer Members</h3>
+<p class="docText">This book generally advocates the use of the standard library. One reason we do so is that using the standard library greatly reduces the need for pointers in modern C++ programs. However, many applications still require the use of pointers, particularly in the implementation of classes. Classes that contain pointers require careful attention to copy control. The reason they must do so is that copying a pointer copies only the address in the pointer. Copying a pointer does not copy the object to which the pointer points.</P>
+<p class="docText">When designing a class with a pointer member, the first decision a class author must make is what behavior that pointer should provide. When we copy one pointer to another, the two pointers point to the same object. When two pointers point to the same object, it is possible to use either pointer to change the underlying object. Similarly, it is possible for one pointer to <tt>delete</tt> the object even though the user of the other pointer still thinks the underlying object exists.</P>
+<p class="docText">By default, a pointer member has the same behavior as a pointer object. However, through different copy-control strategies we can implement different behavior for pointer members. Most C++ classes take one of three approaches to managing pointer members:</p>
+<div style="font-weight:bold"><ol class="docList" type="1"><LI><div style="font-weight:normal"><p class="docList">The pointer member can be given normal pointerlike behavior. Such classes will have all the pitfalls of pointers but will require no special copy control.</p></div></li><LI><div style="font-weight:normal"><p class="docList">The class can implement so-called &quot;smart pointer&quot; behavior. The object to which the pointer points is shared, but the class prevents dangling pointers.</P></div></li><li><div style="font-weight:normal"><p class="docList">The class can be given valuelike behavior. The object to which the pointer points will be unique to and managed separately by each class object.</p></div></li></ol></div>
+<p class="docText">In this section we look at three classes that implement each of these different approaches to managing their pointer members.</p>
+<a name="ch13lev2sec21"></a>
+<H4 class="docSection2Title">A Simple Class with a Pointer Member</h4>
+<p class="docText"><a name="idd1e101863"></a><a name="idd1e101870"></a><a name="idd1e101876"></a><a name="idd1e101884"></a><a name="idd1e101889"></a>To illustrate the issues involved, we'll implement a simple class that contains an <tt>int</tt> and a pointer:</P>
+<pre>
+     // <span class="docEmphItalicAlt">class that has a pointer member that behaves like a plain pointer</span>
+     class HasPtr {
+     public:
+         // <span class="docEmphItalicAlt">copy of the values we're given</span>
+         HasPtr(int *p, int i): ptr(p), val(i) { }
+
+         // <span class="docEmphasis">const</span> <span class="docEmphItalicAlt">members to return the value of the indicated data member</span>
+         int *get_ptr() const { return ptr; }
+         int get_int() const { return val; }
+
+         // <span class="docEmphItalicAlt">non</span> <span class="docEmphasis">const</span> <span class="docEmphItalicAlt">members to change the indicated data member</span>
+         void set_ptr(int *p) { ptr = p; }
+         void set_int(int i) { val = i; }
+
+         // <span class="docEmphItalicAlt">return or change the value pointed to, so ok for</span> <span class="docEmphasis">const</span> <span class="docEmphItalicAlt">objects</span>
+         int get_ptr_val() const { return *ptr; }
+         void set_ptr_val(int val) const { *ptr = val; }
+
+     private:
+         int *ptr;
+         int val;
+     };
+</pre><BR>
+<p class="docText">The <tt>HasPtr</tt> constructor takes two parameters, which it copies into <tt>HasPtr</tt>'s data members. The class provides simple accessor functions: The <tt>const</tt> functions <tt>get_int</tt> and <tt>get_ptr</tt> return the value of the <tt>int</tt> and pointer members, respectively; the <tt>set_int</tt> and <tt>set_ptr</tt> members let us change these members, giving a new value to the <tt>int</tt> or making the pointer point to a different object. We also define the <tt>get_ptr_val</tt> and <tt>set_ptr_val</tt> members. These members get and set the underlying value to which the pointer points.</p>
+
+<a name="ch13lev2sec22"></a>
+<h4 class="docSection2Title">Default Copy/Assignment and Pointer Members</h4>
+<p class="docText">Because the class does not define a copy constructor, copying one <tt>HasPtr</tt> object to another copies both members:</P>
+<pre>
+     int obj = 0;
+     HasPtr ptr1(&amp;obj, 42); // <span class="docEmphasis">int*</span> <span class="docEmphItalicAlt">member points to</span> <span class="docEmphasis">obj, val</span> <span class="docEmphItalicAlt">is</span> <span class="docEmphasis">42</span>
+     HasPtr ptr2(ptr1);     // <span class="docEmphasis">int*</span> <span class="docEmphItalicAlt">member points to</span> <span class="docEmphasis">obj, val</span> <span class="docEmphItalicAlt">is</span> <span class="docEmphasis">42</span>
+</pre><BR>
+<p class="docText">After the copy, the pointers in <tt>ptr1</tt> and <tt>ptr1</tt> both address the same object and the <tt>int</tt> values in each object are the same. However, the behavior of these two members appears quite different, because the value of a pointer is distinct from the value of the object to which it points. After the copy, the <tt>int</tt> values are distinct and independent, whereas the pointers are intertwined.</p>
+<a name="ch13note12"></a><div class="docNote"><p>
+<table width="90%" border="0" cellspacing="0" cellpadding="1"><tr><td width="60" valign="top"><img border="0" alt="" align="LEFT" width="57" height="96" SRC="images/0201721481/graphics/beware.jpg;400478"></TD><td valign="top"><p class="docText"> Classes that have pointer members and use default synthesized copy control have all the pitfalls of ordinary pointers. In particular, the class itself has no way to avoid dangling pointers.</p></TD></tr></table><br>
+</P></div><br>
+
+<a name="ch13lev2sec23"></a>
+<H4 class="docSection2Title">Pointers Share the Same Object</h4>
+<p class="docText"><a name="idd1e102050"></a><a name="idd1e102055"></a><a name="idd1e102062"></a>When we copy an arithmetic value, the copy is independent from the original. We can change one copy without changing the other:</p>
+<pre>
+     ptr1.set_int(0); // <span class="docEmphItalicAlt">changes</span> <span class="docEmphasis">val</span> <span class="docEmphItalicAlt">member only in</span> <span class="docEmphasis">ptr1</span>
+     ptr2.get_int();  // <span class="docEmphasis">returns 42</span>
+     ptr1.get_int();  // <span class="docEmphasis">returns 0</span>
+</pre><br>
+<p class="docText">When we copy a pointer, the address values are distinct, but the pointers point to the same underlying object. If we call <tt>set_ptr_val</tt> on either object, the underlying object is changed for both:</p>
+<pre>
+     ptr1.set_ptr_val(42); // <span class="docEmphItalicAlt">sets object to which both</span> <span class="docEmphasis">ptr1</span> <span class="docEmphItalicAlt">and</span> <span class="docEmphasis">ptr2</span> <span class="docEmphItalicAlt">point</span>
+     ptr2.get_ptr_val();   // <span class="docEmphasis">returns 42</span>
+</pre><br>
+<p class="docText">When two pointers point to the same object, either one can change the value of the shared object.</p>
+
+<a name="ch13lev2sec24"></a>
+<h4 class="docSection2Title">Dangling Pointers Are Possible</h4>
+<p class="docText">Because our class copies the pointers directly, it presents our users with a potential problem: <tt>HasPtr</tt> stores the pointer it was given. It is up to the user to guarantee that the object to which that pointer points stays around as long as the <tt>HasPtr</tt> object does:</p>
+<pre>
+     int *ip = new int(42); // <span class="docEmphItalicAlt">dynamically allocated</span> <span class="docEmphasis">int</span> <span class="docEmphItalicAlt">initialized to</span> <span class="docEmphasis">42</span>
+     HasPtr ptr(ip, 10);    // <span class="docEmphasis">Has Ptr</span> <span class="docEmphItalicAlt">points to same object as</span> <span class="docEmphasis">ip</span> <span class="docEmphItalicAlt">does</span>
+     delete ip;             // <span class="docEmphItalicAlt">object pointed to by</span> <span class="docEmphasis">ip</span> <span class="docEmphItalicAlt">is freed</span>
+     ptr.set_ptr_val(0); // <span class="docEmphItalicAlt">disaster: The object to which</span> <span class="docEmphasis">Has Ptr</span> <span class="docEmphItalicAlt">points was freed!</span>
+</pre><br>
+<p class="docText">The problem here is that <tt>ip</tt> and the pointer inside <tt>ptr</tt> both point to the same object. When that object is deleted, the pointer inside <tt>HasPtr</tt> no longer points to a valid object. However, there is no way to know that the object is gone.</p>
+<a name="ch13sb06"></a><p><table cellspacing="0" width="90%" border="1" cellpadding="5"><tr><TD>
+<H2 class="docSidebarTitle">Exercises Section 13.5</h2>
+<blockquote>
+<P><table border="0" cellspacing="16" cellpadding="0"><tr valign="top"><td align="right" class="docText" width="50"><a name="ch13qa6q1"></a><B>Exercise 13.20:</b></TD><td><p class="docText">Given the original version of the <tt>HasPtr</tt> class that relies on the default definitions for copy-control, describe what happens in the following code:</p>
+<pre>
+     int i = 42;
+     HasPtr p1(&amp;i, 42);
+     HasPtr p2 = p1;
+     cout &lt;&lt; p2.get_ptr_val() &lt;&lt; endl;
+     p1.set_ptr_val(0);
+     cout &lt;&lt; p2.get_ptr_val() &lt;&lt; endl;
+</pre><br>
+</td></tr><TR valign="top"><td align="right" class="docText" width="50"><a name="ch13qa6q2"></a><B>Exercise 13.21:</b></TD><td><p class="docText">What would happen if we gave our <tt>HasPtr</tt> class a destructor that <tt>delete</tt>d its pointer member?</p>
+</td></TR></table></P>
+</blockquote>
+</td></tr></table></p><br>
+
+<a name="ch13lev2sec25"></a>
+<H4 class="docSection2Title">13.5.1. Defining Smart Pointer Classes</h4>
+<p class="docText"><a name="idd1e102257"></a><a name="idd1e102266"></a><a name="idd1e102274"></a><a name="idd1e102279"></a><a name="idd1e102282"></a><a name="idd1e102287"></a><a name="idd1e102292"></a><a name="idd1e102298"></a><a name="idd1e102307"></a><a name="idd1e102312"></a><a name="idd1e102317"></a><a name="idd1e102320"></a><a name="idd1e102323"></a>In the previous section we defined a simple class that held a pointer and an <tt>int</tt>. The pointer member behaved in all ways like any other pointer. Any changes made to the object to which the pointer pointed were made to a single, shared object. If the user deleted that object, then our class had a dangling pointer. Its pointer member pointed at an object that no longer existed.</p>
+<p class="docText">An alternative to having a pointer member behave exactly like a pointer is to define what is sometimes referred to as a <B><a name="ch13term10"></a><a class="docLink" href="ch13lev1sec7.html#gloss13_10">smart pointer</a></b> class. A smart pointer behaves like an ordinary pointer except that it adds functionality. In this case, we'll give our smart pointer the responsibility for deleting the shared object. Users will dynamically allocate an object and pass the address of that object to our new <tt>HasPtr</tt> class. The user may still access the object through a plain pointer but must not <tt>delete</tt> the pointer. The <tt>HasPtr</tt> class will ensure that the object is deleted when the last <tt>HasPtr</tt> that points to it is destroyed.</p>
+<p class="docText">In other ways, our <tt>HasPtr</tt> will behave like a plain pointer. In particular, when we copy a <tt>HasPtr</tt> object, the copy and the original will point to the same underlying object. If we change that object through one copy, the value will be changed when accessed through the other.</p>
+<p class="docText">Our new <tt>HasPtr</tt> class will need a destructor to delete the pointer. However, the destructor cannot delete the pointer unconditionally. If two <tt>HasPtr</tt> objects point to the same underlying object, we don't want to delete the object until both objects are destroyed. To write the destructor, we need to know whether this <tt>HasPtr</tt> is the last one pointing to a given object.</P>
+<a name="ch13lev3sec2"></a>
+<h5 class="docSection3Title">Introducing Use Counts</H5>
+<p class="docText">A common technique used in defining smart pointers is to use a <b><a name="ch13term13"></a><a class="docLink" href="ch13lev1sec7.html#gloss13_13">use count</a></b>. The pointerlike class associates a counter with the object to which the class points. The use count keeps track of how many objects of the class share the same pointer. When the use count goes to zero, then the object is deleted. A use count is sometimes also referred to as a <b><a name="ch13term8"></a><a class="docLink" href="ch13lev1sec7.html#gloss13_08">reference count</a></b>.</p>
+<p class="docText">Each time a new object of the class is created, the pointer is initialized and the use count is set to 1. When an object is created as a copy of another, the copy constructor copies the pointer and increments the associated use count. When an object is assigned to, the assignment operator decrements the use count of the object to which the left-hand operand points (and deletes that object if the use count goes to zero) and increments the use count of the object pointed to by the right-hand operand. Finally, when the destructor is called, it decrements the use count and deletes the underlying object if the count goes to zero.</p>
+<p class="docText">The only wrinkle is deciding where to put the use count. The counter cannot go directly into our <tt>HasPtr</tt> object. To see why, consider what happens in the following case:</p>
+<pre>
+     int obj;
+     HasPtr p1(&amp;obj, 42);
+     HasPtr p2(p1);  // <span class="docEmphasis">p1</span> <span class="docEmphItalicAlt">and</span> <span class="docEmphasis">p2</span> <span class="docEmphItalicAlt">both point to same</span> <span class="docEmphasis">int</span> <span class="docEmphItalicAlt">object</span>
+     HasPtr p3(p1);  // <span class="docEmphasis">p1, p2,</span> <span class="docEmphItalicAlt">and</span> <span class="docEmphasis">p3</span> <span class="docEmphItalicAlt">all point to same</span> <span class="docEmphasis">int</span> <span class="docEmphItalicAlt">object</span>
+</pre><br>
+<p class="docText"><a name="idd1e102438"></a><a name="idd1e102443"></a><a name="idd1e102447"></a>If the use count is stored in a <tt>HasPtr</tt> object, how can we update it correctly when <tt>p3</tt> is created? We could increment the count in <tt>p1</tt> and copy that count into <tt>p3</tt>, but how would we update the counter in <tt>p2?</tt></p>
+
+<a name="ch13lev3sec3"></a>
+<h5 class="docSection3Title">The Use-Count Class</h5>
+<p class="docText">There are two classic strategies for implementing a use count, one of which we will use here; the other approach is described in <a class="docLink" href="ch15lev1sec8.html#ch15lev2sec21">Section 15.8.1</a> (p. <a class="docLink" href="ch15lev1sec8.html#ch15lev2sec21">599</a>). In the approach we use here, we'll define a separate concrete class to encapsulate the use count and the associated pointer:</p>
+<pre>
+     // <span class="docEmphItalicAlt">private class for use by HasPtr only</span>
+     class U_Ptr {
+         friend class HasPtr;
+         int *ip;
+         size_t use;
+         U_Ptr(int *p): ip(p), use(1) { }
+         ~U_Ptr() { delete ip; }
+     };
+</pre><br>
+<p class="docText">All the members of this class are <tt>private</tt>. We don't intend ordinary users to use the <tt>U_Ptr</tt> class, so we do not give it any <tt>public</tt> members. The <tt>HasPtr</tt> class is made a friend so that its members will have access to the members of <tt>U_Ptr</tt>.</p>
+<p class="docText">The class is pretty simple, although the concept of how it works can be slippery. The <tt>U_Ptr</tt> class holds the pointer and the use count. Each <tt>HasPtr</tt> will point to a <tt>U_Ptr</tt>. The use count will keep track of how many <tt>HasPtr</tt> objects point to each <tt>U_Ptr</tt> object. The only functions <tt>U_Ptr</tt> defines are its constructor and destructor. The constructor copies the pointer, which the destructor deletes. The constructor also sets the use count to 1, indicating that a <tt>HasPtr</tt> object points to this <tt>U_Ptr</tt>.</p>
+<p class="docText">Assuming we just created a <tt>HasPtr</tt> object from a pointer that pointed to an <tt>int</tt> value of 42, we might picture the objects as follows:</P>
+
+<p class="docText">
+<img border="0" alt="" width="385" height="146" SRC="images/0201721481/graphics/496fig01.gif;400478"></P>
+
+<p class="docText">If we copy this object, then the objects will be as shown on the next page.</p>
+
+<a name="ch13lev3sec4"></a>
+<H5 class="docSection3Title">Using the Use-Counted Class</h5>
+<p class="docText">Our new <tt>HasPtr</tt> class holds a pointer to a <tt>U_Ptr</tt>, which in turn points to the actual underlying <tt>int</tt> object. Each member must be changed to reflect the fact that the class points to a <tt>U_Ptr</tt> rather than an <tt>int*</tt>.</p>
+
+<p class="docText">
+<img border="0" alt="" width="425" height="180" SRC="images/0201721481/graphics/497fig01.gif;400478"></P>
+
+<p class="docText"><a name="idd1e102589"></a><a name="idd1e102594"></a>We'll look first at the constructors and copy-control members:</P>
+<pre>
+     /* <span class="docEmphItalicAlt">smart pointer class: takes ownership of the dynamically allocated</span>
+      *          <span class="docEmphItalicAlt">object to which it is bound</span>
+      * <span class="docEmphItalicAlt">User code must dynamically allocate an object to initialize a</span> <span class="docEmphasis">HasPtr</span>
+      * <span class="docEmphItalicAlt">and must not delete that object; the</span> <span class="docEmphasis">HasPtr</span> <span class="docEmphItalicAlt">class will delete it</span>
+      */
+     class HasPtr {
+     public:
+         // <span class="docEmphasis">HasPtr</span> <span class="docEmphItalicAlt">owns the pointer; pmust have been dynamically allocated</span>
+         HasPtr(int *p, int i): ptr(new U_Ptr(p)), val(i) { }
+
+         // <span class="docEmphItalicAlt">copy members and increment the use count</span>
+         HasPtr(const HasPtr &amp;orig):
+            ptr(orig.ptr), val(orig.val) { ++ptr-&gt;use; }
+         HasPtr&amp; operator=(const HasPtr&amp;);
+
+         // <span class="docEmphItalicAlt">if use count goes to zero, delete the</span> <span class="docEmphasis">U_Ptr</span> <span class="docEmphItalicAlt">object</span>
+         ~HasPtr() { if (--ptr-&gt;use == 0) delete ptr; }
+     private:
+         U_Ptr *ptr;        // <span class="docEmphItalicAlt">points to use-counted</span> <span class="docEmphasis">U_Ptr</span> <span class="docEmphItalicAlt">class</span>
+         int val;
+     };
+</pre><br>
+<p class="docText">The <tt>HasPtr</tt> constructor that takes a pointer and an <tt>int</tt> uses its pointer parameter to create a new <tt>U_Ptr</tt> object. After the <tt>HasPtr</tt> constructor completes, the <tt>HasPtr</tt> object points to a newly allocated <tt>U_Ptr</tt> object. That <tt>U_Ptr</tt> object stores the pointer we were given. The use count in that new <tt>U_Ptr</tt> is 1, indicating that only one <tt>HasPtr</tt> object points to it.</p>
+<p class="docText">The copy constructor copies the members from its parameter and increments the use count. After the constructor completes, the newly created object points to the same <tt>U_Ptr</tt> object as the original and the use count of that <tt>U_Ptr</tt> object is incremented by one.</p>
+<p class="docText">The destructor checks the use count in the underlying <tt>U_Ptr</tt> object. If the use count goes to 0, then this is the last <tt>HasPtr</tt> object that points to this <tt>U_Ptr</tt>. In this case, the <tt>HasPtr</tt> destructor deletes its <tt>U_Ptr</tt> pointer. Deleting that pointer has the effect of calling the <tt>U_Ptr</tt> destructor, which in turn deletes the underlying <tt>int</tt> object.</p>
+
+<a name="ch13lev3sec5"></a>
+<h5 class="docSection3Title">Assignment and Use Counts</H5>
+<p class="docText"><a name="idd1e102725"></a><a name="idd1e102734"></a><a name="idd1e102742"></a><a name="idd1e102751"></a><a name="idd1e102756"></a>The assignment operator is a bit more complicated than the copy constructor:</p>
+<pre>
+     HasPtr&amp; HasPtr::operator=(const HasPtr &amp;rhs)
+     {
+         ++rhs.ptr-&gt;use;     // <span class="docEmphItalicAlt">increment use count on rhs first</span>
+         if (--ptr-&gt;use == 0)
+              delete ptr;    // <span class="docEmphItalicAlt">if use count goes to 0 on this object, delete it</span>
+         ptr = rhs.ptr;      // <span class="docEmphItalicAlt">copy the</span> <span class="docEmphasis">U_Ptr</span> <span class="docEmphItalicAlt">object</span>
+         val = rhs.val;      // <span class="docEmphItalicAlt">copy the</span> <span class="docEmphasis">int</span> <span class="docEmphItalicAlt">member</span>
+         return *this;
+     }
+</pre><BR>
+<p class="docText">Here we start by incrementing the use count in the right-hand operand. Then we decrement and check the use count on this object. As with the destructor, if this is the last object pointing to the <tt>U_Ptr</tt>, we delete the object, which in turn destroys the underlying <tt>int</tt>. Having decremented (and possibly destroyed) the existing value in the left-hand operand, we then copy the pointer from <tt>rhs</tt> into this object. As usual, assignment returns a reference to this object.</P>
+<a name="ch13note13"></a><div class="docNote"><p>
+<table width="90%" border="0" cellspacing="0" cellpadding="1"><tr><td width="60" valign="top"><img border="0" alt="" align="LEFT" width="50" height="54" SRC="images/0201721481/graphics/note.jpg;400478"></TD><TD valign="top"><p class="docText"> This assignment operator guards against self-assignment by incrementing the use count of <tt>rhs</tt> before decrementing the use count of the left-hand operand.</p></td></tr></table><br>
+</P></div><br>
+<p class="docText">If the left and right operands are the same, the effect of this assignment operator will be to increment and then immediately decrement the use count in the underlying <tt>U_Ptr</tt> object.</p>
+
+<a name="ch13lev3sec6"></a>
+<H5 class="docSection3Title">Changing Other Members</h5>
+<p class="docText">The other members that access the <tt>int*</tt> now need to change to get to the <tt>int</tt> indirectly through the <tt>U_Ptr</tt> pointer:</p>
+<pre>
+     class HasPtr {
+     public:
+         // <span class="docEmphItalicAlt">copy control and constructors as before</span>
+         // <span class="docEmphItalicAlt">accessors must change to fetch value from</span> <span class="docEmphasis">U_Ptr</span> <span class="docEmphItalicAlt">object</span>
+         int *get_ptr() const { return ptr-&gt;ip; }
+         int get_int() const { return val; }
+
+         // <span class="docEmphItalicAlt">change the appropriate data member</span>
+         void set_ptr(int *p) { ptr-&gt;ip = p; }
+         void set_int(int i) { val = i; }
+
+         // <span class="docEmphItalicAlt">return or change the value pointed to, so ok for</span> <span class="docEmphasis">const</span> <span class="docEmphItalicAlt">objects</span>
+         // <span class="docEmphItalicAlt">Note:</span> <span class="docEmphasis">*ptr-&gt;ip</span> <span class="docEmphItalicAlt">is equivalent to</span> <span class="docEmphasis">*(ptr-&gt;ip)</span>
+         int get_ptr_val() const { return *ptr-&gt;ip; }
+         void set_ptr_val(int i) { *ptr-&gt;ip = i; }
+     private:
+         U_Ptr *ptr;        // <span class="docEmphItalicAlt">points to use-counted</span> <span class="docEmphasis">U_Ptr</span> <span class="docEmphItalicAlt">class</span>
+         int val;
+     };
+</pre><BR>
+<p class="docText"><a name="idd1e102893"></a><a name="idd1e102900"></a><a name="idd1e102905"></a><a name="idd1e102911"></a><a name="idd1e102918"></a><a name="idd1e102921"></a>The functions that get and set the <tt>int</tt> member are unchanged. Those that operate on the pointer have to dereference the <tt>U_Ptr</tt> to get to the underlying <tt>int*</tt>.</p>
+<p class="docText">When we copy <tt>HasPtr</tt> objects, the <tt>int</tt> member behaves the same as in our first class. Its value is copied; the members are independent. The pointer members in the copy and the original still point to the same underlying object. A change made to that object will affect the value as seen by either <tt>HasPtr</tt> object. However, users of <tt>HasPtr</tt> do not need to worry about dangling pointers. As long as they let the <tt>HasPtr</tt> class take care of freeing the object, the class will ensure that the object stays around as long as there are <tt>HasPtr</tt> objects that point to it.</P>
+<a name="ch13sb07"></a><p><table cellspacing="0" width="90%" border="1" cellpadding="5"><tr><td>
+<h2 class="docSidebarTitle">Advice: Managing Pointer Members</h2>
+<p class="docText"><span class="docEmphStrong">Objects with pointer members often need to define the copy-control members. If we rely on the synthesized versions, then the class puts a burden on its users. Users must ensure that the object to which the member points stays around for at least as long as the object that points to it does.</span></p>
+<p class="docText"><span class="docEmphStrong">To manage a class with pointer members, we must define all three copy-control members: the copy constructor, assignment operator, and the destructor. These members can define either pointerlike or valuelike behavior for the pointer member.</span></p>
+<p class="docText"><span class="docEmphStrong">Valuelike classes give each object its own copy of the underlying values pointed to by pointer members. The copy constructor allocates a new element and copies the value from the object it is copying. The assignment operator destroys the existing object it holds and copies the value from its right-hand operand into its left-hand operand. The destructor destroys the object.</span></p>
+<p class="docText"><span class="docEmphStrong">As an alternative to defining either valuelike behavior or pointerlike behavior some classes are so-called &quot;smart pointers.&quot; These classes share the same underlying value between objects, thus providing pointerlike behavior. But they use copy-control techniques to avoid some of the pitfalls of regular pointers. To implement smart pointer behavior, a class needs to ensure that the underlying object stays around until the last copy goes away. Use counting (<a class="docLink" href="#ch13lev2sec25">Section 13.5.1</a>, p. <a class="docLink" href="#ch13lev2sec25">495</a>), is a common technique for managing smart pointer classes. Each copy of the same underlying value is given a use count. The copy constructor copies the pointer from the old object into the new one and increments the use count. The assignment operator decrements the use count of the left-hand operand and increments the count of the right-hand operand. If the use count of the left-hand operand goes to zero, the assignment operator must delete the object to which it points. Finally, the assignment operator copies the pointer from the right-hand operand into its left-hand operand. The destructor decrements the use count and deletes the underlying object if the count goes to zero.</span></p>
+<a name="ch13note14"></a><div class="docNote"><p>
+<table width="90%" border="0" cellspacing="0" cellpadding="1"><tr><td width="60" valign="top"><img border="0" alt="" align="LEFT" width="57" height="96" SRC="images/0201721481/graphics/beware.jpg;400478"></td><TD valign="top"><p class="docText"> <span class="docEmphStrong">These approaches to managing pointers occur so frequently that programmers who use classes with pointer members must be thoroughly familiar with these programming techniques.</span></P></td></TR></table><br>
+</p></div><BR>
+</TD></tr></table></p><br>
+
+
+<a name="ch13lev2sec26"></a>
+<h4 class="docSection2Title">13.5.2. Defining Valuelike Classes</h4>
+<p class="docText">A completely different approach to the problem of managing pointer members is to give them <B><a name="ch13term14"></a><a class="docLink" href="ch13lev1sec7.html#gloss13_14">value semantics</a></b>. Simply put, classes with value semantics define <a name="idd1e103008"></a><a name="idd1e103013"></a>objects that behave like the arithmetic types: When we copy a valuelike object, we get a new, distinct copy. Changes made to the copy are not reflected in the original, and vice versa. The <tt>string</tt> class is an example of a valuelike class.</p>
+<a name="ch13sb08"></a><P><table cellspacing="0" width="90%" border="1" cellpadding="5"><TR><td>
+<h2 class="docSidebarTitle">Exercises Section 13.5.1</h2>
+<blockquote>
+<P><table border="0" cellspacing="16" cellpadding="0"><TR valign="top"><td align="right" class="docText" width="50"><a name="ch13qa7q1"></a><b>Exercise 13.22:</b></td><td><p class="docText">What is a use count?</P>
+</td></tr><TR valign="top"><td align="right" class="docText" width="50"><a name="ch13qa7q2"></a><b>Exercise 13.23:</b></TD><td><p class="docText">What is a smart pointer? How does a smart pointer class differ from one that implements plain pointer behavior?</P>
+</td></tr><tr valign="top"><td align="right" class="docText" width="50"><a name="ch13qa7q3"></a><b>Exercise 13.24:</b></td><td><p class="docText">Implement your own version of the use-counted <tt>HasPtr</tt> class.</p>
+</td></tr></table></p>
+</blockquote>
+</td></tr></table></P><BR>
+<p class="docText">To make our pointer member behave like a value, we must copy the object to which the pointer points whenever we copy the <tt>HasPtr</tt> object:</p>
+<pre>
+     /*
+      * <span class="docEmphItalicAlt">Valuelike behavior even though</span> <span class="docEmphasis">HasPtr</span> <span class="docEmphItalicAlt">has a pointer member:</span>
+      * <span class="docEmphItalicAlt">Each time we copy a</span> <span class="docEmphasis">HasPtr</span> <span class="docEmphItalicAlt">object, we make a new copy of the</span>
+      * <span class="docEmphItalicAlt">underlying</span> <span class="docEmphasis">int</span> <span class="docEmphItalicAlt">object to which</span> <span class="docEmphasis">ptr</span> <span class="docEmphItalicAlt">points</span>.
+      */
+     class HasPtr {
+     public:
+         // <span class="docEmphItalicAlt">no point to passing a pointer if we're going to copy it anyway</span>
+         // <span class="docEmphItalicAlt">store pointer to a copy of the object we're given</span>
+         HasPtr(const int &amp;p, int i): ptr(new int(p)), val(i) {}
+
+         // <span class="docEmphItalicAlt">copy members and increment the use count</span>
+         HasPtr(const HasPtr &amp;orig):
+            ptr(new int (*orig.ptr)), val(orig.val) { }
+
+         HasPtr&amp; operator=(const HasPtr&amp;);
+         ~HasPtr() { delete ptr; }
+         // <span class="docEmphItalicAlt">accessors must change to fetch value from Ptr object</span>
+         int get_ptr_val() const { return *ptr; }
+         int get_int() const { return val; }
+
+         // <span class="docEmphItalicAlt">change the appropriate data member</span>
+         void set_ptr(int *p) { ptr = p; }
+         void set_int(int i) { val = i; }
+
+         // <span class="docEmphItalicAlt">return or change the value pointed to, so ok for const objects</span>
+         int *get_ptr() const { return ptr; }
+         void set_ptr_val(int p) const { *ptr = p; }
+     private:
+         int *ptr;        // <span class="docEmphItalicAlt">points to an</span> <span class="docEmphasis">int</span>
+         int val;
+     };
+</pre><BR>
+<p class="docText">The copy constructor no longer copies the pointer. It now allocates a new <tt>int</tt> object and initializes that object to hold the same value as the object of which it is a copy. Each object always holds its own, distinct copy of its <tt>int</tt> value. Because each object holds its own copy, the destructor unconditionally deletes the pointer.</p>
+<p class="docText"><a name="idd1e103147"></a><a name="idd1e103156"></a><a name="idd1e103164"></a>The assignment operator doesn't need to allocate a new object. It just has to remember to assign a new value to the object to which its <tt>int</tt> pointer points rather than assigning to the pointer itself:</p>
+<pre>
+     HasPtr&amp; HasPtr::operator=(const HasPtr &amp;rhs)
+     {
+         // <span class="docEmphItalicAlt">Note: Every</span> <span class="docEmphasis">HasPtr</span> <span class="docEmphItalicAlt">is guaranteed to point at an actual</span> <span class="docEmphasis">int;</span>
+         //    <span class="docEmphItalicAlt">We know that</span> <span class="docEmphasis">ptr</span> <span class="docEmphasis">cannot be a zero pointer</span>
+         *ptr = *rhs.ptr;       // <span class="docEmphItalicAlt">copy the value pointed to</span>
+         val = rhs.val;         // <span class="docEmphItalicAlt">copy the</span> <span class="docEmphasis">int</span>
+         return *this;
+     }
+</pre><BR>
+<p class="docText">In other words, we change the value pointed to but not the pointer.</P>
+<a name="ch13note15"></a><div class="docNote"><p>
+<table width="90%" border="0" cellspacing="0" cellpadding="1"><tr><td width="60" valign="top"><img border="0" alt="" align="LEFT" width="50" height="54" SRC="images/0201721481/graphics/note.jpg;400478"></td><td valign="top"><p class="docText"> As always, the assignment operator must be correct even if we're assigning an object to itself. In this case, the operations are inherently safe even if the left- and right-hand objects are the same. Thus, there is no need to explicitly check for self-assignment.</P></td></TR></table><BR>
+</p></div><br>
+<a name="ch13sb09"></a><p><table cellspacing="0" width="90%" border="1" cellpadding="5"><TR><TD>
+<h2 class="docSidebarTitle">Exercises Section 13.5.2</h2>
+<blockquote>
+<p><table border="0" cellspacing="16" cellpadding="0"><tr valign="top"><TD align="right" class="docText" width="50"><a name="ch13qa8q1"></a><b>Exercise 13.25:</b></td><TD><p class="docText">What is a valuelike class?</p>
+</td></TR><tr valign="top"><TD align="right" class="docText" width="50"><a name="ch13qa8q2"></a><b>Exercise 13.26:</b></td><td><p class="docText">Implement your own version of a valuelike <tt>HasPtr</tt> class.</p>
+</td></tr><tr valign="top"><td align="right" class="docText" width="50"><a name="ch13qa8q3"></a><b>Exercise 13.27:</b></td><td><p class="docText">The valuelike <tt>HasPtr</tt> class defines each of the copy-control members. Describe what would happen if the class defined</p>
+<div style="font-weight:bold"><ol class="docList" type="a"><li><div style="font-weight:normal"><p class="docList">The copy constructor and destructor but no assignment operator.</P></div></LI><li><div style="font-weight:normal"><p class="docList">The copy constructor and assignment operator but no destructor.</P></div></li><li><div style="font-weight:normal"><p class="docList">The destructor but neither the copy constructor nor assignment operator.</P></div></LI></ol></div>
+</td></tr><tr valign="top"><td align="right" class="docText" width="50"><a name="ch13qa8q4"></a><b>Exercise 13.28:</b></TD><td><p class="docText">Given the following classes, implement a default constructor and the necessary copy-control members.</P>
+<pre>
+     (a) class TreeNode {        (b) class BinStrTree {
+         public:                         public:
+             // ...                         //...
+         private:                        private:
+             std::string value;               TreeNode *root;
+             int         count;          };
+             TreeNode    *left;
+             TreeNode    *right;
+         };
+</pre><BR>
+</td></tr></table></p>
+</blockquote>
+</TD></TR></table></p><br>
+
+
+<a href="21001535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><ul></ul></TD></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=ch13lev1sec4.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=ch13lev1sec6.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

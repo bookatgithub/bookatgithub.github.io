@@ -1,0 +1,520 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Section 18.1.&nbsp; Optimizing Memory Allocation</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=ch18.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=ch18lev1sec2.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><a name="ch18lev1sec1"></a>
+<h3 class="docSection1Title">18.1. Optimizing Memory Allocation</h3>
+<p class="docText"><a name="idd1e144672"></a><span class="docEmphasis">Memory allocation</span> in C++ is a typed operation: <tt>new</tt> (<a class="docLink" href="ch05lev1sec11.html#ch05lev1sec11">Section 5.11</a>, p. <a class="docLink" href="ch05lev1sec11.html#ch05lev1sec11">174</a>) allocates memory for a specified type and constructs an object of that type in the newly allocated memory. A <tt>new</tt> expression automatically runs the appropriate constructor to initialize each dynamically allocated object of class type.</P>
+<p class="docText">The fact that <tt>new</tt> allocates memory on a per-object basis can impose unacceptable run-time overhead on some classes. Such classes might need to make user-level allocation of objects of the class type faster. A common strategy such classes use is to preallocate memory to be used when new objects are created, constructing each new object in preallocated memory as needed.</P>
+<p class="docText">Other classes want to minimize allocations needed for their own data members. For example, the library <tt>vector</tt> class preallocates (<a class="docLink" href="ch09lev1sec4.html#ch09lev1sec4">Section 9.4</a>, p. <a class="docLink" href="ch09lev1sec4.html#ch09lev1sec4">330</a>) extra memory to hold additional elements if and when they are added. New elements are added in this reserved capacity. Preallocating elements allows <tt>vector</tt> to efficiently add elements while keeping the elements in contiguous memory.</p>
+<p class="docText">In each of these casespreallocating memory to hold user-level objects or to hold the internal data for a classthere is the need to decouple memory allocation from object construction. The obvious reason to decouple allocation and construction is that constructing objects in preallocated memory is wasteful. Objects may be created that are never used. Those objects that are used must be reassigned new values when the preallocated object is actually used. More subtly, some classes could not use preallocated memory if it had to be constructed. As an example, consider <tt>vector</tt>, which uses a preallocation strategy. If objects in preallocated memory had to be constructed, then it would not be possible to have <tt>vector</tt>s of types that do not have a default constructorthere would be no way for <tt>vector</tt> to know how to construct these objects.</P>
+<a name="ch18note01"></a><div class="docNote"><p>
+<table width="90%" border="0" cellspacing="0" cellpadding="1"><tr><TD width="60" valign="top"><img border="0" alt="" align="LEFT" width="57" height="96" SRC="images/0201721481/graphics/beware.jpg;400478"></TD><td valign="top"><p class="docText"> The techniques presented in this section are not guaranteed to make all programs faster. Even when they do improve performance, they may carry other costs such as space usage or difficulty of debugging. It is always best to defer optimization until the program is known to work and when run-time measurements indicate that improving memory allocation will solve known performance problems.</p></td></tr></table><br>
+</P></div><br>
+<a name="ch18lev2sec1"></a>
+<H4 class="docSection2Title">18.1.1. Memory Allocation in C++</H4>
+<p class="docText">In C++ memory allocation and object construction are closely intertwined, as are object destruction and memory deallocation. When we use a <tt>new</tt> expression, memory is allocated, and an object is constructed in that memory. When we use a <tt>delete</tt> expression, a destructor is called to destroy the object and the memory used by the object is returned to the system.</p>
+<p class="docText">When we take over memory allocation, we must deal with both these tasks. When we allocate raw memory, we must construct object(s) in that memory. Before freeing that memory, we must ensure that the objects are properly destroyed.</p>
+<a name="ch18note02"></a><div class="docNote"><p>
+<table width="90%" border="0" cellspacing="0" cellpadding="1"><TR><TD width="60" valign="top"><img border="0" alt="" align="LEFT" width="57" height="96" SRC="images/0201721481/graphics/beware.jpg;400478"></td><td valign="top"><p class="docText"><a name="idd1e144755"></a><a name="idd1e144759"></a><a name="idd1e144763"></a><a name="idd1e144770"></a><a name="idd1e144777"></a><a name="idd1e144781"></a> Assigning to an object in unconstructed memory rather than initializing it is undefined. For many classes, doing so causes a crash at run time. Assignment involves obliterating the existing object. If there is no existing object, then the actions in the assignment operator can have disastrous effects.</p></td></TR></table><br>
+</p></div><BR>
+<p class="docText">C++ provides two ways to allocate and free unconstructed, raw memory:</p>
+<div style="font-weight:bold"><ol class="docList" type="1"><li><div style="font-weight:normal"><p class="docList">The <B><a name="ch18term1"></a><a class="docLink" href="ch18lev1sec9.html#gloss18_01"><span class="docEmphStrong"><tt>allocator</tt></span> class</a></b>, which provides type-aware memory allocation. This class supports an abstract interface to allocating memory and subsequently using that memory to hold objects.</p></div></LI><li><div style="font-weight:normal"><p class="docList">The library <tt>operator new</tt> and <tt>operator delete</tt> functions, which allocate and free raw, untyped memory of a requested size.</p></div></li></ol></div>
+<p class="docText">C++ also provides various ways to construct and destroy objects in raw memory:</p>
+<div style="font-weight:bold"><ol class="docList" type="1"><li><div style="font-weight:normal"><p class="docList">The <tt>allocator</tt> class defines members named <tt>construct</tt> and <tt>destroy</tt>, which operate as their names suggest. The <tt>construct</tt> member initializes objects in unconstructed memory; the <tt>destroy</tt> member runs the appropriate destructor on objects.</p></div></li><li><div style="font-weight:normal"><p class="docList">The placement <tt>new</tt> expression takes a pointer to unconstructed memory and initializes an object or an array in that space.</p></div></li><li><div style="font-weight:normal"><p class="docList">We can directly call an object's destructor to destroy the object. Running the destructor does not free the memory in which the object resides.</p></div></li><LI><div style="font-weight:normal"><p class="docList">The algorithms <tt>uninitialized_fill</tt> and <tt>uninitialized_copy</tt> execute like the <tt>fill</tt> and <tt>copy</tt> algorithms except that they construct objects in their destination rather than assigning to them.</P></div></li></ol></div>
+<a name="ch18note03"></a><div class="docNote"><P>
+<table width="90%" border="0" cellspacing="0" cellpadding="1"><tr><td width="60" valign="top"><img border="0" alt="" align="LEFT" width="50" height="54" SRC="images/0201721481/graphics/note.jpg;400478"></TD><TD valign="top"><p class="docText"> Modern C++ programs ordinarily ought to use the <tt>allocator</tt> class to allocate memory. It is safer and more flexible. However, when constructing objects, the placement <tt>new</tt> expression is more flexible than the <tt>allocator::construct</tt> member. There are some cases where placement <tt>new</tt> must be used.</p></td></tr></table><br>
+</p></div><BR>
+
+<a name="ch18lev2sec2"></a>
+<h4 class="docSection2Title">18.1.2. The <tt>allocator</tt> Class</H4>
+<p class="docText">The <tt>allocator</tt> class is a template that provides typed memory allocation and object construction and destruction. <a class="docLink" href="#ch18table01">Table 18.1</a> on the following page outlines the operations that <tt>allocator</tt> supports.</P>
+<a name="ch18table01"></a><p><table cellspacing="0" class="allBorders" border="1" RULES="none" cellpadding="5"><caption><h5 class="docTableTitle">Table 18.1. Standard <tt>allocator</tt> Class and Customized Algorithms</h5></caption><colgroup><col width="200"><col width="300"></colgroup><thead></thead><TR><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>allocator&lt;T&gt; a;</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText">Defines an <tt>allocator</tt> object named <tt>a</tt> that can allocate memory or construct objects of type <tt>T</tt>.</p></TD></tr><tr><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>a.allocate(n)</tt></p></td><TD class="docTableCell" align="left" valign="top"><p class="docText">Allocates raw, unconstructed memory to hold <tt>n</tt> objects of type <tt>T</tt>.</p></TD></tr><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>a.deallocate(p, n)</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText">Deallocates memory that held <tt>n</tt> objects of type <tt>T</tt> starting at address contained in the <tt>T*</tt> pointer named <tt>p</tt>. It is the user's responsibility to run <tt>destroy</tt> on any objects that were constructed in this memory before calling <tt>deallocate</tt>.</p></td></tr><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>a.construct(p, t)</tt></p></td><TD class="docTableCell" align="left" valign="top"><p class="docText">Constructs a new element in the memory pointed to by the <tt>T*</tt> pointer <tt>p</tt>. The copy constructor of type <tt>T</tt> is run to initialize the object from <tt>t</tt>.</P></td></TR><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>a.destroy(p)</tt></P></TD><td class="docTableCell" align="left" valign="top"><p class="docText">Runs the destructor on the object pointed to by the <tt>T*</tt> pointer <tt>p</tt>.</p></td></tr><tr><TD class="docTableCell" align="left" valign="top" colspan="2"><p class="docText"><tt>uninitialized_copy(b, e, b2)</tt></p></TD></TR><tr><td class="docTableCell" align="left" valign="top">&nbsp;</td><TD class="docTableCell" align="left" valign="top"><p class="docText">Copies elements from the input range denoted by iterators <tt>b</tt> and <tt>e</tt> into unconstructed, raw memory beginning at iterator <tt>b2</tt>. The function constructs elements in the destination, rather than assigning them. The destination denoted by <tt>b2</tt> is assumed large enough to hold a copy of the elements in the input range.</P></td></tr><tr><td class="docTableCell" align="left" valign="top" colspan="2"><p class="docText"><tt>uninitialized_fill(b, e, t)</tt></P></td></tr><TR><td class="docTableCell" align="left" valign="top">&nbsp;</td><TD class="docTableCell" align="left" valign="top"><p class="docText">Initializes objects in the range denoted by iterators <tt>b</tt> and <tt>e</tt> as a copy of <tt>t</tt>. The range is assumed to be unconstructed, raw memory. The objects are constructed using the copy constructor.</p></TD></tr><tr><td class="docTableCell" align="left" valign="top" colspan="2"><p class="docText"><tt>uninitialized_fill_n(b, e, t, n)</tt></p></td></tr><tr><td class="docTableCell" align="left" valign="top">&nbsp;</td><td class="docTableCell" align="left" valign="top"><p class="docText">Initializes at most an integral number <tt>n</tt> objects in the range denoted by iterators <tt>b</tt> and <tt>e</tt> as a copy of <tt>t</tt>. The range is assumed to be at least <tt>n</tt> elements in size. The objects are constructed using the copy constructor.</p></td></tr></table></P><BR>
+<p class="docText">The <tt>allocator</tt> class separates allocation and object construction. When an <tt>allocator</tt> object allocates memory, it allocates space that is appropriately sized and aligned to hold objects of the given type. However, the memory it allocates is unconstructed. Users of <tt>allocator</tt> must separately <tt>construct</tt> and <tt>destroy</tt> objects placed in the memory it allocates.</p>
+<a name="ch18lev3sec1"></a>
+<H5 class="docSection3Title">Using <tt>allocator</tt> to Manage Class Member Data</h5>
+<p class="docText"><a name="idd1e145164"></a><a name="idd1e145170"></a><a name="idd1e145177"></a>To understand how we might use a preallocation strategy and the <tt>allocator</tt> class to manage the internal data needs of a class, let's think a bit more about how memory allocation in the <tt>vector</tt> class might work.</p>
+<p class="docText">Recall that the <tt>vector</tt> class stores its elements in contiguous storage. To obtain acceptable performance, <tt>vector</tt> preallocates more elements than are needed (<a class="docLink" href="ch09lev1sec4.html#ch09lev1sec4">Section 9.4</a>, p. <a class="docLink" href="ch09lev1sec4.html#ch09lev1sec4">330</a>). Each <tt>vector</tt> member that adds elements to the container checks whether there is space available for another element. If so, then the member initializes an object in the next available spot in preallocated memory. If there isn't a free element, then the <tt>vector</tt> is reallocated: The <tt>vector</tt> obtains new space, copies the existing elements into that space, adds the new element, and frees the old space.</P>
+<p class="docText">The storage that <tt>vector</tt> uses starts out as unconstructed memory; it does not yet hold any objects. When the elements are copied to or added in this preallocated space, they must be constructed using the <tt>construct</tt> member of <tt>allocator</tt>.</P>
+<p class="docText"><a name="idd1e145229"></a><a name="idd1e145233"></a><a name="idd1e145240"></a><a name="idd1e145246"></a>To illustrate these concepts we'll implement a small portion of <tt>vector</tt>. We'll name our class <tt>Vector</tt> to distinguish it from the standard <tt>vector</tt> class:</p>
+<pre>
+     // <span class="docEmphItalicAlt">pseudo-implementation of memory allocation strategy for a</span> <span class="docEmphasis">vector</span><span class="docEmphItalicAlt">-like class</span>
+     template &lt;class T&gt; class Vector {
+     public:
+         Vector(): elements(0), first_free(0), end(0) { }
+         void push_back(const T&amp;);
+          // ...
+     private:
+         static std::allocator&lt;T&gt; alloc; // <span class="docEmphItalicAlt">object to get raw memory</span>
+         void reallocate(); // <span class="docEmphItalicAlt">get more space and copy existing elements</span>
+         T* elements;       // <span class="docEmphItalicAlt">pointer to first element in the array</span>
+         T* first_free;     // <span class="docEmphItalicAlt">pointer to first free element in the array</span>
+         T* end;            // <span class="docEmphItalicAlt">pointer to one past the end of the array</span>
+         // ...
+     };
+</pre><br>
+<p class="docText">Each <tt>Vector&lt;T&gt;</tt> type defines a <tt>static</tt> data member of type <tt>allocator&lt;T&gt;</tt> to allocate and construct the elements in <tt>Vector</tt>s of the given type. Each <tt>Vector</tt> object keeps its elements in a built-in array of the indicated type and maintains three pointers into that array:</p>
+<ul><li><p class="docList"><tt>elements</tt>, which points to the first element in the array</P></li><LI><p class="docList"><tt>first_free</tt>, which points just after the last actual element</P></li><li><p class="docList"><tt>end</tt>, which points just after the end of the array itself</p></LI></UL>
+<p class="docText"><a class="docLink" href="#ch18fig01">Figure 18.1</a> illustrates the meaning of these pointers.</p>
+<a name="ch18fig01"></a><p><center>
+<h5 class="docFigureTitle">Figure 18.1. <tt>Vector</tt> Memory Allocation Strategy</h5>
+
+<p class="docText">
+<img border="0" alt="" width="400" height="82" SRC="images/0201721481/graphics/18fig01.gif;400478"></P>
+
+</center></p><br>
+<p class="docText">We can use these pointers to determine the size and capacity of the <tt>Vector</tt>:</P>
+<ul><li><p class="docList">The <tt>size</tt> of a <tt>Vector</tt> (the number of elements actually in use) is equal to <tt>first_free</tt>  <tt>elements</tt>.</P></li><LI><p class="docList">The <tt>capacity</tt> of a <tt>Vector</tt> (the total number of elements that could be defined before the <tt>Vector</tt> has to be reallocated) is equal to <tt>end</tt>  <tt>elements</tt>.</p></li><li><p class="docList">The free capacity (the number of elements that can be added before a reallocation is necessary) is <tt>end</tt>  <tt>first_free</tt>.</p></li></ul>
+
+<a name="ch18lev3sec2"></a>
+<h5 class="docSection3Title">Using <tt>construct</tt></h5>
+<p class="docText"><a name="idd1e145422"></a><a name="idd1e145429"></a><a name="idd1e145436"></a>The <tt>push_back</tt> member uses these pointers to add a new element to the end of the <tt>Vector</tt>:</p>
+<pre>
+     template &lt;class T&gt;
+     void Vector&lt;T&gt;::push_back(const T&amp; t)
+     {
+         // <span class="docEmphItalicAlt">are we out of space?</span>
+         if (first_free == end)
+           reallocate(); // <span class="docEmphItalicAlt">gets more space and copies existing elements to it</span>
+         alloc.construct(first_free, t);
+         ++first_free;
+     }
+</pre><br>
+<p class="docText">The <tt>push_back</tt> function starts by determining whether there is space available. If not, it calls <tt>reallocate</tt>. That member allocates new space and copies the existing elements. It resets the pointers to point to the newly allocated space.</p>
+<p class="docText">Once <tt>push_back</tt> knows that there is room for the new element, it asks the <tt>allocator</tt> object to <tt>construct</tt> a new last element. The <tt>construct</tt> function uses the copy constructor for type <tt>T</tt> to copy the value <tt>t</tt> into the element denoted by <tt>first_free</tt>. It then increments <tt>first_free</tt> to indicate that one more element is in use.</p>
+
+<a name="ch18lev3sec3"></a>
+<h5 class="docSection3Title">Reallocating and Copying Elements</H5>
+<p class="docText">The <tt>reallocate</tt> function has the most work to do:</P>
+<pre>
+     template &lt;class T&gt; void Vector&lt;T&gt;::reallocate()
+     {
+         // <span class="docEmphItalicAlt">compute size of current array and allocate space for twice as many elements</span>
+         std::ptrdiff_t size = first_free - elements;
+         std::ptrdiff_t newcapacity = 2 * max(size, 1);
+         // <span class="docEmphItalicAlt">allocate space to hold</span> <span class="docEmphasis">newcapacity</span> <span class="docEmphItalicAlt">number of elements of type</span> <span class="docEmphasis">T</span>
+         T* newelements = alloc.allocate(newcapacity);
+
+         // <span class="docEmphItalicAlt">construct copies of the existing elements in the new space</span>
+         uninitialized_copy(elements, first_free, newelements);
+         // <span class="docEmphItalicAlt">destroy the old elements in reverse order</span>
+         for (T *p = first_free; p != elements; /* <span class="docEmphItalicAlt">empty</span> */ )
+            alloc.destroy(--p);
+
+         // <span class="docEmphasis">deallocate</span> <span class="docEmphItalicAlt">cannot be called on a 0 pointer</span>
+         if (elements)
+             // <span class="docEmphItalicAlt">return the memory that held the elements</span>
+             alloc.deallocate(elements, end - elements);
+         // <span class="docEmphItalicAlt">make our data structure point to the new elements</span>
+         elements = newelements;
+         first_free = elements + size;
+         end = elements + newcapacity;
+     }
+</pre><br>
+<p class="docText"><a name="idd1e145554"></a><a name="idd1e145561"></a><a name="idd1e145568"></a><a name="idd1e145575"></a>We use a simple but surprisingly effective strategy of allocating twice as much memory each time we reallocate. The function starts by calculating the current number of elements in use, doubling that number, and asking the <tt>allocator</tt> object to obtain the desired amount of space. If the <tt>Vector</tt> is empty, we allocate two elements.</P>
+<p class="docText">If <tt>Vector</tt> holds <tt>int</tt>s, the call to <tt>allocate</tt> allocates space for <tt>newcapacity</tt> number of <tt>int</tt>s. If it holds <tt>string</tt>s, then it allocates that space for the given number of <tt>string</tt>s.</p>
+<p class="docText">The call to <tt>uninitialized_copy</tt> uses a specialized version of the standard <tt>copy</tt> algorithm. This version expects its destination to be raw, unconstructed memory. Rather than assigning elements from the input range to the destination, it copy-constructs each element in the destination. The copy constructor for <tt>T</tt> is used to copy each element from the input range to the destination.</p>
+<p class="docText">The <tt>for</tt> loop calls the <tt>allocator</tt> member <tt>destroy</tt> on each object in the old array. It destroys the elements in reverse order, starting with the last element in the array and finishing with the first. The <tt>destroy</tt> function runs the destructor for type <tt>T</tt> to free any resources used by the old elements.</P>
+<p class="docText">Once the elements have been copied and destroyed, we free the space used by the original array. We must check that <tt>elements</tt> actually pointed to an array before calling <tt>deallocate</tt>.</P>
+<a name="ch18note04"></a><div class="docNote"><p>
+<table width="90%" border="0" cellspacing="0" cellpadding="1"><tr><td width="60" valign="top"><img border="0" alt="" align="LEFT" width="50" height="54" SRC="images/0201721481/graphics/note.jpg;400478"></td><td valign="top"><p class="docText"> <tt>deallocate</tt> expects a pointer that points to space that was allocated by <tt>allocate</tt>. It is not legal to pass <tt>deallocate</tt> a zero pointer.</P></td></TR></table><BR>
+</p></div><br>
+<p class="docText">Finally, we have to reset the pointers to address the newly allocated and initialized array. The <tt>first_free</tt> and <tt>end</tt> pointers are set to denote one past the last constructed element and one past the end of the allocated space, respectively.</p>
+<a name="ch18sb01"></a><P><table cellspacing="0" width="90%" border="1" cellpadding="5"><TR><td>
+<h2 class="docSidebarTitle">Exercises Section 18.1.2</h2>
+<blockquote>
+<p><table border="0" cellspacing="16" cellpadding="0"><TR valign="top"><td align="right" class="docText" width="50"><a name="ch18qa1q1"></a><b>Exercise 18.1:</b></TD><td><p class="docText">Implement your own version of the <tt>Vector</tt> class including versions of the <tt>vector</tt> members <tt>reserve</tt> (<a class="docLink" href="ch09lev1sec4.html#ch09lev1sec4">Section 9.4</a>, p. <a class="docLink" href="ch09lev1sec4.html#ch09lev1sec4">330</a>), <tt>resize</tt> (<a class="docLink" href="ch09lev1sec3.html#ch09lev2sec10">Section 9.3.5</a>, p. <a class="docLink" href="ch09lev1sec3.html#ch09lev2sec10">323</a>), and the <tt>const</tt> and non<tt>const</tt> subscript operators (<a class="docLink" href="ch14lev1sec5.html#ch14lev1sec5">Section 14.5</a>, p. <a class="docLink" href="ch14lev1sec5.html#ch14lev1sec5">522</a>).</p></TD></tr><TR valign="top"><td align="right" class="docText" width="50"><a name="ch18qa1q2"></a><b>Exercise 18.2:</b></td><td><p class="docText">Define a typedef that uses the corresponding pointer type as the <tt>iterator</tt> for your <tt>Vector</tt>.</p></td></tr><tr valign="top"><td align="right" class="docText" width="50"><a name="ch18qa1q3"></a><b>Exercise 18.3:</b></td><td><p class="docText">To test your <tt>Vector</tt> class, reimplement earlier programs you wrote using <tt>vector</tt> to use <tt>Vector</tt> instead.</p></TD></TR></table></p>
+</blockquote>
+</TD></tr></table></p><BR>
+
+
+<a name="ch18lev2sec3"></a>
+<H4 class="docSection2Title">18.1.3. <tt>operator new</tt> and <tt>operator delete</tt> Functions</h4>
+<p class="docText">The previous subsection used the <tt>vector</tt> class to show how we could use the <tt>allocator</tt> class to manage a pool of memory for a class' internal data storage. In the next three subsections we'll look at how we might implement the same strategy using the more primitive library facilities.</p>
+<p class="docText"><a name="idd1e145792"></a><a name="idd1e145800"></a><a name="idd1e145806"></a><a name="idd1e145814"></a><a name="idd1e145820"></a><a name="idd1e145825"></a><a name="idd1e145835"></a><a name="idd1e145840"></a>First, we need to understand a bit more about how <tt>new</tt> and <tt>delete</tt> expressions work. When we use a <tt>new</tt> expression</p>
+<pre>
+     // new expression
+     string * sp = new string("initialized");
+</pre><br>
+<p class="docText">three steps actually take place. First, the expression calls a library function named <b><a name="ch18term15"></a><a class="docLink" href="ch18lev1sec9.html#gloss18_15"><span class="docEmphStrong"><tt>operator new</tt></span></a></b> to allocate raw, untyped memory large enough to hold an object of the specified type. Next, a constructor for the type is run to construct the object from the specified initializers. Finally, a pointer to the newly allocated and constructed object is returned.</P>
+<p class="docText">When we use a <tt>delete</tt> expression to delete a dynamically allocated object:</p>
+<pre>
+     delete sp;
+</pre><BR>
+<p class="docText">two steps happen. First, the appropriate destructor is run on the object to which <tt>sp</tt> points. Then, the memory used by the object is freed by calling a library function named <B><a name="ch18term14"></a><a class="docLink" href="ch18lev1sec9.html#gloss18_14"><span class="docEmphStrong"><tt>operator delete</tt></span></a></b>.</p>
+<a name="ch18sb02"></a><p><table cellspacing="0" width="90%" border="1" cellpadding="5"><tr><TD>
+<H2 class="docSidebarTitle">Terminology: <tt>new</tt> Expression versus <tt>operator new</tt> Function</h2>
+<p class="docText"><span class="docEmphStrong">The library functions <tt>operator new</tt> and <tt>operator delete</tt> are misleadingly named. Unlike other <tt>operator</tt> functions, such as <tt>operator=</tt>, these functions do not overload the <tt>new</tt> or <tt>delete</tt> expressions. In fact, we cannot redefine the behavior of the <tt>new</tt> and <tt>delete</tt> expressions.</span></p>
+<p class="docText"><span class="docEmphStrong">A <tt>new</tt> expression executes by calling an <tt>operator new</tt> function to obtain memory and then constructs an object in that memory. A <tt>delete</tt> expression executes by destroying an object and then calls an <tt>operator delete</tt> function to free the memory used by the object.</span></p>
+<a name="ch18note05"></a><div class="docNote"><p>
+<table width="90%" border="0" cellspacing="0" cellpadding="1"><TR><td width="60" valign="top"><img border="0" alt="" align="LEFT" width="57" height="96" SRC="images/0201721481/graphics/beware.jpg;400478"></td><TD valign="top"><p class="docText"> <span class="docEmphStrong">Because the <tt>new</tt> (or <tt>delete</tt>) expressions and the underlying library functions have the same name, it is easy to confuse the two.</span></p></td></TR></table><br>
+</P></div><br>
+</td></tr></table></p><br>
+<a name="ch18lev3sec4"></a>
+<h5 class="docSection3Title">The <tt>operator new</tt> and <tt>operator delete</tt> Interface</h5>
+<p class="docText">There are two overloaded versions of <tt>operator new</tt> and <tt>operator delete</tt> functions. Each version supports the related <tt>new</tt> and <tt>delete</tt> expression:</p>
+<pre>
+     void *operator new(size_t);       // <span class="docEmphItalicAlt">allocate an object</span>
+     void *operator new[](size_t);     // <span class="docEmphItalicAlt">allocate an array</span>
+
+     void *operator delete(void*);     // <span class="docEmphItalicAlt">free an object</span>
+     void *operator delete[](void*);   // <span class="docEmphItalicAlt">free an array</span>
+</pre><br>
+
+<a name="ch18lev3sec5"></a>
+<h5 class="docSection3Title">Using the Allocation Operator Functions</h5>
+<p class="docText">Although the <tt>operator new</tt> and <tt>operator delete</tt> functions are intended to be used by <tt>new</tt> expressions, they are generally available functions in the library. <a name="idd1e146031"></a><a name="idd1e146042"></a><a name="idd1e146053"></a><a name="idd1e146059"></a><a name="idd1e146068"></a><a name="idd1e146077"></a><a name="idd1e146082"></a>We can use them to obtain unconstructed memory. They are somewhat analogous to the <tt>allocate</tt> and <tt>deallocate</tt> members of the <tt>allocator</tt> class. For example, instead of using an <tt>allocator</tt>, we could have used the <tt>operator new</tt> and <tt>operator delete</tt> functions in our <tt>Vector</tt> class. When we allocated new space we wrote</p>
+<pre>
+     // <span class="docEmphItalicAlt">allocate space to hold</span> <span class="docEmphasis">newcapacity</span> <span class="docEmphItalicAlt">number of elements of type</span> <span class="docEmphasis">T</span>
+     T* newelements = alloc.allocate(newcapacity);
+</pre><br>
+<p class="docText">which could be rewritten as</P>
+<pre>
+     // <span class="docEmphItalicAlt">allocate unconstructed memory to hold</span> <span class="docEmphasis">newcapacity</span> <span class="docEmphItalicAlt">elements of type</span> <span class="docEmphasis">T</span>
+     T* newelements = static_cast&lt;T*&gt;
+                    (operator new[](newcapacity * sizeof(T)));
+</pre><BR>
+<p class="docText">Similarly, when we deallocated the old space pointed to be the <tt>Vector</tt> member <tt>elements</tt> we wrote</p>
+<pre>
+     // <span class="docEmphItalicAlt">return the memory that held the elements</span>
+     alloc.deallocate(elements, end - elements);
+</pre><BR>
+<p class="docText">which could be rewritten as</p>
+<pre>
+     // <span class="docEmphItalicAlt">deallocate the memory that they occupied</span>
+     operator delete[](elements);
+</pre><br>
+<p class="docText">These functions behave similarly to the <tt>allocate</tt> and <tt>deallocate</tt> members of the <tt>allocator</tt> class. However, they differ in one important respect: They operate on <tt>void*</tt> pointers rather than typed pointers.</P>
+<a name="ch18note06"></a><div class="docNote"><P>
+<table width="90%" border="0" cellspacing="0" cellpadding="1"><tr><td width="60" valign="top"><img border="0" alt="" align="LEFT" width="116" height="74" SRC="images/0201721481/graphics/bestpractices.jpg;400478"></td><td valign="top"><p class="docText"> In general, it is more type-safe to use an <tt>allocator</tt> rather than using the <tt>operator new</tt> and <tt>operator delete</tt> functions directly.</p></TD></tr></table><BR>
+</P></div><br>
+<p class="docText">The <tt>allocate</tt> member allocates typed memory, so programs that use it can avoid the necessity of calculating the byte-count amount of memory needed. They also can avoid casting (<a class="docLink" href="ch05lev1sec12.html#ch05lev2sec28">Section 5.12.4</a>, p. <a class="docLink" href="ch05lev1sec12.html#ch05lev2sec28">183</a>) the return from <tt>operator new</tt>. Similarly, <tt>deallocate</tt> frees memory of a specific type, again avoiding the necessity for converting to <tt>void*</tt>.</p>
+
+
+<a name="ch18lev2sec4"></a>
+<h4 class="docSection2Title">18.1.4. Placement <tt>new</tt> Expressions</H4>
+<p class="docText">The library functions <tt>operator new</tt> and <tt>operator delete</tt> are lower-level versions of the <tt>allocator</tt> members <tt>allocate</tt> and <tt>deallocate</tt>. Each allocates but does not initialize memory.</P>
+<p class="docText">There are also lower-level alternatives to the <tt>allocator</tt> members <tt>construct</tt> and <tt>destroy</tt>. These members initialize and destroy objects in space allocated by an <tt>allocator</tt> object.</p>
+<p class="docText">Analogous to the <tt>construct</tt> member, there is a third kind of <tt>new</tt> expression, referred to as <b><a name="ch18term16"></a><a class="docLink" href="ch18lev1sec9.html#gloss18_16">placement <span class="docEmphStrong"><tt>new</tt></span></a></b>. The placement <tt>new</tt> expression initializes an object in raw memory that was already allocated. It differs from other versions of <tt>new</tt> in <a name="idd1e146303"></a><a name="idd1e146314"></a><a name="idd1e146319"></a><a name="idd1e146329"></a><a name="idd1e146338"></a>that it does not allocate memory. Instead, it takes a pointer to allocated but unconstructed memory and initializes an object in that memory. In effect, placement <tt>new</tt> allows us to construct an object at a specific, preallocated memory address.</p>
+<p class="docText">The form of a placement <tt>new</tt> expression is:</p>
+<pre>
+     new <span class="docEmphasis">(place_address) type</span>
+     new <span class="docEmphasis">(place_address) type (initializer-list)</span>
+</pre><BR>
+<p class="docText">where <tt>place_address</tt> must be a pointer and the <span class="docEmphasis">initializer-list</span> provides (a possibly empty) list of initializers to use when constructing the newly allocated object.</p>
+<p class="docText">We could use a placement <tt>new</tt> expression to replace the call to <tt>construct</tt> in our <tt>Vector</tt> implementation. The original code</p>
+<pre>
+     // <span class="docEmphItalicAlt">construct a copy</span> <span class="docEmphasis">t</span> <span class="docEmphItalicAlt">in the element to which</span> <span class="docEmphasis">first_free</span> <span class="docEmphItalicAlt">points</span>
+     alloc.construct (first_free, t);
+</pre><BR>
+<p class="docText">would be replaced by the equivalent placement <tt>new</tt> expression</p>
+<pre>
+     // <span class="docEmphItalicAlt">copy</span> <span class="docEmphasis">t</span> <span class="docEmphItalicAlt">into element addressed by</span> <span class="docEmphasis">first_free</span>
+     new (first_free) T(t);
+</pre><br>
+<p class="docText">Placement <tt>new</tt> expressions are more flexible than the <tt>construct</tt> member of class <tt>allocator</tt>. When placement <tt>new</tt> initializes an object, it can use any constructor, and builds the object directly. The <tt>construct</tt> function always uses the copy constructor.</P>
+<p class="docText">For example, we could initialize an allocated but unconstructed <tt>string</tt> from a pair of iterators in either of these two ways:</p>
+<pre>
+     allocator&lt;string&gt; alloc;
+     string *sp = alloc.allocate(2); // <span class="docEmphItalicAlt">allocate space to hold 2</span> <span class="docEmphasis">string</span><span class="docEmphItalicAlt">s</span>
+     // <span class="docEmphItalicAlt">two ways to construct a string from a pair of iterators</span>
+     new (sp) string(b, e);                    // <span class="docEmphItalicAlt">construct directly in place</span>
+     alloc.construct(sp + 1, string(b, e));   // <span class="docEmphItalicAlt">build and copy a temporary</span>
+</pre><BR>
+<p class="docText">The placement <tt>new</tt> expression uses the <tt>string</tt> constructor that takes a pair of iterators to construct the <tt>string</tt> directly in the space to which <tt>sp</tt> points. When we call <tt>construct</tt>, we must first construct the <tt>string</tt> from the iterators to get a <tt>string</tt> object to pass to <tt>construct</tt>. That function then uses the <tt>string</tt> copy constructor to copy that unnamed, temporary <tt>string</tt> into the object to which <tt>sp</tt> points.</p>
+<p class="docText">Often the difference is irrelevant: For valuelike classes, there is no observable difference between constructing the object directly in place and constructing a temporary and copying it. And the performance difference is rarely meaningful. But for some classes, using the copy constructor is either impossible (because the copy constructor is private) or should be avoided. In these cases, use of placement <tt>new</tt> may be necessary.</p>
+
+<a name="ch18lev2sec5"></a>
+<h4 class="docSection2Title">18.1.5. Explicit Destructor Invocation</h4>
+<p class="docText">Just as placement <tt>new</tt> is a lower-level alternative to using the <tt>allocate</tt> member of the <tt>allocator</tt> class, we can use an explicit call to a destructor as the lower-level alternative to calling <tt>destroy</tt>.</p>
+<a name="ch18sb03"></a><p><table cellspacing="0" width="90%" border="1" cellpadding="5"><tr><td>
+<h2 class="docSidebarTitle">Exercises Section 18.1.4</h2>
+<blockquote>
+<p><table border="0" cellspacing="16" cellpadding="0"><tr valign="top"><td align="right" class="docText" width="50"><a name="ch18qa2q1"></a><B>Exercise 18.4:</b></TD><td><p class="docText"><a name="idd1e146560"></a><a name="idd1e146569"></a>Why do you think <tt>construct</tt> is limited to using only the copy constructor for the element type?</P></td></tr><TR valign="top"><TD align="right" class="docText" width="50"><a name="ch18qa2q2"></a><b>Exercise 18.5:</b></td><td><p class="docText">Why can placement <tt>new</tt> expressions be more flexible?</p></td></TR></table></p>
+</blockquote>
+</TD></TR></table></p><br>
+<p class="docText">In the version of <tt>Vector</tt> that used an <tt>allocator</tt>, we clean up each element by calling <tt>destroy</tt>:</p>
+<pre>
+     // <span class="docEmphItalicAlt">destroy the old elements in reverse order</span>
+     for (T *p = first_free; p != elements; /* <span class="docEmphItalicAlt">empty</span> */ )
+         alloc.destroy(--p);
+</pre><BR>
+<p class="docText">For programs that use a placement <tt>new</tt> expression to construct the object, we call the destructor explicitly:</P>
+<pre>
+     for (T *p = first_free; p != elements; /* <span class="docEmphItalicAlt">empty</span> */ )
+         p-&gt;~T(); // <span class="docEmphItalicAlt">call the destructor</span>
+</pre><br>
+<p class="docText">Here we invoke a destructor directly. The arrow operator dereferences the iterator <tt>p</tt> to obtain the object to which <tt>p</tt> points. We then call the destructor, which is the name of the type preceded by a tilde (<tt>~</tt>).</p>
+<p class="docText">The effect of calling the destructor explicitly is that the object itself is properly cleaned up. However, the memory in which the object resided is not freed. We can reuse the space if desired.</p>
+<a name="ch18note07"></a><div class="docNote"><p>
+<table width="90%" border="0" cellspacing="0" cellpadding="1"><TR><td width="60" valign="top"><img border="0" alt="" align="LEFT" width="50" height="54" SRC="images/0201721481/graphics/note.jpg;400478"></td><TD valign="top"><p class="docText"> Calling the <tt>operator delete</tt> function does not run the destructor; it only frees the indicated memory.</p></td></TR></table><br>
+</P></div><br>
+<a name="ch18sb04"></a><p><table cellspacing="0" width="90%" border="1" cellpadding="5"><tr><td>
+<h2 class="docSidebarTitle">Exercises Section 18.1.5</h2>
+<blockquote>
+<p><table border="0" cellspacing="16" cellpadding="0"><tr valign="top"><td align="right" class="docText" width="50"><a name="ch18qa3q1"></a><b>Exercise 18.6:</b></td><td><p class="docText">Reimplement your <tt>Vector</tt> class to use <tt>operator new, operator delete</tt>, placement <tt>new</tt>, and direct calls to the destructor.</p></TD></TR><tr valign="top"><TD align="right" class="docText" width="50"><a name="ch18qa3q2"></a><b>Exercise 18.7:</b></td><TD><p class="docText">Test your new version by running the same programs that you ran against your initial <tt>Vector</tt> implementation.</P></td></tr><tr valign="top"><td align="right" class="docText" width="50"><a name="ch18qa3q3"></a><b>Exercise 18.8:</b></TD><td><p class="docText">Which version do you think is better, and why?</P></TD></tr></table></p>
+</blockquote>
+</td></TR></table></P><br>
+
+<a name="ch18lev2sec6"></a>
+<h4 class="docSection2Title">18.1.6. Class Specific <tt>new</tt> and <tt>delete</tt></h4>
+<p class="docText">The previous subsections looked at how a class can take over memory management for its own internal data structure. Another way to optimize memory allocation involves optimizing the behavior of <tt>new</tt> expressions. As an example, consider <a name="idd1e146732"></a><a name="idd1e146739"></a><a name="idd1e146747"></a><a name="idd1e146757"></a><a name="idd1e146767"></a><a name="idd1e146774"></a><a name="idd1e146784"></a><a name="idd1e146789"></a><a name="idd1e146796"></a><a name="idd1e146803"></a><a name="idd1e146808"></a><a name="idd1e146815"></a><a name="idd1e146824"></a><a name="idd1e146829"></a><a name="idd1e146836"></a><a name="idd1e146843"></a><a name="idd1e146848"></a>the <tt>Queue</tt> class from <a class="docLink" href="ch16.html#ch16">Chapter 16</a>. That class doesn't hold its elements directly. Instead, it uses <tt>new</tt> expressions to allocate objects of type <tt>QueueItem</tt>.</p>
+<p class="docText">It might be possible to improve the performance of <tt>Queue</tt> by preallocating a block of raw memory to hold <tt>QueueItem</tt> objects. When a new <tt>QueueItem</tt> object is created, it could be constructed in this preallocated space. When <tt>QueueItem</tt> objects are freed, we'd put them back in the block of preallocated objects rather than actually returning memory to the system.</P>
+<p class="docText">The difference between this problem and our <tt>Vector</tt> implementation is that in this case, we want to optimize the behavior of <tt>new</tt> and <tt>delete</tt> expressions when applied to objects of a particular type. By default, <tt>new</tt> expressions allocate memory by calling the version of <tt>operator new</tt> that is defined by the library. A class may manage the memory used for objects of its type by defining its own members named <tt>operator new</tt> and <tt>operator delete</tt>.</p>
+<p class="docText">When the compiler sees a <tt>new</tt> or <tt>delete</tt> expression for a class type, it looks to see if the class has a member <tt>operator new</tt> or <tt>operator delete</tt>. If the class defines (or inherits) its own member <tt>new</tt> and <tt>delete</tt> functions, then those functions are used to allocate and free the memory for the object. Otherwise, the standard library versions of these functions are called.</p>
+<p class="docText">When we optimize the behavior of <tt>new</tt> and <tt>delete</tt>, we need only define new versions of the <tt>operator new</tt> and <tt>operator delete</tt>. The <tt>new</tt> and <tt>delete</tt> expressions themselves take care of constructing and destroying the objects.</P>
+<a name="ch18lev3sec6"></a>
+<h5 class="docSection3Title">Member <tt>new</tt> and <tt>delete</tt> Functions</h5>
+<a name="ch18note08"></a><div class="docNote"><P>
+<table width="90%" border="0" cellspacing="0" cellpadding="1"><tr><TD width="60" valign="top"><img border="0" alt="" align="LEFT" width="57" height="96" SRC="images/0201721481/graphics/beware.jpg;400478"></td><td valign="top"><p class="docText"> If a class defines either of these members, it should define both of them.</p></td></tr></table><br>
+</p></div><br>
+<p class="docText">A class member <tt>operator new</tt> function must have a return type of <tt>void*</tt> and take a parameter of type <tt>size_t</tt>. The function's <tt>size_t</tt> parameter is initialized by the <tt>new</tt> expression with the size, in bytes, of the amount of memory to allocate.</p>
+<p class="docText">A class member <tt>operator delete</tt> function must have a <tt>void</tt> return type. It can be defined to take a single parameter of type <tt>void*</tt> or to take two parameters, a <tt>void*</tt> and a <tt>size_t</tt>. The <tt>void*</tt> parameter is initialized by the <tt>delete</tt> expression with the pointer that was <tt>delete</tt>d. That pointer might be a null pointer. If present, the <tt>size_t</tt> parameter is initialized automatically by the compiler with the size in bytes of the object addressed by the first parameter.</p>
+<p class="docText">The <tt>size_t</tt> parameter is unnecessary unless the class is part of an inheritance hierarchy. When we <tt>delete</tt> a pointer to a type in an inheritance hierarchy, the pointer might point to a base-class object or an object of a derived class. In general, the size of a derived-type object is larger than the size of a base-class object. If the base class has a <tt>virtual</tt> destructor (<a class="docLink" href="ch15lev1sec4.html#ch15lev2sec15">Section 15.4.4</a>, p. <a class="docLink" href="ch15lev1sec4.html#ch15lev2sec15">587</a>), then the size passed to <tt>operator delete</tt> will vary depending on the dynamic type of the object to which the deleted pointer points. If the base class does not have a virtual destructor, then, as usual, the behavior of deleting a pointer to a derived object through a base-class pointer is undefined.</p>
+<p class="docText"><a name="idd1e147042"></a><a name="idd1e147047"></a><a name="idd1e147052"></a><a name="idd1e147057"></a><a name="idd1e147062"></a>These functions are implicitly static members (<a class="docLink" href="ch12lev1sec6.html#ch12lev2sec32">Section 12.6.1</a>, p. <a class="docLink" href="ch12lev1sec6.html#ch12lev2sec32">469</a>). There is no need to declare them <tt>static</tt> explicitly, although it is legal to do so. The member <tt>new</tt> and <tt>delete</tt> functions must be static because they are used either before the object is constructed (<tt>operator new</tt>) or after it has been destroyed (<tt>operator delete</tt>). There are, therefore, no member data for these functions to manipulate. As with any other static member function, <tt>new</tt> and <tt>delete</tt> may access only static members of their class directly.</p>
+
+<a name="ch18lev3sec7"></a>
+<h5 class="docSection3Title">Array Operator <tt>new[]</tt> and Operator <tt>delete[]</tt></H5>
+<p class="docText">We can also define member <tt>operator new[]</tt> and <tt>operator delete[]</tt> to manage arrays of the class type. If these <tt>operator</tt> functions exist, the compiler uses them in place of the global versions.</P>
+<p class="docText">A class member <tt>operator new[]</tt> must have a return type of <tt>void*</tt> and take a first parameter of type <tt>size_t</tt>. The operator's <tt>size_t</tt> parameter is initialized automatically with a value that represents the number of bytes required to store an array of the given number of elements of the specified type.</p>
+<p class="docText">The member operator <tt>delete[]</tt> must have a <tt>void</tt> return type and a first parameter of type <tt>void*</tt>. The operator's <tt>void*</tt> parameter is initialized automatically with a value that represents the beginning of the storage in which the array is stored.</P>
+<p class="docText">The operator <tt>delete[]</tt> for a class may also have two parameters instead of one, the second parameter being a <tt>size_t</tt>. If present, the additional parameter is initialized automatically by the compiler with the size in bytes of the storage required to store the array.</p>
+
+<a name="ch18lev3sec8"></a>
+<h5 class="docSection3Title">Overriding Class-Specific Memory Allocation</H5>
+<p class="docText">A user of a class that defines its own member <tt>new</tt> and <tt>delete</tt> can force a <tt>new</tt> or <tt>delete</tt> expression to use the global library functions through the use of the global scope resolution operator. If the user writes</P>
+<pre>
+     Type *p = ::new Type; // <span class="docEmphItalicAlt">uses global</span> <span class="docEmphasis">operator new</span>
+     ::delete p;           // <span class="docEmphItalicAlt">uses global</span> <span class="docEmphasis">operator delete</span>
+</pre><br>
+<p class="docText">then <tt>new</tt> invokes the global <tt>operator new</tt> even if class <tt>Type</tt> defines its own class-specific <tt>operator new</tt>; similarly for <tt>delete</tt>.</p>
+<a name="ch18note09"></a><div class="docNote"><p>
+<table width="90%" border="0" cellspacing="0" cellpadding="1"><tr><td width="60" valign="top"><img border="0" alt="" align="LEFT" width="57" height="96" SRC="images/0201721481/graphics/beware.jpg;400478"></TD><td valign="top"><p class="docText"> If storage was allocated with a <tt>new</tt> expression invoking the global <tt>operator new</tt> function, then the <tt>delete</tt> expression should also invoke the global <tt>operator delete</tt> function.</P></TD></tr></table><br>
+</p></div><BR>
+<a name="ch18sb05"></a><P><table cellspacing="0" width="90%" border="1" cellpadding="5"><tr><td>
+<h2 class="docSidebarTitle">Exercises Section 18.1.6</h2>
+<blockquote>
+<P><table border="0" cellspacing="16" cellpadding="0"><tr valign="top"><td align="right" class="docText" width="50"><a name="ch18qa4q1"></a><B>Exercise 18.9:</b></td><td><p class="docText">Declare members <tt>new</tt> and <tt>delete</tt> for the <tt>QueueItem</tt> class.</P></td></TR></table></p>
+</blockquote>
+</td></tr></table></p><br>
+
+
+<a name="ch18lev2sec7"></a>
+<h4 class="docSection2Title">18.1.7. A Memory-Allocator Base Class</h4>
+<a name="ch18note10"></a><div class="docNote"><p>
+<table width="90%" border="0" cellspacing="0" cellpadding="1"><tr><td width="60" valign="top"><img border="0" alt="" align="LEFT" width="57" height="96" SRC="images/0201721481/graphics/beware.jpg;400478"></td><td valign="top"><p class="docText"><a name="idd1e147280"></a><a name="idd1e147286"></a><a name="idd1e147292"></a><a name="idd1e147304"></a><a name="idd1e147307"></a> Like the generic handle class (<a class="docLink" href="ch16lev1sec5.html#ch16lev1sec5">Section 16.5</a>, p. <a class="docLink" href="ch16lev1sec5.html#ch16lev1sec5">666</a>) this example represents a fairly sophisticated use of C++. Understanding this example requires (and demonstrates) a good grasp of both inheritance and templates. It may be useful to delay studying this example until you are comfortable with these features.</p></TD></TR></table><br>
+</P></div><br>
+<p class="docText">Having seen how to declare class-specific member <tt>new</tt> and <tt>delete</tt>, we might next implement those members for <tt>QueueItem</tt>. Before doing so, we need to decide how we'll improve over the built-in library <tt>new</tt> and <tt>delete</tt> functions. One common strategy is to preallocate a block of raw memory to hold unconstructed objects. When new elements are created, they could be constructed in one of these preallocated objects. When elements are freed, we'd put them back in the block of preallocated objects rather than actually returning memory to the system. This kind of strategy is often known as maintaining a <b><a name="ch18term7"></a><a class="docLink" href="ch18lev1sec9.html#gloss18_07">freelist</a></b>. The freelist might be implemented as a linked list of objects that have been allocated but not constructed.</P>
+<p class="docText">Rather than implementing a freelist-based allocation strategy for <tt>QueueItem</tt>, we'll observe that <tt>QueueItem</tt> is not unique in wanting to optimize allocation of objects of its type. Many classes might have the same need. Because this behavior might be generally useful, we'll define a new class that we'll name <tt>CachedObj</tt> to handle the freelist. A class, such as <tt>QueueItem</tt>, that wants to opimize allocation of objects of its type could use the <tt>CachedObj</tt> class rather than implementing its own <tt>new</tt> and <tt>delete</tt> members directly.</P>
+<p class="docText">The <tt>CachedObj</tt> class will have a simple interface: Its only job is to allocate and manage a freelist of allocated but unconstructed objects. This class will define a member <tt>operator new</tt> that will return the next element from the freelist, removing it from the freelist. The <tt>operator new</tt> will allocate new raw memory whenever the freelist becomes empty. The class will also define <tt>operator delete</tt> to put an element back on the freelist when an object is destroyed.</p>
+<p class="docText">Classes that wish to use a freelist allocation strategy for their own types will <span class="docEmphasis">inherit</span> from <tt>CachedObj</tt>. Through inheritance, these classes can use the <tt>CachedObj</tt> definition of <tt>operator new</tt> and <tt>operator delete</tt> along with the data members needed to represent the freelist. Because the <tt>CachedObj</tt> class is intended as a base class, we'll give it a <tt>public</tt> virtual destructor.</p>
+<a name="ch18note11"></a><div class="docNote"><p>
+<table width="90%" border="0" cellspacing="0" cellpadding="1"><tr><TD width="60" valign="top"><img border="0" alt="" align="LEFT" width="57" height="96" SRC="images/0201721481/graphics/beware.jpg;400478"></td><TD valign="top"><p class="docText"> As we'll see, <tt>CachedObj</tt> may be used only for types that are not involved in an inheritance hierarchy. Unlike the member <tt>new</tt> and <tt>delete</tt> operations, <tt>CachedObj</tt> has no way to allocate different sized objects depending on the actual type of the object: Its freelist holds objects of a single size. Hence, it may be used only for classes, such as <tt>QueueItem</tt>, that do not serve as base classes.</P></td></tr></table><br>
+</P></div><BR>
+<p class="docText">The data members defined by the <tt>CachedObj</tt> class, and inherited by its derived classes, are:</p>
+<ul><li><p class="docList">A <tt>static</tt> pointer to the head of the freelist</p></LI><li><p class="docList">A member named <tt>next</tt> that points from one <tt>CachedObj</tt> to the next</p></LI></ul>
+<p class="docText"><a name="idd1e147463"></a><a name="idd1e147469"></a>The <tt>next</tt> pointer chains the elements together onto the freelist. Each type that we derive from <tt>CachedObj</tt> will contain its own type-specific data plus a single pointer inherited from the <tt>CachedObj</tt> base class. Each object has an extra pointer used by the memory allocator but not by the inherited type itself. When the object is in use, this pointer is meaningless and not used. When the object is available for use and is on the freelist, then the <tt>next</tt> pointer is used to point to the next available object.</p>
+<p class="docText">If we used <tt>CachedObj</tt> to optimize allocation of our <tt>Screen</tt> class, objects of type <tt>Screen</tt> (conceptually) would look like the illustration in <a class="docLink" href="#ch18fig02">Figure 18.2</a>.</P>
+<a name="ch18fig02"></a><p><center>
+<H5 class="docFigureTitle">Figure 18.2. Illustration of a <tt>CachedObj</tt> Derived Class</h5>
+
+<p class="docText">
+<img border="0" alt="" width="250" height="173" SRC="images/0201721481/graphics/18fig02.gif;400478"></p>
+
+</center></p><br>
+<a name="ch18lev3sec9"></a>
+<h5 class="docSection3Title">The <tt>CachedObj</tt> Class</h5>
+<p class="docText">The only remaining question is what types to use for the pointers in <tt>CachedObj</tt>. We'd like to use the freelist approach for any type, so the class will be a template. The pointers will point to an object of the template type:</p>
+<pre>
+     /* <span class="docEmphItalicAlt">memory allocation class: Pre-allocates objects and</span>
+      * <span class="docEmphItalicAlt">maintains a freelist of objects that are unused</span>
+      * <span class="docEmphItalicAlt">When an object is freed, it is put back on the freelist</span>
+      * <span class="docEmphItalicAlt">The memory is only returned when the program exits</span>
+      */
+     template &lt;class T&gt; class CachedObj {
+     public:
+         void *operator new(std::size_t);
+         void operator delete(void *, std::size_t);
+         virtual ~CachedObj() { }
+     protected:
+         T *next;
+     private:
+         static void add_to_freelist(T*);
+         static std::allocator&lt;T&gt; alloc_mem;
+         static T *freeStore;
+         static const std::size_t chunk;
+     };
+</pre><br>
+<p class="docText"><a name="idd1e147554"></a><a name="idd1e147560"></a><a name="idd1e147567"></a>The class is quite simple. It provides only three public members: <tt>operator new, operator delete</tt>, and a virtual destructor. The <tt>new</tt> and <tt>delete</tt> members take objects off and return objects to the freelist.</p>
+<p class="docText">The <tt>static</tt> members manage the freelist. These members are declared as <tt>static</tt> because there is only one freelist maintained for all the objects of a given type. The <tt>freeStore</tt> pointer points to the head of the freelist. The member named <tt>chunk</tt> specifies the number of objects that will be allocated each time the freelist is empty. Finally, <tt>add_to_freelist</tt> puts objects on the freelist. This function is used by <tt>operator new</tt> to put newly allocated objects onto the freelist. It is also used by <tt>operator delete</tt> to put an object back on the free list when an object is deleted.</p>
+
+<a name="ch18lev3sec10"></a>
+<h5 class="docSection3Title">Using <tt>CachedObj</tt></h5>
+<p class="docText">The only really tricky part in using <tt>CachedObj</tt> is understanding the template parameter: When we inherit from <tt>CachedObj</tt>, the template type we use to instantiate <tt>CachedObj</tt> will be the derived type itself. We inherit from <tt>CachedObj</tt> in order to reuse its freelist management. However, <tt>CachedObj</tt> holds a pointer to the object type it manages. The type of that pointer is pointer to a type derived from <tt>CachedObj</tt>.</p>
+<p class="docText">For example, to optimize memory management for our <tt>Screen</tt> class we would declare <tt>Screen</tt> as</P>
+<pre>
+     class Screen: public CachedObj&lt;Screen&gt; {
+         // <span class="docEmphItalicAlt">interface and implementation members of class</span> <span class="docEmphasis">Screen</span> <span class="docEmphItalicAlt">are unchanged</span>
+     };
+</pre><BR>
+<p class="docText">This declaration gives <tt>Screen</tt> a new base class, the instance of <tt>CachedObj</tt> that is parameterized by type <tt>Screen</tt>. Each <tt>Screen</tt> now includes an additional inherited member named <tt>next</tt> in addition to its other members defined inside the <tt>Screen</tt> class.</p>
+<p class="docText">Because <tt>QueueItem</tt> is a template type, deriving it from <tt>CachedObj</tt> is a bit complicated:</P>
+<pre>
+     template &lt;class Type&gt;
+     class QueueItem: public CachedObj&lt; QueueItem&lt;Type&gt; &gt; {
+          // <span class="docEmphItalicAlt">remainder of class declaration and all member definitions unchanged</span>
+     };
+</pre><br>
+<p class="docText">This declaration says that <tt>QueueItem</tt> is a class template that is derived from the instantiation of <tt>CachedObj</tt> that holds objects of type <tt>QueueItem&lt;Type&gt;</tt>. For example, if we define a <tt>Queue</tt> of <tt>int</tt>s, then the <tt>QueueItem&lt;int&gt;</tt> class is derived from <tt>CachedObj&lt; QueueItem&lt;int&gt; &gt;</tt>.</p>
+<a name="ch18note12"></a><div class="docNote"><P>
+<table width="90%" border="0" cellspacing="0" cellpadding="1"><TR><td width="60" valign="top"><img border="0" alt="" align="LEFT" width="50" height="54" SRC="images/0201721481/graphics/note.jpg;400478"></td><td valign="top"><p class="docText"> No other changes are needed in our class. <tt>QueueItem</tt> now has automatic memory allocation that uses a freelist to reduce the number of allocations required when creating new <tt>Queue</tt> elements.</p></td></TR></table><br>
+</P></div><BR>
+
+<a name="ch18lev3sec11"></a>
+<h5 class="docSection3Title">How Allocation Works</h5>
+<p class="docText"><a name="idd1e147747"></a><a name="idd1e147754"></a><a name="idd1e147760"></a><a name="idd1e147767"></a><a name="idd1e147774"></a><a name="idd1e147782"></a><a name="idd1e147789"></a><a name="idd1e147796"></a><a name="idd1e147804"></a>Because we derived <tt>QueueItem</tt> from <tt>CachedObj</tt>, any allocation using a <tt>new</tt> expression, such as the call from <tt>Queue::push:</tt></p>
+<pre>
+     // <span class="docEmphItalicAlt">allocate a new</span> <span class="docEmphasis">QueueItem</span> <span class="docEmphItalicAlt">object</span>
+     QueueItem&lt;Type&gt; *pt =
+         new QueueItem&lt;Type&gt;(val);
+</pre><BR>
+<p class="docText">allocates and constructs a new <tt>QueueItem</tt>. Each <tt>new</tt> expression:</P>
+<div style="font-weight:bold"><ol class="docList" type="1"><li><div style="font-weight:normal"><p class="docList">Uses the <tt>QueueItem&lt;T&gt;::operator new</tt> function to allocate an object from the freelist</p></div></li><li><div style="font-weight:normal"><p class="docList">Uses the element type copy constructor for type <tt>T</tt> to construct an object in that storage</P></div></li></ol></div>
+<p class="docText">Similarly, when we <tt>delete</tt> a <tt>QueueItem</tt> pointer such as</p>
+<pre>
+     delete pt;
+</pre><BR>
+<p class="docText">the <tt>QueueItem</tt> destructor is run to clean up the object to which <tt>pt</tt> points and the class <tt>operator delete</tt> is called. That operator puts the memory the element used back on the freelist.</p>
+
+<a name="ch18lev3sec12"></a>
+<h5 class="docSection3Title">Defining <tt>operator new</tt></H5>
+<p class="docText">The <tt>operator new</tt> member returns an object from the freelist. If the freelist is empty, <tt>new</tt> must first allocate a new <tt>chunk</tt> of memory:</p>
+<pre>
+         template &lt;class T&gt;
+         void *CachedObj&lt;T&gt;::operator new(size_t sz)
+         {
+              // <span class="docEmphasis">new</span> <span class="docEmphItalicAlt">should only be asked to build a</span> <span class="docEmphasis">T</span><span class="docEmphItalicAlt">, not an object</span>
+              // <span class="docEmphItalicAlt">derived from</span> <span class="docEmphasis">T</span><span class="docEmphItalicAlt">; check that right size is requested</span>
+              if (sz != sizeof(T))
+                  throw std::runtime_error
+                   ("CachedObj: wrong size object in operator new");
+              if (!freeStore) {
+                  // <span class="docEmphItalicAlt">the list is empty: grab a new chunk of memory</span>
+                  // <span class="docEmphasis">allocate</span> <span class="docEmphItalicAlt">allocates chunk number of objects of type</span> <span class="docEmphasis">T</span>
+                  T * array = alloc_mem.allocate(chunk);
+
+                  // <span class="docEmphItalicAlt">now set the</span> <span class="docEmphasis">next</span> <span class="docEmphItalicAlt">pointers in each object in the allocated memory</span>
+                  for (size_t i = 0; i != chunk; ++i)
+                        add_to_freelist(&amp;array[i]);
+              }
+              T *p = freeStore;
+              freeStore = freeStore-&gt;CachedObj&lt;T&gt;::next;
+              return p;   // <span class="docEmphItalicAlt">constructor of T will construct the T part of the object</span>
+         }
+</pre><BR>
+<p class="docText">The function begins by verifying that it is being asked to allocate the right amount of space.</p>
+<p class="docText"><a name="idd1e147969"></a><a name="idd1e147976"></a><a name="idd1e147984"></a>This check enforces our design intent that <tt>CachedObj</tt> should be used only for classes that are not base classes. The fact that <tt>CachedObj</tt> allocates objects on its freelist that have a fixed size means that it cannot be used to handle memory allocation for classes in an inheritance hierarchy. Classes related by inheritance almost always define objects of different sizes. A single allocator would have to be much more sophisticated than the one we implement here to handle such classes.</p>
+<p class="docText">The <tt>operator new</tt> function next checks whether there are any objects on the freelist. If not, it asks the <tt>allocator</tt> member to allocate <tt>chunk</tt> new, unconstructed objects. It then iterates through the newly allocated objects, setting the <tt>next</tt> pointer. After the call to <tt>add_to_freelist</tt>, each object on the freelist will be unconstructed, except for its <tt>next</tt> pointer, which will hold the address of the next available object. The freelist looks something like the picture in <a class="docLink" href="#ch18fig03">Figure 18.3</a>.</p>
+<a name="ch18fig03"></a><p><center>
+<h5 class="docFigureTitle">Figure 18.3. Illustration <tt>CachedObj</tt> Freelist</h5>
+
+<p class="docText">
+<img border="0" alt="" width="475" height="137" SRC="images/0201721481/graphics/18fig03.gif;400478"></p>
+
+</center></p><br>
+<p class="docText">Having ensured that there are available objects to allocate, <tt>operator new</tt> returns the address of the first object on the freelist, resetting the <tt>freeStore</tt> pointer to address the next element on the freelist. The object returned is unconstructed. Because <tt>operator new</tt> is called from a <tt>new</tt> expression, the <tt>new</tt> expression will take care of constructing the object.</p>
+
+<a name="ch18lev3sec13"></a>
+<h5 class="docSection3Title">Defining <tt>operator delete</tt></h5>
+<p class="docText">The member <tt>operator delete</tt> is responsible only for managing the memory. The object itself was already cleaned up in the destructor, which the <tt>delete</tt> expression calls before calling <tt>operator delete</tt>. The <tt>operator delete</tt> member is trivial:</p>
+<pre>
+     template &lt;class T&gt;
+     void CachedObj&lt;T&gt;::operator delete(void *p, size_t)
+     {
+        if (p != 0)
+            // <span class="docEmphItalicAlt">put the "deleted" object back at head of freelist</span>
+            add_to_freelist(static_cast&lt;T*&gt;(p));
+     }
+</pre><BR>
+<p class="docText">It calls <tt>add_to_freelist</tt> to put the deleted object back onto the freelist.</P>
+<p class="docText"><a name="idd1e148098"></a><a name="idd1e148105"></a><a name="idd1e148114"></a><a name="idd1e148120"></a>The interesting part is the cast (<a class="docLink" href="ch05lev1sec12.html#ch05lev2sec28">Section 5.12.4</a>, p. <a class="docLink" href="ch05lev1sec12.html#ch05lev2sec28">183</a>). <tt>operator delete</tt> is called when a dynamically allocated object of the class type is <tt>delete</tt>d. The compiler passes the address of that object to <tt>operator delete</tt>. However, the parameter type for the pointer must be <tt>void*</tt>. Before calling <tt>add_to_freelist</tt>, we have to cast the pointer from <tt>void*</tt> back to its actual type. In this case, that type is pointer to <tt>T</tt>, which in turn is a pointer to an object of a type derived from <tt>CachedObj</tt>.</p>
+
+<a name="ch18lev3sec14"></a>
+<H5 class="docSection3Title">The <tt>add_to_freelist</tt> Member</h5>
+<p class="docText">The job of this member is to set the <tt>next</tt> pointer and update the <tt>freeStore</tt> pointer when an object is added to the freelist:</p>
+<pre>
+     // <span class="docEmphItalicAlt">puts object at head of the freelist</span>
+     template &lt;class T&gt;
+     void CachedObj&lt;T&gt;::add_to_freelist(T *p)
+     {
+        p-&gt;CachedObj&lt;T&gt;::next = freeStore;
+        freeStore = p;
+     }
+</pre><BR>
+<p class="docText">The only tricky part is the use of the <tt>next</tt> member. Recall that <tt>CachedObj</tt> is intended to be used as a base class. The objects that are allocated aren't of type <tt>CachedObj</tt>. Instead, those objects are of a type derived from <tt>CachedObj</tt>. The type of <tt>T</tt>, therefore, will be the derived type. The pointer <tt>p</tt> is a pointer to <tt>T</tt>, not a pointer to <tt>CachedObj</tt>. If the derived class has its own member named <tt>next</tt>, then writing</P>
+<pre>
+     p-&gt;next
+</pre><br>
+<p class="docText">would fetch the <tt>next</tt> member of the derived class! But we want to set the <tt>next</tt> in the base, <tt>CachedObj</tt> class.</p>
+<a name="ch18note13"></a><div class="docNote"><p>
+<table width="90%" border="0" cellspacing="0" cellpadding="1"><tr><td width="60" valign="top"><img border="0" alt="" align="LEFT" width="50" height="54" SRC="images/0201721481/graphics/note.jpg;400478"></TD><td valign="top"><p class="docText"> To avoid any possible collision with a member defined in the derived class, we explicitly specify that we are assigning to the base class member <tt>next</tt>.</P></TD></tr></table><br>
+</p></div><BR>
+
+<a name="ch18lev3sec15"></a>
+<H5 class="docSection3Title">Defining the Static Data Members</h5>
+<p class="docText">What remains is to define the static data members:</p>
+<pre>
+     template &lt;class T&gt; allocator&lt; T &gt; CachedObj&lt; T &gt;::alloc_mem;
+     template &lt;class T&gt; T *CachedObj&lt; T &gt;::freeStore = 0;
+     template &lt;class T&gt; const size_t CachedObj&lt; T &gt;::chunk = 24;
+</pre><br>
+<p class="docText">As usual, with static members of a class template there is a different static member for each type used to instantiate <tt>CachedObj</tt>. We initialize <tt>chunk</tt> to an arbitrary valuein this case, 24. We initialize the <tt>freeStore</tt> pointer to 0, indicating that the freelist starts out empty. There is no initialization required for the <tt>alloc_mem</tt> member, but we do have to remember to define it.</p>
+<a name="ch18sb06"></a><P><table cellspacing="0" width="90%" border="1" cellpadding="5"><tr><td>
+<H2 class="docSidebarTitle">Exercises Section 18.1.7</h2>
+<blockquote>
+<p><table border="0" cellspacing="16" cellpadding="0"><TR valign="top"><td align="right" class="docText" width="50"><a name="ch18qa5q1"></a><B>Exercise 18.10:</b></td><td><p class="docText"><a name="idd1e148291"></a><a name="idd1e148296"></a><a name="idd1e148299"></a><a name="idd1e148302"></a><a name="idd1e148307"></a><a name="idd1e148310"></a>Explain each of the following initializations. Indicate if any are errors, and if so, why.</p>
+<pre>
+     class iStack {
+     public:
+         iStack(int capacity): stack(capacity), top(0) { }
+     private:
+         int top;
+         vector&lt;int&gt; stack;
+     };
+     (a) iStack *ps = new iStack(20);
+     (b) iStack *ps2 = new const iStack(15);
+     (c) iStack *ps3 = new iStack[ 100 ];
+</pre><br>
+</td></tr><tr valign="top"><td align="right" class="docText" width="50"><a name="ch18qa5q2"></a><b>Exercise 18.11:</b></td><td><p class="docText">Explain what happens in the following <tt>new</tt> and <tt>delete</tt> expressions:</p>
+<pre>
+     struct Exercise {
+         Exercise();
+         ~Exercise();
+     };
+     Exercise *pe = new Exercise[20];
+     delete[] pe;
+</pre><br>
+</TD></TR><tr valign="top"><TD align="right" class="docText" width="50"><a name="ch18qa5q3"></a><b>Exercise 18.12:</b></td><TD><p class="docText">Implement a class-specific memory allocator for <tt>Queue</tt> or another class of your choice. Measure the change in performace to see how much it helps, if at all.</P></td></tr></table></p>
+</blockquote>
+</td></tr></table></P><br>
+
+
+
+<a href="21001535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><UL></UL></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=ch18.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=ch18lev1sec2.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

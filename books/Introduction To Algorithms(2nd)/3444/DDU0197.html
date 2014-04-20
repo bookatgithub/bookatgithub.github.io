@@ -1,0 +1,455 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>30.3 Efficient FFT implementations</title>
+<link rel="STYLESHEET" type="text/css" href="images/xpolecat.css">
+<link rel="STYLESHEET" type="text/css" href="images/ie.content.books24x7.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td align="left" width="30%">
+<div STYLE="MARGIN-LEFT: 0.15in;">
+<a href="DDU0196.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</div></td>
+<td align="center" width="40%">
+<a href="toc.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td align="right" width="30%">
+<div STYLE="MARGIN-RIGHT: 0.15in"><a href="DDU0198.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr>
+</table>
+<hr size="1">
+<br>
+<div class="chapter">
+<a name="ch30"></a>
+<div class="section">
+<h2 class="first-section-title">
+<a name="2597"></a><a name="ch30lev1sec3"></a><span class="section-titlelabel">30.3 </span>Efficient FFT implementations</h2>
+<a name="2598"></a><a name="IDX-839"></a>
+<p class="para">Since the practical applications of the DFT, such as signal processing, demand the utmost speed, this section examines two efficient FFT implementations. First, we shall examine an iterative version of the FFT algorithm that runs in <span class="unicode">&Theta;</span>(<i class="emphasis">n</i> lg <i class="emphasis">n</i>) time but has a lower constant hidden in the <span class="unicode">&Theta;</span>-notation than the recursive implementation in <a href="DDU0196.html#2568" target="_parent" class="chapterjump">Section 30.2.</a> Then, we shall use the insights that led us to the iterative implementation to design an efficient parallel FFT circuit.</p>
+<div class="section">
+<h4 class="sect4-title">
+<a name="2599"></a><a name="ch30lev3sec10"></a>An iterative FFT implementation</h4>
+<p class="first-para">We first note that the <b class="bold">for</b> loop of lines 10 <span class="unicode">-</span>13 of RECURSIVE-FFT involves computing the value <span class="inlinemediaobject"><img src="images/fig861_01.jpg" height="15" width="31" alt="" border="0"></span> twice. In compiler terminology, this value is known as a <b class="bold"><i class="emphasis">common subexpression</i></b>. We can change the loop to compute it only once, storing it in a temporary variable <i class="emphasis">t</i>.</p>
+<div class="informalexample">
+<pre class="literallayout-normal">
+     <b class="bold">for</b> <i class="emphasis">k</i> <span class="unicode">&larr;</span> 0 <b class="bold">to</b> <i class="emphasis">n</i>/2 - 1
+          <b class="bold">do</b> <span class="inlinemediaobject"><img src="images/fig861_02.jpg" height="19" width="63" alt="" border="0"></span>
+             <span class="inlinemediaobject"><img src="images/fig861_03.jpg" height="19" width="82" alt="" border="0"></span>
+             <span class="inlinemediaobject"><img src="images/fig861_04.jpg" height="20" width="112" alt="" border="0"></span>
+             <i class="emphasis">w<sub>n</sub></i> <span class="unicode">&larr;</span> <i class="emphasis">w w<sub>n</sub></i>
+</pre>
+</div>
+<p class="para">The operation in this loop, multiplying the twiddle factor <span class="inlinemediaobject"><img src="images/fig861_05.jpg" height="14" width="36" alt="" border="0"></span> by <span class="inlinemediaobject"><img src="images/fig861_06.jpg" height="15" width="17" alt="" border="0"></span>, storing the product into <i class="emphasis">t</i>, and adding and subtracting <i class="emphasis">t</i> from <span class="inlinemediaobject"><img src="images/fig861_07.jpg" height="16" width="16" alt="" border="0"></span>, is known as a <b class="bold"><i class="emphasis">butterfly operation</i></b> and is shown schematically in <a class="internaljump" href="#ch30fig03">Figure 30.3</a>.</p>
+<div class="figure">
+<a name="2600"></a><a name="ch30fig03"></a><span class="figuremediaobject"><a href="images/fig862%5F03%5F0%2Ejpg" NAME="IMG_1443" target="_parent"><img src="images/fig862_03.jpg" height="69" width="350" alt="Click To expand" border="0"></a></span>
+<br style="line-height: 1">
+<span class="figure-title"><span class="figure-titlelabel">Figure 30.3: </span>A butterfly operation. (a) The two input values enter from the left, the twiddle factor <span class="inlinemediaobject"><a href="images/fig862%5F01%5F0%2Ejpg" NAME="IMG_1441" target="_parent"><img src="images/fig862_01.jpg" height="14" width="12" alt="Click To expand" border="0"></a></span> is multiplied by <span class="inlinemediaobject"><img src="images/fig862_02.jpg" height="15" width="15" alt="" border="0"></span>, and the sum and difference are output on the right. (b) A simplified drawing of a butterfly operation. We will use this representation in a parallel FFT circuit.</span>
+</div>
+<p class="para">We now show how to make the FFT algorithm iterative rather than recursive in structure. In <a class="internaljump" href="#ch30fig04">Figure 30.4</a>, we have arranged the input vectors to the recursive calls in an invocation of RECURSIVE-FFT in a tree structure, where the initial call is for <i class="emphasis">n</i> = 8. The tree has one node for each call of the procedure, labeled by the corresponding input vector. Each RECURSIVE-FFT invocation makes two recursive calls, unless it has received a 1-element vector. We make the first call the left child and the second call the right child.</p>
+<div class="figure">
+<a name="2601"></a><a name="ch30fig04"></a><span class="figuremediaobject"><a href="images/fig862%5F04%5F0%2Ejpg" NAME="IMG_1444" target="_parent"><img src="images/fig862_04.jpg" height="117" width="350" alt="Click To expand" border="0"></a></span>
+<br style="line-height: 1">
+<span class="figure-title"><span class="figure-titlelabel">Figure 30.4: </span>The tree of input vectors to the recursive calls of the RECURSIVE-FFT procedure. The initial invocation is for <i class="emphasis">n</i> = 8.</span>
+</div>
+<p class="para">Looking at the tree, we observe that if we could arrange the elements of the initial vector <i class="emphasis">a</i> into the order in which they appear in the leaves, we could mimic the execution of the RECURSIVE-FFT procedure as follows. First, we take the elements in pairs, compute the DFT of each pair using one butterfly operation, and replace the pair with its DFT. The vector then holds <i class="emphasis">n</i>/2 2-element DFT's. Next, we take these <i class="emphasis">n</i>/2 DFT's in pairs and compute the DFT of the four vector elements they come from by executing two butterfly operations, replacing two 2-element DFT's with one 4-element DFT. The vector then holds <i class="emphasis">n</i>/4 4-element DFT's. We<a name="2602"></a><a name="IDX-840"></a>continue in this manner until the vector holds two (<i class="emphasis">n</i>/2)-element DFT's, which we can combine using <i class="emphasis">n</i>/2 butterfly operations into the final <i class="emphasis">n</i>-element DFT.</p>
+<p class="para">To turn this observation into code, we use an array <i class="emphasis">A</i>[0 <span class="unicode">&#8229;</span><i class="emphasis">n</i> - 1] that initially holds the elements of the input vector <i class="emphasis">a</i> in the order in which they appear in the leaves of the tree of <a class="internaljump" href="#ch30fig04">Figure 30.4</a>. (We shall show later how to determine this order, which is known as a bit-reversal permutation.) Because the combining has to be done on each level of the tree, we introduce a variable <i class="emphasis">s</i> to count the levels, ranging from 1 (at the bottom, when we are combining pairs to form 2-element DFT's) to lg <i class="emphasis">n</i> (at the top, when we are combining two (<i class="emphasis">n</i>/2)-element DFT's to produce the final result). The algorithm therefore has the following structure:</p>
+<div class="informalexample">
+<pre class="literallayout-normal">
+1   <b class="bold">for</b> <i class="emphasis">s</i> <span class="unicode">&larr;</span> 1 <b class="bold">to</b> lg <i class="emphasis">n</i>
+2        <b class="bold">do for</b> <i class="emphasis">k</i> <span class="unicode">&larr;</span> 0 <b class="bold">to</b> <i class="emphasis">n</i> - 1 <b class="bold">by</b> 2<sup><i class="emphasis">s</i></sup>
+3               <b class="bold">do</b> combine the two 2<sup><i class="emphasis">s</i>-1</sup>-element DFT's in
+                     <i class="emphasis">A</i>[<i class="emphasis">k</i> <span class="unicode">&#8229;</span><i class="emphasis">k</i> + 2<sup><i class="emphasis">s</i>-1</sup> - 1] and <i class="emphasis">A</i>[<i class="emphasis">k</i> + 2<sup><i class="emphasis">s</i>-1</sup> <span class="unicode">&#8229;</span><i class="emphasis">k</i> + 2<sup><i class="emphasis">s</i></sup> - 1]
+                     into one 2<sup><i class="emphasis">s</i></sup>-element DFT in <i class="emphasis">A</i>[<i class="emphasis">k</i> <span class="unicode">&#8229;</span><i class="emphasis">k</i> + 2<sup><i class="emphasis">s</i></sup> - 1]
+</pre>
+</div>
+<a name="2603"></a><a name="IDX-841"></a>
+<p class="para">We can express the body of the loop (line 3) as more precise pseudocode. We copy the <b class="bold">for</b> loop from the RECURSIVE-FFT procedure, identifying <i class="emphasis">y</i><sup>[0]</sup> with <i class="emphasis">A</i>[<i class="emphasis">k</i> <span class="unicode">&#8229;</span> <i class="emphasis">k</i> + 2<sup><i class="emphasis">s</i>-1</sup> - 1] and <i class="emphasis">y</i><sup>[1]</sup> with <i class="emphasis">A</i>[<i class="emphasis">k</i> + 2<sup><i class="emphasis">s</i>-1</sup> <span class="unicode">&#8229;</span><i class="emphasis">k</i> + 2<sup><i class="emphasis">s</i></sup> - 1]. The twiddle factor used in each butterfly operation depends on the value of <i class="emphasis">s</i>; it is a power of <i class="emphasis">w<sub>m</sub></i>, where <i class="emphasis">m</i> = 2<sup><i class="emphasis">s</i></sup>. (We introduce the variable <i class="emphasis">m</i> solely for the sake of readability.) We introduce another temporary variable <i class="emphasis">u</i> that allows us to perform the butterfly operation in place. When we replace line 3 of the overall structure by the loop body, we get the following pseudocode, which forms the basis of the parallel implementation we shall present later. The code first calls the auxiliary procedure BIT-REVERSE-COPY (<i class="emphasis">a</i>, <i class="emphasis">A</i>) to copy vector <i class="emphasis">a</i> into array <i class="emphasis">A</i> in the initial order in which we need the values.</p>
+<div class="informalexample">
+<pre class="literallayout-normal">
+ITERATIVE-FFT (<i class="emphasis">a</i>)
+ 1  BIT-REVERSE-COPY (<i class="emphasis">a</i>, <i class="emphasis">A</i>)
+ 2  <i class="emphasis">n</i> <span class="unicode">&larr;</span> <i class="emphasis">length</i>[<i class="emphasis">a</i>]      <span class="unicode">&#9657;</span> <i class="emphasis">n</i> is a power of 2.
+ 3  <b class="bold">for</b> <i class="emphasis">s</i> <span class="unicode">&larr;</span> 1 <b class="bold">to</b> lg <i class="emphasis">n</i>
+ 4       <b class="bold">do</b> <i class="emphasis">m</i> <span class="unicode">&larr;</span> 2<sup><i class="emphasis">s</i></sup>
+ 5         <i class="emphasis"><span class="unicode">&omega;</span><sub>m</sub></i> <span class="unicode">&larr;</span> <i class="emphasis">e</i><sup>2<i class="emphasis"><span class="unicode">&pi;</span>i</i>/<i class="emphasis">m</i></sup>
+ 6         <b class="bold">for</b> <i class="emphasis">k</i> <span class="unicode">&larr;</span> 0 <b class="bold">to</b> <i class="emphasis">n</i> - 1 <b class="bold">by</b> <i class="emphasis">m</i>
+ 7              <b class="bold">do</b> <span class="unicode">&omega;</span> <span class="unicode">&larr;</span> 1
+ 8                  <b class="bold">for</b> <i class="emphasis">j</i> <span class="unicode">&larr;</span> 0 <b class="bold">to</b> <i class="emphasis">m</i>/2 - 1
+ 9                      <b class="bold">do</b> <i class="emphasis">t</i> <span class="unicode">&larr;</span> <i class="emphasis"><span class="unicode">&omega;</span></i><i class="emphasis">A</i>[<i class="emphasis">k</i> + <i class="emphasis">j</i> + <i class="emphasis">m</i>/2]
+10                         <i class="emphasis">u</i> <span class="unicode">&larr;</span> <i class="emphasis">A</i>[<i class="emphasis">k</i> + <i class="emphasis">j</i>]
+11                         <i class="emphasis">A</i>[<i class="emphasis">k</i> + <i class="emphasis">j</i>] <span class="unicode">&larr;</span> <i class="emphasis">u</i> + <i class="emphasis">t</i>
+12                         <i class="emphasis">A</i>[<i class="emphasis">k</i> + <i class="emphasis">j</i> + <i class="emphasis">m</i>/2] <span class="unicode">&larr;</span> <i class="emphasis">u</i> - <i class="emphasis">t</i>
+13                         <i class="emphasis"><span class="unicode">&omega;</span></i> <span class="unicode">&larr;</span> <i class="emphasis"><span class="unicode">&omega;</span> <span class="unicode">&omega;</span><sub>m</sub></i>
+</pre>
+</div>
+<p class="para">How does BIT-REVERSE-COPY get the elements of the input vector <i class="emphasis">a</i> into the desired order in the array <i class="emphasis">A</i>? The order in which the leaves appear in <a class="internaljump" href="#ch30fig04">Figure 30.4</a> is a <b class="bold"><i class="emphasis">bit-reversal permutation</i></b>. That is, if we let rev(<i class="emphasis">k</i>) be the lg <i class="emphasis">n</i>-bit integer formed by reversing the bits of the binary representation of <i class="emphasis">k</i>, then we want to place vector element <i class="emphasis">a<sub>k</sub></i> in array position <i class="emphasis">A</i>[rev(<i class="emphasis">k</i>)]. In <a class="internaljump" href="#ch30fig04">Figure 30.4</a>, for example, the leaves appear in the order 0, 4, 2, 6, 1, 5, 3, 7; this sequence in binary is 000, 100, 010, 110, 001, 101, 011, 111, and when we reverse the bits of each value we get the sequence 000, 001, 010, 011, 100, 101, 110, 111. To see that we want a bit-reversal permutation in general, we note that at the top level of the tree, indices whose low-order bit is 0 are placed in the left subtree and indices whose low-order bit is 1 are placed in the right subtree. Stripping off the low-order bit at each level, we continue this process down the tree, until we get the order given by the bit-reversal permutation at the leaves.</p>
+<p class="para">Since the function rev(<i class="emphasis">k</i>) is easily computed, the BIT-REVERSE-COPY procedure can be written as follows.<a name="2604"></a><a name="IDX-842"></a>
+</p>
+<div class="informalexample">
+<pre class="literallayout-normal">
+BIT-REVERSE-COPY(<i class="emphasis">a</i>, <i class="emphasis">A</i>)
+1  <i class="emphasis">n</i> <span class="unicode">&larr;</span> <i class="emphasis">length</i>[<i class="emphasis">a</i>]
+2  <b class="bold">for</b> <i class="emphasis">k</i> <span class="unicode">&larr;</span> 0 <b class="bold">to</b> <i class="emphasis">n</i> - 1
+3      <b class="bold">do</b> <i class="emphasis">A</i>[<i class="emphasis">rev</i>(<i class="emphasis">k</i>)] <span class="unicode">&larr;</span> <i class="emphasis">a<sub>k</sub></i>
+</pre>
+</div>
+<p class="para">The iterative FFT implementation runs in time <i class="emphasis"><span class="unicode">&Theta;</span></i>(<i class="emphasis">n</i> lg <i class="emphasis">n</i>). The call to BIT-REVERSE-COPY(<i class="emphasis">a</i>, <i class="emphasis">A</i>) certainly runs in <i class="emphasis">O</i>(<i class="emphasis">n</i> lg <i class="emphasis">n</i>) time, since we iterate <i class="emphasis">n</i> times and can reverse an integer between 0 and <i class="emphasis">n</i> - 1, with lg <i class="emphasis">n</i> bits, in <i class="emphasis">O</i>(lg <i class="emphasis">n</i>) time. (In practice, we usually know the initial value of <i class="emphasis">n</i> in advance, so we would probably code a table mapping <i class="emphasis">k</i> to rev(<i class="emphasis">k</i>), making BIT-REVERSE-COPY run in <span class="unicode">&Theta;</span>(<i class="emphasis">n</i>) time with a low hidden constant. Alternatively, we could use the clever amortized reverse binary counter scheme described in <a href="DDU0104.html#1309" target="_parent" class="chapterjump">Problem 17-1</a>.) To complete the proof that ITERATIVE-FFT runs in time <span class="unicode">&Theta;</span>(<i class="emphasis">n</i> lg <i class="emphasis">n</i>), we show that <i class="emphasis">L</i>(<i class="emphasis">n</i>), the number of times the body of the innermost loop (lines 8 <span class="unicode">-</span>13) is executed, is <span class="unicode">&Theta;</span>(<i class="emphasis">n</i> lg <i class="emphasis">n</i>). The <b class="bold">for</b> loop of lines 6 <span class="unicode">-</span>13 iterates <i class="emphasis">n</i>/<i class="emphasis">m</i> = <i class="emphasis">n</i>/2<sup><i class="emphasis">s</i></sup> times for each value of <i class="emphasis">s</i>, and the innermost loop of lines 8 <span class="unicode">-</span>13 iterates <i class="emphasis">m</i>/2 = 2<sup><i class="emphasis">s</i>-1</sup> times. Thus,</p>
+<div class="informalequation">
+<span class="equation-image"><img src="images/fig864_01.jpg" height="113" width="142" alt="" border="0"></span>
+</div>
+
+</div>
+<div class="section">
+<h4 class="sect4-title">
+<a name="2605"></a><a name="ch30lev3sec11"></a>A parallel FFT circuit</h4>
+<p class="first-para">We can exploit many of the properties that allowed us to implement an efficient iterative FFT algorithm to produce an efficient parallel algorithm for the FFT. We will express the parallel FFT algorithm as a circuit that looks much like the comparison networks of <a href="DDU0168.html#2137" target="_parent" class="chapterjump">Chapter 27</a>. Instead of comparators, the FFT circuit uses butterfly operations, as drawn in <a class="internaljump" href="#ch30fig03">Figure 30.3(b)</a>. The notion of depth that we developed in <a href="DDU0168.html#2137" target="_parent" class="chapterjump">Chapter 27</a> applies here as well. The circuit PARALLEL-FFT that computes the FFT on <i class="emphasis">n</i> inputs is shown in <a class="internaljump" href="#ch30fig05">Figure 30.5</a> for <i class="emphasis">n</i> = 8. It begins with a bit-reverse permutation of the inputs, followed by lg <i class="emphasis">n</i> stages, each stage consisting of <i class="emphasis">n</i>/2 butterflies executed in parallel. The depth of the circuit is therefore <span class="unicode">&Theta;</span>(lg <i class="emphasis">n</i>).</p>
+<div class="figure">
+<a name="2606"></a><a name="ch30fig05"></a><span class="figuremediaobject"><a href="images/fig865%5F01%5F0%2Ejpg" NAME="IMG_1446" target="_parent"><img src="images/fig865_01.jpg" height="225" width="350" alt="Click To expand" border="0"></a></span>
+<br style="line-height: 1">
+<span class="figure-title"><span class="figure-titlelabel">Figure 30.5: </span>A circuit PARALLEL-FFT that computes the FFT, here shown on <i class="emphasis">n</i> = 8 inputs. Each butterfly operation takes as input the values on two wires, along with a twiddle factor, and it produces as outputs the values on two wires. The stages of butterflies are labeled to correspond to iterations of the outermost loop of the ITERATIVE-FFT procedure. Only the top and bottom wires passing through a butterfly interact with it; wires that pass through the middle of a butterfly do not affect that butterfly, nor are their values changed by that butterfly. For example, the top butterfly in stage 2 has nothing to do with wire 1 (the wire whose output is labeled <i class="emphasis">y</i><sub>1</sub>); its inputs and outputs are only on wires 0 and 2 (labeled <i class="emphasis">y</i><sub>0</sub> and <i class="emphasis">y</i><sub>2</sub>, respectively). An FFT on <i class="emphasis">n</i> inputs can be computed in <span class="unicode">&Theta;</span>(lg <i class="emphasis">n</i>) depth with <span class="unicode">&Theta;</span>(<i class="emphasis">n</i> lg <i class="emphasis">n</i>) butterfly operations.</span>
+</div>
+<p class="para">The leftmost part of the circuit PARALLEL-FFT performs the bit-reverse permutation, and the remainder mimics the iterative ITERATIVE-FFT procedure. Because each iteration of the outermost <b class="bold">for</b> loop performs <i class="emphasis">n</i>/2 independent butterfly operations, the circuit performs them in parallel. The value of <i class="emphasis">s</i> in each iteration within ITERATIVE-FFT corresponds to a stage of butterflies shown in <a class="internaljump" href="#ch30fig05">Figure 30.5</a>. Within stage <i class="emphasis">s</i>, for <i class="emphasis">s</i> = 1, 2,..., lg <i class="emphasis">n</i>, there are <i class="emphasis">n</i>/2<sup><i class="emphasis">s</i></sup> groups of butterflies (corresponding to each value of <i class="emphasis">k</i> in ITERATIVE-FFT), with 2<sup><i class="emphasis">s</i>-1</sup> butterflies per group <a name="2607"></a><a name="IDX-843"></a>(corresponding to each value of <i class="emphasis">j</i> in ITERATIVE-FFT). The butterflies shown in <a class="internaljump" href="#ch30fig05">Figure 30.5</a> correspond to the butterfly operations of the innermost loop (lines 9 <span class="unicode">-</span>12 of ITERATIVE-FFT). Note also that the twiddle factors used in the butterflies correspond to those used in ITERATIVE-FFT: in stage <i class="emphasis">s</i>, we use <span class="inlinemediaobject"><img src="images/fig865_02.jpg" height="16" width="89" alt="" border="0"></span>, where <i class="emphasis">m</i> = 2<sup><i class="emphasis">s</i></sup>.</p>
+<div class="example">
+<span class="example-title"><span class="example-titlelabel">Exercises 30.3-1</span></span><a name="2608"></a><a name="ch30ex24"></a>
+<div class="formalbody">
+<table class="BlueLine" border="0" cellspacing="0" cellpadding="0" width="100%">
+<tr>
+<td bgcolor="000080" class="bluecell"><font size="2" face="Arial" color="010100"><b><img src="_.gif" width="1" height="2" alt="Start example" border="0"></b></font></td>
+</tr>
+</table>
+<p class="first-para">Show how ITERATIVE-FFT computes the DFT of the input vector (0, 2, 3, -1, 4, 5, 7, 9).</p>
+<table class="BlueLine" border="0" cellspacing="0" cellpadding="0" width="100%">
+<tr>
+<td bgcolor="000080" class="bluecell"><font size="2" face="Arial" color="010100"><b><img src="_.gif" width="1" height="2" alt="End example" border="0"></b></font></td>
+</tr>
+</table>
+<table class="BlankSpace" border="0" cellspacing="0" cellpadding="0" width="100%">
+<tr>
+<td height="16"></td>
+</tr>
+</table>
+</div>
+</div>
+<a name="2609"></a><a name="IDX-844"></a>
+<div class="example">
+<span class="example-title"><span class="example-titlelabel">Exercises 30.3-2</span></span><a name="2610"></a><a name="ch30ex25"></a>
+<div class="formalbody">
+<table class="BlueLine" border="0" cellspacing="0" cellpadding="0" width="100%">
+<tr>
+<td bgcolor="000080" class="bluecell"><font size="2" face="Arial" color="010100"><b><img src="_.gif" width="1" height="2" alt="Start example" border="0"></b></font></td>
+</tr>
+</table>
+<p class="first-para">Show how to implement an FFT algorithm with the bit-reversal permutation occurring at the end, rather than at the beginning, of the computation. (<i class="emphasis">Hint:</i> Consider the inverse DFT.)</p>
+<table class="BlueLine" border="0" cellspacing="0" cellpadding="0" width="100%">
+<tr>
+<td bgcolor="000080" class="bluecell"><font size="2" face="Arial" color="010100"><b><img src="_.gif" width="1" height="2" alt="End example" border="0"></b></font></td>
+</tr>
+</table>
+<table class="BlankSpace" border="0" cellspacing="0" cellpadding="0" width="100%">
+<tr>
+<td height="16"></td>
+</tr>
+</table>
+</div>
+</div>
+<div class="example">
+<span class="example-title"><span class="example-titlelabel">Exercises 30.3-3</span></span><a name="2611"></a><a name="ch30ex26"></a>
+<div class="formalbody">
+<table class="BlueLine" border="0" cellspacing="0" cellpadding="0" width="100%">
+<tr>
+<td bgcolor="000080" class="bluecell"><font size="2" face="Arial" color="010100"><b><img src="_.gif" width="1" height="2" alt="Start example" border="0"></b></font></td>
+</tr>
+</table>
+<p class="first-para">How many times does ITERATIVE-FFT compute twiddle factors in each stage? Rewrite ITERATIVE-FFT to compute twiddle factors only 2<sup><i class="emphasis">s</i>-1</sup> times in stage <i class="emphasis">s</i>.</p>
+<table class="BlueLine" border="0" cellspacing="0" cellpadding="0" width="100%">
+<tr>
+<td bgcolor="000080" class="bluecell"><font size="2" face="Arial" color="010100"><b><img src="_.gif" width="1" height="2" alt="End example" border="0"></b></font></td>
+</tr>
+</table>
+<table class="BlankSpace" border="0" cellspacing="0" cellpadding="0" width="100%">
+<tr>
+<td height="16"></td>
+</tr>
+</table>
+</div>
+</div>
+<div class="example">
+<span class="example-title"><span class="example-titlelabel">Exercises 30.3-4: </span><span class="unicode">&#8902;</span></span><a name="2612"></a><a name="ch30ex27"></a>
+<div class="formalbody">
+<table class="BlueLine" border="0" cellspacing="0" cellpadding="0" width="100%">
+<tr>
+<td bgcolor="000080" class="bluecell"><font size="2" face="Arial" color="010100"><b><img src="_.gif" width="1" height="2" alt="Start example" border="0"></b></font></td>
+</tr>
+</table>
+<p class="first-para">Suppose that the adders within the butterfly operations of the FFT circuit sometimes fail in such a manner that they always produce a zero output, independent of their inputs. Suppose that exactly one adder has failed, but that you don't know which one. Describe how you can identify the failed adder by supplying inputs to the overall FFT circuit and observing the outputs. How efficient is your method?</p>
+<table class="BlueLine" border="0" cellspacing="0" cellpadding="0" width="100%">
+<tr>
+<td bgcolor="000080" class="bluecell"><font size="2" face="Arial" color="010100"><b><img src="_.gif" width="1" height="2" alt="End example" border="0"></b></font></td>
+</tr>
+</table>
+<table class="BlankSpace" border="0" cellspacing="0" cellpadding="0" width="100%">
+<tr>
+<td height="16"></td>
+</tr>
+</table>
+</div>
+</div>
+<div class="example">
+<span class="example-title"><span class="example-titlelabel">Problems 30-1: </span>Divide-and-conquer multiplication</span><a name="2613"></a><a name="ch30ex28"></a>
+<div class="formalbody">
+<table class="BlueLine" border="0" cellspacing="0" cellpadding="0" width="100%">
+<tr>
+<td bgcolor="000080" class="bluecell"><font size="2" face="Arial" color="010100"><b><img src="_.gif" width="1" height="2" alt="Start example" border="0"></b></font></td>
+</tr>
+</table>
+<ol class="orderedlist">
+<li class="first-listitem">
+<p class="first-para">Show how to multiply two linear polynomials <i class="emphasis">ax</i> + <i class="emphasis">b</i> and <i class="emphasis">cx</i> + <i class="emphasis">d</i> using only three multiplications. (<i class="emphasis">Hint:</i> One of the multiplications is (<i class="emphasis">a</i> + <i class="emphasis">b</i>) <span class="unicode">&middot;</span> (<i class="emphasis">c</i> + <i class="emphasis">d</i>).)</p>
+</li>
+<li class="listitem">
+<p class="first-para">Give two divide-and-conquer algorithms for multiplying two polynomials of degree-bound <i class="emphasis">n</i> that run in time <span class="unicode">&Theta;</span>(<i class="emphasis">n</i><sup>lg 3</sup>). The first algorithm should divide the input polynomial coefficients into a high half and a low half, and the second algorithm should divide them according to whether their index is odd or even.</p>
+<p class="last-para">Show that two <i class="emphasis">n</i>-bit integers can be multiplied in <i class="emphasis">O</i>(<i class="emphasis">n</i><sup>lg 3</sup>) steps, where each step operates on at most a constant number of 1-bit values.</p>
+</li>
+</ol>
+<table class="BlueLine" border="0" cellspacing="0" cellpadding="0" width="100%">
+<tr>
+<td bgcolor="000080" class="bluecell"><font size="2" face="Arial" color="010100"><b><img src="_.gif" width="1" height="2" alt="End example" border="0"></b></font></td>
+</tr>
+</table>
+<table class="BlankSpace" border="0" cellspacing="0" cellpadding="0" width="100%">
+<tr>
+<td height="16"></td>
+</tr>
+</table>
+</div>
+</div>
+<div class="example">
+<span class="example-title"><span class="example-titlelabel">Problems 30-2: </span>Toeplitz matrices</span><a name="2614"></a><a name="ch30ex29"></a>
+<div class="formalbody">
+<table class="BlueLine" border="0" cellspacing="0" cellpadding="0" width="100%">
+<tr>
+<td bgcolor="000080" class="bluecell"><font size="2" face="Arial" color="010100"><b><img src="_.gif" width="1" height="2" alt="Start example" border="0"></b></font></td>
+</tr>
+</table>
+<p class="first-para">A <b class="bold"><i class="emphasis">Toeplitz matrix</i></b> is an <i class="emphasis">n</i> <span class="unicode">&times;</span> <i class="emphasis">n</i> matrix <i class="emphasis">A</i> = (<i class="emphasis">a<sub>ij</sub></i>) such that <i class="emphasis">a<sub>ij</sub></i> = <i class="emphasis">a</i><sub><i class="emphasis">i</i>-1, <i class="emphasis">j</i>-1</sub> for <i class="emphasis">i</i> = 2, 3,..., <i class="emphasis">n</i> and <i class="emphasis">j</i> = 2, 3,..., <i class="emphasis">n</i>.</p>
+<ol class="orderedlist" type="a">
+<li class="first-listitem">
+<p class="first-para">Is the sum of two Toeplitz matrices necessarily Toeplitz? What about the product?</p>
+</li>
+<li class="listitem">
+<p class="first-para">Describe how to represent a Toeplitz matrix so that two <i class="emphasis">n</i> <span class="unicode">&times;</span> <i class="emphasis">n</i> Toeplitz matrices can be added in <i class="emphasis">O</i>(<i class="emphasis">n</i>) time.</p>
+<a name="2615"></a><a name="IDX-845"></a>
+</li>
+<li class="listitem">
+<p class="first-para">Give an <i class="emphasis">O</i>(<i class="emphasis">n</i> lg <i class="emphasis">n</i>)-time algorithm for multiplying an <i class="emphasis">n</i> <span class="unicode">&times;</span> <i class="emphasis">n</i> Toeplitz matrix by a vector of length <i class="emphasis">n</i>. Use your representation from part (b).</p>
+</li>
+<li class="listitem">
+<p class="first-para">Give an efficient algorithm for multiplying two <i class="emphasis">n</i> <span class="unicode">&times;</span> <i class="emphasis">n</i> Toeplitz matrices. Analyze its running time.</p>
+</li>
+</ol>
+<table class="BlueLine" border="0" cellspacing="0" cellpadding="0" width="100%">
+<tr>
+<td bgcolor="000080" class="bluecell"><font size="2" face="Arial" color="010100"><b><img src="_.gif" width="1" height="2" alt="End example" border="0"></b></font></td>
+</tr>
+</table>
+<table class="BlankSpace" border="0" cellspacing="0" cellpadding="0" width="100%">
+<tr>
+<td height="16"></td>
+</tr>
+</table>
+</div>
+</div>
+<div class="example">
+<span class="example-title"><span class="example-titlelabel">Problems 30-3: </span>Multidimensional Fast Fourier Transform</span><a name="2616"></a><a name="ch30ex30"></a>
+<div class="formalbody">
+<table class="BlueLine" border="0" cellspacing="0" cellpadding="0" width="100%">
+<tr>
+<td bgcolor="000080" class="bluecell"><font size="2" face="Arial" color="010100"><b><img src="_.gif" width="1" height="2" alt="Start example" border="0"></b></font></td>
+</tr>
+</table>
+<p class="first-para">We can generalize the 1-dimensional Discrete Fourier Transform defined by equation (<a href="DDU0196.html#2578" target="_parent" class="chapterjump">30.8</a>) to <i class="emphasis">d</i> dimensions. Our input is a <i class="emphasis">d</i>-dimensional array <span class="inlinemediaobject"><img src="images/fig867_01.jpg" height="13" width="71" alt="" border="0"></span> whose dimensions are <i class="emphasis">n</i><sub>1</sub>, <i class="emphasis">n</i><sub>2</sub>,..., <i class="emphasis">n<sub>d</sub></i>, where <i class="emphasis">n</i><sub>1</sub><i class="emphasis">n</i><sub>2</sub> <span class="unicode">&middot;</span> <span class="unicode">&middot;</span> <span class="unicode">&middot;</span> <i class="emphasis">n<sub>d</sub></i> = <i class="emphasis">n</i>. We define the <i class="emphasis">d</i>-dimensional Discrete Fourier Transform by the equation</p>
+<p class="para">
+<div class="informalequation">
+<span class="equation-image"><img src="images/fig867_02.jpg" height="45" width="335" alt="" border="0"></span>
+</div>
+</p>
+<p class="para">for 0 <span class="unicode">&le;</span> <i class="emphasis">k</i><sub>1</sub> <span class="unicode">&lt;</span> <i class="emphasis">n</i><sub>1</sub>, 0 <span class="unicode">&le;</span> <i class="emphasis">k</i><sub>2</sub> <span class="unicode">&lt;</span> <i class="emphasis">n</i><sub>2</sub>,..., 0 <span class="unicode">&le;</span> <i class="emphasis">k<sub>d</sub></i> <span class="unicode">&lt;</span> <i class="emphasis">n<sub>d</sub></i>.</p>
+<ol class="orderedlist" type="a">
+<li class="first-listitem">
+<p class="first-para">Show that we can compute a <i class="emphasis">d</i>-dimensional DFT by computing 1-dimensional DFT's on each dimension in turn. That is, first compute <i class="emphasis">n</i>/<i class="emphasis">n</i><sub>1</sub> separate 1-dimensional DFT's along dimension 1. Then, using the result of the DFT's along dimension 1 as the input, compute <i class="emphasis">n</i>/<i class="emphasis">n</i><sub>2</sub> separate 1-dimensional DFT's along dimension 2. Using this result as the input, compute <i class="emphasis">n</i>/<i class="emphasis">n</i><sub>3</sub> separate 1-dimensional DFT's along dimension 3, and so on, through dimension <i class="emphasis">d</i>.</p>
+</li>
+<li class="listitem">
+<p class="first-para">Show that the ordering of dimensions does not matter, so that we can compute a <i class="emphasis">d</i>-dimensional DFT by computing the 1-dimensional DFT's in any order of the <i class="emphasis">d</i> dimensions.</p>
+</li>
+<li class="listitem">
+<p class="first-para">Show that if we compute each 1-dimensional DFT by computing the Fast Fourier Transform, the total time to compute a <i class="emphasis">d</i>-dimensional DFT is <i class="emphasis">O</i>(<i class="emphasis">n</i> lg <i class="emphasis">n</i>), independent of <i class="emphasis">d</i>.</p>
+</li>
+</ol>
+<table class="BlueLine" border="0" cellspacing="0" cellpadding="0" width="100%">
+<tr>
+<td bgcolor="000080" class="bluecell"><font size="2" face="Arial" color="010100"><b><img src="_.gif" width="1" height="2" alt="End example" border="0"></b></font></td>
+</tr>
+</table>
+<table class="BlankSpace" border="0" cellspacing="0" cellpadding="0" width="100%">
+<tr>
+<td height="16"></td>
+</tr>
+</table>
+</div>
+</div>
+<div class="example">
+<span class="example-title"><span class="example-titlelabel">Problems 30-4: </span>Evaluating all derivatives of a polynomial at a point</span><a name="2617"></a><a name="ch30ex31"></a>
+<div class="formalbody">
+<table class="BlueLine" border="0" cellspacing="0" cellpadding="0" width="100%">
+<tr>
+<td bgcolor="000080" class="bluecell"><font size="2" face="Arial" color="010100"><b><img src="_.gif" width="1" height="2" alt="Start example" border="0"></b></font></td>
+</tr>
+</table>
+<p class="first-para">Given a polynomial <i class="emphasis">A</i>(<i class="emphasis">x</i>) of degree-bound <i class="emphasis">n</i>, its <i class="emphasis">t</i>th derivative is defined by</p>
+<p class="para">
+<div class="informalequation">
+<span class="equation-image"><img src="images/fig867_03.jpg" height="73" width="261" alt="" border="0"></span>
+</div>
+</p>
+<p class="para">From the coefficient representation (<i class="emphasis">a</i><sub>0</sub>, <i class="emphasis">a</i><sub>1</sub>,..., <i class="emphasis">a</i><sub><i class="emphasis">n</i>-1</sub>) of <i class="emphasis">A</i>(<i class="emphasis">x</i>) and a given point <i class="emphasis">x</i><sub>0</sub>, we wish to determine <i class="emphasis">A</i><sup>(<i class="emphasis">t</i>)</sup>(<i class="emphasis">x</i><sub>0</sub>) for <i class="emphasis">t</i> = 0, 1,..., <i class="emphasis">n</i> - 1.<a name="2618"></a><a name="IDX-846"></a>
+</p>
+<ol class="orderedlist" type="a">
+<li class="first-listitem">
+<p class="first-para">Given coefficients <i class="emphasis">b</i><sub>0</sub>, <i class="emphasis">b</i><sub>1</sub>,..., <i class="emphasis">b</i><sub><i class="emphasis">n</i>-1</sub> such that</p>
+<p class="para">
+<div class="informalequation">
+<span class="equation-image"><img src="images/fig868_01.jpg" height="45" width="149" alt="" border="0"></span>
+</div>
+</p>
+<p class="last-para">show how to compute <i class="emphasis">A</i><sup><i class="emphasis">(t)</i></sup>(<i class="emphasis">x</i><sub>0</sub>), for <i class="emphasis">t</i> = 0, 1,..., <i class="emphasis">n</i> - 1, in <i class="emphasis">O</i>(<i class="emphasis">n</i>) time.</p>
+</li>
+<li class="listitem">
+<p class="first-para">Explain how to find <i class="emphasis">b</i><sub>0</sub>, <i class="emphasis">b</i><sub>1</sub>,..., <i class="emphasis">b</i><sub><i class="emphasis">n</i>-1</sub> in <i class="emphasis">O</i>(<i class="emphasis">n</i> lg <i class="emphasis">n</i>) time, given <span class="inlinemediaobject"><img src="images/fig868_02.jpg" height="14" width="52" alt="" border="0"></span> for <i class="emphasis">k</i> = 0, 1,..., <i class="emphasis">n</i> - 1.</p>
+</li>
+<li class="listitem">
+<p class="first-para">Prove that</p>
+<div class="informalequation">
+<span class="equation-image"><img src="images/fig868_03.jpg" height="46" width="275" alt="" border="0"></span>
+</div>
+<p class="para">where <i class="emphasis">f</i>(<i class="emphasis">j</i>) = <i class="emphasis">a<sub>j</sub></i> <span class="unicode">&middot;</span> <i class="emphasis">j</i>! and</p>
+<div class="informalequation">
+<span class="equation-image"><img src="images/fig868_04.jpg" height="39" width="252" alt="" border="0"></span>
+</div>
+</li>
+<li class="listitem">
+<p class="first-para">Explain how to evaluate <span class="inlinemediaobject"><img src="images/fig868_05.jpg" height="14" width="53" alt="" border="0"></span> for <i class="emphasis">k</i> = 0, 1,..., <i class="emphasis">n</i> - 1 in <i class="emphasis">O</i>(<i class="emphasis">n</i> lg <i class="emphasis">n</i>) time. Conclude that all nontrivial derivatives of <i class="emphasis">A</i>(<i class="emphasis">x</i>) can be evaluated at <i class="emphasis">x</i><sub>0</sub> in <i class="emphasis">O</i>(<i class="emphasis">n</i> lg <i class="emphasis">n</i>) time.</p>
+</li>
+</ol>
+<table class="BlueLine" border="0" cellspacing="0" cellpadding="0" width="100%">
+<tr>
+<td bgcolor="000080" class="bluecell"><font size="2" face="Arial" color="010100"><b><img src="_.gif" width="1" height="2" alt="End example" border="0"></b></font></td>
+</tr>
+</table>
+<table class="BlankSpace" border="0" cellspacing="0" cellpadding="0" width="100%">
+<tr>
+<td height="16"></td>
+</tr>
+</table>
+</div>
+</div>
+<div class="example">
+<span class="example-title"><span class="example-titlelabel">Problems 30-5: </span>Polynomial evaluation at multiple points</span><a name="2619"></a><a name="ch30ex32"></a>
+<div class="formalbody">
+<table class="BlueLine" border="0" cellspacing="0" cellpadding="0" width="100%">
+<tr>
+<td bgcolor="000080" class="bluecell"><font size="2" face="Arial" color="010100"><b><img src="_.gif" width="1" height="2" alt="Start example" border="0"></b></font></td>
+</tr>
+</table>
+<p class="first-para">We have observed that the problem of evaluating a polynomial of degree-bound <i class="emphasis">n</i> - 1 at a single point can be solved in <i class="emphasis">O</i>(<i class="emphasis">n</i>) time using Horner's rule. We have also discovered that such a polynomial can be evaluated at all <i class="emphasis">n</i> complex roots of unity in <i class="emphasis">O</i>(<i class="emphasis">n</i> lg <i class="emphasis">n</i>) time using the FFT. We shall now show how to evaluate a polynomial of degree-bound <i class="emphasis">n</i> at <i class="emphasis">n</i> arbitrary points in <i class="emphasis">O</i>(<i class="emphasis">n</i> lg<sup>2</sup> <i class="emphasis">n</i>) time.</p>
+<p class="para">To do so, we shall use the fact that we can compute the polynomial remainder when one such polynomial is divided by another in <i class="emphasis">O</i>(<i class="emphasis">n</i> lg <i class="emphasis">n</i>) time, a result that we assume without proof. For example, the remainder of 3<i class="emphasis">x</i><sup>3</sup> + <i class="emphasis">x</i><sup>2</sup> - 3<i class="emphasis">x</i> + 1 when divided by <i class="emphasis">x</i><sup>2</sup> + <i class="emphasis">x</i> + 2 is</p>
+<p class="para">(3<i class="emphasis">x</i><sup>3</sup> + <i class="emphasis">x</i><sup>2</sup> - 3<i class="emphasis">x</i> + 1) mod (<i class="emphasis">x</i><sup>2</sup> + <i class="emphasis">x</i> + 2) = -7<i class="emphasis">x</i> + 5.</p>
+<p class="para">Given the coefficient representation of a polynomial <span class="inlinemediaobject"><img src="images/fig868_06.jpg" height="16" width="90" alt="" border="0"></span> and <i class="emphasis">n</i> points <i class="emphasis">x</i><sub>0</sub>, <i class="emphasis">x</i><sub>1</sub>,..., <i class="emphasis">x</i><sub><i class="emphasis">n</i>-1</sub>, we wish to compute the <i class="emphasis">n</i> values <i class="emphasis">A</i>(<i class="emphasis">x</i><sub>0</sub>), <i class="emphasis">A</i>(<i class="emphasis">x</i><sub>1</sub>),...,(<i class="emphasis">A</i>(<i class="emphasis">x</i><sub><i class="emphasis">n</i>-1</sub>). For 0 <span class="unicode">&le;</span> <i class="emphasis">i</i> <span class="unicode">&le;</span> <i class="emphasis">j</i> <span class="unicode">&le;</span> <i class="emphasis">n</i> - 1, define the polynomials <span class="inlinemediaobject"><img src="images/fig868_07.jpg" height="16" width="105" alt="" border="0"></span> and <i class="emphasis">Q<sub>ij</sub></i> (<i class="emphasis">x</i>) = <i class="emphasis">A</i>(<i class="emphasis">x</i>) mod <i class="emphasis">P<sub>ij</sub></i>(<i class="emphasis">x</i>). Note that <i class="emphasis">Q<sub>ij</sub></i> (<i class="emphasis">x</i>) has degree at most <i class="emphasis">j</i> - <i class="emphasis">i</i>.</p>
+<ol class="orderedlist" type="a">
+<li class="first-listitem">
+<p class="first-para">Prove that <i class="emphasis">A</i>(<i class="emphasis">x</i>) mod (<i class="emphasis">x</i> - <i class="emphasis">z</i>) = <i class="emphasis">A</i>(<i class="emphasis">z</i>) for any point <i class="emphasis">z</i>.</p>
+<a name="2620"></a><a name="IDX-847"></a>
+</li>
+<li class="listitem">
+<p class="first-para">Prove that <i class="emphasis">Q<sub>kk</sub></i>(<i class="emphasis">x</i>) = <i class="emphasis">A</i>(<i class="emphasis">x<sub>k</sub></i>) and that <i class="emphasis">Q</i><sub>0,<i class="emphasis">n</i>-1</sub>(<i class="emphasis">x</i>) = <i class="emphasis">A</i>(<i class="emphasis">x</i>).</p>
+</li>
+<li class="listitem">
+<p class="first-para">Prove that for <i class="emphasis">i</i> <span class="unicode">&le;</span> <i class="emphasis">k</i> <span class="unicode">&le;</span> <i class="emphasis">j</i>, we have <i class="emphasis">Q<sub>ik</sub></i> (<i class="emphasis">x</i>) = <i class="emphasis">Q<sub>ij</sub></i> (<i class="emphasis">x</i>) mod <i class="emphasis">P<sub>ik</sub></i>(<i class="emphasis">x</i>) and <i class="emphasis">Q<sub>kj</sub></i>(<i class="emphasis">x</i>) = <i class="emphasis">Q<sub>ij</sub></i> (<i class="emphasis">x</i>) mod <i class="emphasis">P<sub>kj</sub></i>(<i class="emphasis">x</i>).</p>
+</li>
+<li class="listitem">
+<p class="first-para">Give an <i class="emphasis">O</i>(<i class="emphasis">n</i> lg<sup>2</sup> <i class="emphasis">n</i>)-time algorithm to evaluate <i class="emphasis">A</i>(<i class="emphasis">x</i><sub>0</sub>), <i class="emphasis">A</i>(<i class="emphasis">x</i><sub>1</sub>),..., <i class="emphasis">A</i>(<i class="emphasis">x</i><sub><i class="emphasis">n</i>-1</sub>).</p>
+</li>
+</ol>
+<table class="BlueLine" border="0" cellspacing="0" cellpadding="0" width="100%">
+<tr>
+<td bgcolor="000080" class="bluecell"><font size="2" face="Arial" color="010100"><b><img src="_.gif" width="1" height="2" alt="End example" border="0"></b></font></td>
+</tr>
+</table>
+<table class="BlankSpace" border="0" cellspacing="0" cellpadding="0" width="100%">
+<tr>
+<td height="16"></td>
+</tr>
+</table>
+</div>
+</div>
+<div class="example">
+<span class="example-title"><span class="example-titlelabel">Problems 30-6: </span>FFT using modular arithmetic</span><a name="2621"></a><a name="ch30ex33"></a>
+<div class="formalbody">
+<table class="BlueLine" border="0" cellspacing="0" cellpadding="0" width="100%">
+<tr>
+<td bgcolor="000080" class="bluecell"><font size="2" face="Arial" color="010100"><b><img src="_.gif" width="1" height="2" alt="Start example" border="0"></b></font></td>
+</tr>
+</table>
+<p class="first-para">As defined, the Discrete Fourier Transform requires the use of complex numbers, which can result in a loss of precision due to round-off errors. For some problems, the answer is known to contain only integers, and it is desirable to utilize a variant of the FFT based on modular arithmetic in order to guarantee that the answer is calculated exactly. An example of such a problem is that of multiplying two polynomials with integer coefficients. <a href="DDU0196.html#2594" target="_parent" class="chapterjump">Exercise 30.2-6</a> gives one approach, using a modulus of length <span class="unicode">&#8486;</span>(<i class="emphasis">n</i>) bits to handle a DFT on <i class="emphasis">n</i> points. This problem gives another approach that uses a modulus of the more reasonable length <i class="emphasis">O</i>(lg <i class="emphasis">n</i>); it requires that you understand the material of <a href="DDU0199.html#2624" target="_parent" class="chapterjump">Chapter 31</a>. Let <i class="emphasis">n</i> be a power of 2.</p>
+<ol class="orderedlist" type="a">
+<li class="first-listitem">
+<p class="first-para">Suppose that we search for the smallest <i class="emphasis">k</i> such that <i class="emphasis">p</i> = <i class="emphasis">kn</i> + 1 is prime. Give a simple heuristic argument why we might expect <i class="emphasis">k</i> to be approximately lg <i class="emphasis">n</i>. (The value of <i class="emphasis">k</i> might be much larger or smaller, but we can reasonably expect to examine <i class="emphasis">O</i>(lg <i class="emphasis">n</i>) candidate values of <i class="emphasis">k</i> on average.) How does the expected length of <i class="emphasis">p</i> compare to the length of <i class="emphasis">n</i>?</p>
+</li>
+</ol>
+<p class="para">Let <i class="emphasis">g</i> be a generator of <span class="inlinemediaobject"><img src="images/fig869_01.jpg" height="14" width="14" alt="" border="0"></span>, and let <i class="emphasis">w</i> = <i class="emphasis">g<sup>k</sup></i> mod <i class="emphasis">p</i>.</p>
+<ol class="orderedlist" start="2" type="a">
+<li class="first-listitem">
+<p class="first-para">Argue that the DFT and the inverse DFT are well-defined inverse operations modulo <i class="emphasis">p</i>, where <i class="emphasis">w</i> is used as a principal <i class="emphasis">n</i>th root of unity.</p>
+</li>
+<li class="listitem">
+<p class="first-para">Argue that the FFT and its inverse can be made to work modulo <i class="emphasis">p</i> in time <i class="emphasis">O</i>(<i class="emphasis">n</i> lg <i class="emphasis">n</i>), where operations on words of <i class="emphasis">O</i>(lg <i class="emphasis">n</i>) bits take unit time. Assume that the algorithm is given <i class="emphasis">p</i> and <i class="emphasis">w</i>.</p>
+</li>
+<li class="listitem">
+<p class="first-para">Compute the DFT modulo <i class="emphasis">p</i> = 17 of the vector (0, 5, 3, 7, 7, 2, 1, 6). Note that <i class="emphasis">g</i> = 3 is a generator of <span class="inlinemediaobject"><img src="images/fig869_02.jpg" height="13" width="16" alt="" border="0"></span>.</p>
+</li>
+</ol>
+<table class="BlueLine" border="0" cellspacing="0" cellpadding="0" width="100%">
+<tr>
+<td bgcolor="000080" class="bluecell"><font size="2" face="Arial" color="010100"><b><img src="_.gif" width="1" height="2" alt="End example" border="0"></b></font></td>
+</tr>
+</table>
+<table class="BlankSpace" border="0" cellspacing="0" cellpadding="0" width="100%">
+<tr>
+<td height="16"></td>
+</tr>
+</table>
+</div>
+</div>
+
+</div>
+
+</div>
+</div>
+</div>
+</div>
+<br><hr size="1">
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td align="left" width="30%">
+<div STYLE="MARGIN-LEFT: 0.15in;">
+<a href="DDU0196.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</div></td>
+<td align="center" width="40%">
+<a href="toc.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td align="right" width="30%">
+<div STYLE="MARGIN-RIGHT: 0.15in"><a href="DDU0198.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr>
+</table>
+</body>
+</html>
