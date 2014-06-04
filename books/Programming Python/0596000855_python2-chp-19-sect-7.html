@@ -1,0 +1,760 @@
+<html><head>
+<META http-equiv="Content-Type" content="text/html">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="19.7 A C Extension Type String Stack"-->
+<link rel="STYLESHEET" type="text/css" href="FILES/style.css">
+<link rel="STYLESHEET" type="text/css" href="FILES/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+	<a href="0596000855_python2-CHP-19-SECT-6.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+	<a href="0596000855_python2-CHP-19-SECT-8.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr>
+<td valign="top"><A NAME="python2-CHP-19-SECT-7"></A>
+<H3 class="docSection1Title">19.7 A C Extension Type String Stack</H3>
+
+<P class="docText"><A NAME="python2-IDXTERM-2280"></A>
+<A NAME="python2-IDXTERM-2281"></A>To
+implement multiple-instance objects in C, you need to code a C
+extension <span class="docEmphasis">type</span>, not a module. Like Python
+classes, C types generate multiple-instance objects and can overload
+(i.e., intercept and implement) Python expression operators and type
+operations. Unlike classes, though, types do not support attribute
+inheritance by themselves -- attributes are fetched from a flat
+names table, not a namespace objects tree. That makes sense if you
+realize that Python's built-in types are simply precoded C
+extension types; when you ask for the list <TT>append</TT>
+method, for instance, inheritance never enters the picture. We can
+add inheritance for types by coding "wrapper" classes,
+but it is a manual process (more on this later).
+</P>
+
+<P class="docText">One of the biggest drawbacks of types, though, is their size -- to
+implement a realistically equipped C type, you need to code lots of
+not-very-pretty C code, and fill out type descriptor tables with
+pointers to link up operation handlers. In fact, C extension types
+are so complex that I'm going to cut some details here. To give
+you a feel for the overall structure, <A class="docLink" HREF="#python2-CHP-19-EX-15">Example 19-15</A>
+presents a C string stack type implementation, but with the bodies of
+all its functions stripped out. For the complete implementation, see
+this file on the book's CD (see <A class="docLink" target="_blank" HREF="http://examples.oreilly.com/python2">http://examples.oreilly.com/python2</A>).
+</P>
+
+<P class="docText">This C type roughly implements the same interface as the stack
+classes we met earlier in <A class="docLink" HREF="0596000855_python2-CHP-17.html#python2-CHP-17">Chapter 17</A>, but imposes a few limits on the
+stack itself and does not support specialization by subclassing
+(it's a type, not a class). The stripped parts use the same
+algorithms as the C module in <A class="docLink" HREF="0596000855_python2-CHP-19-SECT-6.html#python2-CHP-19-EX-14">Example 19-14</A>, but
+operate on the passed-in <TT>self</TT> object, which now
+refers to the particular type instance object being processed, just
+as the first argument does in class methods. In types,
+<TT>self</TT> is a pointer to an allocated C
+<TT>struct</TT> that represents a type instance object.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-19-EX-15"></A>Example 19-15. PP2E\Integrate\Extend\Stacks\stacktyp.c </H5>
+<A NAME="IXTR3-528"></A><A NAME="IXTR3-529"></A><PRE>/****************************************************
+ * stacktyp.c: a character-string stack data-type;
+ * a C extension type, for use in Python programs;
+ * stacktype module clients can make multiple stacks;
+ * similar to stackmod, but 'self' is the instance,
+ * and we can overload sequence operators here;
+ ****************************************************/
+
+#include "Python.h"
+
+static PyObject *ErrorObject;      /* local exception */
+#define onError(message) \
+       { PyErr_SetString(ErrorObject, message); return NULL; }
+
+/*****************************************************************************
+ * STACK-TYPE INFORMATION
+ *****************************************************************************/
+
+#define MAXCHARS 2048
+#define MAXSTACK MAXCHARS
+
+typedef struct {                 /* stack instance object format */
+    PyObject_HEAD                /* python header: ref-count + &amp;typeobject */
+    int top, len;  
+    char *stack[MAXSTACK];       /* per-instance state info */
+    char strings[MAXCHARS];      /* same as stackmod, but multiple copies */
+} stackobject;
+
+/*****************************************************************************
+ * INSTANCE METHODS
+ *****************************************************************************/
+
+static PyObject *             /* on "instance.push(arg)" */
+stack_push(self, args)        /* 'self' is the stack instance object */
+    stackobject *self;        /* 'args' are args passed to self.push method */
+    PyObject    *args; 
+{    ...
+}
+static PyObject *
+stack_pop(self, args)
+    stackobject *self;
+    PyObject    *args;        /* on "instance.pop(  )" */
+{    ...
+}
+static PyObject *
+stack_top(self, args)
+    stackobject *self;
+    PyObject    *args;
+{    ...
+}
+static PyObject *
+stack_empty(self, args)
+    stackobject *self;
+    PyObject    *args;
+{    ...
+}
+static struct PyMethodDef stack_methods[] = {     /* instance methods */
+ {"push",       stack_push,     1},               /* name/address table */
+ {"pop",        stack_pop,      1},               /* like list append,sort */
+ {"top",        stack_top,      1},         
+ {"empty",      stack_empty,    1},               /* extra ops besides optrs */
+ {NULL,         NULL}                             /* end, for getattr here */
+};
+
+/*****************************************************************************
+ * BASIC TYPE-OPERATIONS
+ *****************************************************************************/
+
+static stackobject *             /* on "x = stacktype.Stack(  )" */
+newstackobject(  )                 /* instance constructor function */    
+{   ...                            /* these don't get an 'args' input */
+}
+static void                      /* instance destructor function */
+stack_dealloc(self)              /* when reference-count reaches zero */
+    stackobject *self;
+{   ...                            /* do cleanup activity */
+}
+static int
+stack_print(self, fp, flags)
+    stackobject *self;
+    FILE *fp;
+    int flags;                   /* print self to file */
+{   ...
+}
+static PyObject *
+stack_getattr(self, name)        /* on "instance.attr" reference  */
+    stackobject *self;           /* make a bound-method or member */
+    char *name; 
+{   ...
+}
+static int
+stack_compare(v, w)              /* on all comparisons */
+    stackobject *v, *w;
+{   ...
+}
+
+/*****************************************************************************
+ * SEQUENCE TYPE-OPERATIONS
+ *****************************************************************************/
+
+static int
+stack_length(self)
+    stackobject *self;               /* called on "len(instance)" */
+{   ...
+}
+static PyObject *
+stack_concat(self, other)
+    stackobject *self;               /* on "instance + other" */
+    PyObject    *other;              /* 'self' is the instance */
+{   ...
+}
+static PyObject *
+stack_repeat(self, n)                /* on "instance * N" */
+    stackobject *self;               /* new stack = repeat self n times */
+    int n;
+{   ...
+}
+static PyObject *
+stack_item(self, index)              /* on "instance[offset]", "in/for" */
+    stackobject *self;               /* return the i-th item of self */
+    int index;                       /* negative index pre-adjusted */
+{   ...
+}
+static PyObject *
+stack_slice(self, ilow, ihigh)
+    stackobject *self;               /* on "instance[ilow:ihigh]" */
+    int ilow, ihigh;                 /* negative-adjusted, not scaled */
+{   ...
+}
+
+/*****************************************************************************
+ * TYPE DESCRIPTORS
+ *****************************************************************************/
+
+static PySequenceMethods stack_as_sequence = {  /* sequence supplement     */
+      (inquiry)       stack_length,             /* sq_length    "len(x)"   */
+      (binaryfunc)    stack_concat,             /* sq_concat    "x + y"    */
+      (intargfunc)    stack_repeat,             /* sq_repeat    "x * n"    */
+      (intargfunc)    stack_item,               /* sq_item      "x[i], in" */
+      (intintargfunc) stack_slice,              /* sq_slice     "x[i:j]"   */
+      (intobjargproc)     0,                    /* sq_ass_item  "x[i] = v" */
+      (intintobjargproc)  0,                    /* sq_ass_slice "x[i:j]=v" */
+};
+
+static PyTypeObject Stacktype = {      /* main python type-descriptor */
+  /* type header */                    /* shared by all instances */
+      PyObject_HEAD_INIT(&amp;PyType_Type)         
+      0,                               /* ob_size */
+      "stack",                         /* tp_name */
+      sizeof(stackobject),             /* tp_basicsize */
+      0,                               /* tp_itemsize */
+
+  /* standard methods */
+      (destructor)  stack_dealloc,     /* tp_dealloc  ref-count==0  */
+      (printfunc)   stack_print,       /* tp_print    "print x"     */
+      (getattrfunc) stack_getattr,     /* tp_getattr  "x.attr"      */
+      (setattrfunc) 0,                 /* tp_setattr  "x.attr=v"    */
+      (cmpfunc)     stack_compare,     /* tp_compare  "x &gt; y"       */
+      (reprfunc)    0,                 /* tp_repr     `x`, print x  */
+
+  /* type categories */
+      0,                               /* tp_as_number   +,-,*,/,%,&amp;,&gt;&gt;,...*/
+      &amp;stack_as_sequence,              /* tp_as_sequence +,[i],[i:j],len, ...*/
+      0,                               /* tp_as_mapping  [key], len, ...*/
+
+  /* more methods */
+      (hashfunc)     0,                /* tp_hash    "dict[x]" */
+      (ternaryfunc)  0,                /* tp_call    "x(  )"     */
+      (reprfunc)     0,                /* tp_str     "str(x)"  */
+
+};  /* plus others: see Include/object.h */
+
+/*****************************************************************************
+ * MODULE LOGIC 
+ *****************************************************************************/
+
+static PyObject *
+stacktype_new(self, args)                 /* on "x = stacktype.Stack(  )" */
+    PyObject *self;                       /* self not used */
+    PyObject *args;                       /* constructor args */
+{
+    if (!PyArg_ParseTuple(args, ""))      /* Module-method function */
+        return NULL;
+    return (PyObject *)newstackobject(  );  /* make a new type-instance object */
+}                                         /* the hook from module to type... */
+
+static struct PyMethodDef stacktype_methods[] = {
+    {"Stack",  stacktype_new,  1},             /* one function: make a stack */ 
+    {NULL,     NULL}                           /* end marker, for initmodule */
+};
+
+void
+initstacktype(  )                 /* on first "import stacktype" */
+{
+    PyObject *m, *d;
+    m = Py_InitModule("stacktype", stacktype_methods);   /* make the module, */
+    d = PyModule_GetDict(m);                             /* with 'Stack' func */
+    ErrorObject = Py_BuildValue("s", "stacktype.error");
+    PyDict_SetItemString(d, "error", ErrorObject);       /* export exception */
+    if (PyErr_Occurred(  ))
+        Py_FatalError("can't initialize module stacktype");
+
+}</PRE>
+
+
+<A NAME="python2-CHP-19-SECT-7.1"></A>
+<H4 class="docSection2Title">19.7.1 Anatomy of a C Extension Type</H4>
+
+<P class="docText"><A NAME="IXT-19-338206"></A> <A NAME="IXT-19-338207"></A>Although most of file <I>stacktyp.c
+</I>is missing, there is enough here to illustrate the global
+structure common to C type implementations:
+</P>
+
+<A NAME="IXT-19-338208"></A><DL class="docList">
+<DT><I><span class="docPubcolor">Instance struct</span></I></DT>
+<DD>
+<P class="docList">The file starts off by defining a C struct called
+<TT>stackobject</TT> that will be used to hold per-instance
+state information -- each generated instance object gets a newly
+<TT>malloc</TT>'d copy of the struct. It serves the
+same function as class instance attribute dictionaries, and contains
+data that was saved in global variables by the C stack module.
+</P>
+</DD><DT><I><span class="docPubcolor">Instance methods</span></I></DT>
+<DD>
+<P class="docList">As in the module, a set of instance methods follows next; they
+implement method calls such as <TT>push</TT> and
+<TT>pop</TT>. But here, method functions process the
+implied instance object, passed in to the <TT>self</TT>
+argument. This is similar in spirit to class methods. Type instance
+methods are looked up in the registration table of the code listing
+(<A class="docLink" HREF="#python2-CHP-19-EX-15">Example 19-15</A>) when accessed.
+</P>
+</DD><DT><I><span class="docPubcolor">Basic type operations</span></I></DT>
+<DD>
+<P class="docList">Next, the file defines functions to handle basic operations common to
+all types: creation, printing, qualification, and so on. These
+functions have more specific type signatures than instance method
+handlers. The object creation handler allocates a new stack
+<TT>struct</TT>, and initializes its header fields: the
+reference count is set to 1, and its type object pointer is set to
+the <TT>Stacktype</TT> type descriptor that appears later
+in the file.
+</P>
+</DD><DT><I><span class="docPubcolor">Sequence operations</span></I></DT>
+<DD>
+<P class="docList"><A NAME="IXT-19-338208"></A>Functions
+for handling sequence type operations come next. Stacks respond to
+most sequence operators: <TT>len</TT>,
+<TT>+</TT>, <TT>*</TT>, and
+<TT>[i]</TT>. Much like the <TT>__getitem__</TT>
+class method, the <TT>stack_item</TT> indexing handler
+performs indexing, but also <TT>in</TT> membership tests
+and <TT>for</TT> iterator loops. These latter two work by
+indexing an object until an <TT>IndexError</TT> exception
+is caught by Python.
+</P>
+</DD><DT><I><span class="docPubcolor">Type descriptors</span></I></DT>
+<DD>
+<P class="docList">The type descriptor tables (really, <TT>structs</TT>) that
+appear near the end of the file are the crux of the matter for
+types -- Python uses these tables to dispatch an operation
+performed on an instance object to the corresponding C handler
+function in this file. In fact, everything is routed through these
+tables; even method attribute lookups start by running a C
+<TT>stack_getattr</TT> function listed in the table (which
+in turn looks up the attribute name in a name/function-pointer
+table). The main <TT>Stacktype</TT> table includes a link
+to the supplemental <TT>stack_as_sequence</TT> table where
+sequence operation handlers are registered; types can provide such
+tables to register handlers for mapping, number, and sequence
+operation sets. See Python's integer and dictionary
+objects' source code for number and mapping examples; they are
+analogous to the sequence type here, but their operation tables
+vary.<sup class="docFootnote"><A class="docLink" HREF="#">[5]</A></sup>
+</P> <blockquote><p class="docFootnote"><sup><A NAME="">[5]</A></sup> Note that type descriptor layouts, like most C
+API tools, are prone to change over time, and you should always
+consult <I>Include/object.h</I> in the Python
+distribution for an up-to-date list of fields. Some new Python
+releases may also require that types written to work with earlier
+releases be recompiled to pick up descriptor changes. As always, see
+Python's extension manuals and its full source code
+distribution for more information and examples.</p></blockquote> 
+</DD><DT><I><span class="docPubcolor">Constructor module</span></I></DT>
+<DD>
+<P class="docList">Besides defining a C type, this file also creates a simple C
+<span class="docEmphasis">module</span> at the end that exports a
+<TT>stacktype.Stack</TT> constructor function, which Python
+scripts call to generate new stack instance objects. The
+initialization function for this module is the only C name in this
+file that is not <TT>static</TT> (local to the file);
+everything else is reached by following pointers -- from instance,
+to type descriptor, to C handler function.
+</P>
+</DD>
+</DL>
+
+<P class="docText">Again, see the book CD (see <A class="docLink" target="_blank" HREF="http://examples.oreilly.com/python2">http://examples.oreilly.com/python2</A>) for the full C stack type implementation. But
+to give you the general flavor of C type methods, here is what the C
+type's <TT>pop</TT> function looks like; compare this
+with the C module's <TT>pop</TT> function to see how
+the <TT>self</TT> argument is used to access per-instance
+information in types:
+</P>
+
+<PRE>static PyObject *
+stack_pop(self, args)
+    stackobject *self;
+    PyObject *args;                            /* on "instance.pop()" */
+{
+    PyObject *pstr;
+    if (!PyArg_ParseTuple(args, ""))           /* verify no args passed */
+        return NULL;
+    if (self-&gt;top == 0)
+        onError("stack underflow")             /* return NULL = raise */
+    else {
+        pstr = Py_BuildValue("s", self-&gt;stack[--self-&gt;top]);
+        self-&gt;len -= (strlen(self-&gt;stack[self-&gt;top]) + 1);
+        return pstr;
+    }
+}</PRE>
+
+
+<A NAME="python2-CHP-19-SECT-7.2"></A>
+<H4 class="docSection2Title">19.7.2 Compiling and Running</H4>
+
+<P class="docText"><A NAME="IXT-19-338209"></A>
+<A NAME="IXT-19-338210"></A>
+<A NAME="IXT-19-338211"></A>This C
+extension file is compiled and dynamically or statically linked like
+previous examples; file <I>makefile.stack</I> on the CD
+(see <A class="docLink" target="_blank" HREF="http://examples.oreilly.com/python2">http://examples.oreilly.com/python2</A>) handles the build like this:
+</P>
+
+<PRE>stacktype.so: stacktyp.c
+	gcc stacktyp.c -g -I$(PY)/Include -I$(PY) -fpic -shared -o stacktype.so</PRE>
+
+<P class="docText">Once compiled, you can import the C module and make and use instances
+of the C type it defines much as if it were a Python class (but
+without inheritance). You would normally do this from a Python
+script, but the interactive prompt is a convenient place to test the
+basics:
+</P>
+
+<PRE>[mark@toy ~/.../PP2E/Integrate/Extend/Stacks]$ <B>python</B>
+&gt;&gt;&gt; <B>import stacktype</B>                            # import C constructor module
+&gt;&gt;&gt; <B>x = stacktype.Stack(  )</B>                       # make C type instance object
+&gt;&gt;&gt; <B>x.push('new')         </B>                      # call C type methods
+&gt;&gt;&gt; <B>x</B>                                           # call C type print handler
+[Stack:
+0: 'new'
+]
+
+&gt;&gt;&gt; <B>x[0]</B>                                        # call C type index handler
+'new'
+&gt;&gt;&gt; <B>y = stacktype.Stack(  )                       </B># make another type instance
+&gt;&gt;&gt; <B>for c in 'SPAM': y.push(c)</B>                  # a distinct stack object
+...
+&gt;&gt;&gt; <B>y</B>
+[Stack:
+3: 'M'
+2: 'A'
+1: 'P'
+0: 'S'
+]
+
+&gt;&gt;&gt; <B>z = x + y</B>                                   # call C type concat handler
+&gt;&gt;&gt; <B>z</B>
+[Stack:
+4: 'M'
+3: 'A'
+2: 'P'
+1: 'S'
+0: 'new'
+]
+
+&gt;&gt;&gt; <B>y.pop(  )</B>
+'M'
+&gt;&gt;&gt; <B>len(z), z[0], z[-1]</B>                         # for loops work too (indexing)
+(5, 'new', 'M')</PRE>
+
+
+<A NAME="python2-CHP-19-SECT-7.3"></A>
+<H4 class="docSection2Title">19.7.3 Timing the C Implementations</H4>
+
+<P class="docText"><A NAME="python2-IDXTERM-2288"></A> <A NAME="python2-IDXTERM-2289"></A> <A NAME="python2-IDXTERM-2290"></A> <A NAME="python2-IDXTERM-2291"></A>So how did we do on the
+optimization front this time? Let's resurrect that timer module
+we wrote back in Example 17-6 to compare the C stack module and type
+to the Python stack module and classes we coded in <A class="docLink" HREF="0596000855_python2-CHP-17.html#python2-CHP-17">Chapter 17</A>. <A class="docLink" HREF="#python2-CHP-19-EX-16">Example 19-16</A> calculates the
+system time in seconds that it takes to run tests on all of this
+book's stack implementations.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-19-EX-16"></A>Example 19-16. PP2E\Integrate\Extend\Stacks\exttime.py </H5>
+<PRE>#!/usr/local/bin/python
+# time the C stack module and type extensions
+# versus the object chapter's Python stack implementations
+
+from PP2E.Dstruct.Basic.timer  import test      # second count function
+from PP2E.Dstruct.Basic import stack1           # python stack module 
+from PP2E.Dstruct.Basic import stack2           # python stack class: +/slice
+from PP2E.Dstruct.Basic import stack3           # python stack class: tuples
+from PP2E.Dstruct.Basic import stack4           # python stack class: append/pop
+import stackmod, stacktype                      # c extension type, module
+
+from sys import argv
+rept, pushes, pops, items = 200, 200, 200, 200  # default: 200 * (600 ops)
+try:
+    [rept, pushes, pops, items] = map(int, argv[1:])
+except: pass
+print 'reps=%d * [push=%d+pop=%d+fetch=%d]' % (rept, pushes, pops, items)
+
+def moduleops(mod):
+    for i in range(pushes): mod.push('hello')   # strings only for C
+    for i in range(items):  t = mod.item(i)
+    for i in range(pops):   mod.pop(  )
+
+def objectops(Maker):                           # type has no init args
+    x = Maker(  )                                 # type or class instance
+    for i in range(pushes): x.push('hello')     # strings only for C
+    for i in range(items):  t = x[i]
+    for i in range(pops):   x.pop(  )
+
+# test modules: python/c
+print "Python module:", test(rept, moduleops, stack1)
+print "C ext module: ", test(rept, moduleops, stackmod), '\n'
+
+# test objects: class/type
+print "Python simple Stack:", test(rept, objectops, stack2.Stack)  
+print "Python tuple  Stack:", test(rept, objectops, stack3.Stack)
+print "Python append Stack:", test(rept, objectops, stack4.Stack)
+print "C ext type Stack:   ", test(rept, objectops, stacktype.Stack)    </PRE>
+
+
+<P class="docText">Running this script on Linux produces the following results. As we
+saw before, the Python tuple stack is slightly better than the Python
+in-place <TT>append</TT> stack in typical use (when the
+stack is only pushed and popped), but it is slower when indexed. The
+first test here runs 200 repetitions of 200 stack pushes and pops, or
+80,000 stack operations (200 x 400); times listed are test
+duration seconds:
+</P>
+
+<PRE>[mark@toy ~/.../PP2E/Integrate/Extend/Stacks]$ <B>python exttim.py 200 200 200 0</B>
+reps=200 * [push=200+pop=200+fetch=0]
+Python module: 2.09
+C ext module:  0.68
+
+Python simple Stack: 2.15
+Python tuple  Stack: 0.68
+Python append Stack: 1.16
+C ext type Stack:    0.5
+
+[mark@toy ~/.../PP2E/Integrate/Extend/Stacks]$ <B>python exttim.py 100 300 300 0</B>
+reps=100 * [push=300+pop=300+fetch=0]
+Python module: 1.86
+C ext module:  0.52
+
+Python simple Stack: 1.91
+Python tuple  Stack: 0.51
+Python append Stack: 0.87
+C ext type Stack:    0.38</PRE>
+
+<P class="docText">At least when there are no indexing operations on the stack as in
+these two tests (just pushes and pops), the C type is only slightly
+faster than the best Python stack (tuples). In fact, it's
+almost a draw -- in these first two tests, the C type reports only
+a tenth of a second speedup after 200 stacks and 80,000 stack
+operations. It's not exactly the kind of performance difference
+that would generate a bug report.<sup class="docFootnote"><A class="docLink" HREF="#">[6]</A></sup>
+</P>
+<blockquote><p class="docFootnote"><sup><A NAME="">[6]</A></sup> Interestingly,
+Python has gotten much faster since this book's first edition,
+relative to C. Back then, the C type was still almost three times
+faster than the best Python stack (tuples) when no indexing was
+performed. Today, it's almost a draw. One might infer from this
+that C migrations have become a third as important as they once
+were.</p></blockquote>
+
+<P class="docText">The C module comes in at roughly three times faster than the Python
+module, but these results are flawed. The <TT>stack1</TT>
+Python module tested here uses the same slow stack implementation as
+the Python "simple" stack (<TT>stack2</TT>). If
+it was recoded to use the <span class="docEmphasis">tuple</span> stack
+representation used in <A class="docLink" HREF="0596000855_python2-CHP-17.html#python2-CHP-17">Chapter 17</A>, its speed would
+be similar to the "tuple" figures listed here, and almost
+identical to the speed of the C module in the first two tests:
+</P>
+
+<PRE>[mark@toy ~/.../PP2E/Integrate/Extend/Stacks]$ <B>python exttim.py 200 200 200 50</B>
+reps=200 * [push=200+pop=200+fetch=50]
+Python module: 2.17
+C ext module:  0.79
+
+Python simple Stack: 2.24
+Python tuple  Stack: 1.94
+Python append Stack: 1.25
+C ext type Stack:    0.52
+
+[mark@toy ~/.../PP2E/Integrate/Extend/Stacks]$ <B>python exttim.py</B>
+reps=200 * [push=200+pop=200+fetch=200]
+Python module: 2.42
+C ext module:  1.1
+
+Python simple Stack: 2.54
+Python tuple  Stack: 19.09
+Python append Stack: 1.54
+C ext type Stack:    0.63</PRE>
+
+<P class="docText">But under the different usage patterns simulated in these two tests,
+the C type wins the race. It is about twice as fast as the best
+Python stack (<TT>append</TT>) when indexing is added to
+the test mix, as illustrated by two of the preceding test runs that
+ran with a nonzero fetch count. Similarly, the C module would be
+twice as fast as the best Python module coding in this case as well.
+</P>
+
+<P class="docText">In other words, the fastest Python stacks are as good as the C stacks
+if you stick to pushes and pops, but the C stacks are roughly twice
+as fast if any indexing is performed. Moreover, since you have to
+pick one representation, if indexing is possible at all you would
+likely pick the Python <TT>append</TT> stack; assuming they
+represent the best case, C stacks would always be twice as fast.
+</P>
+
+<P class="docText">Of course, the measured time differences are so small that in many
+applications you won't care. Further, the C stacks are much
+more difficult to program, and achieve their speed by imposing
+substantial functional limits; in many ways, this is not quite an
+apples-to-apples comparison. But as a rule of thumb, C extensions can
+not only integrate existing components for use in Python scripts,
+they can also optimize time-critical components of pure Python
+programs. In other scenarios, migration to C might yield an even
+larger speedup.
+</P>
+
+<P class="docText">On the other hand, C extensions should generally be used only as a
+last resort. As we learned earlier, algorithms and data structures
+are often bigger influences on program performance than
+implementation language. The fact that Python-coded tuple stacks are
+just as fast as the C stacks under common usage patterns speaks
+volumes about the importance of data structure
+representation.<A NAME="IXTR3-530"></A> <A NAME="IXTR3-531"></A> <A NAME="IXTR3-532"></A> <A NAME="IXTR3-533"></A>
+</P>
+
+
+<A NAME="python2-CHP-19-SECT-7.4"></A>
+<H4 class="docSection2Title">19.7.4 Wrapping C Types in Classes</H4>
+
+<P class="docText"><A NAME="python2-IDXTERM-2296"></A>
+<A NAME="python2-IDXTERM-2297"></A>
+<A NAME="python2-IDXTERM-2298"></A> <A NAME="python2-IDXTERM-2299"></A>In the current Python
+implementation, to add inheritance to C types you must have a class
+somewhere. The most common way to support type customization is to
+introduce a <span class="docEmphasis">wrapper</span> class -- a Python class
+that does little but keep a reference to a type object and pass all
+operations off to the type. Because such a wrapper adds a class
+interface on top of the type, though, it allows the underlying type
+to be subclassed and extended as though the type was a class. This is
+illustrated in <A class="docLink" HREF="#python2-CHP-19-EX-17">Example 19-17</A>.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-19-EX-17"></A>Example 19-17. PP2E\Integrate\Extend\Stacks\oopstack.py </H5>
+<PRE>import stacktype                                # get the C type/module
+class Stack:
+    def __init__(self, start=None):             # make/wrap a C type-instance
+        self._base = start or stacktype.Stack(  ) # deleted when class-instance is
+    def __getattr__(self, name):
+        return getattr(self._base, name)        # methods/members: type-instance
+    def __cmp__(self, other):
+        return cmp(self._base, other)
+    def __repr__(self):                         # 'print' is not really repr
+        print self._base,; return ''
+    def __add__(self, other):                   # operators: special methods
+        return Stack(self._base + other._base)  # operators are not attributes
+    def __mul__(self, n): 
+        return Stack(self._base * n)            # wrap result in a new Stack
+    def __getitem__(self, i): 
+        return self._base[i]                    # 'item': index, in, for
+    def __len__(self):
+        return len(self._base)</PRE>
+
+
+<P class="docText">This wrapper class can be used the same as the C type, because it
+delegates all operations to the type instance stored away in the
+class instance's <TT>self._base</TT>:
+</P>
+
+<PRE>[mark@toy ~/.../PP2E/Integrate/Extend/Stacks]$ <B>python</B>
+&gt;&gt;&gt; <B>import oopstack</B>
+&gt;&gt;&gt; <B>x = oopstack.Stack(  )</B>
+&gt;&gt;&gt; <B>y = oopstack.Stack(  )</B>
+&gt;&gt;&gt; <B>x.push('class')</B>
+&gt;&gt;&gt; <B>for c in "SPAM": y.push(c)</B>
+...
+&gt;&gt;&gt; <B>x</B>
+[Stack:
+0: 'class'
+]
+
+&gt;&gt;&gt; <B>y[2]</B>
+'A'
+&gt;&gt;&gt; <B>z = x + y</B>
+&gt;&gt;&gt; <B>for s in z: print s,</B>
+...
+class S P A M
+
+&gt;&gt;&gt; <B>z.__methods__, z.__members__, z.pop(  )</B>
+(['empty', 'pop', 'push', 'top'], ['len'], 'M')
+&gt;&gt;&gt; <B>type(z), type(z._base)</B>
+(&lt;type 'instance'&gt;, &lt;type 'stack'&gt;)</PRE>
+
+<P class="docText">The point of coding such a wrapper is to better support extensions in
+Python. Subclasses really subclass the wrapper class, but because the
+wrapper is just a thin interface to the type, it's like
+subclassing the type itself, as in <A class="docLink" HREF="#python2-CHP-19-EX-18">Example 19-18</A>.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-19-EX-18"></A>Example 19-18. PP2E\Integrate\Extend\Stacks\substack.py </H5>
+<PRE>from oopstack import Stack              # get the 'stub' class (C-type wrapper)
+
+class Substack(Stack):
+    def __init__(self, start=[]):       # extend the 'new' operation
+        Stack.__init__(self)            # initialize stack from any sequence
+        for str in start:               # start can be another stack too
+            self.push(str)
+    def morestuff(self):                # add a new method
+        print 'more stack stuff'
+    def __getitem__(self, i):           # extend 'item' to trace accesses
+        print 'accessing cell', i
+        return Stack.__getitem__(self, i)</PRE>
+
+
+<P class="docText">This subclass extends the type (wrapper) to support an initial value
+at construction time, prints trace messages when indexed, and
+introduces a brand new <TT>morestuff</TT> method. This
+subclass is limited (e.g., the result of a <TT>+</TT> is a
+<TT>Stack</TT>, not a <TT>Substack</TT>), but
+proves the point -- wrappers let you apply inheritance and
+composition techniques we've met in this book to new types
+coded in C:
+</P>
+
+<A NAME="IXTR3-534"></A><A NAME="IXTR3-535"></A><A NAME="IXTR3-536"></A><A NAME="IXTR3-537"></A><PRE>&gt;&gt;&gt; <B>import substack</B>
+&gt;&gt;&gt; <B>a = substack.Substack(x + y)</B>
+&gt;&gt;&gt; <B>a</B>
+[Stack:
+4: 'M'
+3: 'A'
+2: 'P'
+1: 'S'
+0: 'class'
+]
+
+&gt;&gt;&gt; <B>a[3]</B>
+accessing cell 3
+'A'
+&gt;&gt;&gt; <B>a.morestuff(  )</B>
+more stack stuff
+&gt;&gt;&gt; <B>b = substack.Substack("C" + "++")</B>
+&gt;&gt;&gt; <B>b.pop(), b.pop(  )</B>
+('+', '+')
+&gt;&gt;&gt; <B>c = b + substack.Substack(['-', '-'])</B>
+&gt;&gt;&gt; <B>for s in c: print s,</B>
+...
+C - -
+
+
+</PRE>
+
+
+<A NAME="python2-CHP-19-SECT-7.5"></A>
+<H4 class="docSection2Title">19.7.5 But Don't Do That Either -- SWIG</H4>
+
+<P class="docText">You can code C types manually like this, but you don't
+necessarily have to. Because SWIG knows how to generate glue code for
+C++ classes, you can instead <span class="docEmphasis">automatically</span>
+generate all the C extension and wrapper class code required to
+integrate such a stack object, simply by running SWIG over an
+appropriate class declaration. The next section shows
+how.<A NAME="IXT-19-338212"></A>
+</P>
+
+
+
+<ul></ul>
+</td>
+</tr>
+</table>
+<td></td>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+          <a href="0596000855_python2-CHP-19-SECT-6.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+          <a href="0596000855_python2-CHP-19-SECT-8.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+</body></html>

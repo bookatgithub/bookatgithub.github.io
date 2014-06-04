@@ -1,0 +1,246 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>10.10 Putting It All Together</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="squid-CHP-10-SECT-9.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="squid-CHP-10-SECT-11.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="squid-CHP-10-SECT-10"></A>
+<H3 class="docSection1Title" id="225793-948">10.10 Putting It All Together</H3>
+
+<P class="docText">As you probably realize by now, Squid has many different ways to
+decide how and where requests are forwarded. In many cases, you can
+employ more than one protocol or technique at a time. Just by looking
+at the configuration file, however, you'd probably
+have a hard time figuring out how Squid uses the different techniques
+in combination. In this section I'll explain how
+Squid actually makes the forwarding decision.</P>
+
+<P class="docText">Obviously, it all starts with a cache miss. Any request that is
+satisfied as an unvalidated cache hit doesn't go
+through the following sequence of events.</P>
+
+<P class="docText">The goal of the selection procedure is to create a list of
+appropriate next-hop locations. A next-hop location may be a neighbor
+cache or the origin server. Depending on your configuration, Squid
+may select up to three possible next-hops. If the request
+can't be satisfied by the first, Squid tries the
+second, and so on.</P>
+
+<A NAME="squid-CHP-10-SECT-10.1"></A>
+<H4 class="docSection2Title">10.10.1 Step 1: Determine Direct Options</H4>
+
+<P class="docText">The first step is to determine if <A NAME="squid-CHP-10-ITERM-1679"></A>the request may, must, or must not be
+sent directly to the origin server. Squid evaluates the
+<span class="docEmphasis">never_direct</span> and
+<span class="docEmphasis">always_direct</span> access rule lists for the request.
+The goal is to set a flag to one of three values: DIRECT_YES,
+DIRECT_MAYBE, or DIRECT_NO. This flag later determines whether Squid
+should, or should not, try to select a neighbor cache for the
+request. Squid checks the following conditions in order. If any
+condition is true, it sets the direct flag and proceeds to the next
+step. If you're following along in the source code,
+this step corresponds to the beginning of the
+<I>peerSelectFoo( )</I> function:</P>
+
+<span style="font-weight:bold"><OL class="docList" TYPE="1"><LI><span style="font-weight:normal"><P class="docList">Squid looks at the <span class="docEmphasis">always_direct</span> list first. If
+the request matches this list, the direct flag is set to DIRECT_YES.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">Squid looks at the <span class="docEmphasis">never_direct</span> list next. If
+the request matches this list, the direct flag is set to DIRECT_NO.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">Squid has a special check for requests that appear to be looping.
+When Squid detects a forwarding loop, it sets the direct flag to
+DIRECT_YES to break the loop.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">Squid checks the <span class="docEmphasis">minimum_direct_hops</span> and
+<span class="docEmphasis">minimum_direct_rtt</span> settings, but only if
+you've enabled <span class="docEmphasis">netdb</span>. If the
+measured hop count or round-trip time is lower than the configured
+values, Squid sets the direct flag to DIRECT_YES.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">If none of the previous conditions are true, Squid sets the direct
+flag to DIRECT_MAYBE.</P></span></LI></OL></span>
+<P class="docText">If the direct flag is set to DIRECT_YES, the selection process is
+complete. Squid forwards the request directly to the origin server
+and skips the remaining steps in this section.</P>
+
+
+<A NAME="squid-CHP-10-SECT-10.2"></A>
+<H4 class="docSection2Title">10.10.2 Step 2: Neighbor Selection Protocols</H4>
+
+<P class="docText">Here Squid uses one of the <A NAME="squid-CHP-10-ITERM-1680"></A>hierarchical protocols to select a
+neighbor cache. As before, once Squid selects a neighbor in this
+step, it exits the routine and proceeds to Step 3. This step roughly
+corresponds to the <I>peerGetSomeNeighbor( )</I>
+function:</P>
+
+<span style="font-weight:bold"><OL class="docList" TYPE="1"><LI><span style="font-weight:normal"><P class="docList">Squid examines the neighbor's Cache Digests. If it
+indicates a hit, that neighbor is placed on the next-hop list.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">Squid tries CARP if enabled. CARP always succeeds (i.e., selects a
+parent), unless the <span class="docEmphasis">cache_peer_access</span> or
+<span class="docEmphasis">cache_peer_domain</span> rules forbid communication
+with any of the parent caches for a particular request.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">Squid checks <span class="docEmphasis">netdb</span> measurements (if enabled) for
+a "closest parent." If Squid knows
+that the round-trip time from one or more parents to the origin
+server is less than its own RTT to the origin server, Squid selects
+the parent with the least RTT. For this to happen, the following
+conditions must be met:</P><UL><LI><P class="docList">Both your Squid and the parent cache(s) must have enabled
+<span class="docEmphasis">netdb</span> measurements.</P></LI><LI><P class="docList"><span class="docEmphasis">query_icmp</span> must be enabled in your configuration
+file.</P></LI><LI><P class="docList">The origin server must respond to ICMP pings.</P></LI><LI><P class="docList">The parent(s) must have previously measured the RTT to the origin
+server and returned those measurements in ICP/HTCP replies, or
+through a <span class="docEmphasis">netdb</span> exchange.</P></LI></UL></span></LI><LI><span style="font-weight:normal"><P class="docList">Squid sends ICP/HTCP queries as the last resort. Squid loops through
+all neighbors and checks a number of conditions. Squid
+doesn't query a neighbor if:</P><UL><LI><P class="docList">The direct flag is DIRECT_MAYBE and the request is nonhierarchical
+(see <A class="docLink" HREF="squid-CHP-10-SECT-4.html#squid-CHP-10-SECT-4.5">Section 10.4.5</A>).
+Because Squid is allowed to go directly to the origin server, it
+doesn't bother the neighbor with this request, which
+is likely to be uncachable.</P></LI><LI><P class="docList">The direct flag is DIRECT_NO, the neighbor is a sibling, and the
+request is nonhierarchical. Because Squid is forced to use a
+neighbor, it only queries parents, which can always handle a cache
+miss.</P></LI><LI><P class="docList">The <span class="docEmphasis">cache_peer_access</span> or
+<span class="docEmphasis">cache_peer_domain</span> rules forbid sending this
+request to the neighbor.</P></LI><LI><P class="docList">The neighbor's <TT>no-query</TT> flag is
+set, or its ICP/HTCP port number is zero.</P></LI><LI><P class="docList">The neighbor is a multicast responder.</P></LI></UL></span></LI><LI><span style="font-weight:normal"><P class="docList">Squid counts how many queries it sends and calculates how many
+replies to expect. If it expects at least one reply, the rest of the
+next-hop selection procedure is postponed until the replies arrive,
+or a timeout occurs. Squid expects to receive replies from neighbors
+that are alive, but not neighbors that are dead (see 
+<A class="docLink" HREF="squid-CHP-10-SECT-3.html#squid-CHP-10-SECT-3.2">Section 10.3.2</A>).</P></span></LI></OL></span>
+
+<A NAME="squid-CHP-10-SECT-10.3"></A>
+<H4 class="docSection2Title">10.10.3 Step 2a: ICP/HTCP Reply Processing</H4>
+
+<P class="docText">If Squid sends out any ICP or HTCP queries, it
+<A NAME="squid-CHP-10-ITERM-1681"></A><A NAME="squid-CHP-10-ITERM-1682"></A>waits for some number of replies.
+Just after transmitting the queries, Squid knows how many replies to
+expect and the maximum amount of time to wait for them. Squid expects
+a reply from every alive neighbor queried. If you're
+using multicast, Squid adds the current group size estimate to the
+expected reply count. While waiting for replies, Squid schedules a
+timeout, in case one or more of the replies don't
+arrive.</P>
+
+<P class="docText">When Squid receives an ICP/HTCP reply from a neighbor, it takes the
+following actions:</P>
+
+<span style="font-weight:bold"><OL class="docList" TYPE="1"><LI><span style="font-weight:normal"><P class="docList">If the reply is a hit, Squid forwards the request to that neighbor
+immediately. Any replies arriving after this point are ignored.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">If the reply is a miss, and it is from a sibling, it is ignored.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">Squid doesn't immediately act on ICP/HTCP misses
+from parents. Instead, it remembers which parents meet the following
+criteria:</P><DL class="docList"><br><p><DT><span class="docPubcolor">The <I>closest-parent miss</I></span></DT></p>
+<DD>
+<P class="docList">If the reply includes a <span class="docEmphasis">netdb</span> RTT measurement,
+Squid remembers the parent that has the least RTT to the origin
+server.</P>
+</DD>
+<br><p><DT><span class="docPubcolor">The <I>first-parent miss</I> </span></DT></p>
+<DD>
+<P class="docList">Squid remembers the parent that had the first reply. In other words,
+the parent with least RTT to your cache. Two
+<span class="docEmphasis">cache_peer</span> options affect this part of the
+algorithm: <TT>weight=</TT><TT><I>N</I></TT> and
+<TT>closest-only</TT>.</P>
+
+<P class="docList">The <TT>weight=</TT><TT><I>N</I></TT> option
+makes a parent closer than it really is. When calculating RTTs, Squid
+divides the actual RTT by this artificial weight. Thus you can give
+higher preference to certain parents by increasing their weight
+value.</P>
+
+<P class="docList">The <TT>closest-only</TT> option disables the first-parent
+miss feature for a neighbor cache. In other words, Squid selects a
+parent (based on ICP/HTCP miss replies) only if that parent is the
+closest to the origin server.</P>
+</DD>
+</DL></span></LI><LI><span style="font-weight:normal"><P class="docList">If Squid receives the expected number of replies (all misses), or if
+the timeout occurs, it selects the closest-parent miss neighbor if
+set. Otherwise, it selects the first-parent miss neighbor if set.</P></span></LI></OL></span>
+<P class="docText">Squid may not receive any ICP/HTCP replies from parent caches, either
+because they weren't queried or because the network
+dropped some packets. In this case, Squid relies on the secondary
+parent (or direct) selection algorithm described in the next section.</P>
+
+<P class="docText">If the ICP/HTCP query timeout occurs before receiving the expected
+number of replies, Squid prepends the string
+<TT>TIMEOUT_</TT> to the result code in
+<I>access.log</I>.</P>
+
+
+<A NAME="squid-CHP-10-SECT-10.4"></A>
+<H4 class="docSection2Title">10.10.4 Step 3: Secondary Parent Selection</H4>
+
+<P class="docText">This step is a little tricky. Remember that if the direct flag is
+DIRECT_YES, Squid never executes this step. If the flag is DIRECT_NO,
+Squid calls the <I>getSomeParent( )</I> function
+(described subsequently) to <A NAME="squid-CHP-10-ITERM-1683"></A>select a backup parent, in case Step
+2 failed to select one. Following that, Squid adds to the list all
+parents it believes are alive. Thus, it tries all possible parent
+caches before returning an error message to the user.</P>
+
+<P class="docText">In the case of DIRECT_MAYBE, Squid adds both a parent cache, and the
+origin server. The order, however, depends on the
+<span class="docEmphasis">prefer_direct</span> setting. If
+<span class="docEmphasis">prefer_direct</span> is enabled, Squid inserts the
+origin server into the list first. Next, Squid calls
+<I>getSomeParent( )</I> if the request is hierarchical
+or if the <span class="docEmphasis">nonhierarchical_direct</span> directive is
+disabled. Finally, Squid adds the origin server last if
+<span class="docEmphasis">prefer_direct</span> is disabled.</P>
+
+<P class="docText">The <I>getSomeParent( )</I> function selects one of the
+parents based on the following criteria. In each case, the parent
+must be alive and allowed to handle the request according to the
+<span class="docEmphasis">cache_peer_access</span> and
+<span class="docEmphasis">cache_peer_domain</span> rules:</P>
+
+<UL><LI><P class="docList">The first parent with the <TT>default</TT>
+<span class="docEmphasis">cache_peer</span> option</P></LI><LI><P class="docList">The parent with the <TT>round-robin</TT>
+<span class="docEmphasis">cache_peer</span> option that has the lowest request
+count</P></LI><LI><P class="docList">The first parent that is known to be alive</P></LI></UL>
+
+<A NAME="squid-CHP-10-SECT-10.5"></A>
+<H4 class="docSection2Title">10.10.5 Retrying</H4>
+
+<P class="docText">Occasionally, Squid's attempt to
+<A NAME="squid-CHP-10-ITERM-1684"></A>forward a request to an origin server
+or neighbor may fail for one reason or another. This is why Squid
+creates a list of appropriate next-hop locations during the neighbor
+selection procedure. When one of the following types of errors
+occurs, Squid can retry the request at the next server in the list:</P>
+
+<UL><LI><P class="docList">Network congestion or other errors can cause a
+"connection timeout."</P></LI><LI><P class="docList">The origin server or neighbor cache may be temporarily unavailable,
+causing a "connection refused"
+error.</P></LI><LI><P class="docList">A sibling may return a 504 (Gateway Timeout) error if the request
+would cause a cache miss.</P></LI><LI><P class="docList">A neighbor may return an "access
+denied" error message if the two caches have a
+mismatch in access control policies.</P></LI><LI><P class="docList">A read error may occur on an established connection before Squid
+reads the HTTP message body.</P></LI><LI><P class="docList">There may be race conditions with persistent connections.</P></LI></UL>
+<P class="docText">Squid's algorithm for retrying failed requests is
+relatively aggressive. It is better for Squid to keep trying (causing
+some extra delay), rather than return an error to the user.</P>
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="squid-CHP-10-SECT-9.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="squid-CHP-10-SECT-11.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

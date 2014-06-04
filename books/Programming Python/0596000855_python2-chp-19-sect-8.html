@@ -1,0 +1,632 @@
+<html><head>
+<META http-equiv="Content-Type" content="text/html">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="19.8 Wrapping C++ Classes with SWIG"-->
+<link rel="STYLESHEET" type="text/css" href="FILES/style.css">
+<link rel="STYLESHEET" type="text/css" href="FILES/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+	<a href="0596000855_python2-CHP-19-SECT-7.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+	<a href="0596000855_python2-CHP-20.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr>
+<td valign="top"><A NAME="python2-CHP-19-SECT-8"></A>
+<H3 class="docSection1Title">19.8 Wrapping C++ Classes with SWIG</H3>
+
+<P class="docText"><A NAME="python2-IDXTERM-2301"></A>One of the neater tricks SWIG can
+perform is class wrapper generation -- given a C++ class
+declaration and special command-line settings, SWIG generates:
+</P>
+
+<UL>
+<LI><P class="docList">A C++ coded Python extension module with accessor functions that
+interface with the C++ class's methods and members
+</P></LI>
+<LI><P class="docList">A Python coded wrapper class (called a "shadow" class in
+SWIG-speak) that interfaces with the C++ class accessor functions
+module
+</P></LI>
+</UL>
+<P class="docText">As before, simply run SWIG in your makefile to scan the C++ class
+declaration and compile its outputs. The end result is that by
+importing the shadow class in your Python scripts, you can utilize
+C++ classes as though they were really coded in Python. Not only can
+Python programs make and use instances of the C++ class, they can
+also customize it by subclassing the generated shadow class.
+</P>
+
+<A NAME="python2-CHP-19-SECT-8.1"></A>
+<H4 class="docSection2Title">19.8.1 A Little C++ Class (But Not Too Much)</H4>
+
+<P class="docText">To see how this all works, we need a C++ class. To illustrate,
+let's code a simple one to be used in Python scripts.<sup class="docFootnote"><A class="docLink" HREF="#">[7]</A></sup> The following C++ files
+define a <TT>Number</TT> class with three methods
+(<TT>add</TT>, <TT>sub</TT>,
+<TT>display</TT>), a data member (<TT>data</TT>),
+and a constructor and destructor. <A class="docLink" HREF="#python2-CHP-19-EX-19">Example 19-19</A> shows
+the header file.
+</P>
+<blockquote><p class="docFootnote"><sup><A NAME="">[7]</A></sup> For a more direct comparison, you could translate the stack
+type in <A class="docLink" HREF="0596000855_python2-CHP-19-SECT-7.html#python2-CHP-19-EX-15">Example 19-15</A> to a C++ class too, but that
+yields much more C++ code than I care to show in this Python book.
+Moreover, such a translation would sacrifice the type's
+operator overloading features (SWIG does not currently map C++
+operator overloads).</p></blockquote>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-19-EX-19"></A>Example 19-19. PP2E\Integrate\Extend\Swig\Shadow\number.h </H5>
+<PRE>class Number
+{
+public:
+    Number(int start);
+    ~Number(  );
+    void add(int value);
+    void sub(int value);
+    void display(  );
+    int data;
+};</PRE>
+
+
+<P class="docText">And <A class="docLink" HREF="#python2-CHP-19-EX-20">Example 19-20</A> is the C++ class's
+implementation file; each method prints a message when called to
+trace class operations.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-19-EX-20"></A>Example 19-20. PP2E\Integrate\Extend\Swig\Shadow\number.cxx </H5>
+<PRE>#include "number.h"
+#include "iostream.h"
+// #include "stdio.h"
+
+Number::Number(int start) { 
+   data = start; 
+   cout &lt;&lt; "Number: " &lt;&lt; data &lt;&lt; endl;    // cout and printf both work
+   // printf("Number: %d\n", data);       // python print goes to stdout
+}
+
+Number::~Number(  ) { 
+   cout &lt;&lt; "~Number: " &lt;&lt; data &lt;&lt; endl; 
+}
+
+void Number::add(int value) { 
+   data += value; 
+   cout &lt;&lt; "add " &lt;&lt; value &lt;&lt; endl; 
+}
+
+void Number::sub(int value) { 
+   data -= value; 
+   cout &lt;&lt; "sub " &lt;&lt; value &lt;&lt; endl; 
+}
+
+void Number::display(  ) { 
+   cout &lt;&lt; "Number = " &lt;&lt; data &lt;&lt; endl; 
+}</PRE>
+
+
+<P class="docText">Just so that you can compare languages, here is how this class is
+used in a C++ program; <A class="docLink" HREF="#python2-CHP-19-EX-21">Example 19-21</A> makes a
+<TT>Number</TT> object, call its methods, and fetches and
+sets its data attribute directly (C++ distinguishes between
+"members" and "methods," while they're
+usually both called "attributes" in Python).
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-19-EX-21"></A>Example 19-21. PP2E\Integrate\Extend\Swig\Shadow\main.cxx </H5>
+<PRE>#include "iostream.h"
+#include "number.h"
+
+main(  )
+{
+    Number *num;
+    num = new Number(1);            // make a C++ class instance
+    num-&gt;add(4);                    // call its methods
+    num-&gt;display(  );
+    num-&gt;sub(2); 
+    num-&gt;display(  );
+
+    num-&gt;data = 99;                 // set C++ data member
+    cout &lt;&lt; num-&gt;data &lt;&lt; endl;      // fetch C++ data member
+    num-&gt;display(  );
+    delete num;
+}</PRE>
+
+
+<P class="docText">You can use the <TT>g++</TT> command-line C++ compiler
+program to compile and run this code on Linux. If you don't run
+Linux, you'll have to extrapolate (there are far too many C++
+compiler differences to list here).
+</P>
+
+<PRE>[mark@toy ~/.../PP2E/Integrate/Extend/Swig/Shadow]$ <B>g++ main.cxx number.cxx</B>
+[mark@toy ~/.../PP2E/Integrate/Extend/Swig/Shadow]$ <B>a.out</B>
+Number: 1
+add 4
+Number = 5
+sub 2
+Number = 3
+99
+Number = 99
+~Number: 99</PRE>
+
+
+<A NAME="python2-CHP-19-SECT-8.2"></A>
+<H4 class="docSection2Title">19.8.2 Wrapping the C++ Class with SWIG</H4>
+
+<P class="docText">Lets get back to Python. To use the C++ <TT>Number</TT>
+class in Python scripts, you need to code or generate a glue logic
+layer between the two languages, as in prior examples. To generate
+that layer automatically, just write a SWIG input file like the one
+shown in <A class="docLink" HREF="#python2-CHP-19-EX-22">Example 19-22</A>.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-19-EX-22"></A>Example 19-22. PP2E\Integrate\Extend\Swig\Shadow\number.i </H5>
+<PRE>/********************************************************
+ * Swig module description file for wrapping a C++ class.
+ * Generate by saying "swig -python -shadow number.i".   
+ * The C module is generated in file number_wrap.c; here,
+ * module 'number' refers to the number.py shadow class.
+ ********************************************************/
+
+%module number
+
+%{
+#include "number.h"
+%}
+
+%include number.h</PRE>
+
+
+<P class="docText">This interface file simply directs SWIG to read the C++ class's
+type signature information from the included
+<I>number.h</I> header file. This time, SWIG uses the
+class declaration to generate three files, and two different Python
+modules:
+</P>
+
+<UL>
+<LI><P class="docList"><I>number_wrap.doc</I>, a simple wrapper function
+description file
+</P></LI>
+<LI><P class="docList"><I>number_wrap.c</I>, a C++ extension module with class
+accessor functions
+</P></LI>
+<LI><P class="docList"><I>number.py</I>, a Python shadow class module that
+wraps accessor functions
+</P></LI>
+</UL>
+<P class="docText">The Linux makefile shown in <A class="docLink" HREF="#python2-CHP-19-EX-23">Example 19-23</A> combines the
+generated C++ wrapper code module with the C++ class implementation
+file to create a <I>numberc.so</I>,the dynamically loaded extension module that must be in a
+directory on your Python module search path when imported from a
+Python script.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-19-EX-23"></A>Example 19-23. PP2E\Integrate\Extend\Swig\Shadow\makefile.number-swig </H5>
+<PRE>###########################################################################
+# Use SWIG to integrate the number.h C++ class for use in Python programs.
+# Note: name "numberc.so" matters, because shadow class imports numberc. 
+###########################################################################
+
+# unless you've run make install
+SWIG = ../myswig
+PY   = $(MYPY)
+
+all: numberc.so number.py
+
+# wrapper + real class
+numberc.so: number_wrap.o number.o
+	g++ -shared number_wrap.o number.o -o numberc.so
+
+# generated class wrapper module
+number_wrap.o: number_wrap.c number.h
+	g++ number_wrap.c -c -g -I$(PY)/Include -I$(PY) 
+
+number_wrap.c: number.i
+	$(SWIG) -c++ -python -shadow number.i
+
+number.py: number.i
+	$(SWIG) -c++ -python -shadow number.i
+
+# wrapped C++ class code
+number.o: number.cxx number.h
+	g++ -c -g number.cxx 
+
+cxxtest:
+	g++ main.cxx number.cxx 
+
+clean:
+	rm -f *.pyc *.o *.so core a.out 
+force:
+	rm -f *.pyc *.o *.so core a.out number.py number_wrap.c number_wrap.doc</PRE>
+
+
+<P class="docText">As usual, run this makefile to generate and compile the necessary
+glue code into an extension module that can be imported by Python
+programs:
+</P>
+
+<PRE>[mark@toy ~/....../Integrate/Extend/Swig/Shadow]$ <B>make -f makefile.number-swig</B>
+Generating wrappers for Python
+g++ number_wrap.c -c -g -I/...
+g++ -c -g number.cxx
+g++ -shared number_wrap.o number.o -o numberc.so</PRE>
+
+<P class="docText">To help demystify SWIG's magic somewhat, here is a portion of
+the generated C++ <I>number_wrap.c</I> accessor
+functions module. You can find the full source file at <A class="docLink" target="_blank" HREF="http://examples.oreilly.com/python2">http://examples.oreilly.com/python2</A> (or simply generate it yourself ). Notice that this
+file defines a simple C extension module of functions that generally
+expect a C++ object pointer to be passed in (i.e., a
+"this" pointer in C++ lingo). This is a slightly
+different structure than <A class="docLink" HREF="0596000855_python2-CHP-19-SECT-7.html#python2-CHP-19-EX-17">Example 19-17</A>, which wrapped
+a C <span class="docEmphasis">type</span> with a Python class instead, but the
+net effect is similar:
+</P>
+
+<PRE><I>..._wrap function implementations that run C++ operation syntax...</I>
+#define new_Number(_swigarg0) (new Number(_swigarg0))
+static PyObject *_wrap_new_Number(PyObject *self, PyObject *args) {
+<I>    ...body deleted...</I>
+}
+
+#define Number_add(_swigobj,_swigarg0)  (_swigobj-&gt;add(_swigarg0))
+static PyObject *_wrap_Number_add(PyObject *self, PyObject *args) {
+<I>    ...body
+deleted...</I>
+}
+
+#define Number_data_get(_swigobj) ((int ) _swigobj-&gt;data)
+static PyObject *_wrap_Number_data_get(PyObject *self, PyObject *args) {
+<I>    ...body deleted...</I>
+}
+
+static PyMethodDef numbercMethods[] = {
+	 { "Number_data_get", _wrap_Number_data_get, 1 },
+	 { "Number_data_set", _wrap_Number_data_set, 1 },
+	 { "Number_display", _wrap_Number_display, 1 },
+	 { "Number_sub", _wrap_Number_sub, 1 },
+	 { "Number_add", _wrap_Number_add, 1 },
+	 { "delete_Number", _wrap_delete_Number, 1 },
+	 { "new_Number", _wrap_new_Number, 1 },
+	 { NULL, NULL }
+};
+
+SWIGEXPORT(void,initnumberc)(  ) {
+	 PyObject *m, *d;
+	 SWIG_globals = SWIG_newvarlink(  );
+	 m = Py_InitModule("numberc", numbercMethods);
+	 d = PyModule_GetDict(m);</PRE>
+
+<P class="docText">On top of the accessor functions module, SWIG generates
+<I>number.py</I>, the following shadow class that
+Python scripts import as the actual interface to the class. This code
+is a bit more complicated than the wrapper class we saw in the prior
+section, because it manages object ownership and therefore handles
+new and existing objects differently. The important thing to notice
+is that it is a straight Python class that saves the C++
+"this" pointer of the associated C++ object, and passes
+control to accessor functions in the generated C++ extension module:
+</P>
+
+<PRE>import numberc
+class NumberPtr :
+    def __init__(self,this):
+        self.this = this
+        self.thisown = 0
+    def __del__(self):
+        if self.thisown == 1 :
+            numberc.delete_Number(self.this)
+    def add(self,arg0):
+        val = numberc.Number_add(self.this,arg0)
+        return val
+    def sub(self,arg0):
+        val = numberc.Number_sub(self.this,arg0)
+        return val
+    def display(self):
+        val = numberc.Number_display(self.this)
+        return val
+    def __setattr__(self,name,value):
+        if name == "data" :
+            numberc.Number_data_set(self.this,value)
+            return
+        self.__dict__[name] = value
+    def __getattr__(self,name):
+        if name == "data" : 
+            return numberc.Number_data_get(self.this)
+        raise AttributeError,name
+    def __repr__(self):
+        return "&lt;C Number instance&gt;"
+class Number(NumberPtr):
+    def __init__(self,arg0) :
+        self.this = numberc.new_Number(arg0)
+        self.thisown = 1</PRE>
+
+<P class="docText">A subtle thing: the generated C++ module file is named
+<I>number_wrap.c,</I> but the Python module name it
+gives in its initialization function is <TT>numberc</TT>,
+which is the name also imported by the shadow class. The import works
+because the combination of the glue code module and the C++ library
+file is linked into a file <I>numberc.so</I> such that
+the imported module file and initialization function names match.
+When using shadow classes and dynamic binding, the compiled object
+file's name must generally be the module name given in the
+<I>.i</I> file with an appended "c". In
+general, given an input file named <I>interface.i</I>:
+</P>
+
+<PRE>%module interface
+<I>...declarations...</I></PRE>
+
+<P class="docText">SWIG generates glue code file <I>interface_wrap.c</I>,
+which you should somehow compile into an
+<I>interfacec.so</I> file to be dynamically loaded on
+import:
+</P>
+
+<PRE>swig -python -shadow interface.i
+g++ -c interface.c interface_wrap.c <I>...more...</I>
+g++ -shared interface.o interface_wrap.o -o interfacec.so</PRE>
+
+<P class="docText">The module name <TT>interface</TT> is reserved for the
+generated shadow class module, <I>interface.py</I>.
+Keep in mind that this implementation structure is subject to change
+at the whims of SWIG's creator, but the interface it yields
+should remain the same -- a Python class that shadows the C++
+class, attribute for attribute.<sup class="docFootnote"><A class="docLink" HREF="#">[8]</A></sup>
+</P>
+<blockquote><p class="docFootnote"><sup><A NAME="">[8]</A></sup> While I wrote this,
+Guido suggested a few times that a future Python release may merge
+the ideas of Python classes and C types more closely, and may even be
+rewritten in C++ to ease C++ integration in general. If and when that
+happens, it's possible that SWIG may use C types to wrap C++
+classes, instead of the current accessor functions + Python class
+approach. Or not. Watch <A class="docLink" target="_blank" HREF="http://www.swig.org/default.htm">http://www.swig.org</A> for more recent developments beyond the
+details presented in this book.</p></blockquote>
+
+
+<A NAME="python2-CHP-19-SECT-8.3"></A>
+<H4 class="docSection2Title">19.8.3 Using the C++ Class in Python</H4>
+
+<P class="docText"><A NAME="python2-IDXTERM-2302"></A> <A NAME="python2-IDXTERM-2303"></A>Once the glue code is generated and
+compiled, Python scripts can access the C++ class as though it were
+coded in Python. <A class="docLink" HREF="#python2-CHP-19-EX-24">Example 19-24</A> repeats the
+<I>main.cxx</I> file's class tests; here, though,
+the C++ class is being utilized from the Python programming language.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-19-EX-24"></A>Example 19-24. PP2E\Integrate\Extend\Swig\Shadow\main.py </H5>
+<PRE>from number import Number       # use C++ class in Python (shadow class)
+                                # runs same tests as main.cxx C++ file
+num = Number(1)                 # make a C++ class object in Python
+num.add(4)                      # call its methods from Python 
+num.display(  )                   # num saves the C++ 'this' pointer
+num.sub(2)
+num.display(  )
+
+num.data = 99                   # set C++ data member, generated __setattr__ 
+print num.data                  # get C++ data member, generated __getattr__ 
+num.display(  )
+del num                         # runs C++ destructor automatically</PRE>
+
+
+<P class="docText">Because the C++ class and its wrappers are automatically loaded when
+imported by the <TT>number</TT> shadow class, you run this
+script like any other:
+</P>
+
+<PRE>[mark@toy ~/....../Integrate/Extend/Swig/Shadow]$ <B>python main.py</B>
+Number: 1
+add 4
+Number = 5
+sub 2
+Number = 3
+99
+Number = 99
+~Number: 99</PRE>
+
+<P class="docText">This output is mostly coming from the C++ class's methods, and
+is the same as the <I>main.cxx</I> results shown in
+<A class="docLink" HREF="#python2-CHP-19-EX-21">Example 19-21</A>. If you really want to use the generated
+accessor functions module, you can, as shown in <A class="docLink" HREF="#python2-CHP-19-EX-25">Example 19-25</A>.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-19-EX-25"></A>Example 19-25. PP2E\Integrate\Extend\Swig\Shadow\main_low.py </H5>
+<PRE>from numberc import *           # same test as main.cxx 
+                                # use low-level C accessor function interface 
+num = new_Number(1) 
+Number_add(num, 4)              # pass C++ 'this' pointer explicitly
+Number_display(num)             # use accessor functions in the C module
+Number_sub(num, 2)
+Number_display(num)
+
+Number_data_set(num, 99)
+print Number_data_get(num)
+Number_display(num)
+delete_Number(num)</PRE>
+
+
+<P class="docText">This script generates the same output as
+<I>main.py</I>, but there is no obvious advantage to
+moving from the shadow class to functions here. By using the shadow
+class, you get both an object-based interface to C++ and a
+customizable Python object. For instance, the Python module shown in
+<A class="docLink" HREF="#python2-CHP-19-EX-26">Example 19-26</A> extends the C++ class, adding an extra
+print statement to the C++ <TT>add</TT> method, and
+defining a brand new <TT>mul</TT> method. Because the
+shadow class is pure Python, this works naturally.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-19-EX-26"></A>Example 19-26. PP2E\Integrate\Extend\Swig\Shadow\main_subclass.py </H5>
+<PRE>from number import Number       # sublass C++ class in Python (shadow class)
+
+class MyNumber(Number):
+    def add(self, other):
+        print 'in Python add...'
+        Number.add(self, other)
+    def mul(self, other):
+        print 'in Python mul...'
+        self.data = self.data * other
+
+num = MyNumber(1)               # same test as main.cxx
+num.add(4)                      # using Python subclass of shadow class
+num.display()                   # add(  ) is specialized in Python
+num.sub(2)
+num.display(  )
+
+num.data = 99
+print num.data
+num.display(  )
+
+num.mul(2)                      # mul(  ) is implemented in Python
+num.display(  )
+del num</PRE>
+
+
+<P class="docText">Now we get extra messages out of <TT>add</TT> calls, and
+<TT>mul</TT> changes the C++ class's data member
+automatically when it assigns <TT>self.data</TT>:
+</P>
+
+<PRE>[mark@toy ~/....../Integrate/Extend/Swig/Shadow]$ <B>python main_subclass.py</B>
+Number: 1
+in Python add...
+add 4
+Number = 5
+sub 2
+Number = 3
+99
+Number = 99
+in Python mul...
+Number = 198
+~Number: 198</PRE>
+
+<P class="docText">In other words, SWIG makes it easy to use C++ class libraries as base
+classes in your Python scripts. As usual, you can import the C++
+class interactively to experiment with it some more:
+</P>
+
+<PRE>[mark@toy ~/....../Integrate/Extend/Swig/Shadow]$ <B>python</B>
+&gt;&gt;&gt; <B>import numberc</B>
+&gt;&gt;&gt; <B>numberc.__file__</B>              # the C++ class plus generated glue module
+'./numberc.so'
+&gt;&gt;&gt; <B>import number</B>                 # the generated Python shadow class module
+&gt;&gt;&gt; <B>number.__file__</B>
+'number.pyc'
+
+&gt;&gt;&gt; <B>x = number.Number(2)</B>          # make a C++ class instance in Python
+Number: 2
+&gt;&gt;&gt; <B>y = number.Number(4)</B>          # make another C++ object
+Number: 4
+&gt;&gt;&gt; <B>x, y</B>
+(&lt;C Number instance&gt;, &lt;C Number instance&gt;)
+
+&gt;&gt;&gt; <B>x.display(  )</B>                   # call C++ method (like C++ x-&gt;display(  ))
+Number = 2
+&gt;&gt;&gt; <B>x.add(y.data)</B>                 # fetch C++ data member, call C++ method
+add 4
+&gt;&gt;&gt; <B>x.display(  )</B>
+Number = 6
+                                                          
+&gt;&gt;&gt; <B>y.data = x.data + y.data + 32         </B># set C++ data member
+&gt;&gt;&gt; <B>y.display(  )</B>                           # y records the C++ this pointer
+Number = 42</PRE>
+
+<P class="docText">So what's the catch? Nothing much, really, but if you start
+using SWIG in earnest, the biggest downside is that SWIG cannot
+handle every feature of C++ today. If your classes use advanced C++
+tools such as operator overloading and templates, you may need to
+hand-code simplified class type declarations for SWIG, instead of
+running SWIG over the original class header files.
+</P>
+
+<P class="docText">Also, SWIG's current string-based pointer representation
+sidesteps conversion and type-safety issues and works well in most
+cases, but it has sometimes been accused of creating performance or
+interface complications when wrapping existing libraries. SWIG
+development is ongoing, so you should consult the SWIG manuals and
+web site for more details on these and other topics.
+</P>
+
+<P class="docText">In return for any such trade-offs, though, SWIG can completely
+obviate the need to code glue layers to access C and C++ libraries
+from Python scripts. If you have ever coded such layers by hand in
+the past, you already know that this is a <span class="docEmphasis">very</span>
+big win.
+</P>
+
+<P class="docText">If you do go the manual route, though, consult Python's
+standard extension manuals for more details on both API calls used in
+this and the next chapter, as well as additional extension tools we
+don't have space to cover in this text. C extensions can run
+the gamut from short SWIG input files to code that is staunchly
+wedded to the internals of the Python interpreter; as a rule of
+thumb, the former survives the ravages of time much better than the
+latter.<A NAME="IXTR3-538"></A>
+</P>
+
+<P><A NAME="python2-CHP-19-SIDEBAR-1"></A><TABLE CELLSPACING="0" WIDTH="90%" BORDER="1"><TR><TD>
+<H2 class="docSidebarTitle">Mixing Python and C++</H2>
+
+<P class="docText">Python's standard implementation is currently coded in C, so
+all the normal rules about mixing C programs with C++ programs apply
+to the Python interpreter. In fact, there is nothing special about
+Python in this context, but here are a few pointers.
+</P>
+
+<P class="docText">When embedding Python in a C++ program, there are no special rules to
+follow. Simply link in the Python library and call its functions from
+C++. Python's header files automatically wrap themselves in
+<TT>extern</TT> <TT>"C"</TT>
+<TT>{...}</TT> declarations to suppress C++ name-mangling.
+Hence, the Python library looks like any other C component to C++;
+there is no need to recompile Python itself with a C++ compiler.
+</P>
+
+<P class="docText">When extending Python with C++ components, Python header files are
+still C++-friendly, so Python API calls in C++ extensions work like
+any other C++ to C call. But be sure to wrap the parts of your
+extension code made visible to Python with <TT>extern</TT>
+<TT>"C"</TT> declarations so that they may be called by
+Python's C code. For example, to wrap a C++ class, SWIG
+generates a C++ extension module that declares its initialization
+function this way, though the rest of the module is pure C++.
+</P>
+
+<P class="docText">The only other potential complication involves C++ static or global
+object constructor methods when extending. If Python (a C program) is
+at the top level of a system, such C++ constructors may not be run
+when the system starts up. This behavior may vary per compiler, but
+if your C++ objects are not initialized on startup, make sure that
+your main program is linked by your C++ compiler, not C.
+</P>
+
+<P class="docText">If you are interested in Python/C++ integration in general, be sure
+to consult the C++ special interest group (SIG) pages at <A class="docLink" target="_blank" HREF="http://www.python.org/default.htm">http://www.python.org</A> for information about
+work in this domain. The CXX system, for instance, makes it easier to
+extend Python with C++.<A NAME="IXTR3-539"></A> <A NAME="IXTR3-540"></A>
+</P>
+</TD></TR></TABLE></P>
+
+
+
+<a href="0596000855_"><img src="FILES/pixel.gif" width="1" height="1" border="0"></a><ul></ul>
+</td>
+</tr>
+</table>
+<td></td>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+          <a href="0596000855_python2-CHP-19-SECT-7.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+          <a href="0596000855_python2-CHP-20.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+</body></html>

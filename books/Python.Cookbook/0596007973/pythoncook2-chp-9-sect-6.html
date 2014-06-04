@@ -1,0 +1,192 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;9.6.&nbsp;Coordinating Threads by Simple Message Passing</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-9-sect-5.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-9-sect-7.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-9-SECT-6"></a>
+<h3 class="docSection1Title">Recipe 9.6. Coordinating Threads by Simple Message Passing</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Michael Hobbs</span></p>
+
+<a name="pythoncook2-CHP-9-SECT-6.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-9-ITERM-2545"></a> <a name="pythoncook2-CHP-9-ITERM-2546"></a>You
+want to write a multithreaded application, using, as the
+synchronization and communication primitive, a simple yet powerful
+message-passing paradigm.</P>
+
+
+<a name="pythoncook2-CHP-9-SECT-6.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText"><a name="pythoncook2-CHP-9-ITERM-2547"></a>The <tt>candygram</tt> module
+lets you use concurrent programming semantics that are essentially
+equivalent to those of the Erlang language. To use
+<tt>candygram</tt>, you start by defining appropriate
+classes, such as the following one, to model your
+threads' functionality:</p>
+
+<pre>import candygram as cg
+class ExampleThread(object):
+    """A thread-class with just a single counter value and a stop flag."""
+    def _ _init_ _(self):
+        """ Initialize the counter to 0, the running-flag to True. """
+        self.val = 0
+        self.running = True
+    def increment(self):
+        """ Increment the counter by one. """
+        self.val += 1
+    def sendVal(self, msg):
+        """ Send current value of counter to requesting thread. """
+        req = msg[0]
+        req.send((cg.self( ), self.val))
+    def setStop(self):
+        """ Set the running-flag to False. """
+        self.running = False
+    def run(self):
+        """ The entry point of the thread. """
+        # Register the handler functions for various messages:
+        r = cg.Receiver( )
+        r.addHandler('increment', self.increment)
+        r.addHandler((cg.Process, 'value'), self.sendVal, cg.Message)
+        r.addHandler('stop', self.setStop)
+        # Keep handling new messages until a stop has been requested
+        while self.running:
+            r.receive( )</pre><BR>
+
+
+<p class="docText">To start a thread running this code under
+<tt>candygram</tt>, use:</p>
+
+<pre>counter = cg.spawn(ExampleThread( ).run)</pre><BR>
+
+
+<p class="docText">To handle the <tt>counter</tt> tHRead's
+responses, you need another <tt>Receiver</tt> object, with
+the proper handler registered:</p>
+
+<pre>response = cg.Receiver( )
+response.addHandler((counter, int), lambda msg: msg[1], cg.Message)</pre><BR>
+
+
+<p class="docText">And here is an example of how you might use these
+<tt>counter</tt> and <tt>response</tt> objects:</P>
+
+<pre># Tell thread to increment twice
+counter.send('increment')
+counter.send('increment')
+# Request the thread's current value, then print the thread's response
+counter.send((cg.self( ), 'value'))
+print response.receive( )
+# Tell thread to increment one more time
+counter.send('increment')
+# Again, request the thread's current value, then print the thread's response
+counter.send((cg.self( ), 'value'))
+print response.receive( )
+# Tell the thread to stop running
+counter.send('stop')</pre><br>
+
+
+
+<a name="pythoncook2-CHP-9-SECT-6.3"></a>
+<h4 class="docSection2Title">Discussion</h4>
+
+<p class="docText">With the <tt>candygram</tt> module (<a class="docLink" target="_blank" href="http://candygram.sourceforge.net">http://candygram.sourceforge.net</a>), Python
+developers can send and receive messages between threads using
+semantics nearly identical to those introduced in the Erlang language
+(<a class="docLink" target="_blank" href="http://www.erlang.org">http://www.erlang.org</a>). Erlang
+is widely respected for its elegant built-in facilities for
+concurrent programming.</p>
+
+<p class="docText"><a name="pythoncook2-CHP-9-ITERM-2548"></a>
+<a name="pythoncook2-CHP-9-ITERM-2549"></a>Erlang's approach is
+simple and yet powerful. To communicate with another thread, simply
+send a message to it. You do not need to worry about locks,
+semaphores, mutexes, and other such primitives, to share information
+among concurrent tasks. Developers of multitasking software mostly
+use message passing only to implement a producer/consumer model. When
+you combine message passing with the flexibility of a
+<tt>Receiver</tt> object, however, it becomes much more
+powerful. For example, by using timeouts and message patterns, a
+thread may easily handle its messages as a state machine, or as a
+priority queue.</P>
+
+<p class="docText">For those who wish to become more familiar with Erlang, <a class="docLink" target="_blank" href="http://www.erlang.org/download/erlang-book-part1.pdf">http://www.erlang.org/download/erlang-book-part1.pdf</a>
+(<span class="docEmphasis">Concurrent Programming in Erlang</span>) provides a
+very complete introduction. In particular, the
+<tt>candygram</tt> module implements all of the functions
+described in <a class="docLink" href="pythoncook2-CHP-5.html#pythoncook2-CHP-5">Chapter 5</a> and sections 7.2, 7.3,
+and 7.5 of that book.</p>
+
+<p class="docText">This recipe offers a very elementary demonstration of how messages
+are passed between threads using <tt>candygram</tt>. When
+you run this recipe as a script, the <tt>print</tt>
+statements will output the values <tt>2</tt> and then
+<tt>3</tt>.</p>
+
+<p class="docText">It's important to understand how the
+<tt>candygram.Receiver</tt> class works. The
+<tt>addHandler</tt> method requires at least two
+parameters: the first is a message pattern and the second is a
+handler function. The <tt>Receiver.receive</tt> method
+invokes a registered handler function, and returns that
+function's result, whenever it finds a message that
+matches the associated pattern. Any parameters optionally passed to
+<tt>addHandler</tt> beyond the first two get passed as
+parameters to the handler function when the
+<tt>Receiver</tt> calls it. If a parameter is the
+<tt>candygram.Message</tt> constant, then
+<tt>receive</tt> replaces that parameter with the matching
+message when it calls the handler function.</P>
+
+<p class="docText">This recipe's code contains four different message
+patterns: '<tt>increment</tt>',
+<tt>(cg.Process</tt>, '<tt>value')</tt>,
+'<tt>stop</tt>', and <tt>(counter, int)</tt>. The
+'<tt>increment</tt>' and '<tt>stop</tt>' patterns
+are simple patterns that match any message that consists solely of
+the strings '<tt>increment</tt>' and
+'<tt>stop</tt>', respectively. The <tt>(cg.Process,
+'value')</tt> pattern matches any message that is a tuple with
+two items, where the first item <tt>isinstance</tt> of
+<tt>cg.Process</tt> and the second item is the string
+<tt>value</tt>. Lastly, the <tt>(counter,
+int)</tt> pattern matches any message that is a tuple with two
+items where the first item is the <tt><i>counter</I></tt>
+object and the second element is an integer.</p>
+
+<p class="docText">You can find more information about the Candygram package at
+<a class="docLink" target="_blank" href="http://candygram.sourceforge.net">http://candygram.sourceforge.net</a>.
+At that URL, you can find all details on how to specify message
+patterns, how to set a timeout for the
+<tt>Receiver.receive</tt> method, and how to monitor the
+running status of spawned threads.</P>
+
+
+<a name="pythoncook2-CHP-9-SECT-6.4"></a>
+<H4 class="docSection2Title">See Also</h4>
+
+<p class="docText"><span class="docEmphasis">Concurrent Programming in Erlang</span> at
+<a class="docLink" target="_blank" href="http://www.erlang.org/download/erlang-book-part1.pdf">http://www.erlang.org/download/erlang-book-part1.pdf</a>;
+the <tt>candygram</tt> home page at <a class="docLink" target="_blank" href="http://candygram.sourceforge.net">http://candygram.sourceforge.net</a>.<a name="pythoncook2-CHP-9-ITERM-2550"></a> <a name="pythoncook2-CHP-9-ITERM-2551"></a> <a name="pythoncook2-CHP-9-ITERM-2552"></a></p>
+
+
+
+<a href="5991535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-9-sect-5.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-9-sect-7.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

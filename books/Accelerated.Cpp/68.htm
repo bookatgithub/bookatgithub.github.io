@@ -1,0 +1,365 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
+<title>11.3 Copy control</title>
+<link rel="stylesheet" type="text/css" href="./acc.css" />
+</head>
+
+<body>
+<div class="prevnext">
+<a href="67.htm"><img src="images/Prev1.gif" /></a>&nbsp;&nbsp;<a href="69.htm"><img src="images/Next1.gif" /></a>
+</div>
+<h3>11.3 Copy control</h3>
+<p>In the introduction to this chapter, we said that the class author controls what happens 
+when objects are created, copied, assigned, and destroyed. We've explained how to create 
+objects, but not how to control what happens when they are copied, assigned, or 
+destroyed. As we'll see, if we fail to define these operations, the compiler will synthesize 
+definitions for us. These synthesized operations are sometimes exactly what we need. 
+The rest of the time, the synthesized operations can lead to counterintuitive behavior, and 
+even to run-time failures.</p>
+<p>C++ is the only language in widespread use that gives the programmer this level of 
+control over an object's behavior. Not surprisingly, getting these operations correct is 
+essential in building useful data types.</p>
+<h4>11.3.1 Copy constructor</h4>
+<p>Passing an object by value to a function, or returning an object by value from a function, 
+implicitly copies the object. For example,</p>
+<div class="prebox"><pre>
+vector&lt;int&gt; vi;
+double d;
+d = median(vi);                       // <i>copy vi into the parameter in median</i>
+
+string line;
+vector&lt;string&gt; words = split(line);   // <i>copy the return from split into words</i>
+</pre></div>
+<p>Similarly, we can explicitly copy an object by using it to initialize another object:</p>
+<div class="prebox"><pre>
+vector&lt;Student_info&gt; vs;
+vector&lt;Student_info&gt; v2 = vs;  // <i>copy </i>vs <i>into </i>v2
+</pre></div>
+<p>Both explicit and implicit copies are controlled by a special constructor called the 
+<i><b>copy constructor</b>. </i>Like other constructors, the copy constructor is a member function with 
+the same name as the name of the class. Because it exists to initialize a new object as a 
+copy of an existing object of the same type, it follows that the copy constructor takes a single 
+argument that has the same type as the class itself. Because we are defining what it 
+means to make a copy, including making copies of function arguments, this is one case 
+when it is essential that the parameter be a reference type! Furthermore, copying an 
+object should not change the object being copied from, so the constructor takes a <code>const</code> 
+reference to the object from which to copy:</p>
+<div class="prebox"><pre>
+template &lt;class T&gt; class Vec {
+public:
+    Vec (const Vec&amp; v);   // <i>copy constructor</i>
+    // <i>as before</i>
+};
+</pre></div>
+<p>Having declared the copy constructor, we have to figure out what it should do. In general, 
+copy constructors &quot;copy&quot; each data element from an existing object into the new 
+object. We say &quot;copy&quot; because sometimes copying involves more than just copying the 
+contents of a data element. For example, in our <code>Vec</code> class, we have two data elements, 
+both of which are pointers. If we copy the values of the pointers, then the original and the 
+copy will both point to the same underlying data. For example, assume that v is a <code>Vec</code>, 
+and that we want to copy <code>v</code> into <code>v2</code>. If we copied the pointers, then what we'd have is</p>
+<center>
+<img src="images/196a.jpg" />
+</center>
+<p>Clearly, any change made to an element of one &quot;copy&quot; would result in changing the value 
+of the element of the other &quot;copy&quot; as well. That is, if we assigned a value to <code>v[0]</code>, doing 
+so would also change <code>v2[0]</code>. Is this behavior what we want?</p>
+<p>As with other operations, we can answer this question by seeing what the standard 
+<code>vector</code> does. Recall the discussion in &sect;4.1.1/53, in which we noted that we needed to 
+pass the <code>vector</code> to the <code>median</code> function by value so that the <code>vector</code> would be copied. 
+Making a copy ensured that changes made inside <code>median</code> would not propagate out of the 
+function. This analysis, and the behavior that we observe when we run the <code>median</code> function, 
+indicates that the standard <code>vector</code> class does not share the same underlying storage 
+once a copy is made. Instead, it arranges that each copy of a <code>vector</code> is independent, so 
+that changes to one are not reflected in the other:</p>
+<center>
+<img src="images/196b.jpg" />
+</center>
+<p>Evidently, when we copy a <code>Vec</code>, we'll need to allocate new space and copy the contents 
+from the source into the newly allocated destination. As before, we'll assume that one of 
+our utility functions will handle the allocation and copy so that the copy constructor can 
+forward its work to that function:</p>
+<div class="prebox"><pre>
+template &lt;class T&gt; class Vec {
+public:
+    Vec(const Vec&amp; v) { create(v.begin(), v.end()); }
+    // <i>as before</i>
+};
+</pre></div>
+<p>When we get around to writing it, the function will be yet another version of <code>create</code>— 
+this one taking a pair of iterators (i.e., pointers) and initializing the elements being created 
+from the elements in the range bounded by those pointers.</p>
+<h4>11.3.2  Assignment</h4>
+<p>Just as a class definition specifies what happens when objects of that class are copied, the 
+class definition also controls the behavior of the <i><b>assignment operator</b>. </i>Although a class 
+may define several instances of the assignment operator—overloaded, as usual, by differing 
+types for its argument—the version that takes a const reference to the class itself is 
+special: It defines what it means to assign one value of the class type to another. This version 
+is typically called &quot;the assignment operator,&quot; even if the class defines several other 
+versions of the <code>operator=</code> function. The assignment operator, like the index operator, 
+must be a member of the class. As with any other operator, the assignment operator has a 
+return value, and so it must define a return type. For consistency with the built-in assignment 
+operators, we return a reference to the left-hand side:</p>
+<div class="prebox"><pre>
+template &lt;class T&gt; class Vec {
+public:
+    Vec&amp; operator=(const Vec&amp;);
+    // <i>as before</i>
+};
+</pre></div>
+<p>Assignment differs from the copy constructor in that assignment always involves obliterating 
+an existing value (the left-hand side) and replacing it with a new value (the right-
+hand side). When we make a copy, we are creating a new object for the first time, so there 
+is no preexisting object to deallocate. Like the copy constructor, assignment usually 
+involves assigning each of the data values. Data members that are pointers present the 
+same issues for assignment as they did for copying. We'll want assignment to ensure that 
+each object has its own copy of the data from the right-hand side.</p>
+<p>There's one last detail to consider before writing the code, and that is self-assignment. 
+It is possible that a user might wind up assigning an object to itself. As we shall see, it is 
+crucial that assignment operators deal correctly with self-assignment:</p>
+<div class="prebox"><pre>
+template &lt;class T&gt;
+Vec&lt;T&gt;&amp; Vec&lt;T&gt;::operator=(const Vec&amp; rhs)
+{
+    // check for self-assignment
+    if (&amp;rhs != this) {
+
+        // free the array in the left-hand side
+        uncreate();
+
+        // <i>copy elements from the right-hand to the left-hand side</i>
+        create(rhs.begin(), rhs.end());
+    }
+    return *this;
+}
+</pre></div>
+<p>This function uses a couple of new concepts, which we'll need to explain.</p>
+<p>First is the syntax that we use to define a template member function outside the class 
+header. As with any template, we begin by signaling to the compiler that we are defining 
+a template, and naming the template parameters. Next comes the return type, which in 
+this case is <code>Vec&lt;T&gt;&amp;</code>. If we compare this definition with the corresponding declaration in 
+the header file, we'll see that we said the function returned a <code>Vec&amp;</code>. We did not explicitly 
+name the type parameter in the return type. As a bit of syntactic sugar, the language 
+allows us to omit the type parameters when we are within the scope of the template. 
+Thus, inside the header file, we need not repeat<code> &lt;T&gt;</code> because the template parameter is 
+implicit. When we name the return type, we are outside the scope of the class, so we must 
+explicitly state the template parameters, if any. Similarly, the name of the function is 
+<code>Vec&lt;T&gt;::operator=</code>, not simply <code>Vec::operator=</code>. However, once we have specified 
+that it is a member of <code>Vec&lt;T&gt;</code> that we are defining, we need no longer repeat the template 
+qualifiers. Hence, the argument is simply <code>const Vec&amp;</code>, although we could have written 
+the redundant <code>const Vec&lt;T&gt;&amp;</code>.</p>
+<p>The other new aspect of this function is the use of a new keyword, <b>this. </b>The <code>this</code> 
+keyword is valid only inside a member function, where it denotes a pointer to the object 
+on which the member function is operating. For example, inside <code>Vec::operator=</code>, the 
+type of <code>this</code> is <code>Vec*</code>, because <code>this</code> is a pointer to the <code>Vec</code> object of which <code>operator=</code> is 
+a member. For a binary operator, such as assignment, <code>this</code> is bound to the left-hand 
+operand. Ordinarily, <code>this</code> is used when we need to refer to the object itself, as we do 
+here both in the initial if test and in the return.</p>
+<p>We use <code>this</code> to determine whether the right- and left-hand sides of the assignment 
+refer to the same object. If they do, then they will have the same address. As we saw in 
+&sect;10.1.1/170, <code>&amp;rhs</code> yields a pointer that is the address of <code>rhs</code>. We explicitly test for self-assignment 
+by comparing that pointer and <code>this</code>, which points to the left-hand side. If 
+the objects are the same, then there's nothing to do in the assignment operator, and we 
+immediately fall through to the <code>return</code> statement. If the objects are different, we need to 
+free the old space and assign new values to each data element, copying the contents from 
+the right-hand side to the newly allocated array. Evidently, we will need to write another 
+of our utility functions, <code>uncreate</code>, which will destroy the elements that had been in this 
+<code>Vec</code>, and will free the storage that it had consumed. Once we call <code>uncreate</code> to obliterate 
+the old values, we can use the version of <code>create</code> that copies from an existing <code>Vec</code> to allocate 
+new space and copy the values from the right-hand to the left-hand side.</p>
+<p>It is crucially important that assignment operators correctly handle self-assignment, 
+which we did here by explicitly checking whether the left- and right-hand operands are 
+the same object. To see the importance, consider what would happen if we were to 
+remove this test from our assignment operator. In that case, we would always <code>uncreate</code> 
+the existing array from the left-hand operand, destroying the elements and returning the 
+space that had been used. However, if the two operands were the same object, then the 
+right operand would refer to this same space. Had we used the elements from the right 
+operand to create a new array for the left operand, the result would have been a disaster: 
+When we freed the space held by the left operand, we would also have freed the space 
+for the right-hand object. When <code>create</code> attempted to copy the elements from <code>rhs</code>, those 
+elements would have been destroyed and the memory returned to the system.</p>
+<p>Although it is most common to handle self-assignment through a direct check, such as 
+we did here, it is not universal, nor is it always the best approach. The important point is 
+to handle self-assignment correctly. How to do so is a matter of tactics.</p>
+<p>The last interesting bit is the <code>return</code> statement, which dereferences <code>this</code> to obtain the 
+object to which it points. We then return a reference to that object. As usual in returning 
+a reference, it is crucial that the object to which the reference refers persist after the function 
+has returned. Returning a reference to a local object ensures disaster: The referenced 
+object will have gone away when the function returns, resulting in a reference to garbage.</p>
+<p>In the case of the assignment operator, we are returning a reference to the object that is the 
+left-hand side of the expression. That object exists outside the scope of the assignment 
+operator and hence is guaranteed to be around even after the function returns.</p>
+<h4>11.3.3 Assignment is not initialization</h4>
+<p>Experience leads us to believe that the difference between assignment and initialization is 
+one of the trickier aspects of learning C++ well. Many programming languages, C notably 
+among them, do not expose the distinction, so programmers often are unaware of the difference. 
+The fact that the <code>=</code> symbol can be involved in both initialization and assignment 
+can make the distinction harder to grasp. When we use <code>=</code> to give an initial value to a variable, 
+we are invoking the copy constructor. When we use it in an assignment expression, 
+we're calling <code>operator=</code>. Class authors must be attuned to the difference in order to 
+implement the right semantics.</p>
+<p>The key difference stems from two observations: Assignment (<code>operator=</code>) always 
+obliterates a previous value; initialization never does so. Rather, initialization involves 
+creating a new object and giving it a value at the same time. Initialization happens</p>
+<ul>
+<li>In variable declarations</li>
+<li>For function parameters on entry to a function</li>
+<li>For the return value of a function on return from the function</li>
+<li>In constructor initializers</li>
+</ul>
+<p>Assignment happens only when using the <code>=</code> operator in an expression. For example:</p>
+<div class="prebox"><pre>
+string url_ch = &quot;~;/?:@=&amp;$-_.+!*'(),&quot;   // <i>initialization</i>
+string spaces(url_ch.size(), ' ') ;     // <i>initialization</i>
+string y;                               // <i>initialization</i>
+y = url_ch;                             // <i>assignment</i>
+</pre></div>
+<p>The first declaration creates a new object. Therefore, we know that we are initializing that 
+object, and hence that we will be invoking a constructor. The syntax</p>
+<div class="prebox"><pre>
+string url_ch = &quot;~;/?:@=&amp;$-_.+!*'(),&quot;
+</pre></div>
+<p>says to create a <code>string</code> from the <code>const char*</code> that represents the string literal 
+<code>&quot;~;/?:@=&amp;$-_.+!*'(),&quot;</code>. To do so, the compiler will call the <code>string</code> constructor that 
+takes a <code>const char*</code>. That constructor can construct <code>url_ch</code> directly from the string literal, 
+or it can construct an unnamed temporary variable from the string literal, and then 
+call the copy constructor to construct <code>url_ch</code> as a copy of that temporary variable.</p>
+<p>The second declaration shows another form of initialization: giving one or more constructor 
+arguments directly. The compiler will call whichever constructor is most appropriate 
+for the number of arguments and their types. In this example, it will use the 
+<code>string</code> constructor that takes two arguments. The first argument says how many characters 
+the variable <code>spaces</code> is to have; the second tells what value to give each of those 
+characters. The effect will be to define <code>spaces</code> as having the same number of characters 
+as <code>url_ch</code>, with all of the characters being blank.</p>
+<p>The third declaration is easier: We're invoking the default constructor to create an 
+empty <code>string</code>. The last statement is not a declaration at all. Instead, it is using the <code>=</code> 
+operator as part of an expression; hence, it is an assignment. That assignment will be 
+accomplished by running the <code>string</code> assignment operator.</p>
+<p>A slightly more complicated example involves function arguments and return values. 
+For example, assume that line holds a line of input, and we call <code>split</code> from &sect;6.1.1/103:</p>
+<div class="prebox"><pre>
+vector&lt;string&gt; split(const string&amp;);  // <i>function declaration</i>
+vector&lt;string&gt; v;                     // <i>initialization</i>
+
+v = split(line);        // <i>on entry, initialization of </i>split's <i>parameter from </i>line;
+                        // on exit, both initialization of the return value
+                        // <i>and assignment to v</i>
+</pre></div>
+<p>The declaration of <code>split</code> is interesting because it defines a return type that is a class type. 
+Assigning a class type return value from a function is a two-step process: First, the copy 
+constructor is run to copy the return value into a temporary at the call site. Then the 
+assignment operator is run to assign the value of that temporary to the left-hand operand. 
+The distinction between initialization and assignment is important because each one 
+causes different operations to run:</p>
+<ul>
+<li>Constructors always control initialization.</li>
+<li>The <code>operator=</code> member function always controls assignment.</li>
+</ul>
+<h4>11.3.4 Destructor</h4>
+<p>We must still provide one more operation, which defines what happens when a <code>Vec</code> 
+object is destroyed. An object that is created in a local scope is destroyed as soon as it 
+goes out of scope; a dynamically allocated object is destroyed when we <code>delete</code> a pointer 
+to the object. For example, consider the <code>split</code> function from &sect;6.1.1/103:</p>
+<div class="prebox"><pre>
+vector&lt;string&gt; split(const string&amp; str) {
+    vector&lt;string&gt; ret;
+    // <i>split </i>str <i>into words and store in </i>ret
+    return ret;
+}
+</pre></div>
+<p>When we return from <code>split</code>, the local variable <code>ret</code> goes out of scope and is destroyed.</p>
+<p>Just as with copy and assignment, it is up to the class to say what happens when 
+objects are destroyed. Like constructors, which say how to create objects, there is a special 
+member function, called a <i><b>destructor</b>, </i>that controls what happens when objects of the type 
+are destroyed. Destructors have the same name as the name of the class prefixed by 
+a tilde(<code>~</code>). Destructors take no arguments and have no return value.</p>
+<p>The work of the destructor is to do any cleanup that should be done whenever an 
+object goes away. Typically, this cleanup involves releasing resources, such as memory, 
+that the constructor has allocated:</p>
+<div class="prebox"><pre>
+template &lt;class T&gt; class Vec {
+public:
+    ~Vec() { uncreate(); }
+    // <i>as before</i>
+};
+</pre></div>
+<p>For <code>Vec</code>s, we allocate memory in the constructors, and so we must free it in the 
+destructor. This job is similar to what the assignment operator does to obliterate the old 
+left-hand side. Not surprisingly, we can call the same utility function from the destructor, 
+with the aim of destroying the elements and freeing the space that they occupied.</p>
+<h4>11.3.5 Default operations</h4>
+<p>Some classes, such as the <code>Student_info</code> types that we defined in Chapters 4 and 9, do 
+not explicitly define a copy constructor, assignment operator, or destructor. A logical 
+question is: What happens when objects of such types are created, copied, assigned, and 
+destroyed? The answer is that if the class author does not specify these operations, the 
+compiler synthesizes default versions of the unspecified operations.</p>
+<p>The default versions are defined to operate recursively—copying, assigning, or 
+destroying each data element according to the appropriate rules for the type of that element. 
+Members that are of class type are copied, assigned, or destroyed by calling the 
+copy constructor, assignment operator, or destructor for the data element. Members that 
+are of built-in type are copied or assigned by copying or assigning their value. The 
+destructor for built-in types has no work to do—even if the type is a pointer. In particular, 
+destroying a pointer through the default destructor does not free the space at which 
+the pointer points.</p>
+<p>Now we can understand how the default <code>Student_info</code> operations execute. For 
+example, the copy constructor copies four data elements. To do so, it invokes the <code>string</code> 
+and <code>vector</code> copy constructors to copy the <code>name</code> and <code>homework</code> members respectively. It 
+copies the two <code>double</code> values, <code>midterm</code> and <code>final</code>, directly.</p>
+<p>Finally, as we saw in &sect;9.5/164, there is a default for the default constructor. If the class 
+defines no constructors at all, then the compiler will synthesize the default constructor, 
+which is the constructor that has no parameters. The synthesized default constructor 
+recursively initializes each data member in the same way as the object itself is initialized: 
+If the context requires default-initialization, it will default-initialize the data members; if 
+the context requires value-initialization, it will value-initialize the data members.</p>
+<p>It is important to note that if a class defines any constructor explicitly, even a copy constructor, 
+then the compiler will not synthesize a default constructor for that class. Default 
+constructors are essential in several contexts: One such context is in the synthesized 
+default constructor itself. In order to be used as a data member of a class that relies on the 
+synthesized default constructor, the data type must itself provide a default constructor. 
+Therefore, it is usually a good idea to give a class a default constructor, either explicitly, as 
+we did in Chapter 9, or implicitly, as we did in Chapter 4.</p>
+<h4>11.3.6 The rule of three</h4>
+<p>Classes that manage resources such as memory require close attention to copy control. In 
+general, the default operations will not suffice for such classes. Failure to control every 
+copy can confuse users of the class and often will lead to run-time errors.</p>
+<p>Consider our <code>Vec</code> class, but pretend that we did not define the copy constructor, 
+assignment operator, or destructor. As we saw in &sect;11.3.1/195, at best we will surprise our 
+users. Users of <code>Vec</code> will almost surely expect that once they've copied one <code>Vec</code> into 
+another, the two objects will be distinct. They will expect that operations on one <code>Vec</code> will 
+not have any effect on the data held by the other.</p>
+<p>Even worse, though, is that if we do not define a destructor, then the default destructor 
+will be used. That destructor will destroy the pointer, but destroying a pointer does not 
+free the space to which it points. The result will be a memory leak: The space consumed 
+by <code>Vec</code>s will never be reclaimed.</p>
+<p>If we fix the leak by providing a destructor, but we do not also add the copy constructor 
+and assignment operator, then we set things up so that a crash is likely. In such a 
+flawed implementation, it would be possible for two <code>Vec</code>s to share the same underlying 
+storage, as we illustrated in the first diagram in &sect;11.3.1/196. When one of those objects is 
+destroyed, the destructor will destroy that shared storage. Any subsequent reference 
+through the undestroyed copy will lead to disaster.</p>
+<p>Classes that allocate resources in their constructors require that every copy deal correctly 
+with those resources. Such classes almost surely need a destructor to free the 
+resources. If the class needs a destructor, it almost surely needs a copy constructor, as 
+well as an assignment operator. Copying or assigning objects of classes that allocate 
+resources usually allocates those resources in the same way that creating an object from 
+scratch does. To control every copy of objects of class <code>T</code>, you need</p>
+<div class="prebox"><pre>
+T::T();                    <i>one or more constructors, perhaps with arguments</i>
+T::~T()                    <i>the destructor</i>
+T::T(const T&amp;)             <i>the copy constructor</i>
+T::operator=(const T&amp;)     <i>the assignment operator</i>
+</pre></div>
+<p>Once we have defined these operations, the compiler will invoke them whenever an 
+object of our type is created, copied, assigned, or destroyed. Remember that objects may 
+be created, copied, or destroyed implicitly. Whether implicitly or explicitly, the compiler 
+will invoke the appropriate operation.</p>
+<p>Because the copy constructor, destructor, and assignment operator are so tightly coupled, 
+the relationship among them has become known as the <i><b>rule of three</b>: </i>If your class 
+needs a destructor, it probably needs a copy constructor and an assignment operator too.</p>
+<div class="prevnext">
+<a href="67.htm"><img src="images/Prev1.gif" /></a>&nbsp;&nbsp;<a href="69.htm"><img src="images/Next1.gif" /></a>
+</div>
+</body>
+</html>

@@ -1,0 +1,135 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;7.12.&nbsp;Storing a BLOB in a SQLite Database</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-7-sect-11.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-7-sect-13.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-7-SECT-12"></a>
+<h3 class="docSection1Title" id="409771-999">Recipe 7.12. Storing a BLOB in a SQLite Database</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: John Barham</span></p>
+
+<a name="pythoncook2-CHP-7-SECT-12.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-7-ITERM-2364"></a>
+<a name="pythoncook2-CHP-7-ITERM-2365"></a> <a name="pythoncook2-CHP-7-ITERM-2366"></a>You need to
+store a BLOB in an SQLite database.</P>
+
+
+<a name="pythoncook2-CHP-7-SECT-12.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">The PySQLite Python extension offers function
+<tt>sqlite.encode</tt> to let you insert binary strings in
+SQLite databases. You can also build a small adapter class based on
+that function:</p>
+
+<pre>import sqlite, cPickle
+class Blob(object):
+    ''' automatic converter for binary strings '''
+    def _ _init_ _(self, s): self.s = s
+    def _quote(self): return "'%s'" % sqlite.encode(self.s)
+# make a test database in memory, get a cursor on it, and make a table
+connection = sqlite.connect(':memory:')
+cursor = connection.cursor( )
+cursor.execute("CREATE TABLE justatest (name TEXT, ablob BLOB)")
+# Prepare some BLOBs to insert in the table
+names = 'aramis', 'athos', 'porthos'
+data = {  }
+for name in names:
+    datum = list(name)
+    datum.sort( )
+    data[name] = cPickle.dumps(datum, 2)
+# Perform the insertions
+sql = 'INSERT INTO justatest VALUES(%s, %s)'
+for name in names:
+    cursor.execute(sql, (name, Blob(data[name])) )
+# Recover the data so you can check back
+sql = 'SELECT name, ablob FROM justatest ORDER BY name'
+cursor.execute(sql)
+for name, blob in cursor.fetchall( ):
+    print name, cPickle.loads(blob), cPickle.loads(data[name])
+# Done, close the connection (would be no big deal if you didn't, but...)
+connection.close( )</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-7-SECT-12.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">SQLite does not directly support binary data, but it still lets you
+declare such types for fields in a <tt>CREATE TABLE</tt>
+DDL statement. The PySQLite Python extension uses the declared types
+of fields to convert field values appropriately to Python values when
+you fetch data after an SQL <tt>SELECT</tt> from an SQLite
+database. However, you still need to be careful when communicating
+binary string data via SQL.</P>
+
+<p class="docText">Specifically, when you use <tt>INSERT</tt> or
+<tt>UPDATE</tt> SQL statements, and need to have binary
+strings among the <tt>VALUES</tt> you're
+passing, you need to escape some characters in the binary string
+according to SQLite's own rules. Fortunately, you
+don't have to figure out those rules for yourself:
+SQLite supplies the function to do the needed escaping, and PySQLite
+exposes that function to your Python programs as the
+<tt>sqlite.encode</tt> function. This recipe shows a
+typical case: the <tt>BLOB</tt>s you're
+inserting come from <tt>cPickle.dumps</tt>, so they may
+represent almost arbitrary Python objects (although, in this case,
+we're just using them for a few lists of
+characters). The recipe is purely demonstrative and works by creating
+a database in memory, so that the database is implicitly lost at the
+end of the script.</p>
+
+<p class="docText">While you could perfectly well call <tt>sqlite.encode</tt>
+directly on your binary strings at the time you pass them as
+parameters to a cursor's <tt>execute</tt>
+method, this recipe takes a slightly different tack, defining a
+<I>Blob</I> class to wrap binary strings and passing
+instances of that. When PySQLite receives as arguments instances of
+any class, the class must define a method named
+<tt>_quote</tt>, and PySQLite calls that method on each
+instance, expecting the method to return a string fully ready for
+insertion into an SQL statement. When you use this approach for more
+complicated classes of your own, you'll probably
+want to pass a <tt>decoders</tt> keyword argument to the
+<tt>connect</tt> method, to associate appropriate decoding
+functions to specific SQL types. By default, however, the
+<tt>BLOB</tt> SQL type is associated with the decoding
+function <tt>sqlite.decode</tt>, which is exactly the
+inverse of <tt>sqlite.encode</tt>; for the simple
+<i>Blob</i> class in this recipe, therefore, we do not need
+to specify any custom decoder, since the default one suits us
+perfectly well.</p>
+
+
+<a name="pythoncook2-CHP-7-SECT-12.4"></a>
+<h4 class="docSection2Title">See Also</H4>
+
+<p class="docText"><a class="docLink" href="pythoncook2-CHP-7-SECT-10.html#pythoncook2-CHP-7-SECT-10">Recipe 7.10</a> and <a class="docLink" href="pythoncook2-CHP-7-SECT-11.html#pythoncook2-CHP-7-SECT-11">Recipe 7.11</a> for MySQL-oriented and
+PostgreSQL-oriented solutions to the same problem;
+SQLite's home page (<a class="docLink" target="_blank" href="http://www.sqlite.org/">http://www.sqlite.org/</a>); the PySQLite manual
+(<a class="docLink" target="_blank" href="http://pysqlite.sourceforge.net/manual.html">http://pysqlite.sourceforge.net/manual.html</a>);
+the SQLite FAQ ("Does SQLite support a BLOB
+type?") at <a class="docLink" target="_blank" href="http://www.hwaci.com/sw/sqlite/faq.html#q12">http://www.hwaci.com/sw/sqlite/faq.html#q12</a>.</p>
+
+
+
+<ul></UL></td></TR></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-7-sect-11.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-7-sect-13.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

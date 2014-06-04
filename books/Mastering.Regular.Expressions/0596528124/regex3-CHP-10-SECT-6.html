@@ -1,0 +1,65 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Section 10.6.&nbsp; PHP Efficiency Issues</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=regex3-CHP-10-SECT-5.html><img src="images/prev.gif" width="60" height="17" border="0" align="absmiddle" alt="Previous Page"></a>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=regex3-CHP-10-SECT-7.html><img src="images/next.gif" width="60" height="17" border="0" align="absmiddle" alt="Next Page"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><a name="regex3-CHP-10-SECT-6"></a>
+<H3 id="title-IDAEYF0E" class="docSection1Title">10.6. PHP Efficiency Issues</H3>
+<a name="IDX-CHP-10-3597"></a> 
+
+<a name="IDX-CHP-10-3598"></a> 
+
+<p class="docText">PHP's preg routines use PCRE, an optimized NFA regular-expression engine, so many of the techniques discussed in <a class="docLink" href="regex3-CHP-4.html#regex3-CHP-4">Chapters 4</a> through <a class="docLink" href="regex3-CHP-6.html#regex3-CHP-6">6</a> apply directly. This includes benchmarking critical sections of code to understand practically, and not just theoretically, what is fast and what is not. <a class="docLink" href="regex3-CHP-6.html#regex3-CHP-6">Chapter 6</a> shows an example of benchmarking in PHP (&#9758; 234).</P>
+<p class="docText">For particularly time-critical code, remember that a callback is generally faster than using the <span class="docEmphStrong">e</span><a name="IDX-CHP-10-3599"></a> 
+ pattern modifier (&#9758; 465), and that named capture with very long strings can result in a lot of extra data copying.</P>
+<p class="docText">Regular expressions are compiled as they're encountered at runtime, but PHP has a huge 4,096-entry cache<a name="IDX-CHP-10-3600"></a> 
+ (&#9758; 242), so in practice, a particular pattern string is compiled only the first time it is encountered.</p>
+<p class="docText">The <span class="docEmphStrong">S</span><a name="IDX-CHP-10-3601"></a> 
+ pattern modifier deserves special coverage: it "studies" a regex to try to achieve a faster match. (This is unrelated, by the way, to Perl's <tt>study</tt> function, which works with target text rather than a regular expression &#9758; 359.)</P>
+<a name="regex3-CHP-10-SECT-6.1"></a>
+<h4 id="title-IDAJ0F0E" class="docSection2Title">10.6.1. The S Pattern Modifier: "Study"</h4>
+<p class="docText">Using the <span class="docEmphStrong">S</span> pattern modifier instructs the preg engine to spend a little extra time<sup class="docFootnote"><a class="docLink" href="#regex3-CHP-10-FN-5">[<img src=images/U2020.jpg border=0>]</a></sup> studying the regular expression prior to its application, with the hope that the extra time spent increases match speed enough to justify it. It may well be that no extra speed is achieved by doing this, but in some situations the speedup is measured by orders of magnitudes.</P><blockquote><p class="docFootnote"><sup><a name="regex3-CHP-10-FN-5">[<img src=images/U2020.jpg border=0>]</a></sup> Really, a very little extra time. For very long and complex regexes on an average CPU, the extra time taken by the <tt>S</tt> pattern modifier is less than a hundred-thousandths of a second.</P></blockquote>
+<p class="docText">Currently, the situations where study can and can't help are fairly well defined: it enhances what <a class="docLink" href="regex3-CHP-6.html#regex3-CHP-6">Chapter 6</a> calls the <span class="docEmphasis">initial class discrimination optimization</span> (&#9758; 247).</p>
+<p class="docText">I'll start off first by noting that unless you intend to apply a regex to a lot of text, there's probably not a lot of time to save in the first place. You need to be concerned with the <span class="docEmphStrong">S</span> pattern modifier only when applying the same regex to large chunks of text, or to many small chunks.</P>
+<a name="regex3-CHP-10-SECT-6.1.1"></a>
+<H5 id="title-IDAQ1F0E" class="docSection3Title">10.6.1.1. Standard optimizations, without the S pattern modifier</h5>
+<p class="docText">Consider a simple expression such as <img src=images/U2308.jpg border=0><tt>&lt;(\w+)</tt><img src=images/U230B.jpg border=0>. Due to the nature of this regex, we know that every match must begin with the '<tt>&lt;</tt>' character. A regex engine can (and in the preg suite's case, does) take advantage of that by presearching the target string for '<tt>&lt;</tt>' and applying the full regular expression at those locations only (since a match must begin with <img src=images/U2308.jpg border=0><tt>&lt;</tt><img src=images/U230B.jpg border=0>, applying it starting at any other character is pointless).</p>
+<p class="docText">This simple presearch can be much faster than a full regex application, and therein lies the optimization. Particularly, the less frequently the character in question appears in the target text, the greater the optimization. Also, the more work a regex engine must do to detect a first-character failure, the greater the benefit of the optimization. This optimization helps <img src=images/U2308.jpg border=0><tt>&lt;i&gt;|&lt;/i&gt;|&lt;b&gt;!&lt;/b&gt;</tt><img src=images/U230B.jpg border=0> more than <img src=images/U2308.jpg border=0><tt>&lt;(\w+)</tt><img src=images/U230B.jpg border=0> because in the first case, the regex engine would otherwise have to attempt four different alternatives before moving on to the next attempt. That's a lot of work to avoid.</p>
+
+<a name="regex3-CHP-10-SECT-6.1.2"></a>
+<H5 id="title-IDAJ2F0E" class="docSection3Title">10.6.1.2. Enhancing the optimization with the S pattern modifier</H5>
+<p class="docText">The preg engine is smart enough to apply this optimization to most expressions that have only a single character that must start any match, as in the previous examples. However, the <span class="docEmphStrong">S</span> pattern modifier tells the engine to preanalyze the expression to enable this optimization for expressions whose possible matches have multiple starting characters.</p>
+<p class="docText">Here are several sample expressions, some of which we've already seen in this chapter, that require the <span class="docEmphStrong">S</span> pattern modifier to be optimized in this way:</p>
+<p><table cellspacing="0" border="1" RULES="all" cellpadding="4" width="100%"><colgroup span="2"><col><col></colgroup><thead><tr><th class="thead" scope="col" align="left"><p class="docText">Regex</P></th><th class="thead" scope="col" align="left"><p class="docText">Possible Starting Characters</p></th></tr></thead><TR><td class="docTableCell" align="left"><p class="docText"><tt>&lt;(\w+) &lt;&amp;(\w+);</tt></p></TD><td class="docTableCell" align="left"><p class="docText"><tt>&lt; &amp;</tt></P></td></tr><tr><td class="docTableCell" align="left"><p class="docText"><tt>[Rr]e:</tt></p></td><td class="docTableCell" align="left"><p class="docText"><tt>R r</tt></p></td></tr><tr><td class="docTableCell" align="left"><p class="docText"><tt>(Jan|Feb|&#8943;|Dec)\b</tt></P></td><TD class="docTableCell" align="left"><p class="docText"><tt>A D F J M N O S</tt></p></td></TR><TR><TD class="docTableCell" align="left"><p class="docText"><tt>(Re:\S*)? SPAM</tt></P></td><TD class="docTableCell" align="left"><p class="docText"><tt>R S</tt></p></td></TR><TR><td class="docTableCell" align="left"><p class="docText"><tt>\S*,\s*</tt></P></TD><td class="docTableCell" align="left"><p class="docText"><tt>\x09 \x0A \x0C \x0D \x20,</tt></p></td></TR><TR><td class="docTableCell" align="left"><p class="docText"><tt>[&amp;&lt;"&gt;]</tt></p></td><td class="docTableCell" align="left"><p class="docText"><tt>&amp; &lt; " &gt;</tt></P></td></tr><TR><td class="docTableCell" align="left"><p class="docText"><tt>\r?\n\r?\n</tt></p></TD><td class="docTableCell" align="left"><p class="docText"><tt>\r \n</tt></P></td></tr></table></p><br>
+
+<a name="regex3-CHP-10-SECT-6.1.3"></a>
+<h5 id="title-IDA2AG0E" class="docSection3Title">10.6.1.3. When the S pattern modifier can't help</h5>
+<a name="IDX-CHP-10-3602"></a> 
+
+<p class="docText">It's instructive to look at the type of expressions that don't benefit from the <span class="docEmphStrong">S</span> pattern modifier:</p>
+<ul><li><p class="docList">Expressions that have a leading anchor (e.g., <img src=images/U2308.jpg border=0><tt>^</tt><img src=images/U230B.jpg border=0> and <img src=images/U2308.jpg border=0><tt>\b</tt><img src=images/U230B.jpg border=0>), or an anchor leading a global-level alternative. This is a restriction of the current implementation that theoretically could be removed, in some future version, for <img src=images/U2308.jpg border=0><tt>\b</tt><img src=images/U230B.jpg border=0>.</p></li><li><p class="docList">Expressions that can match nothingness, such as <img src=images/U2308.jpg border=0><tt>\S*</tt><img src=images/U230B.jpg border=0>.</P></li><LI><p class="docList">Expressions that can match starting at any character (or most any character), such as <img src=images/U2308.jpg border=0><tt><span class="docEmphStrong">(?:</span> [^()]++ &lt;\((?R) \) <span class="docEmphStrong">)*</span></tt><img src=images/U230B.jpg border=0>, seen in an example on page 475. This expression can start on any character except '<span class="docEmphStrong">)</span>', so a precheck is not likely to eliminate many starting positions.</p></li><LI><p class="docList">Expressions that have only one possible starting character, because they are already optimized.</P></LI></UL>
+
+<a name="regex3-CHP-10-SECT-6.1.4"></a>
+<h5 id="title-IDAXCG0E" class="docSection3Title">10.6.1.4. Suggested use</H5>
+<p class="docText">It doesn't take long for the preg engine to do the extra analysis invoked by the <span class="docEmphStrong">S</span> pattern modifier, so if you'll be applying a regex to relatively large chunks of text, it doesn't hurt to use it. If you think there's any chance it might apply, the potential benefit makes it worthwhile.</p>
+
+
+
+</TD></TR></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=regex3-CHP-10-SECT-5.html><img src="images/prev.gif" width="60" height="17" border="0" align="absmiddle" alt="Previous Page"></a>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=regex3-CHP-10-SECT-7.html><img src="images/next.gif" width="60" height="17" border="0" align="absmiddle" alt="Next Page"></a>
+</div></td></tr></table>
+</body></html>

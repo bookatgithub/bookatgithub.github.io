@@ -1,0 +1,263 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;19.14.&nbsp;Merging Sorted Sequences</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-19-sect-13.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-19-sect-15.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-19-SECT-14"></a>
+<h3 class="docSection1Title">Recipe 19.14. Merging Sorted Sequences</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: S&eacute;bastien Keim, Raymond Hettinger, Danny
+Yoo</span></p>
+
+<a name="pythoncook2-CHP-19-SECT-14.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText">You have several sorted sequences (iterables) and need to iterate on
+the overall sorted sequence that results from
+"merging" these sequences.</P>
+
+
+<a name="pythoncook2-CHP-19-SECT-14.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">A generator is clearly the right tool for the job, in the general
+case (i.e., when you might not have enough memory to comfortably hold
+all the sequences). Implementing the generator is made easy by the
+standard library module <tt>heapq</tt>, which supplies
+functions to implement the "heap"
+approach to priority queues:</p>
+
+<pre>import heapq
+def merge(*subsequences):
+    # prepare a priority queue whose items are pairs of the form
+    # (current-value, iterator), one each per (non-empty) subsequence
+    heap = [  ]
+    for subseq in subsequences:
+        iterator = iter(subseq)
+        for current_value in iterator:
+            # subseq is not empty, therefore add this subseq's pair
+            # (current-value, iterator) to the list
+            heap.append((current_value, iterator))
+            break
+    # make the priority queue into a heap
+    heapq.heapify(heap)
+    while heap:
+        # get and yield lowest current value (and corresponding iterator)
+        current_value, iterator = heap[0]
+        yield current_value
+        for current_value in iterator:
+            # subseq is not finished, therefore add this subseq's pair
+            # (current-value, iterator) back into the priority queue
+            heapq.heapreplace(heap, (current_value, iterator))
+            break
+        else:
+            # subseq has been exhausted, therefore remove it from the queue
+            heapq.heappop(heap)</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-19-SECT-14.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">The need for "merging" sorted
+subsequences into a larger sorted sequence is reasonably frequent. If
+the amount of data is small enough to fit entirely in memory without
+problems, then the best approach is to build a list by concatenating
+all subsequences, then sort the list:</P>
+
+<pre>def smallmerge(*subsequences):
+    result = [  ]
+    for subseq in subsequences: result.extend(subseq)
+    result.sort( )
+    return result</pre><br>
+
+
+<p class="docText">The <tt>sort</tt> method of list objects is based on a
+sophisticated <span class="docEmphasis">natural merge</span> algorithm, able to
+take advantage of existing sorted subsequences in the list
+you're sorting; therefore, this approach is quite
+fast, as well as simple (and general, since this
+approach's correctness does <span class="docEmphasis">not</span>
+depend on all subsequences being already sorted). If you can choose
+this approach, it has many other advantages. For example,
+<I>smallmerge</I> works fine even if one of the
+<i>subsequences</i> isn't perfectly sorted
+to start with; and in Python 2.4, you may add a generic keywords
+argument <tt>**kwds</tt> to <i>smallmerge</i> and
+pass it right along to the <tt>result.sort( )</tt> step, to
+achieve the flexibility afforded in that version by the
+<tt>cmp=</tt>, <tt>key=</tt>, and
+<tt>reverse=</tt> arguments to list's
+<tt>sort</tt> method.</P>
+
+<p class="docText">However, you sometimes deal with large sequences, which might not
+comfortably fit in memory all at the same time (e.g., your sequences
+might come from files on disk, or be computed on the fly, item by
+item, by other generators). When this happens, this
+recipe's generator will enable you to perform your
+sequence merging while consuming a very moderate amount of extra
+memory (dependent only on the number of subsequences, not on the
+number of items in the subsequences).</p>
+
+<p class="docText">The recipe's implementation uses a classic
+sequence-merging algorithm based on a priority queue, which, in turn,
+lets it take advantage of the useful <tt>heapq</tt> module
+in the Python Standard Library. <tt>heapq</tt> offers
+functions to implement a priority queue through the data structure
+known as a <i>heap</I>.</p>
+
+<p class="docText">A <I>heap</i> is any list
+<tt><I>H</I></tt> such that, for any valid index
+<tt>0&lt;=i&lt;len(H)</tt>,
+<tt>H[i]&lt;=H[2*i+1]</tt>, and
+<tt>H[i]&lt;=H[2*i+2]</tt> (if <tt>2*i+1</tt> and
+<tt>2*i+2</tt> are also valid indices into
+<tt><i>H</i></tt>). This <span class="docEmphasis">heap
+property</span> is fast to establish on an arbitrary list
+(function <tt>heapify</tt> does that) and very fast to
+re-establish after altering or removing the smallest item (and
+functions <tt>heapreplace</tt> and
+<tt>heappop</tt> do that). The smallest item is always
+<tt><i>H</i></tt>[<tt><i>0</i></tt>]
+(it's easy to see that the
+"heap" property implies this), and
+being able to find the smallest item instantly makes heaps an
+excellent implementation of priority queues.</p>
+
+<p class="docText">In this recipe, we use as items in the
+"heap" a
+"pair" (i.e., two-items tuple) for
+each subsequence that is not yet exhausted (i.e., each subsequence
+through which we have not yet fully iterated). As its first item,
+each pair has the "current item" in
+the corresponding subsequence and, as its second item, an iterator
+over that subsequence. At each iteration step, we yield the smallest
+"current item", then we advance the
+corresponding iterator and re-establish the
+"heap" property; when an iterator
+is exhausted, we remove the corresponding pair from the
+"heap" (so that, clearly,
+we're finished when the
+"heap" is emptied). Note the idiom
+that we use to advance an iterator by one step, dealing with the
+possibility that the iterator is exhausted:</p>
+
+<pre>for current_value in iterator:
+    # if we get here the iterator was not empty, current_value was
+    # its first value, and the iterator has been advanced one step
+    <i>...use pair (current_value, iterator)...</i>
+    # we break at once as we only wanted the first item of iterator
+    break
+else:
+    # if we get here the break did not execute, so the iterator
+    # was empty (exhausted)
+    <i># deal with the case of iterator being exhausted...</i></pre><br>
+
+
+<p class="docText">We use this idiom twice in the recipe, although in the first of the
+two uses we do not need the <tt>else</tt> clause since we
+can simply ignore iterators that are immediately exhausted (they
+correspond to empty subsequences, which can be ignored for merging
+purposes).</P>
+
+<p class="docText">If you find this idiom confusing or tricky (because it uses a
+<tt>for</tt> statement whose body immediately
+<tt>break</tt>si.e., a statement that looks like a
+loop but is not really a loop because it never executes more than
+once!), you may prefer a different approach:</P>
+
+<pre>try:
+    current_value = iterator.next( )
+except StopIteration:
+    # if we get here the iterator was empty (exhausted)
+    #<i>   deal with the case of iterator being exhausted...</i>
+else:
+    # if we get here the iterator was not empty, current_value was
+    # its first value, and the iterator has been advanced one step
+    <I>#  use pair (current_value, iterator)...</i></pre><br>
+
+
+<p class="docText">I slightly prefer the idiom using <tt>for</tt>; in my view,
+it gains in clarity by putting the normal case (i.e., an unexhausted
+iterator) first and the rare case (an exhausted iterator) later. A
+variant of the <tt>try</tt>/<tt>except</tt> idiom
+that has the same property is:</p>
+
+<pre>try:
+    current_value = iterator.next( )
+    # if we get here the iterator was not empty, current_value was
+    # its first value, and the iterator has been advanced one step
+    <i>#  use pair (current_value, iterator)...</i>
+except StopIteration:
+    # if we get here the iterator was empty (exhausted)
+    <I>#  deal with the case of iterator being exhausted...</i></pre><BR>
+
+
+<p class="docText">However, I somewhat dislike this variant (even though
+it's quite OK for the two specific uses of this
+recipe) because it crucially depends on the code indicated as
+"<tt><i>use
+pair</I></tt>"<tt><i>
+</I></tt><span class="docEmphasis">never</span> raising a
+<tt>StopIteration</tt> exception. As a general principle,
+it's best to use a <tt>TRy</tt>
+clause's body that is as small as
+possiblejust the smallest fragment that you
+<span class="docEmphasis">do</span> expect to possibly raise the exception
+you're catching in the following handlers
+(<tt>except</tt> clauses), <span class="docEmphasis">not</span> the
+follow-on code that must execute only if the exception was not
+raised. The follow-on code goes in the <tt>else</tt> clause
+of the <tt>try</tt> statement, in properly defensive
+Pythonic coding style. In any case, as long as you are fully aware of
+the tradeoffs in clarity and defensiveness between these three
+roughly equivalent idioms, you're welcome to develop
+your own distinctive Pythonic style and, in particular, to choose
+freely among them!</P>
+
+<p class="docText">If you do choose either of the idioms that explicitly call
+<tt>iterator.next( )</tt>, a further
+"refinement" (i.e., a tiny
+optimization) is to keep as the second item of each pair, rather than
+the <tt>iterator</tt> object, the bound-method
+<tt>iterator.next</tt> directly, ready for you to call.
+This optimization is not really tricky at all (it
+<span class="docEmphasis">is</span> quite common in Python to stash away bound
+methods and other such callables), but it may nevertheless result in
+code of somewhat lower readability. Once again, the choice is up to
+you!</P>
+
+
+<a name="pythoncook2-CHP-19-SECT-14.4"></a>
+<h4 class="docSection2Title">See Also</h4>
+
+<p class="docText"><a class="docLink" href="pythoncook2-CHP-5.html#pythoncook2-CHP-5">Chapter 5</a> for general issues about sorting and
+<a class="docLink" href="pythoncook2-CHP-5-SECT-7.html#pythoncook2-CHP-5-SECT-7">Recipe 5.7</a> and <a class="docLink" href="pythoncook2-CHP-5-SECT-8.html#pythoncook2-CHP-5-SECT-8">Recipe 5.8</a> about
+<tt>heapq</tt> specifically; <span class="docEmphasis">Library
+Reference</span> and <span class="docEmphasis">Python in a Nutshell</span>
+documentation on module <tt>heapq</tt> and
+lists' <tt>sort</tt> method; Robert
+Sedgewick, <span class="docEmphasis">Algorithms</span> (Addison-Wesley) (heaps
+are covered starting on p. 178 in the 2d edition);
+<i>heapq.py</i> in the Python sources contains an
+interesting discussion of heaps.</P>
+
+
+
+<ul></ul></TD></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-19-sect-13.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-19-sect-15.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

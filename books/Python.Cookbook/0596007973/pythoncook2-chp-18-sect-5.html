@@ -1,0 +1,179 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;18.5.&nbsp;Memoizing (Caching) the Return Values of Functions</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-18-sect-4.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-18-sect-6.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-18-SECT-5"></a>
+<h3 class="docSection1Title">Recipe 18.5. Memoizing (Caching) the Return Values of Functions</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Paul Moore, Mitch Chapman, Hannu Kankaanp</span></p>
+
+<a name="pythoncook2-CHP-18-SECT-5.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-18-ITERM-3086"></a>
+<a name="pythoncook2-CHP-18-ITERM-3087"></a>
+<a name="pythoncook2-CHP-18-ITERM-3088"></a>You
+have a pure function that is often called with the same arguments
+(particularly a recursive function) and is slow to compute its
+results. You want to find a simple way to gain substantial
+improvement in performance.</P>
+
+
+<a name="pythoncook2-CHP-18-SECT-5.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">The key idea behind memoizing is to store a
+function's results in a dictionary, keyed by the
+arguments that produce each result. This approach makes sense only
+for a pure function (i.e., one that yields the same result when
+called more than once with the same arguments). It's
+easy to memoize a function by hand. For example, using the recursive
+Fibonacci function, here is a manually memoized function:</p>
+
+<pre>fib_memo = {  }
+def fib(n):
+    if n &lt; 2: return 1
+    if n not in fib_memo:
+        fib_memo[n] = fib(n-1) + fib(n-2)
+    return fib_memo[n]</pre><BR>
+
+
+<p class="docText">Having to code the memoization inside each function to be memoized is
+repetitive and degrades the function's readability.
+An alternative is to encapsulate the memoization mechanics into a
+closure:</p>
+
+<pre>def memoize(fn):
+    memo = {  }
+    def memoizer(*param_tuple, **kwds_dict):
+        # can't memoize if there are any named arguments
+        if kwds_dict:
+            return fn(*param_tuple, **kwds_dict)
+        try:
+            # try using the memo dict, or else update it
+            try:
+                return memo[param_tuple]
+            except KeyError:
+                memo[param_tuple] = result = fn(*param_tuple)
+                return result
+        except TypeError:
+            # some mutable arguments, bypass memoizing
+            return fn(*param_tuple)
+    # 2.4 only: memoizer._ _name_ _ = fn._ _name_ _
+    return memoizer</pre><BR>
+
+
+<p class="docText">Using this <I>memoize</i> closure to memoize
+<I>fib</I>, the function definition becomes obvious,
+without caching boilerplate to obscure the algorithm. You must assign
+the <i>memoize</i> result to the same name,
+<i>fib</i>, as the recursive function; otherwise, the
+recursive calls bypass the memoizing:</P>
+
+<pre>def fib(n):
+    if n &lt; 2: return 1
+    return fib(n-1) + fib(n-2)
+fib = memoize(fib)</pre><br>
+
+
+<p class="docText">This latest snippet shows that <i>memoize</I> is meant to
+be used exactly as a Python 2.4 <i>decorator</I>, so
+in Python 2.4, you could use decorator syntax (instead of the
+explicit call to <i>memoize</I>):</P>
+
+<pre>@memoize
+def fib(n):
+    if n &lt; 2: return 1
+    return fib(n-1) + fib(n-2)</pre><br>
+
+
+<p class="docText">giving exactly the same semantics as the previous snippet.</p>
+
+
+<a name="pythoncook2-CHP-18-SECT-5.3"></a>
+<h4 class="docSection2Title">Discussion</h4>
+
+<p class="docText">The <i>memoize</i> function is called with just one
+argument, a function <tt><i>f</i></tt>. It returns a
+closure <i>memoizer</i> that acts just like
+<tt><i>f</i></tt> but memoizes its arguments and result if
+the actual arguments to a call are hashable and positional. Calls
+with mutable or keyword arguments bypass the memoizing. If
+you're worried that such bypassing happens too
+often, making memoizing counterproductive, you should do a few dry
+runs that are representative of your intended production usage, with
+a closure that's modified to collect statistics.
+Then you can decide whether memoization is worth using for your
+specific application. Here's the modified
+<i>memoize</I> for this purpose:</P>
+
+<pre>def memoize(fn):
+    memo = {  }
+    def memoizer(*param_tuple, **kwds_dict):
+        if kwds_dict:
+            memoizer.namedargs += 1
+            return fn(*param_tuple, **kwds_dict)
+        try:
+            memoizer.cacheable += 1
+            try:
+                return memo[param_tuple]
+            except KeyError:
+                memoizer.misses += 1
+                memo[param_tuple] = result = fn(*param_tuple)
+                return result
+        except TypeError:
+            memoizer.cacheable -= 1
+            memoizer.noncacheable += 1
+            return fn(*param_tuple)
+    memoizer.namedargs = memoizer.cacheable = memoizer.noncacheable = 0
+    memoizer.misses = 0
+    return memoizer</pre><br>
+
+
+<p class="docText">Functions to be memoized must be pure (i.e., they must have no side
+effects and must always return the same value whenever they are
+called with the same arguments). More significantly,
+<tt><i>memoize</I></tt> returns a closure that does not
+memoize calls that receive mutable arguments, such as
+<tt>len</tt> on a list, nor functions that receive named
+parameters.</p>
+
+<p class="docText"><i>memoize</i> cannot really check the semantics of the
+functions you wrap. The notions of <span class="docEmphasis">same value</span>
+and <span class="docEmphasis">same arguments</span> are vaguely defined in many
+cases, so take care. <i>memoize</i> does try to field
+occasional calls with keyword and mutable arguments (with an
+interesting mix of checking and
+<tt>try</tt>/<tt>except</tt>), but performance
+will suffer unless such cases are rare. This is why
+it's worth having around a version of
+<I>memoize</i> that keeps counts of the various
+possibilities, so that you can check their rarity.</P>
+
+
+<a name="pythoncook2-CHP-18-SECT-5.4"></a>
+<h4 class="docSection2Title">See Also</H4>
+
+<p class="docText"><a class="docLink" href="pythoncook2-CHP-20-SECT-4.html#pythoncook2-CHP-20-SECT-4">Recipe 20.4</a> applies caching
+to class instances' attributes.</p>
+
+
+
+<a href="5991535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><UL></UL></td></TR></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-18-sect-4.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-18-sect-6.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

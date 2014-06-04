@@ -1,0 +1,204 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;7.6.&nbsp;Pickling Code Objects</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-7-sect-5.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-7-sect-7.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-7-SECT-6"></a>
+<h3 class="docSection1Title">Recipe 7.6. Pickling Code Objects</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Andres Tremols, Peter Cogolo</span><a name="pythoncook2-CHP-7-ITERM-2327"></a> <a name="pythoncook2-CHP-7-ITERM-2328"></a> <a name="pythoncook2-CHP-7-ITERM-2329"></a></p>
+
+<a name="pythoncook2-CHP-7-SECT-6.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText">You want to be able to pickle code objects, but this functionality is
+not supported by the standard library's pickling
+modules.</P>
+
+
+<a name="pythoncook2-CHP-7-SECT-6.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">You can extend the abilities of the <tt>pickle</tt> (or
+<tt>cPickle</tt>) module by using module
+<tt>copy_reg</tt>. Just make sure the following module has
+been imported before you pickle code objects, and has been imported,
+or is available to be imported, when you're
+unpickling them:<a name="pythoncook2-CHP-7-ITERM-2330"></a></p>
+
+<pre>import new, types, copy_reg
+def code_ctor(*args):
+    # delegate to new.code the construction of a new code object
+    return new.code(*args)
+def reduce_code(co):
+    # a reductor function must return a tuple with two items: first, the
+    # constructor function to be called to rebuild the argument object
+    # at a future de-serialization time; then, the tuple of arguments
+    # that will need to be passed to the constructor function.
+    if co.co_freevars or co.co_cellvars:
+        raise ValueError, "Sorry, cannot pickle code objects from closures"
+    return code_ctor, (co.co_argcount, co.co_nlocals, co.co_stacksize,
+        co.co_flags, co.co_code, co.co_consts, co.co_names,
+        co.co_varnames, co.co_filename, co.co_name, co.co_firstlineno,
+        co.co_lnotab)
+# register the reductor to be used for pickling objects of type 'CodeType'
+copy_reg.pickle(types.CodeType, reduce_code)
+if _ _name_ _ == '_ _main_ _':
+    # example usage of our new ability to pickle code objects
+    import cPickle
+    # a function (which, inside, has a code object, of course)
+    def f(x): print 'Hello,', x
+    # serialize the function's code object to a string of bytes
+    pickled_code = cPickle.dumps(f.func_code)
+    # recover an equal code object from the string of bytes
+    recovered_code = cPickle.loads(pickled_code)
+    # build a new function around the rebuilt code object
+    g = new.function(recovered_code, globals( ))
+    # check what happens when the new function gets called
+    g('world')</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-7-SECT-6.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">The Python Standard Library <tt>pickle</tt> module (just
+like its faster equivalent cousin <tt>cPickle</tt>) pickles
+functions and classes by name. There is no pickling of the
+<I>code objects</i> containing the compiled bytecode
+that, when run, determines almost every aspect of
+functions' (and methods') behavior.
+In some situations, you'd rather pickle everything
+by value, so that all the relevant stuff can later be retrieved from
+the pickle, rather than having to have module files around for some
+of it. Sometimes you can solve such problems by using marshaling
+rather than pickling, since <tt>marshal</tt>
+<span class="docEmphasis">does</span> let you serialize code objects, but
+<tt>marshal</tt> has limitations on many other issues. For
+example, you cannot marshal instances of classes you have coded.
+(Once you're serializing code objects, which are
+specific to a given version of Python, <tt>pickle</tt> will
+share one key limitation of <tt>marshal</tt>: no guaranteed
+ability to save and later reload data across different versions of
+Python.)<a name="pythoncook2-CHP-7-ITERM-2331"></a>
+<a name="pythoncook2-CHP-7-ITERM-2332"></a> <a name="pythoncook2-CHP-7-ITERM-2333"></a></P>
+
+<p class="docText">An alternative approach is to take advantage of the possibility,
+which the Python Standard Library allows, to extend the set of types
+known to <tt>pickle</tt>. Basically, you can
+"teach" <tt>pickle</tt>
+how to save and reload code objects; this, in turn, lets you pickle
+by value, rather than "by name",
+such objects as functions and classes. (The code in this
+recipe's Solution under the <tt>if _ _name_ _
+==</tt> '<tt>_ _main_ _</tt>' guard essentially shows
+how to extend <tt>pickle</tt> for a function.)</P>
+
+<p class="docText">To teach <tt>pickle</tt> about some new type, use module
+<tt>copy_reg</tt>, which is also part of the Python
+Standard Library. Through function
+<tt>copy_reg.pickle</tt>, you register the reduction
+function to use for instances of a given type. A reduction function
+takes as its argument an instance to be pickled and returns a tuple
+with two items: a constructor function, which will be called to
+reconstruct the instance, and a tuple of arguments, which will be
+passed to the constructor function. (A reduction function may also
+return other kinds of results, but for this recipe's
+purposes a two-item tuple suffices.)</p>
+
+<p class="docText">The module in this recipe defines function
+<i>reduce_code</i>, then registers it as the reduction
+function for objects of type
+<tt>types.CodeType</tt>that is, code objects. When
+<i>reduce_code</I> gets called, it first checks whether its
+code object <i>co</i> comes from a
+<I>closure</i> (functions nested inside each other),
+because it just can't deal with this
+eventualityI've been unable to find a way
+that works, so in this case, <I>reduce_code</i> just raises
+an exception to let the user know about the problem.</P>
+
+<p class="docText">In normal cases, <I>reduce_code</i> returns
+<i>code_ctor</i> as the constructor and a tuple made up of
+all of <i>co</i>'s attributes as the
+arguments tuple for the constructor. When a code object is reloaded
+from a pickle, <i>code_ctor</i> gets called with those
+arguments and simply passes the call on to the
+<tt>new.code</tt> callable, which is the
+<span class="docEmphasis">true</span> constructor for code arguments.
+Unfortunately, <i>reduce_code</i> cannot return
+<tt>new.code</tt> itself as the first item in its result
+tuple, because <tt>new.code</tt> is a built-in (a C-coded
+callable) but is not available through a built-in
+<span class="docEmphasis">name</span>. So, basically, the role of
+<i>code_ctor</i> is to provide a name for the (by-name)
+pickling of <tt>new.code</tt>.</p>
+
+<p class="docText">The <tt>if _ _name_ _ == '_ _main_ _</tt>' part of the
+recipe provides a typical toy usage exampleit pickles a code
+object to a string, recovers a copy of it from the pickle string, and
+builds and calls a function around that code object. A more typical
+use case for this recipe's functionality, of course,
+will do the pickling in one script and the unpickling in another.
+Assume that the module in this recipe has been saved as file
+<i>reco.py</I> somewhere on Python's
+<tt>sys.path</tt>, so that it can be imported by Python
+scripts and other modules. You could then have a script that imports
+<I>reco</i> and thus becomes able to pickle code objects,
+such as:</p>
+
+<pre>import reco, pickle
+def f(x):
+    print 'Hello,', x
+pickle.dump(f.func_code, open('saved.pickle','wb'))</pre><BR>
+
+
+<p class="docText">To unpickle and use that code object, an example script might be:</p>
+
+<pre>import new, cPickle
+c = cPickle.load(open('saved.pickle','rb'))
+g = new.function(c, globals( ))
+g('world')</pre><br>
+
+
+<p class="docText">Note that the second script does not need to <tt>import
+reco</tt>the <tt>import</tt> will happen
+automatically when needed (part of the information that
+<tt>pickle</tt> saves in <i>saved.pickle</i>
+is that, in order to reconstruct the pickled object therein, it needs
+to call <i>reco.code_ctor</i>; so, it also knows it needs
+to import <I>reco</i>). I'm also showing
+that you can use modules <tt>pickle</tt> and
+<tt>cPickle</tt> interchangeably. <tt>Pickle</tt>
+is faster, but there are no other differences, and in particular, you
+can use one module to pickle objects and the other one to unpickle
+them, if you wish.</P>
+
+
+<a name="pythoncook2-CHP-7-SECT-6.4"></a>
+<h4 class="docSection2Title">See Also</H4>
+
+<p class="docText">Modules <tt>pickle</tt>, <tt>cPickle</tt>, and
+<tt>copy_reg</tt> in the <span class="docEmphasis">Library
+Reference</span> and <span class="docEmphasis">Python in a
+Nutshell</span>.<a name="pythoncook2-CHP-7-ITERM-2334"></a> <a name="pythoncook2-CHP-7-ITERM-2335"></a> <a name="pythoncook2-CHP-7-ITERM-2336"></a></p>
+
+
+
+<a href="5991535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><UL></UL></td></TR></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-7-sect-5.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-7-sect-7.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

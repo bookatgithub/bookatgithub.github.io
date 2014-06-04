@@ -1,0 +1,166 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;6.20.&nbsp;Using Cooperative Supercalls Concisely and Safely</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-6-sect-19.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-7.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-6-SECT-20"></a>
+<h3 class="docSection1Title">Recipe 6.20. Using Cooperative Supercalls Concisely and Safely</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Paul McNett, Alex Martelli</span></p>
+
+<a name="pythoncook2-CHP-6-SECT-20.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-6-ITERM-2229"></a> <a name="pythoncook2-CHP-6-ITERM-2230"></a>You appreciate the
+cooperative style of multiple-inheritance coding supported by the
+<tt>super</tt> built-in, but you wish you could use that
+style in a more terse and concise way.</P>
+
+
+<a name="pythoncook2-CHP-6-SECT-20.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText"><a name="pythoncook2-CHP-6-ITERM-2231"></a>A good solution is a
+<tt>mixin</tt> classa class you can multiply inherit
+from, that uses introspection to allow more terse
+coding:<a name="pythoncook2-CHP-6-ITERM-2232"></a></p>
+
+<pre>import inspect
+class SuperMixin(object):
+    def super(cls, *args, **kwargs):
+        frame = inspect.currentframe(1)
+        self = frame.f_locals['self']
+        methodName = frame.f_code.co_name
+        method = getattr(super(cls, self), methodName, None)
+        if inspect.ismethod(method):
+            return method(*args, **kwargs)
+    super = classmethod(super)</pre><BR>
+
+
+<p class="docText">Any class <tt>cls</tt> that inherits from class
+<i>SuperMixin</I> acquires a magic method named
+<I>super</i>: calling <tt>cls.super(args)</tt>
+from within a method named <tt>somename</tt> of class
+<tt>cls</tt> is a concise way to call <tt>super(cls,
+self).somename(args)</tt>. Moreover, the call is safe even if no
+class that follows <tt>cls</tt> in Method Resolution Order
+(MRO) defines any method named <tt>somename</tt>.</P>
+
+
+<a name="pythoncook2-CHP-6-SECT-20.3"></a>
+<H4 class="docSection2Title">Discussion</h4>
+
+<p class="docText">Here is a usage example:</p>
+
+<pre>if _ _name_ _ == '_ _main_ _':
+    class TestBase(list, SuperMixin):
+        # note: no myMethod defined here
+        pass
+    class MyTest1(TestBase):
+        def myMethod(self):
+            print "in MyTest1"
+            MyTest1.super( )
+    class MyTest2(TestBase):
+        def myMethod(self):
+            print "in MyTest2"
+            MyTest2.super( )
+    class MyTest(MyTest1, MyTest2):
+        def myMethod(self):
+            print "in MyTest"
+            MyTest.super( )
+    MyTest( ).myMethod( )
+# emits:
+# <b>in MyTest</b>
+# <b>in MyTest</b>1
+# <B>in MyTest2</b></pre><br>
+
+
+<p class="docText">Python has been offering
+"new-style" classes for years, as a
+preferable alternative to the classic classes that you get by
+default. Classic classes exist only for backwards-compatibility with
+old versions of Python and are not recommended for new code. Among
+the advantages of new-style classes is the ease of calling superclass
+implementations of a method in a
+"cooperative" way that fully
+supports multiple inheritance, thanks to the <tt>super</tt>
+built-in.</p>
+
+<p class="docText">Suppose you have a method in a new-style class
+<tt>cls</tt>, which needs to perform a task and then
+delegate the rest of the work to the superclass implementation of the
+same method. The code idiom is:</P>
+
+<pre>def somename(self, *args):
+    <i>...some preliminary task...</I>
+    return super(cls, self).somename(*args)</pre><br>
+
+
+<p class="docText">This idiom suffers from two minor issues: it's
+slightly verbose, and it also depends on a superclass offering a
+method <tt>somename</tt>. If you want to make
+<tt>cls</tt> less coupled to other classes, and therefore
+more robust, by removing the dependency, the code gets even more
+verbose:</P>
+
+<pre>def somename(self, *args):
+    <I>...some preliminary task...</i>
+    try:
+        super_method = super(cls, self).somename
+    except AttributeError:
+        return None
+    else:
+        return super_method(*args)</pre><br>
+
+
+<p class="docText">The <tt>mixin</tt> class <i>SuperMixin</i> shown
+in this recipe removes both issues. Just ensure
+<tt>cls</tt> inherits, directly or indirectly, from
+<i>SuperMixin</i> (alongside any other base classes you
+desire), and then you can code, concisely <span class="docEmphasis">and</span>
+robustly:<a name="pythoncook2-CHP-6-ITERM-2233"></a></p>
+
+<pre>def somename(self, *args):
+    <i>...some preliminary task...</i>
+    return cls.super(*args)</pre><br>
+
+
+<p class="docText">The <tt>classmethod</tt> <i>SuperMixin.super</i>
+relies on simple introspection to get the <tt>self</tt>
+object and the name of the method, then internally uses built-ins
+<tt>super</tt> and <tt>getattr</tt> to get the
+superclass method, and safely call it only if it exists. The
+introspection is performed through the handy
+<tt>inspect</tt> module of the standard Python library,
+making the whole task even simpler.</p>
+
+
+<a name="pythoncook2-CHP-6-SECT-20.4"></a>
+<H4 class="docSection2Title">See Also</H4>
+
+<p class="docText"><span class="docEmphasis">Library Reference</span> and <span class="docEmphasis">Python in a
+Nutshell</span> docs on <tt>super</tt>, the new object
+model and MRO, the built-in <tt>getattr</tt>, and standard
+library module <tt>inspect</tt>; <a class="docLink" href="pythoncook2-CHP-20-SECT-12.html#pythoncook2-CHP-20-SECT-12">Recipe 20.12</a> for another recipe taking a
+very different approach to simplify the use of built-in
+<tt>super</tt>.<a name="pythoncook2-CHP-6-ITERM-2234"></a> <a name="pythoncook2-CHP-6-ITERM-2235"></a> <a name="pythoncook2-CHP-6-ITERM-2236"></a></p>
+
+
+
+<a href="5991535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><ul></UL></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-6-sect-19.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-7.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

@@ -1,0 +1,95 @@
+<html><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<link href="styles/globalstyle.css" type="text/css" rel="stylesheet"/>
+<link title="medium" href="styles/two.css" type="text/css" rel="stylesheet"/>
+<script src="scripts/main.js" type="text/javascript" language="javascript"></script>
+<title>Section 6.4. How Simple Can an HTML Parser Be?</title>
+</head><body>
+<DIV class=h3 style="MARGIN-TOP: 0px; PADDING-BOTTOM: 1em; WIDTH: 100%; PADDING-TOP: 0px"><SPAN>Framework for Integrated Test: Beauty Through Fragility</SPAN><SPAN> &gt; How Simple Can an HTML Parser Be?</SPAN></DIV>
+<DIV></DIV>
+<DIV>
+<DIV><A name=how_simple_can_an_html_parser_be></A>
+<H3 class=docSection1Title id=-100000>6.4. How Simple Can an HTML Parser Be?</H3>
+<P class=docText><A name="In addition"></A>In addition to being an open framework, FIT presents some other surprising design choices. Earlier, I mentioned that all of FIT's <A name=idx-CHP-6-0304></A><A name="done by"></A>HTML parsing is done by the <TT>Parse</TT><A name="things that"></A> class. One of the things that I love the most about the <TT>Parse</TT><A name="that it"></A> class is that it constructs an entire tree with its constructors.</P>
+<P class=docText><A name="create an"></A>Here's how it works. You create an instance of the class with a string of <A name=idx-CHP-6-0305></A>HTML as a constructor argument:</P><PRE>	String input = read(new File(argv[0]);
+	<A name=idx-CHP-6-0306></A>Parse parse = new Parse(input);
+</PRE><BR>
+<P class=docText>The <TT>Parse</TT> constructor recursively constructs a tree of <TT>Parse</TT> instances, each of which represents a portion of the HTML document. The <A name=idx-CHP-6-0307></A>parsing code is entirely within the constructors of <TT>Parse</TT>.</P>
+<P class=docText>Each <TT>Parse</TT> instance has five public strings and two references to other <TT>Parse</TT> objects:</P><PRE>	public String leader;
+	public String tag;
+	public String body;
+	public String end;
+	public String trailer;
+
+	public Parse more;
+	public Parse parts;
+</PRE><BR>
+<P class=docText>When you construct your first <TT>Parse</TT><A name="point on"></A> for an HMTL document, in a sense, you've constructed all of them. From that point on, you can use <TT>more</TT> and <TT>parts</TT><A name="the parsing"></A> to traverse nodes. Here's the parsing code in the <TT>Parse</TT> class:</P>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedHeight>	static String tags[] = {"table", "tr", "td"};
+
+	public Parse (String text) throws ParseException {
+	    this (text, tags, 0, 0);
+	}
+
+	public Parse (String text, String tags[]) throws ParseException {
+	    this (text, tags, 0, 0);
+	}
+
+	public Parse (String text, String tags[], int level, int offset) throws ParseException
+	{
+	    String lc = text.toLowerCase( );
+	    int startTag = lc.indexOf("&lt;"+tags[level]);
+	    int endTag = lc.indexOf("&gt;", startTag) + 1;
+	    int startEnd = lc.indexOf("&lt;/"+tags[level], endTag);
+	    int endEnd = lc.indexOf("&gt;", startEnd) + 1;
+	    int startMore = lc.indexOf("&lt;"+tags[level], endEnd);
+	    if (startTag&lt;0 || endTag&lt;0 || startEnd&lt;0 || endEnd&lt;0) {
+	        throw new ParseException ("Can't find tag: "+tags[level], offset);
+	    }
+	    
+	    leader = text.substring(0,startTag);
+	    tag = text.substring(startTag, endTag);
+	    body = text.substring(endTag, startEnd);
+	    end = text.substring(startEnd,endEnd);
+	    trailer = text.substring(endEnd);
+	    
+	    if (level+1 &lt; tags.length) {
+	        parts = new <A name=idx-CHP-6-0308></A>Parse (body, tags, level+1, offset+endTag);
+	        body = null;
+	    }
+	    
+	    if (startMore&gt;=0) {
+	        more = new Parse (trailer, tags, level, offset+endEnd);
+	        trailer = null;
+	    }
+	}
+
+
+					    </PRE><BR>
+<P class=docText><A name="interesting things"></A>One of the most interesting things about <TT>Parse</TT><A name=entire></A> is that it represents the entire <A name=idx-CHP-6-0309></A><A name="HTML document"></A>HTML document. The <TT>leader</TT><A name="of the"></A> string holds all of the text prior to an HTML element, <TT>tag</TT> holds the tag text, <TT>body</TT><A name="between the"></A> holds the text between the tag and the end tag, and <TT>trailer</TT><A name="trailing text"></A> holds any trailing text. Because <TT>Parse</TT><A name="you can"></A> holds all the text, you can go to the top-level parse and print it using this method:</P><PRE>	public void print(PrintWriter out) {
+	    out.print(leader);
+	    out.print(tag);
+	    if (parts != null) {
+	        parts.print(out);
+	    } else {
+	        out.print(body);
+	    }
+	    out.print(end);
+	    if (more != null) {
+	        more.print(out);
+	    } else {
+	        out.print(trailer);
+	    }
+	}
+</PRE><BR>
+<P class=docText>In my opinion, Java code doesn't get much more elegant than that.</P>
+<P class=docText><A name="constructors should"></A>For a long while, I've subscribed to the rule of thumb that constructors should not do the bulk of work in a class. All they should do is put an object into a valid state and leave the real work to the other methods. In general, people don't expect object creation to be an expensive operation, and they are often surprised when it is. However, the construction code for <TT>Parse</TT><A name="a beautiful"></A> is undeniably elegant. There's a beautiful symmetry to the way it breaks an HTML string down into a couple hundred <TT>Parse</TT><A name="it using"></A> objects and then reconstitutes it using a single method: <TT>print</TT>.</P>
+<P class=docText><A name=the></A>If the parsing code and the <A name=idx-CHP-6-0310></A><A name="representation code"></A>representation code were in separate classes, the framework might be able to handle different formats, such as XML or RTF; however, restricting the design to handling HTML feels like the right choice. It keeps the framework small and easy to understand—the parsing code is only about 25 lines. By fixing a single choice, <A name=idx-CHP-6-0311></A><A name="more robust"></A>FIT became a simpler, more robust framework. One of the deepest lessons in design is that you can gain a great deal if you hold the right things constant.</P>
+<P class=docText><A name=about></A>Another interesting thing about <TT>Parse</TT><A name="that they"></A> objects is that they don't use collections to hold references to their neighbors. They use <TT>parts</TT> and <TT>more</TT><A name="makes the"></A> as direct links. This makes the code a little Lisp-y, but if you are used to looking at things from a functional point of view, it's very straightforward.<A name=idx-CHP-6-0312></A></P>
+<P class=docText>Here's an example of this style of coding. The <TT>last</TT> method in <TT>Parse</TT> returns the last element in the <TT>more</TT> sequence of a <TT>Parse</TT>:</P><PRE>	public Parse <A name=idx-CHP-6-0313></A>last() {
+	    return more==null ? this : more.last();
+	}
+</PRE><BR>
+<P class=docText>Again, it's interesting that all of these fields on <TT>Parse</TT> are public. The framework can't <A name=idx-CHP-6-0314></A><A name="are convenience"></A>anticipate every way that users might need to modify them. Yes, there are convenience methods such as <TT>addToTag</TT> and <TT>addToBody</TT><A name="who wants"></A>, but anyone who wants to can directly modify the fields that they act on. <A name=idx-CHP-6-0315></A><A name="power at"></A>FIT gives you that power at its own expense: future versions of FIT can't easily revoke that access. It's not the sort of choice that all framework designers can or should make, but if you can live with the consequences, it's a valid choice.</P></DIV></DIV>
+<p>&nbsp;</p><p>&nbsp;</p><!-- 仁·义 -->
+</body></html>

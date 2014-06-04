@@ -1,0 +1,265 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;20.17.&nbsp;Solving Metaclass Conflicts</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-20-sect-16.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-colophon.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-20-SECT-17"></a>
+<h3 class="docSection1Title">Recipe 20.17. Solving Metaclass Conflicts</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Michele Simionato, David Mertz, Phillip J. Eby,
+Alex Martelli, Anna Martelli Ravenscroft</span></p>
+
+<a name="pythoncook2-CHP-20-SECT-17.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText">You need to multiply inherit from several classes that may come from
+several metaclasses, so you need to generate automatically a custom
+metaclass to solve any possible metaclass conflicts.</P>
+
+
+<a name="pythoncook2-CHP-20-SECT-17.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">First of all, given a sequence of metaclasses, we want to filter out
+"redundant" onesthose that
+are already implied by others, being duplicates or superclasses. This
+job nicely factors into a general-purpose generator yielding the
+unique, nonredundant items of an iterable, and a function using
+<tt>inspect.getmro</tt> to make the set of all superclasses
+of the given classes (since superclasses are redundant):</p>
+
+<pre># support 2.3, too
+try: set
+except NameError: from sets import Set as set
+# support classic classes, to some extent
+import types
+def uniques(sequence, skipset):
+    for item in sequence:
+        if item not in skipset:
+            yield item
+            skipset.add(item)
+import inspect
+def remove_redundant(classes):
+    redundant = set([types.ClassType])   # turn old-style classes to new
+    for c in classes:
+        redundant.update(inspect.getmro(c)[1:])
+    return tuple(uniques(classes, redundant))</pre><BR>
+
+
+<p class="docText">Using the <tt>remove_redundant</tt> function, we can
+generate a metaclass that can resolve metatype conflicts (given a
+sequence of base classes, and other metaclasses to inject both before
+and after those implied by the base classes). It's
+important to avoid generating more than one metaclass to solve the
+same potential conflicts, so we also keep a
+"memoization" mapping:</p>
+
+<pre>memoized_metaclasses_map = {  }
+def _get_noconflict_metaclass(bases, left_metas, right_metas):
+     # make tuple of needed metaclasses in specified order
+     metas = left_metas + tuple(map(type, bases)) + right_metas
+     needed_metas = remove_redundant(metas)
+     # return existing confict-solving meta, if any
+     try: return memoized_metaclasses_map[needed_metas]
+     except KeyError: pass
+     # compute, memoize and return needed conflict-solving meta
+     if not needed_metas:         # whee, a trivial case, happy us
+         meta = type
+     elif len(needed_metas) == 1: # another trivial case
+         meta = needed_metas[0]
+     else:                        # nontrivial, darn, gotta work...
+         # ward against non-type root metatypes
+         for m in needed_metas:
+             if not issubclass(m, type):
+                 raise TypeError( 'Non-type root metatype %r' % m)
+         metaname = '_' + ''.join([m._ _name_ _ for m in needed_metas])
+         meta = classmaker( )(metaname, needed_metas, {  })
+     memoized_metaclasses_map[needed_metas] = meta
+     return meta
+def classmaker(left_metas=( ), right_metas=( )):
+     def make_class(name, bases, adict):
+         metaclass = _get_noconflict_metaclass(bases, left_metas, right_metas)
+         return metaclass(name, bases, adict)
+     return make_class</pre><BR>
+
+
+<p class="docText">The internal <I>_get_noconflict_metaclass</i> function,
+which returns (and, if needed, builds) the conflict-resolution
+metaclass, and the public <I>classmaker</I> closure must be
+mutually recursive for a rather subtle reason. If
+<i>_get_noconflict_metaclass</i> just built the metaclass
+with the reasonably common idiom:</p>
+
+<pre>         meta = type(metaname, needed_metas, {  })</pre><br>
+
+
+<p class="docText">it would work in all ordinary cases, but it might get into trouble
+when the metaclasses involved have custom metaclasses themselves!
+Just like "little fleas have lesser
+fleas," so, potentially, metaclasses can have
+meta-metaclasses, and so onfortunately
+<span class="docEmphasis">not</span> "ad
+infinitum," pace Augustus De Morgan, so the mutual
+recursion does eventually terminate.</P>
+
+<p class="docText">The recipe offers minimal support for old-style (i.e., classic)
+classes, with the simple expedient of initializing the set
+<i>redundant</i> to contain the metaclass of old-style
+classes, <tt>types.ClassType</tt>. In practice, this recipe
+imposes automatic conversion to new-style classes. Trying to offer
+more support than this for classic classes, which are after all a
+mere legacy feature, would be overkill, given the confused and
+confusing situation of metaclass use for old-style classes.</P>
+
+<p class="docText">In all of our code outside of this <i>noconflict.py</I>
+module, we will only use <i>noconflict.classmaker</I>,
+optionally passing it metaclasses we want to inject, left and right,
+to obtain a callable that we can then use just like a metaclass to
+build new class objects given names, bases, and dictionary, but with
+the assurance that metatype conflicts cannot occur. Phew. Now
+<span class="docEmphasis">that</span> was worth it, wasn't it?!</P>
+
+
+<a name="pythoncook2-CHP-20-SECT-17.3"></a>
+<h4 class="docSection2Title">Discussion</h4>
+
+<p class="docText">Here is the simplest case in which a metatype conflict can occur:
+multiply inheriting from two classes with independent metaclasses. In
+a pedagogically simplified toy-level example, that could be, say:</p>
+
+<pre>&gt;&gt;&gt; class Meta_A(type): pass
+... 
+&gt;&gt;&gt; class Meta_B(type): pass
+... 
+&gt;&gt;&gt; class A: _ _metaclass_ _ = Meta_A
+... 
+&gt;&gt;&gt; class B: _ _metaclass_ _ = Meta_B
+... 
+&gt;&gt;&gt; class C(A, B): pass
+<b>Traceback (most recent call last):</b>
+<b>  File "&lt;stdin&gt;", line 1, in ?</b>
+<b>TypeError: Error when calling the metaclass bases</b>
+<b>    metaclass conflict: the metaclass of a derived class must be a</b>
+<b>(non-strict) subclass of the metaclasses of all its bases</b>
+&gt;&gt;&gt;</pre><br>
+
+
+<p class="docText">A class normally inherits its metaclass from its bases, but when the
+bases have distinct metaclasses, the metatype constraint that Python
+expresses so tersely in this error message applies. So, we need to
+build a new metaclass, say <tt><i>Meta_C</i></tt>, which
+inherits from both <tt><i>Meta_A</i></tt> and
+<tt><I>Meta_B</I></tt>. For a demonstration of this need,
+see the book that's so aptly considered the bible of
+metaclasses: Ira R. Forman and Scott H. Danforth, <span class="docEmphasis">Putting
+Metaclasses to Work: A New Dimension in Object-Oriented
+Programming</span> (Addison-Wesley).</p>
+
+<p class="docText">Python does not do magic: it does not automatically create the
+required <tt><i>Meta_C</I></tt>. Rather, Python raises a
+<tt>TypeError</tt> to ensure that the programmer is aware
+of the problem. In simple cases, the programmer can solve the
+metatype conflict by hand, as follows:</p>
+
+<pre>&gt;&gt;&gt; class Meta_C(Meta_A, Meta_B): pass
+&gt;&gt;&gt; class C(A, B): _ _metaclass_ _ = Meta_C</pre><br>
+
+
+<p class="docText">In this case, everything works smoothly.</p>
+
+<p class="docText">The key point of this recipe is to show an automatic way to resolve
+metatype conflicts, rather than having to do it by hand every time.
+Having saved all the code from this recipe's
+Solution into <i>noconflict.py</i> somewhere along your
+Python <tt>sys.path</tt>, you can make class
+<i>C</I> with automatic conflict resolution, as follows:</p>
+
+<pre>&gt;&gt;&gt; import noconflict
+&gt;&gt;&gt; class C(A, B): _ _metaclass_ _ = noconflict.classmaker( )</pre><BR>
+
+
+<p class="docText">The call to the <i>noconflict.classmaker</I> closure
+returns a function that, when Python calls it, obtains the proper
+metaclass and uses it to build the class object. It cannot yet return
+the metaclass itself, but that's OKyou
+<span class="docEmphasis">can</span> assign anything you want to the <tt>_
+_metaclass_ _</tt> attribute of your class, as long as
+it's callable with the (name, bases, dict) arguments
+and nicely builds the class object. Once again,
+Python's signature-based polymorphism serves us well
+and unobtrusively.</p>
+
+<p class="docText">Automating the resolution of the metatype conflict has many pluses,
+even in simple cases. Thanks to the
+"memoizing" technique used in
+<I>noconflict.py</I>, the same conflict-resolving
+metaclass is used for any occurrence of a given sequence of
+conflicting metaclasses. Moreover, with this approach you may also
+explicitly inject other metaclasses, beyond those you get from your
+base classes, and again you can avoid conflicts. Consider:</p>
+
+<pre>&gt;&gt;&gt; class D(A): _ _metaclass_ _ = Meta_B
+<B>Traceback (most recent call last):</b>
+<B>  File "&lt;stdin&gt;", line 1, in ?</b>
+<b>TypeError: Error when calling the metaclass bases</b>
+<b>    metaclass conflict: the metaclass of a derived class must be a</b>
+<b>(non-strict) subclass of the metaclasses of all its bases</b></pre><br>
+
+
+<p class="docText">This metatype conflict is resolved just as easily as the former one:</P>
+
+<pre>&gt;&gt;&gt; class D(A): _ _metaclass_ _ = noconflict.classmaker((Meta_B,))</pre><br>
+
+
+<p class="docText">The code presented in this recipe's Solution takes
+pains to avoid any subclassing that is not strictly necessary, and it
+also uses mutual recursion to avoid any meta-level of meta-meta-type
+conflicts. You might never meet higher-order-meta conflicts anyway,
+but if you adopt the code presented in this recipe, you need not even
+worry about them.</p>
+
+<p class="docText">Thanks to David Mertz for help in polishing the original version of
+the code. This version has benefited immensely from discussions with
+Phillip J. Eby. Alex Martelli and Anna Martelli Ravenscroft did their
+best to make the recipe's code and discussion as
+explicit and understandable as they could. The functionality in this
+recipe is not absolutely complete: for example, it supports old-style
+classes only in a rather backhanded way, and it does not really cover
+such exotica as nontype metatype roots (such as Zope
+2's old <tt>ExtensionClass</tt>). These
+limitations are there primarily to keep this recipe as understandable
+as possible. You may find a more complete implementation of metatype
+conflict resolution at Phillip J. Eby's PEAK site,
+<a class="docLink" target="_blank" href="http://peak.telecommunity.com/">http://peak.telecommunity.com/</a>,
+in the <tt>peak.util.Meta</tt> module of the PEAK
+framework.</P>
+
+
+<a name="pythoncook2-CHP-20-SECT-17.4"></a>
+<h4 class="docSection2Title">See Also</H4>
+
+<p class="docText">Ira R. Forman and Scott H. Danforth, <span class="docEmphasis">Putting Metaclasses
+to Work: A New Dimension in Object-Oriented Programming</span>
+(Addison-Wesley); Michele Simionato's essay,
+"Method Resolution Order,"
+<a class="docLink" target="_blank" href="http://www.python.org/2.3/mro.html">http://www.python.org/2.3/mro.html</a>.<a name="pythoncook2-CHP-20-ITERM-3146"></a> <a name="pythoncook2-CHP-20-ITERM-3147"></a> <a name="pythoncook2-CHP-20-ITERM-3148"></a> <a name="pythoncook2-CHP-20-ITERM-3149"></a></p>
+
+
+
+<a href="5991535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><UL></UL></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-20-sect-16.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-colophon.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

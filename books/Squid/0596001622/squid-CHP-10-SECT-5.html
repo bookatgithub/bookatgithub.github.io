@@ -1,0 +1,159 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>10.5 The Network Measurement Database</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="squid-CHP-10-SECT-4.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="squid-CHP-10-SECT-6.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="squid-CHP-10-SECT-5"></A>
+<H3 class="docSection1Title">10.5 The Network Measurement Database</H3>
+
+<P class="docText">Squid's network <A NAME="squid-CHP-10-ITERM-1634"></A>measurement database
+(<I>netdb</I>) is designed to measure the proximity
+of origin servers. In other words, by querying this database, Squid
+knows how close it is to the origin server. The database includes
+ICMP round-trip time (RTT) measurements <A NAME="squid-CHP-10-ITERM-1635"></A>and hop counts.
+Squid normally uses only the RTT measurements but can also use the
+hop counts in some situations.</P>
+
+<P class="docText">To enable <span class="docEmphasis">netdb</span>, you must
+<A NAME="squid-CHP-10-ITERM-1636"></A>configure
+Squid with the <I>—enable-icmp</I> option. You must
+also install the <I>pinger</I> program with superuser
+permissions, as described in <A class="docLink" HREF="squid-CHP-3-SECT-6.html#squid-CHP-3-SECT-6">Section 3.6</A>. When
+everything is working correctly, you should see a message like this
+in <I>cache.log</I>:</P>
+
+<PRE>2003/09/29 00:01:03| Pinger socket opened on FD 28</PRE>
+
+<P class="docText">When <span class="docEmphasis">netdb</span> is enabled, Squid sends ICMP
+"pings" to origin servers. The ICMP
+messages are actually sent and received by the
+<I>pinger</I> program, which runs as
+<span class="docEmphasis">root</span>. Squid is careful not to send pings too
+frequently, which may annoy web site administrators. By default,
+Squid waits at least five minutes before sending another ping to the
+same host, or to any other host on the same /24 subnet. You can
+adjust the interval with the <span class="docEmphasis">netdb_ping_period</span>
+directive.</P>
+
+<P class="docText">The ICMP pings are generally small in size (less than 100 bytes).
+Squid includes the origin server hostname in the payload of the ICMP
+message, along with a timestamp.</P>
+
+<P class="docText">To reduce memory <A NAME="squid-CHP-10-ITERM-1637"></A><A NAME="squid-CHP-10-ITERM-1638"></A>requirements, Squid aggregates
+the <span class="docEmphasis">netdb</span> data by /24 subnets. Squid assumes
+that all hosts within the subnet have similar RTT and hop-count
+measurements. This scheme also allows Squid to estimate the proximity
+of a new origin server when other servers in the subnet have already
+been measured.</P>
+
+<P class="docText">Along with the RTT and hop-count measurements, Squid also stores a
+list of hostnames associated with the subnet. A typical record may
+look something like this:</P>
+
+<PRE>Subnet 140.98.193.0
+RTT    76.5
+Hops   20.0
+Hosts  services1.ieee.org
+       www.spectrum.ieee.org
+       www.ieee.org</PRE>
+
+<P class="docText">The <span class="docEmphasis">netdb</span> measurements are primarily used by ICP
+and HTCP. When you enable the <span class="docEmphasis">query_icmp</span>
+directive in <I>squid.conf</I>, Squid sets a flag in
+the ICP/HTCP queries that it sends to neighbors. This flag is a
+request to include proximity measurements in the ICP/HTCP reply. If
+your neighbors also enabled <span class="docEmphasis">netdb</span>, their replies
+should include RTT and hop-count measurements if available. Note that
+Squid always sends ICP replies immediately. It
+doesn't wait for an ICMP measurement before replying
+to the query. See <A class="docLink" HREF="squid-CHP-10-SECT-6.html#squid-CHP-10-SECT-6.2.2">Section 10.6.2.2</A> for details on how ICP uses
+<span class="docEmphasis">netdb</span>.</P>
+
+<P class="docText">Squid remembers the RTT values it learns from ICP/HTCP replies. These
+values may be used later to optimize forwarding decisions. Squid also
+supports a "bulk transfer" of
+<A class="docLink" HREF="mailto:netdb">netdb</A> measurements via what is called
+<span class="docEmphasis">netdb</span> <span class="docEmphasis">exchange</span>. Squid
+periodically makes an HTTP request to a neighbor for its
+<span class="docEmphasis">netdb</span> data. You can disable these requests with
+the <TT>no-netdb-exchange</TT> option on the
+<span class="docEmphasis">cache_peer</span> line.</P>
+
+<P class="docText">The <span class="docEmphasis">netdb_low</span> and
+<span class="docEmphasis">netdb_high</span> directives control the size of the
+measurement database. When the number of stored subnets reaches
+<span class="docEmphasis">netdb_high</span>, Squid deletes the least recently
+used entries until the count is less than
+<span class="docEmphasis">netdb_low</span>.</P>
+
+<P class="docText">The <span class="docEmphasis">minimum_direct_hops</span> and
+<span class="docEmphasis">minimum_direct_rtt</span> directives instruct Squid to
+connect directly to origin servers that are no more than some number
+of hops, or milliseconds, away. Requests that meet this criteria are
+logged with <TT>CLOSEST_DIRECT</TT> in
+<I>access.log</I>.</P>
+
+<P class="docText">The cache manager's <span class="docEmphasis">netdb</span> page
+displays the entire network measurement database, including values
+from neighbor caches. For example:</P>
+
+<PRE>Network DB Statistics:
+Network          recv/sent     RTT  Hops Hostnames
+63.241.84.0         1/   1    25.0   9.0 www.xyzzy.com
+    sd.us.ircache.net         21.5  15.0
+    bo1.us.ircache.net        27.0  13.0
+    pb.us.ircache.net         70.0  11.0
+206.100.24.0        5/   5    25.0   3.0 wcarchive.cdrom.com ftp.cdrom.com
+    uc.us.ircache.net         23.5  11.0
+    bo1.us.ircache.net        27.7   7.0
+    pb.us.ircache.net         35.7  10.0
+    sd.us.ircache.net         72.9  10.0
+146.6.135.0         1/   1    25.0  13.0 www.cm.utexas.edu
+    bo1.us.ircache.net        32.0  11.0
+    sd.us.ircache.net         55.0   8.0
+216.234.248.0       2/   2    25.0   8.0 postfuture.com www1.123india.com
+    pb.us.ircache.net         44.0  14.0
+216.148.242.0       1/   1    25.0   9.0 images.worldres.com
+    sd.us.ircache.net         25.2  15.0
+    bo1.us.ircache.net        27.0  13.0
+    pb.us.ircache.net         69.5  11.0</PRE>
+
+<P class="docText">Here you can see that the server <span class="docEmphasis">www.xyzzy.com</span> has an IP address in the
+63.241.84.0/24 block. The RTT from this cache to the origin server is
+25 milliseconds. The neighbor cache <span class="docEmphasis">sd.us.ircache.net</span> is a little closer, at 21.5
+milliseconds.</P>
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="squid-CHP-10-SECT-4.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="squid-CHP-10-SECT-6.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

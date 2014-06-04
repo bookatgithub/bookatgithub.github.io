@@ -1,0 +1,276 @@
+<html><head>
+<META http-equiv="Content-Type" content="text/html">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="15.6 Python Restricted Execution Mode"-->
+<link rel="STYLESHEET" type="text/css" href="FILES/style.css">
+<link rel="STYLESHEET" type="text/css" href="FILES/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+	<a href="0596000855_python2-CHP-15-SECT-5.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+	<a href="0596000855_python2-CHP-15-SECT-7.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr>
+<td valign="top"><A NAME="python2-CHP-15-SECT-6"></A>
+<H3 class="docSection1Title">15.6 Python Restricted Execution Mode</H3>
+
+<P class="docText">In prior chapters, I've been careful to point out the dangers
+of running arbitrary Python code that was shipped across the
+Internet. There is nothing stopping a malicious user, for instance,
+from sending a string such as <TT>os.system('rm *')</TT> in
+a form field where we expect a simple number; running such a code
+string with the built-in <TT>eval</TT> function or
+<TT>exec</TT> statement may, by default, really
+work -- it might just delete all the files in the server or client
+directory where the calling Python script
+runs!<A NAME="IXT-15-337860"></A>
+<A NAME="IXT-15-337861"></A>
+<A NAME="IXT-15-337862"></A>
+<A NAME="IXT-15-337863"></A>
+</P>
+
+<P class="docText">Moreover, a truly malicious user can use such hooks to view or
+download password files, and otherwise access, corrupt, or overload
+resources on your machine. Alas, where there is a hole, there is
+probably a hacker. As I've cautioned, if you are expecting a
+number in a form, you should use simpler string conversion tools such
+as <TT>int</TT> or <TT>string.atoi</TT> instead
+of interpreting field contents as Python program syntax with
+<TT>eval</TT>.
+</P>
+
+<P class="docText"><A NAME="python2-IDXTERM-1734"></A> <A NAME="python2-IDXTERM-1735"></A> <A NAME="python2-IDXTERM-1736"></A>But what if you really want to run
+Python code transmitted over the Net? For instance, you may wish to
+put together a web-based training system that allows users to run
+code from a browser. It is possible to do this safely, but you need
+to use Python's <span class="docEmphasis">restricted execution mode</span>
+tools when you ask Python to run the code. Python's restricted
+execution mode support is provided in two standard library modules,
+<TT>rexec</TT> and <TT>bastion</TT>.
+<TT>rexec</TT> is the primary interface to restricted
+execution, while <TT>bastion</TT> can be used to restrict
+and monitor access to object attributes.<A NAME="python2-IDXTERM-1737"></A> <A NAME="python2-IDXTERM-1738"></A> <A NAME="python2-IDXTERM-1739"></A>
+</P>
+
+<P class="docText"><A NAME="IXT-15-337864"></A>
+<A NAME="IXT-15-337865"></A>
+<A NAME="IXT-15-337866"></A>On Unix systems,
+you can also use the standard <TT>resource</TT> module to
+limit things like CPU time and memory consumption while the code is
+running. Python's library manual goes into detail on these
+modules, but let's take a brief look at
+<TT>rexec</TT> here.
+</P>
+
+<A NAME="python2-CHP-15-SECT-6.1"></A>
+<H4 class="docSection2Title">15.6.1 Using rexec</H4>
+
+<P class="docText">The restricted execution mode implemented by <TT>rexec</TT>
+is optional -- by default, all Python code runs with full access
+to everything available in the Python language and library. But when
+we enable restricted mode, code executes in what is commonly called a
+"sandbox" model -- access to components on the local
+machine is limited. Operations that are potentially unsafe are either
+disallowed or must be approved by code you can customize by
+subclassing. For example, the script in <A class="docLink" HREF="#python2-CHP-15-EX-8">Example 15-8</A>
+runs a string of program code in a restricted environment and
+customizes the default <TT>rexec</TT> class to restrict
+file access to a single, specific
+directory.<A NAME="IXT-15-337867"></A>
+<A NAME="IXT-15-337868"></A>
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-15-EX-8"></A>Example 15-8. PP2E\Internet\Other\restricted.py </H5>
+<PRE>#!/usr/bin/python
+import rexec, sys
+Test = 1
+if sys.platform[:3] == 'win':
+    SafeDir = r'C:\temp'
+else:
+    SafeDir = '/tmp/'
+
+def commandLine(prompt='Input (ctrl+z=end) =&gt; '):
+    input = ''
+    while 1:
+        try:
+            input = input + raw_input(prompt) + '\n'
+        except EOFError:
+            break
+    print # clear for Windows
+    return input
+
+if not Test:
+    import cgi                         # run on the web? - code from form
+    form  = cgi.FieldStorage(  )         # else input interactively to test
+    input = form['input'].value
+else:
+    input = commandLine(  )
+
+# subclass to customize default rules: default=write modes disallowed
+class Guard(rexec.RExec):
+    def r_open(self, name, mode='r', bufsz=-1):
+        if name[:len(SafeDir)] != SafeDir:
+            raise SystemError, 'files outside %s prohibited' % SafeDir
+        else:
+            return open(name, mode, bufsz)
+
+# limit system resources (not available on Windows)
+if sys.platform[:3] != 'win':
+    import resource            # at most 5 cpu seconds
+    resource.setrlimit(resource.RLIMIT_CPU, (5, 5))
+
+# run code string safely
+guard = Guard(  )
+guard.r_exec(input)      # ask guard to check and do opens</PRE>
+
+
+<P class="docText"><A NAME="IXT-15-337869"></A>
+<A NAME="IXT-15-337870"></A>When we run
+Python code strings with this script on Windows, safe code works as
+usual, and we can read and write files that live in the
+<I>C:\temp</I> directory, because our custom
+<TT>Guard</TT> class's <TT>r_open</TT>
+method allows files with names beginning with "C:\temp"
+to proceed. The default <TT>r_open</TT> in
+<TT>rexec.RExec</TT> allows all files to be read, but all
+write requests fail. Here, we type code interactively for testing,
+but it's exactly as if we received this string over the
+Internet in a CGI script's form field:
+</P>
+
+<PRE>C:\...\PP2E\Internet\Other&gt;<B>python restricted.py</B>
+Input (ctrl+z=end) =&gt; <B>x = 5</B>
+Input (ctrl+z=end) =&gt; <B>for i in range(x): print 'hello%d' % i,</B>
+Input (ctrl+z=end) =&gt; hello0 hello1 hello2 hello3 hello4
+
+C:\...\PP2E\Internet\Other&gt;<B>python restricted.py</B>
+Input (ctrl+z=end) =&gt; <B>open(r'C:\temp\rexec.txt', 'w').write('Hello rexec\n')</B>
+Input (ctrl+z=end) =&gt;
+
+C:\...\PP2E\Internet\Other&gt;<B>python restricted.py</B>
+Input (ctrl+z=end) =&gt; <B>print open(r'C:\temp\rexec.txt', 'r').read(  )</B>
+Input (ctrl+z=end) =&gt; Hello rexec</PRE>
+
+<P class="docText">On the other hand, attempting to access files outside the allowed
+directory will fail in our custom class, as will inherently unsafe
+things such as opening sockets, which <TT>rexec</TT> always
+makes out of bounds by default:
+</P>
+
+<PRE>C:\...\PP2E\Internet\Other&gt;<B>python restricted.py</B>
+Input (ctrl+z=end) =&gt; <B>open(r'C:\stuff\mark\hack.txt', 'w').write('BadStuff\n')</B>
+Input (ctrl+z=end) =&gt; Traceback (innermost last):
+  File "restricted.py", line 41, in ?
+    guard.r_exec(input)      # ask guard to check and do opens
+  File "C:\Program Files\Python\Lib\rexec.py", line 253, in r_exec
+    exec code in m.__dict__
+  File "&lt;string&gt;", line 1, in ?
+  File "restricted.py", line 30, in r_open
+    raise SystemError, 'files outside %s prohibited' % SafeDir
+SystemError: files outside C:\temp prohibited
+
+C:\...\PP2E\Internet\Other&gt;<B>python restricted.py</B>
+Input (ctrl+z=end) =&gt; <B>open(r'C:\stuff\mark\secret.py', 'r').read(  )</B>
+Input (ctrl+z=end) =&gt; Traceback (innermost last):
+  File "restricted.py", line 41, in ?
+    guard.r_exec(input)      # ask guard to check and do opens
+  File "C:\Program Files\Python\Lib\rexec.py", line 253, in r_exec
+    exec code in m.__dict__
+  File "&lt;string&gt;", line 1, in ?
+  File "restricted.py", line 30, in r_open
+    raise SystemError, 'files outside %s prohibited' % SafeDir
+SystemError: files outside C:\temp prohibited
+
+C:\...\PP2E\Internet\Other&gt;<B>python restricted.py</B>
+Input (ctrl+z=end) =&gt; <B>from socket import *</B>
+Input (ctrl+z=end) =&gt; <B>s = socket(AF_INET, SOCK_STREAM)</B>
+Input (ctrl+z=end) =&gt; Traceback (innermost last):
+  File "restricted.py", line 41, in ?
+    guard.r_exec(input)      # ask guard to check and do opens
+  ...part ommitted...  
+  File "C:\Program Files\Python\Lib\ihooks.py", line 324, in load_module
+    exec code in m.__dict__
+  File "C:\Program Files\Python\Lib\plat-win\socket.py", line 17, in ?
+    _realsocketcall = socket
+NameError: socket</PRE>
+
+<P class="docText">And what of that nasty <TT>rm</TT> <TT>*</TT>
+problem? It's possible in normal Python mode like everything
+else, but not when running in restricted mode. Python makes some
+potentially dangerous attributes of the <TT>os</TT> module,
+such as <TT>system</TT> (for running shell commands),
+disallowed in restricted mode:<A NAME="IXT-15-337871"></A>
+<A NAME="IXT-15-337872"></A>
+</P>
+
+<PRE>C:\temp&gt;<B>python</B>
+&gt;&gt;&gt; <B>import os</B>
+&gt;&gt;&gt; <B>os.system('ls -l rexec.txt')</B>
+-rwxrwxrwa   1 0        0             13 May  4 15:45 rexec.txt
+0
+&gt;&gt;&gt;
+C:\temp&gt;<B>python %X%\Part2\internet\other\restricted.py</B>
+Input (ctrl+z=end) =&gt; <B>import os</B>
+Input (ctrl+z=end) =&gt; <B>os.system('rm *.*')</B>
+Input (ctrl+z=end) =&gt; Traceback (innermost last):
+  File "C:\PP2ndEd\examples\Part2\internet\other\restricted.py", line 41, in ?
+    guard.r_exec(input)      # ask guard to check and do opens
+  File "C:\Program Files\Python\Lib\rexec.py", line 253, in r_exec
+    exec code in m.__dict__
+  File "&lt;string&gt;", line 2, in ?
+AttributeError: system</PRE>
+
+<P class="docText">Internally, restricted mode works by taking away access to certain
+APIs (imports are controlled, for example) and changing the
+<TT>__builtins__</TT> dictionary in the module where the
+restricted code runs to reference a custom and safe version of the
+standard <TT>__builtin__</TT> built-in names scope. For
+instance, the custom version of name <TT>__builtins_
+_.open</TT> references a restricted version of the standard file
+open function. <TT>rexec</TT> also keeps customizable lists
+of safe built-in modules, safe <TT>os</TT> and
+<TT>sys</TT> module attributes, and more. For the rest of
+this story, see the Python library manual.
+</P>
+
+<P><table border="0" bgcolor="black" cellspacing="0" cellpadding="1" width="90%" align="center"><tr><td>
+<table bgcolor="white" width="100%" border="0" cellspacing="0" cellpadding="6"><tr>
+<td width="60" valign="top"><img src="FILES/tip_yellow.gif" width="50" height="54"></td>
+<td valign="top">
+<P class="docText">Restricted execution mode is not necessarily tied to Internet
+scripting. It can be useful any time you need to run Python code of
+possibly dubious origin. For instance, we will use Python's
+<TT>eval</TT> and <TT>exec</TT> built-ins to
+evaluate arithmetic expressions and input commands in a calculator
+program later in the book. Because user input is evaluated as
+executable code in this context, there is nothing preventing a user
+from knowingly or unknowingly entering code that can do damage when
+run (e.g., they might accidentally type Python code that deletes
+files). However, the risk of running raw code strings becomes more
+prevalent in applications that run on the Web, since they are
+inherently open to both use and abuse. Although JPython inherits the
+underlying Java security model, pure Python systems such as Zope,
+Grail, and custom CGI scripts can all benefit from restricted
+execution of strings sent over the Net.<A NAME="IXTR3-430"></A> <A NAME="IXTR3-431"></A> <A NAME="IXTR3-432"></A> <A NAME="IXTR3-433"></A>
+</P>
+</td>
+</tr></table></td></tr></table></P>
+
+
+
+<a href="0596000855_"><img src="FILES/pixel.gif" width="1" height="1" border="0"></a><ul></ul>
+</td>
+</tr>
+</table>
+<td></td>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+          <a href="0596000855_python2-CHP-15-SECT-5.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+          <a href="0596000855_python2-CHP-15-SECT-7.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+</body></html>

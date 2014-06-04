@@ -1,0 +1,276 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>11.2 Fighting Game Strike Prediction</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="ch11_sect1_001.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="ch11_sect1_004.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="ch11_sect1_002"></A>
+<H3 class="docSection1Title">11.2 Fighting Game Strike Prediction</H3>
+<P class="docText">In this example, we aim to predict a human opponent's next strike in a martial arts fighting game. The basic assumption is that the player will try to use combinations of strikes to find the most effective combination. These combinations can be something such as low kick, low kick, high kick; or punch, punch, power kick; and so on. We want the computer opponent to somehow learn to anticipate which strike the player will throw next given the most recently thrown strikes and some history of the player's strike patterns. If the computer can anticipate the next strike, it can throw an appropriate counter strike, or block, or take evasive action such as side-stepping or back-stepping. This will add a higher level of realism to the combat simulation and present new challenges for the player.</P>
+<P class="docText">To achieve this, we're going to implement a rule-based system with a learning capability. We will achieve this learning by weighting each rule to reinforce some while suppressing others. In <A class="docLink" HREF="ch13.html#ch13">Chapter 13</A> we'll look at an alternative approach to this problem whereby instead of rules, we'll use conditional probabilities to help predict the next strike.</P>
+<P class="docText">To keep this example manageable for discussion purposes, we're going to simplify things a bit. We'll assume that the player's strikes can be classified as punch, low kick, or high kick. And we're going to track three-strike combinations. Even with these simplifications we still end up with 27 rules to capture all possible three-strike combinations of punch, low kick, and high kick. We'll look at the rules in a moment, but first let's take a look at the structures and classes we need to implement the working memory and rules memory.</P>
+<A NAME="ch11_sect2_002"></A>
+<H4 class="docSection2Title">11.2.2 Working Memory</H4>
+<P class="docText"><A class="docLink" HREF="#ch11exm06">Example 11-6</A> shows how the working memory is implemented.</P>
+<A NAME="ch11exm06"></A>
+<H5 class="docExampleTitle">Example 11-6. Working memory</H5>
+<PRE>
+enum TStrikes {Punch, LowKick, HighKick, Unknown};
+struct TWorkingMemory {
+        TStrikes        strikeA; // previous, previous strike (data)
+        TStrikes        strikeB; // previous strike (data)
+        TStrikes        strikeC; // next, predicted, strike (assertion)
+        // note: can add additional elements here for things such as which counter
+to throw, etc....
+};
+TWorkingMemory  WorkingMemory;  // global working memory variable
+</PRE><BR>
+
+
+<P class="docText"><span class="docEmphasis">TStrikes</span> is just an enumerated type for the possible strikes. Note that we include <span class="docEmphasis">Unknown</span> for the case when the computer does not know what strike will be thrown.</P>
+<P class="docText"><span class="docEmphasis">TWorkingMemory</span> is the structure defining the working memory. Here we have three elements: <span class="docEmphasis">strikeA</span>, <span class="docEmphasis">strikeB</span>, and <span class="docEmphasis">strikeC</span>. <span class="docEmphasis">strikeC</span> will store the predicted next strike to be thrown. This will be asserted by forward chaining through the rules given the observed facts, <span class="docEmphasis">strikeA</span> and <span class="docEmphasis">strikeB</span>. <span class="docEmphasis">strikeB</span> represents the most recently thrown strike while <span class="docEmphasis">strikeA</span> represents the strike thrown before <span class="docEmphasis">strikeB</span>. The three-strike combinations are <span class="docEmphasis">strikeA</span>, then <span class="docEmphasis">strikeB</span>, then <span class="docEmphasis">strikeC</span>, in that order, where <span class="docEmphasis">strikeC</span> is predicted by the rule system.</P>
+<P class="docText">We can add more facts or assertions to the working memory if desired. For example, we can include a counter strike element that can be asserted given the predicted next strike. If the predicted next strike is, say, low kick, we can have rules that assert an appropriate counter such as back step, and so on. Given the way we're implementing the working memory and rules in this example, you easily can add new elements in the working memory as well as new rules.</P>
+
+<A NAME="ch11_sect2_003"></A>
+<H4 class="docSection2Title">11.2.3 Rules</H4>
+<P class="docText"><A class="docLink" HREF="#ch11exm07">Example 11-7</A> shows the rules class for this example. Note that we are not going to hardcode if-then rules. Instead, we'll keep an array of <span class="docEmphasis">TRule</span> objects to represent the rules memory. We easily could have used if-then constructs; however, the approach we're taking here makes it easier to add or delete rules and facilitates backward chaining, which we're going to use to a limited extent. We'll come back to this subject a little later.</P>
+<A NAME="ch11exm07"></A>
+<H5 class="docExampleTitle">Example 11-7. Ruleclass</H5>
+<PRE>
+class TRule {
+public:
+TRule();
+void SetRule(TStrikes A, TStrikes B, TStrikes C);
+TStrikes        antecedentA;
+TStrikes        antecedentB;
+TStrikes        consequentC;
+bool            matched;
+int             weight;
+};
+</PRE><BR>
+
+
+<P class="docText">The <span class="docEmphasis">TRule</span> object contains five members. The first two are <span class="docEmphasis">antecedentA</span> and <span class="docEmphasis">antecedentB</span>. These members correspond to the previous two strikes thrown by the player. The next member, <span class="docEmphasis">consequentC</span>, corresponds to the predicted next strike—the strike that we'll assert using the rules. If we were using standard if-statements for the rules, we'd have rules that look something like this:</P>
+<IMG BORDER="0" ALIGN="center" SRC="images/0596005555/figs/ch11_ueq01.jpg" ALT="figs/ch11_ueq01.jpg">
+<P class="docText">In an if-then style rule such as <span class="docEmphasis">if X then Y</span>, the "if X" part is the antecedent, or the premise. The "then Y" part is the consequent, or conclusion. In our example, we're assuming that our rules consist of the conjunction (logical <span class="docEmphasis">AND</span>) of two parameters: <span class="docEmphasis">antecedentA</span> and <span class="docEmphasis">antecedentB</span>. The then-part in our rules, <span class="docEmphasis">consequentC</span>, is the expected strike given the two previous strikes.</P>
+<P class="docText">The next member in <span class="docEmphasis">TRule</span> is <span class="docEmphasis">matched</span>. This flag is set to <span class="docEmphasis">true</span> if the antecedents in the rule match the facts stored in working memory. More specifically, for a given rule, if <span class="docEmphasis">antecedentA</span> equals <span class="docEmphasis">WorkingMemory.strikeA</span> and <span class="docEmphasis">antecedentB</span> equals <span class="docEmphasis">WorkingMemory.strikeB</span>, the rule is matched. It's possible that more than one rule will match a given set of facts. This matched member helps us keep track of those that do match so that we can pick one to fire during the conflict resolution phase.</P>
+<P class="docText">The final member in <span class="docEmphasis">TRule</span> is <span class="docEmphasis">weight</span>. This is a weighting factor that we can adjust to reinforce or inhibit rules. In a sense it represents the strength of each rule. Looking at it from a different angle, the weight represents the computer's belief that a given rule is more or less applicable relative to other potentially matching rules. During the conflict resolution phase where more than one rule matches, we'll fire the one rule with the highest weight to make a strike prediction. If after the next strike is thrown, we see that we fired the wrong rule—that is, we made a wrong prediction—we'll decrement the fired rule's weight to suppress it. Further, we'll figure out which rule should have been fired and increment its weight to reinforce it.</P>
+<P class="docText"><span class="docEmphasis">TRule</span> contains only two methods, <span class="docEmphasis">SetRule</span> and the constructor. The constructor simply initializes <span class="docEmphasis">matched</span> to <span class="docEmphasis">false</span> and <span class="docEmphasis">weight</span> to <span class="docEmphasis">0</span>. We use <span class="docEmphasis">SetRule</span> to set the other members—<span class="docEmphasis">antecedentA</span>, <span class="docEmphasis">antecedentB</span>, and <span class="docEmphasis">consequentC</span>—therefore defining a rule. <span class="docEmphasis">SetRule</span> is illustrated in <A class="docLink" HREF="#ch11exm08">Example 11-8</A>.</P>
+<A NAME="ch11exm08"></A>
+<H5 class="docExampleTitle">Example 11-8. SetRule method</H5>
+<PRE>
+void TRule::SetRule(TStrikes A, TStrikes B, TStrikes C)
+{
+        antecedentA = A;
+        antecedentB = B;
+        consequentC = C;
+}
+</PRE><BR>
+
+
+<P class="docText">We need a few global variables for this example. The first is <span class="docEmphasis">WorkingMemory</span>, as we showed in <A class="docLink" HREF="#ch11exm06">Example 11-6</A>. <A class="docLink" HREF="#ch11exm09">Example 11-9</A> shows the others.</P>
+<A NAME="ch11exm09"></A>
+<H5 class="docExampleTitle">Example 11-9. Global variables</H5>
+<PRE>
+TRule           Rules[NUM_RULES];
+int             PreviousRuleFired;
+TStrikes        Prediction;
+TStrikes        RandomPrediction;
+int             N;
+int             NSuccess;
+int             NRandomSuccess;
+</PRE><BR>
+
+
+<P class="docText">Here, <span class="docEmphasis">Rules</span> is an array of <span class="docEmphasis">TRule</span> objects. The size of the <span class="docEmphasis">Rules</span> array is set to <span class="docEmphasis">NUM_RULES</span>, which is defined as 27 for this example. <span class="docEmphasis">PreviousRuleFired</span> is an integer type that we'll use to store the index to the rule fired during the previous game cycle. <span class="docEmphasis">Prediction</span> keeps track of the strike prediction the rule system makes. Technically we don't need this because the prediction also is stored in working memory.</P>
+<P class="docText">We're going to use <span class="docEmphasis">RandomPrediction</span> to store a randomly generated prediction to compare with our rule-based prediction. What we'll really compare is the success rate for our rule-based predictions versus the success rate for random guesses. The global variable <span class="docEmphasis">N</span> will store the number of predictions made. <span class="docEmphasis">NSuccess</span> will store the number of successful predictions made by our rule-based systems, while <span class="docEmphasis">NRandomSuccess</span> will store the number of successes for the random guesses. We calculate the success rates by dividing the number of successes by the total number of predictions.</P>
+
+<A NAME="ch11_sect2_004"></A>
+<H4 class="docSection2Title">11.2.4 Initialization</H4>
+<P class="docText">At the start of this simulation, or at the start of the game, we need to initialize all the rules and working memory. The <span class="docEmphasis">Initialize</span> function shown in <A class="docLink" HREF="#ch11exm10">Example 11-10</A> takes care of this for us.</P>
+<A NAME="ch11exm10"></A>
+<H5 class="docExampleTitle">Example 11-10. Initialize function</H5>
+<PRE>
+void TForm1::Initialize(void)
+{
+        Rules[0].SetRule(Punch, Punch, Punch);
+        Rules[1].SetRule(Punch, Punch, LowKick);
+        Rules[2].SetRule(Punch, Punch, HighKick);
+        Rules[3].SetRule(Punch, LowKick, Punch);
+        Rules[4].SetRule(Punch, LowKick, LowKick);
+        Rules[5].SetRule(Punch, LowKick, HighKick);
+        Rules[6].SetRule(Punch, HighKick, Punch);
+        Rules[7].SetRule(Punch, HighKick, LowKick);
+        Rules[8].SetRule(Punch, HighKick, HighKick);
+        Rules[9].SetRule(LowKick, Punch, Punch);
+        Rules[10].SetRule(LowKick, Punch, LowKick);
+        Rules[11].SetRule(LowKick, Punch, HighKick);
+        Rules[12].SetRule(LowKick, LowKick, Punch);
+        Rules[13].SetRule(LowKick, LowKick, LowKick);
+        Rules[14].SetRule(LowKick, LowKick, HighKick);
+        Rules[15].SetRule(LowKick, HighKick, Punch);
+        Rules[16].SetRule(LowKick, HighKick, LowKick);
+        Rules[17].SetRule(LowKick, HighKick, HighKick);
+        Rules[18].SetRule(HighKick, Punch, Punch);
+        Rules[19].SetRule(HighKick, Punch, LowKick);
+        Rules[20].SetRule(HighKick, Punch, HighKick);
+        Rules[21].SetRule(HighKick, LowKick, Punch);
+        Rules[22].SetRule(HighKick, LowKick, LowKick);
+        Rules[23].SetRule(HighKick, LowKick, HighKick);
+        Rules[24].SetRule(HighKick, HighKick, Punch);
+        Rules[25].SetRule(HighKick, HighKick, LowKick);
+        Rules[26].SetRule(HighKick, HighKick, HighKick);
+        WorkingMemory.strikeA = sUnknown;
+        WorkingMemory.strikeB = sUnknown;
+        WorkingMemory.strikeC = sUnknown;
+        PreviousRuleFired = -1;
+        N = 0;
+        NSuccess = 0;
+        NRandomSuccess = 0;
+        UpdateForm();
+}
+</PRE><BR>
+
+
+<P class="docText">Here we have 27 rules corresponding to all possible three-strike combinations of punch, low kick, and high kick. For example, the first rule, <span class="docEmphasis">Rules[0]</span>, can be read as follows:</P>
+<IMG BORDER="0" ALIGN="center" SRC="images/0596005555/figs/ch11_ueq02.jpg" ALT="figs/ch11_ueq02.jpg">
+<P class="docText">Examining these rules, it's clear that more than one can match the facts stored in working memory at any given time. For example, if strikes <span class="docEmphasis">A</span> and <span class="docEmphasis">B</span> are punch, punch, respectively, the first three rules will match and the prediction could be punch, or low kick, or high kick. This is where the weight factor comes into play to help select which matching rule to fire. We simply select the rule with the highest weight. We pick the first rule encountered in the event that two or more rules have the same weight.</P>
+<P class="docText">After all the rules are set, the working memory is initialized. Basically, everything in working memory is initialized to <span class="docEmphasis">Unknown</span>.</P>
+
+<A NAME="ch11_sect2_005"></A>
+<H4 class="docSection2Title">11.2.5 Strike Prediction</H4>
+<P class="docText">While the game is running we need to make a strike prediction after every strike the player throws. This will allow the computer opponent to anticipate the next strike the player will throw, as we've already discussed. In our example, we have one function, <span class="docEmphasis">ProcessMove</span>, to process each strike the player throws and to predict the next strike. <A class="docLink" HREF="#ch11exm11">Example 11-11</A> shows the <span class="docEmphasis">ProcessMove</span> function.</P>
+<A NAME="ch11exm11"></A>
+<H5 class="docExampleTitle">Example 11-11. ProcessMove function</H5>
+<PRE>
+TStrikes TForm1::ProcessMove(TStrikes move)
+{
+        int     i;
+        int     RuleToFire = -1;
+    // Part 1:
+        if(WorkingMemory.strikeA == sUnknown)
+        {
+                   WorkingMemory.strikeA = move;
+                   return sUnknown;
+        }
+        if(WorkingMemory.strikeB == sUnknown)
+        {
+                   WorkingMemory.strikeB = move;
+                   return sUnknown;
+        }
+     // Part 2:
+     // Process previous prediction first
+        // Tally and adjust weights
+        N++;
+        if(move == Prediction)
+        {
+                   NSuccess++;
+                   if(PreviousRuleFired != -1)
+                           Rules[PreviousRuleFired].weight++;
+        } else {
+                  if(PreviousRuleFired != -1)
+                          Rules[PreviousRuleFired].weight--;
+                     // Backward chain to increment the rule that
+                     // should have been fired:
+                     for(i=0; i&lt;NUM_RULES; i++)
+                {
+                        if(Rules[i].matched &amp;&amp; (Rules[i].consequentC == move))
+                        {
+                                   Rules[i].weight++;
+                                   break;
+                        }
+                }
+        }
+        if(move == RandomPrediction)
+                  NRandomSuccess++;
+        // Roll back
+        WorkingMemory.strikeA = WorkingMemory.strikeB;
+        WorkingMemory.strikeB = move;
+    // Part 3:
+    // Now make new prediction
+         for(i=0; i&lt;NUM_RULES; i++)
+         {
+                    if(Rules[i].antecedentA == WorkingMemory.strikeA &amp;&amp;
+                        Rules[i].antecedentB == WorkingMemory.strikeB)
+                               Rules[i].matched = true;
+                    else
+                               Rules[i].matched = false;
+         }
+        // Pick the matched rule with the highest weight...
+        RuleToFire = -1;
+        for(i=0; i&lt;NUM_RULES; i++)
+        {
+                if(Rules[i].matched)
+                {
+                           if(RuleToFire == -1)
+                                RuleToFire = i;
+                           else if(Rules[i].weight &gt; Rules[RuleToFire].weight)
+                                RuleToFire = i;
+                }
+        }
+        // Fire the rule
+        if(RuleToFire != -1) {
+                   WorkingMemory.strikeC = Rules[RuleToFire].consequentC;
+                   PreviousRuleFired = RuleToFire;
+        } else {
+                   WorkingMemory.strikeC = sUnknown;
+                   PreviousRuleFired = -1;
+        }
+        return WorkingMemory.strikeC;
+}
+</PRE><BR>
+
+
+<P class="docText">You can break this function into three distinctive parts, as indicated by the comments <span class="docEmphasis">// Part 1</span>, <span class="docEmphasis">// Part 2</span>, and <span class="docEmphasis">// Part 3</span>. Let's consider each part in turn.</P>
+<A NAME="ch11_sect3_003"></A>
+<H5 class="docSection3Title">11.2.3 Part 1</H5>
+<P class="docText">The first part populates the working memory. At the start of the game, after working memory is initialized and before any strikes are thrown, the working memory contains only <span class="docEmphasis">Unknown</span> values. This is insufficient to make a prediction, so we want to collect some data from the player as he begins to throw strikes. The first strike thrown is stored in <span class="docEmphasis">WorkingMemory.strikeA</span> and <span class="docEmphasis">ProcessMoves</span> simply returns <span class="docEmphasis">Unknown</span> without attempting a prediction. After the second strike is thrown, <span class="docEmphasis">ProcessMoves</span> is called again and this time the second strike is stored in <span class="docEmphasis">WorkingMemory.strikeB</span>. <span class="docEmphasis">ProcessMoves</span> returns <span class="docEmphasis">Unknown</span> one more time.</P>
+
+<A NAME="ch11_sect3_004"></A>
+<H5 class="docSection3Title">11.2.4 Part 2</H5>
+<P class="docText">The second part in <span class="docEmphasis">ProcessMoves</span> takes care of processing the previous prediction—that is, the prediction returned the previous time <span class="docEmphasis">ProcessMoves</span> was called. The first task in part 2 is to determine whether the previous prediction was accurate. <span class="docEmphasis">ProcessMoves</span> takes <span class="docEmphasis">move</span> as a parameter. <span class="docEmphasis">move</span> is the strike the player threw most recently. Therefore, if <span class="docEmphasis">move</span> equals the previous prediction stored in <span class="docEmphasis">Prediction</span>, we have a success. In this case, we increment <span class="docEmphasis">NSuccess</span> so that we can update our success rate. Then we reinforce the previously fired rule because it was the correct one to fire given the strike history stored in working memory. To reinforce a rule we simply increment the rule's weight.</P>
+<P class="docText">If the previous prediction was wrong—that is, if <span class="docEmphasis">move</span> does not equal <span class="docEmphasis">Prediction</span>—we need to inhibit the previously fired rule. To do this we simply decrement the previously fired rule's weight. At the same time we want to reinforce the rule that should have been fired. To do this we have to figure out which rule should have been fired the last time <span class="docEmphasis">ProcessMoves</span> was called. To this end, we need to backward-chain a bit. Essentially, we know the <span class="docEmphasis">move</span>; therefore, we know what consequent should have been returned for the previous prediction. So, all we have to do is cycle through the last set of matched rules and pick the one who's <span class="docEmphasis">consequentC</span> equals <span class="docEmphasis">move</span>. Once we find the rule, we increment its weight and we're done.</P>
+<P class="docText">The remaining tasks in part 2 of <span class="docEmphasis">ProcessMoves</span> are relatively simple. The next task is to see if the previous random prediction was correct and, if so, to increment the number of successful random predictions, <span class="docEmphasis">NRandomSuccess</span>.</P>
+<P class="docText">Finally, we need to update the strikes in working memory in preparation for making a new prediction. To this end, we simply shift the strikes in working memory and add the most recent <span class="docEmphasis">move</span>. Specifically, <span class="docEmphasis">WorkingMemory.strikeB</span> becomes <span class="docEmphasis">WorkingMemory.strikeA</span> and <span class="docEmphasis">move</span> becomes <span class="docEmphasis">WorkingMemory.strikeB</span>. Now we're ready to make a new prediction for the new series of strikes stored in working memory.</P>
+
+<A NAME="ch11_sect3_005"></A>
+<H5 class="docSection3Title">11.2.5 Part 3</H5>
+<P class="docText">Referring to <span class="docEmphasis">// Part 3</span> in <A class="docLink" HREF="#ch11exm11">Example 11-11</A>, the first task in the prediction process is to find the rules that match the facts stored in working memory. We take care of this in the first <span class="docEmphasis">for</span> loop under the <span class="docEmphasis">// Part 3</span> comment. Note that this is the so-called <span class="docEmphasis">match</span> phase of the forward chaining algorithm. Matching occurs when a rule's <span class="docEmphasis">antecedentA</span> and <span class="docEmphasis">antecedentB</span> equal <span class="docEmphasis">WorkingMemory.strikeA</span> and <span class="docEmphasis">WorkingMemory.strikeB</span>, respectively.</P>
+<P class="docText">After the match phase, we need to pick one rule to fire from those that were matched during the matching phase. This is the conflict resolution phase. Basically, all we do is cycle through the matched rules and pick the one with the highest <span class="docEmphasis">weight</span>. We take care of this in the second <span class="docEmphasis">for</span> loop after the <span class="docEmphasis">// Part 3</span> comment in <A class="docLink" HREF="#ch11exm11">Example 11-11</A>. After this loop does its thing, the index to the selected rule is stored in <span class="docEmphasis">RuleToFire</span>. To actually fire the rule we simply copy <span class="docEmphasis">consequentC</span> of <span class="docEmphasis">Rules[RuleToFire]</span> to <span class="docEmphasis">WorkingMemory.strikeC</span>.</P>
+<P class="docText"><span class="docEmphasis">ProcessMoves</span> stores the index to the fired rule, <span class="docEmphasis">RuleToFire</span>, in <span class="docEmphasis">PreviousRuleFired</span>, which will be used in part 2 the next time <span class="docEmphasis">ProcessMoves</span> is called. Finally, <span class="docEmphasis">ProcessMoves</span> returns the predicted strike.</P>
+<P class="docText">That's pretty much all there is to this example. Upon running the example and simulating thrown strikes, by pressing buttons corresponding to punch, low kick, and high kick, we see that the rule-based system is pretty good at predicting the next strike. Our experiments saw success rates from 65% up to 80%. Comparing this to the roughly 30% success rate we achieved by guessing randomly, it's clear that such a rule-based system works very well.</P>
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="ch11_sect1_001.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="ch11_sect1_004.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

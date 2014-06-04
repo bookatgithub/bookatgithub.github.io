@@ -1,0 +1,82 @@
+<html><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<link href="styles/globalstyle.css" type="text/css" rel="stylesheet"/>
+<link title="medium" href="styles/two.css" type="text/css" rel="stylesheet"/>
+<script src="scripts/main.js" type="text/javascript" language="javascript"></script>
+<title>Section 2.4. But Is It Art?</title>
+</head><body>
+<DIV class=h3 style="MARGIN-TOP: 0px; PADDING-BOTTOM: 1em; WIDTH: 100%; PADDING-TOP: 0px"><SPAN>Subversion's Delta Editor: Interface As Ontology</SPAN><SPAN> &gt; But Is It Art?</SPAN></DIV>
+<DIV></DIV>
+<DIV>
+<DIV><A name=but_is_it_art></A>
+<H3 class=docSection1Title id=-100000>2.4. But Is It Art?</H3>
+<P class=docText><A name="I cannot"></A>I cannot claim that the beauty of this interface was immediately obvious to me. I'm not sure it was obvious to Jim either; he was probably just trying to get Ben and me out of his house. But he'd been pondering the problem for a long time, too, and he followed his instincts about how tree structures behave.</P>
+<P class=docText><A name="that strikes"></A>The first thing that strikes one about the <A name=idx-CHP-2-0085></A><A name="that it"></A>delta editor is that it <SPAN class=docEmphasis>chooses</SPAN><A name="there is"></A> constraint: even though there is no philosophical requirement that tree edits be done in depth-first order (or indeed in any order at all), the interface enforces depth-firstness anyway, by means of the baton relationships. This makes the interface's usage and behavior more predictable.</P>
+<P class=docText><A name="is that"></A>The second thing is that an entire edit operation unobtrusively carries its context with it, again by means of the batons. A file baton can contain a pointer to its parent directory baton, a directory baton can contain a pointer to <SPAN class=docEmphasis>its</SPAN><A name="the edit"></A> parent directory baton (with a null parent for the root of the edit), and everyone can contain a pointer to the global edit baton. Although an individual baton may be a disposable object—for example, when a file is closed, its baton is destroyed—any given baton allows access to the global edit context, which may contain, for example, the revision number the client side is being updated to. Thus, batons are overloaded: they provide scope (i.e., lifetime, because a baton only lasts as long as the pool in which it is allocated) to portions of the edit, but they also carry global context.</P>
+<P class=docText><A name="important feature"></A>The third important feature is that the interface provides clear boundaries between the various suboperations involved in expressing a tree change. For example, opening a file merely indicates that something changed in that file between the two trees, but doesn't give details; calling <TT>apply_textdelta</TT><A name="have to"></A> gives the details, but you don't have to call <TT>apply_ textdelta</TT><A name="directory indicates"></A> if you don't want to. Similarly, opening a directory indicates that something changed in or under that directory, but if you don't need to say any more than that, you can just close the directory and move on. These boundaries are a consequence of the interface's dedication to <SPAN class=docEmphasis>streaminess</SPAN><A name="as expressed"></A>, as expressed in its introductory comment: "…<SPAN class=docEmphasis><A name="the tree"></A>instead of representing the tree delta explicitly, we define a standard way for a consumer to process each piece of a tree delta as soon as the producer creates it</SPAN><A name="been tempting"></A>." It would have been tempting to stream only the largest data chunks (that is, the file diffs), but the delta editor interface goes the whole way and streams the entire tree delta, thus giving both producer and consumer fine-grained control over memory usage, progress reporting, and interruptibility.<A name=idx-CHP-2-0086></A><A name=idx-CHP-2-0087></A></P>
+<P class=docText><A name="only after"></A>It was only after we began throwing the new delta editor at various problems that these features began to show their value. For example, one thing we wanted to implement was change summarization: a way to show an overview of the difference between two trees without giving the details. This is useful when someone wants to know which files in her working copy have changed in the repository since she checked them out, but doesn't need to know exactly what the changes were.</P>
+<P class=docText><A name="version of"></A>Here's a slightly simplified version of how it works: the client tells the server what revision tree the working copy is based on, and then the server tells the client the difference between that revision tree and the latest one, using the <A name=idx-CHP-2-0088></A>delta editor. The server is the producer, the client is the consumer.</P>
+<P class=docText><A name="built up"></A>Using the repository from earlier in the chapter, in which we built up a change to <SPAN class=docEmphasis>/A/fish/tuna</SPAN><A name="revision "></A> to create revision 2, let's see how this would look as a series of editor calls, sent by the server to a client whose tree is still at revision 1. The if block about two-thirds of the way through is where we decide whether this is a summarization edit or a "give me everything" edit:</P>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedHeight>	svn_delta_editor_t *editor
+	void *edit_baton;
+
+	/* In real life, this would be a passed-in parameter, of course. */
+	int summarize_only = TRUE;
+
+	/* In real life, these variables would be declared in subroutines,
+	   so that their lifetimes would be bound to the stack frame just
+	   as the objects they point to are bound by the tree edit frame. */
+	void *root_baton;
+	void *dir_baton;
+	void *subdir_baton;
+	void *file_baton;
+
+	/* Similarly, there would be subpools, not just one top-level pool. */
+	apr_pool_t *pool = svn_pool_create();
+
+	/* Each use of the delta editor interface starts by requesting the 
+	   particular editor that implements whatever you need, e.g.,
+	   streaming the edit across the network, applying it to a working
+	   copy, etc. */
+	Get_Update_Editor(&amp;editor, &amp;eb,
+	                some_repository,
+	                1, /* source revision number */
+	                2, /* target revision number */
+	                pool);
+
+	/* Now we drive the editor. In real life, this sequence of calls
+	   would be dynamically generated, by code that walks the two
+	   repository trees and invokes editor-&gt;foo() as appropriate. */
+
+	editor-&gt;open_root(edit_baton, pool, &amp;root_baton);
+	editor-&gt;open_directory("A", root_baton, pool, &amp;dir_baton);
+	editor-&gt;open_directory("A/fish", dir_baton,pool, &amp;subdir_baton);
+	editor-&gt;open_file("A/fish/tuna", subdir_baton, pool, &amp;file_baton);
+
+	if (! summarize_only)
+	  {
+	    svn_txdelta_window_handler_t window_handler;
+	    void *window_handler_baton;
+	    svn_txdelta_window_t *window;
+
+	    editor-&gt;apply_textdelta(file_baton, pool
+	                               apr_pool_t *pool,
+	                               &amp;window_handler,
+	                               &amp;window_handler_baton);
+	   do {
+	     window = Get_Next_TextDelta_Window(...);
+	     window_handler(window, window_handler_baton);
+	   } while (window);
+	 }
+
+	 editor-&gt;close_file(file_baton, pool);
+	 editor-&gt;close_directory(subdir_baton, pool);
+	 editor-&gt;close_directory(dir_baton, pool);
+	 editor-&gt;close_directory(root_baton, pool);
+	 editor-&gt;close_edit(edit_baton, pool);
+
+
+					    </PRE><BR>
+<P class=docText><A name="distinction between"></A>As this example shows, the distinction between a summary of a change and the full version of the change falls naturally along the boundaries of the <A name=idx-CHP-2-0089></A><A name="use the"></A>delta editor interface, allowing us to use the same code path for both purposes. While it happens that the two revision trees in this example were adjacent (revision 1 and revision 2), they didn't have to be. The same method would work for any two trees, even with many revisions between them, as is the case when a working copy hasn't been updated for a long time. And it would work when the two trees are in reverse order—that is, with the newer revision first. This is useful for reverting a change.</P></DIV></DIV>
+<p>&nbsp;</p><p>&nbsp;</p><!-- 仁·义 -->
+</body></html>

@@ -1,0 +1,323 @@
+<html><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<link href="styles/globalstyle.css" type="text/css" rel="stylesheet"/>
+<link title="medium" href="styles/two.css" type="text/css" rel="stylesheet"/>
+<script src="scripts/main.js" type="text/javascript" language="javascript"></script>
+<title>Section 2.3. The Delta Editor Interface</title>
+</head><body>
+<DIV class=h3 style="MARGIN-TOP: 0px; PADDING-BOTTOM: 1em; WIDTH: 100%; PADDING-TOP: 0px"><SPAN>Subversion's Delta Editor: Interface As Ontology</SPAN><SPAN> &gt; The Delta Editor Interface</SPAN></DIV>
+<DIV></DIV>
+<DIV>
+<DIV><A name=the_delta_editor_interface></A>
+<H3 class=docSection1Title id=-100000>2.3. The Delta Editor Interface</H3>
+<P class=docText><A name="Following is"></A>Following is a mildly abridged version of the delta editor interface. I've left out the parts that deal with copying and renaming, the parts related to <A name=idx-CHP-2-0068></A><A name="versioned metadata"></A>Subversion properties (properties are versioned metadata, and are not important here), and parts that handle some other Subversion-specific bookkeeping. However, you can always see the latest version of the delta editor by visiting <A class=docLink href="http://svn.collab.net/repos/svn/trunk/subversion/include/svn_delta.h" target=_blank>http://svn.collab.net/repos/svn/trunk/subversion/include/svn_delta.h</A><A name="based on"></A>. This chapter is based on r21731 (that is, revision 21731) at <A class=docLink href="http://svn.collab.net/viewvc/svn/trunk/subversion/include/svn_delta.h?revision=21731" target=_blank>http://svn.collab.net/viewvc/svn/trunk/subversion/include/svn_delta.h?revision=21731</A>.<A name=idx-CHP-2-0069></A><A name=idx-CHP-2-0070></A><A name=idx-CHP-2-0071></A></P>
+<P class=docText><A name="the interface"></A>To understand the interface, even in its abridged form, you'll need to know some Subversion jargon:</P><A name=idx-CHP-2-0072></A><A name=idx-CHP-2-0073></A><A name=idx-CHP-2-0074></A><A name=idx-CHP-2-0075></A>
+<DL class=docList>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docEmphasis>pools</SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList>The <TT>pool</TT><A name="buffers that"></A> arguments are memory pools—allocation buffers that allow a large number of objects to be freed simultaneously.</P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docPubcolor><SPAN class=docMonofont>svn_error_t</SPAN></SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList>The return type <TT>svn_error_t</TT><A name="Subversion error"></A> simply means that the function returns a pointer to a Subversion error object; a successful call returns a null pointer.<A name=idx-CHP-2-0072></A></P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docEmphasis>text delta</SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList><A name="delta is"></A>A text delta is the difference between two different versions of a file; you can apply a text delta as a patch to one version of the file to produce the other version. In Subversion, the "text" of a file is considered binary data—it doesn't matter whether the file is plain text, audio data, an image, or something else. Text deltas are expressed as streams of fixed-sized windows, each window containing a chunk of binary diff data. This way, peak memory usage is proportional to the size of a single window, rather than to the total size of the patch (which might be quite large in the case of, say, an image file).<A name=idx-CHP-2-0073></A><A name=idx-CHP-2-0074></A></P></DD>
+<DT><BR>
+<P><I><SPAN class=docPubcolor>window handler</SPAN></I></P></DT>
+<DD>
+<P class=docList><A name="prototype for"></A>This is the function prototype for applying one window of text-delta data to a target file.</P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docEmphasis>baton</SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList>This is a <TT>void *</TT><A name="to a"></A> data structure that provides context to a callback function. In other APIs, these are sometimes called <TT><A name="void "></A>void *ctx, void *userdata</TT>, or <TT>void *closure</TT><A name="because they"></A>. Subversion calls them "batons" because they're passed around a lot, like batons in a relay race.<A name=idx-CHP-2-0075></A></P></DD></DL>
+<P class=docText><A name="with an"></A>The interface starts with an introduction, to put a reader of the code in the right frame of mind. This text is almost unchanged since Jim <A name=idx-CHP-2-0076></A><A name="it in"></A>Blandy wrote it in August of 2000, so the general concept has clearly weathered well:</P>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedHeight>	/** Traversing tree deltas.
+	 *
+	 * In Subversion, we've got various producers and consumers of tree
+	 * deltas.
+	 *
+	 * In processing a `commit' command:
+	 * - The client examines its working copy data, and produces a tree
+	 *   <A name=idx-CHP-2-0077></A>delta describing the changes to be committed.
+	 * - The client networking library consumes that delta, and sends them
+	 *   across the wire as an equivalent series of network requests.
+	 * - The server receives those requests and produces a tree delta --
+	 *   hopefully equivalent to the one the client produced above.
+	 * - The <A name=idx-CHP-2-0078></A>Subversion server module consumes that delta and commits an
+	 *   appropriate transaction to the filesystem.
+	 *
+	 * In processing an `update' command, the process is reversed:
+	 * - The Subversion server module talks to the filesystem and produces
+	 *   a tree delta describing the changes necessary to bring the
+	 *   client's working copy up to date.
+	 * - The server consumes this delta, and assembles a reply
+	 *   representing the appropriate changes.
+	 * - The client networking library receives that reply, and produces a
+	 *   tree delta --- hopefully equivalent to the one the Subversion
+	 *   server produced above.
+	 * - The working copy library consumes that delta, and makes the
+	 *   appropriate changes to the working copy.
+	 *
+	 * The simplest approach would be to represent tree deltas using the
+	 * obvious data structure. To do an update, the server would
+	 * construct a delta structure, and the working copy library would
+	 * apply that structure to the working copy; the network layer's job
+	 * would simply be to get the structure across the net intact.
+	 *
+	 * However, we expect that these deltas will occasionally be too large
+	 * to fit in a typical workstation's swap area. For example, in
+	 * checking out a 200Mb source tree, the entire source tree is
+	 * represented by a single tree delta. So it's important to handle
+	 * deltas that are too large to fit in swap all at once.
+	 *
+	 * So instead of representing the tree delta explicitly, we define a
+	 * standard way for a consumer to process each piece of a tree delta
+	 * as soon as the producer creates it. The <B>svn_delta_editor_t</B>
+	 * structure is a set of callback functions to be defined by a delta
+	 * consumer, and invoked by a delta producer. Each invocation of a
+	 * callback function describes a piece of the delta --- a file's
+	 * contents changing, something being renamed, etc.
+	 */
+
+
+					    </PRE><BR>
+<P class=docText><A name="formal documentation"></A>Then comes a long, formal documentation comment, followed by the <A name=idx-CHP-2-0079></A><A name="partially constrained"></A>interface itself, which is a callback table whose invocation order is partially constrained:<A name=I_indexterm2_tt20></A></P>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedHeight>	/** A structure full of callback functions the delta source will invoke
+	 * as it produces the delta.
+	 *
+	 * Function Usage
+	 * ============== 
+	 *
+	 * Here's how to use these functions to express a tree delta.
+	 *
+	 * The delta consumer implements the callback functions described in
+	 * this structure, and the <A name=idx-CHP-2-0080></A>delta producer invokes them. So the
+	 * caller (producer) is pushing tree delta data at the callee
+	 * (consumer).
+	 *
+	 * At the start of traversal, the consumer provides <B>edit_baton</B>, a
+	 * baton global to the entire delta edit. 
+	 *
+	 * Next, if there are any tree deltas to express, the producer should
+	 * pass the <B>edit_baton</B> to the <B>open_root</B> function, to get a baton
+	 * representing root of the tree being edited.
+	 *
+	 * Most of the callbacks work in the obvious way:
+	 *
+	 * <B>delete_entry</B>
+	 * <B> add_file</B>
+	 * <B>add_directory</B>
+	 * <B>open_file</B> 
+	 * <B>open_directory</B>
+	 *
+	 * Each of these takes a directory baton, indicating the directory
+	 * in which the change takes place, and a <B>path</B> argument, giving the
+	 * path (relative to the root of the edit) of the file,
+	 * subdirectory, or directory entry to change. Editors will usually
+	 * want to join this relative path with some base stored in the edit
+	 * baton (e.g. a URL, a location in the OS filesystem). 
+	 *
+	 * Since every call requires a parent directory baton, including
+	 * <B>add_directory</B> and <B>open_directory</B>, where do we ever get our
+	 * initial directory baton, to get things started? The <B>open_root</B>
+	 * function returns a baton for the top directory of the change. In
+	 * general, the producer needs to invoke the editor's <B>open_root</B>
+	 * function before it can get anything of interest done.
+	 *
+	 * While <B>open_root</B> provides a directory baton for the root of
+	 * the tree being changed, the <B>add_directory</B> and <B>open_directory</B>
+	 * callbacks provide batons for other directories. Like the
+	 * callbacks above, they take a <B>parent_baton</B> and a relative path
+	 * <B>path</B>, and then return a new baton for the subdirectory being
+	 * created / modified --- <B>child_baton</B>. The producer can then use
+	 * <B>child_baton</B> to make further changes in that subdirectory. 
+	 *
+	 * So, if we already have subdirectories named `foo' and `foo/bar',
+	 * then the producer can create a new file named `foo/bar/baz.c' by
+	 * calling:
+	 *
+	 *     - <B>open_root</B> () --- yielding a baton <B>root</B> for the top directory
+	 *
+	 *     - <B>open_directory</B> (root, "foo")
+	 *
+	 *     - <B>open_directory</B> (f, "foo/bar") --- yielding a baton b for `foo/bar' 
+	 *
+	 *     - <B>add_file</B> (b, "foo/bar/baz.c")
+	 *
+	 * When the producer is finished making changes to a directory, it
+	 * should call <B>close_directory</B>. This lets the consumer do any
+	 * necessary cleanup, and free the baton's storage.
+	 *
+	 * <B>The add_file</B> and <B>open_file</B> callbacks each ret urn a baton
+	 * for the file being created or changed. This baton can then be
+	 * passed to <B>apply_textdelta</B><A name=idx-CHP-2-0081></A> to change the file's contents.
+	 * When the producer is finished making changes to a file, it should
+	 * call <B>close_file</B>, to let the consumer clean up and free the baton. 
+	 *
+	 * Function Call Ordering
+	 * ======================
+	 *
+	 * There are five restrictions on the order in which the producer
+	 * may use the batons: 
+	 *
+	 * 1. The producer may call <B>open_directory, add_directory</B>,
+	 *    <B>open_file, add_file</B> at most once on any given directory
+	 *	  entry. <B>delete_entry</B> may be called at most once on any given
+	 *    directory entry and may later be followed by <B>add_directory</B> or
+	 *	 <B>add_file</B> on the same directory entry. <B>delete_entry</B> may
+	 *    not be called on any directory entry after <B>open_directory</B>,
+	 *   <B>add_directory,open_file</B> or <B>add_file</B> has been called on
+	 *    that directory entry.
+	 *
+	 * 2. The producer may not close a directory baton until it has
+	 *    closed all batons for its subdirectories. 
+	 *
+	 * 3. When a producer calls <B>open_directory</B> or <B>add_directory</B>,
+	 *    it must specify the most recently opened of the currently open
+	 *    directory batons. Put another way, the producer cannot have
+	 *    two sibling directory batons open at the same time.
+	 *
+	 * 4. When the producer calls <B>open_file</B> or <B>add_file</B>, it must
+	 *    follow with any changes to the file (using <B>apply_textdelta</B>),
+	 *    followed by a <B>close_file</B> call, before issuing any other
+	 *    file or directory calls.
+	 *
+	 * 5. When the producer calls <B>apply_textdelta</B>, it must make all of
+	 *    the window handler calls (including the <B>NULL</B> window at the
+	 *    end) before issuing any other <B>svn_delta_editor_t</B> calls. 
+	 *
+	 * So, the producer needs to use directory and file batons as if it
+	 * is doing a single depth-first traversal of the tree. 
+	 *
+	 * Pool Usage
+	 * ==========
+	 *
+	 * Many editor functions are invoked multiple times, in a sequence
+	 * determined by the editor "driver". The driver is responsible for
+	 * creating a pool for use on each iteration of the editor function,
+	 * and clearing that pool between each iteration. The driver passes
+	 * the appropriate pool on each function invocation. 
+	 *
+	 * Based on the requirement of calling the editor functions in a
+	 * depth-first style, it is usually customary for the driver to similarly
+	 * nest the pools. However, this is only a safety feature to ensure
+	 * that pools associated with deeper items are always cleared when the
+	 * top-level items are also cleared. The <A name=idx-CHP-2-0082></A>interface does not assume, nor
+	 * require, any particular organization of the pools passed to these
+	 * functions.
+	 */
+	typedef struct svn_<A name=idx-CHP-2-0083></A>delta_editor_t 
+	{
+	  /** Set <B>*root_baton</B> to a baton for the top directory of the change.
+	   * (This is the top of the subtree being changed, not necessarily
+	   * the root of the filesystem.) Like any other directory baton, the
+	   * producer should call <B>close_directory</B> on <B>root_baton</B> when they're
+	   * done. 
+	   */
+	  svn_error_t *(*open_root)(void *edit_baton,
+	                            apr_pool_t *dir_pool,
+	                            void **root_baton);
+
+
+
+	  /** Remove the directory entry named <B>path</B>, a child of the directory
+	   * represented by <B>parent_baton</B>.
+	   */
+	  svn_error_t *(*delete_entry)(const char *path,
+	                               void *parent_baton,
+	                               apr_pool_t *pool);
+
+
+
+	  /** We are going to add a new subdirectory named <B>path</B>. We will use
+	   * the value this callback stores in <B>*child_baton</B> as the
+	   * <B>parent_baton</B> for further changes in the new subdirectory.
+	   */
+	  svn_error_t *(*add_directory)(const char *path,
+	                                void *parent_baton,
+	                                apr_pool_t *dir_pool,
+	                                void **child_baton);
+
+	  /** We are going to make changes in a subdirectory (of the directory
+	   * identified by <B>parent_baton</B>). The subdirectory is specified by
+	   * <B>path</B>. The callback must store a value in <B>*child_baton</B> that
+	   * should be used as the <B>parent_baton</B> for subsequent changes in this
+	   * subdirectory.
+	   */
+	  svn_error_t *(*open_directory)(const char *path,
+	                                 void *parent_baton,
+	                                 apr_pool_t *dir_pool,
+	                                 void **child_baton);
+
+	  /** We are done processing a subdirectory, whose baton is <B>dir_baton</B>
+	   * (set by <B>add_directory</B> or <B>open_directory</B>). We won't be using
+	   * the baton any more, so whatever resources it refers to may now be
+	   * freed.
+	   */
+	  svn_error_t *(*close_directory)(void *dir_baton,
+	                                  apr_pool_t *pool);
+	  /** We are going to add a new file named <B>path</B>. The callback can
+	   * store a baton for this new file in <B>**file_baton;</B> whatever value
+	   * it stores there should be passed through to <B>apply_textdelta</B><A name=idx-CHP-2-0084></A>.
+	   */
+	  svn_error_t *(*add_file)(const char *path,
+	                           void *parent_baton,
+	                           apr_pool_t *file_pool,
+	                           void **file_baton);
+
+	  /** We are going to make change to a file named <B>path</B>, which resides
+	   * in the directory identified by <B>parent_baton.</B>
+	   *
+	   * The callback can store a baton for this new file in <B>**file_baton;</B>
+	   * whatever value it stores there should be passed through to
+	   * <B>apply_textdelta</B>.
+	   */
+	  svn_error_t *(*open_file)(const char *path,
+	                            void *parent_baton,
+	                            apr_pool_t *file_pool,
+	                             void **file_baton);
+
+	  /** Apply a text delta, yielding the new revision of a file. 
+	   *
+	   * <B>file_baton</B> indicates the file we're creating or updating, and the
+	   * ancestor file on which it is based; it is the baton set by some
+	   * prior <B>add_file</B> or <B>open_file</B> callback.
+	   *
+	   * The callback should set <B>*handle</B> to a text delta window
+	   * handler; we will then call <B>*handle</B> on successive text
+	   * delta windows as we receive them. The callback should set
+	   * * <B>handler_baton</B> to the value we should pass as the <B>baton</B>
+	   * argument to <B>*handler.</B>
+	   */
+	  svn_error_t *(*apply_textdelta)(void *file_baton,
+	                                  apr_pool_t *pool,
+	                                  svn_txdelta_window_handler_t *handler,
+	                                  void **handler_baton);
+
+	  /** We are done processing a file, whose baton is <B>file_baton</B> (set by
+	   * <B>add_file</B> or <B>open_file</B>). We won't be using the baton any
+	   * more, so whatever resources it refers to may now be freed.
+	   */
+	  svn_error_t *(*close_file)(void *file_baton,
+	                             apr_pool_t *pool)
+
+	  /** All delta processing is done. Call this, with the <B>edit_baton</B> for
+	   * the entire edit.
+	   */
+	  svn_error_t *(*close_edit)(void *edit_baton,
+	                             apr_pool_t *pool);]
+
+	  /** The editor-driver has decided to bail out. Allow the editor to
+	   * gracefully clean up things if it needs to.
+	   */
+	  svn_error_t *(*abort_edit)(void *edit_baton,
+	                             apr_pool_t *pool);
+	} svn_delta_editor_t;
+
+
+					    </PRE><BR></DIV></DIV>
+<p>&nbsp;</p><p>&nbsp;</p><!-- 仁·义 -->
+</body></html>

@@ -1,0 +1,157 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>9.1 How It Works</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="squid-CHP-9.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="squid-CHP-9-SECT-2.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="squid-CHP-9-SECT-1"></A>
+<H3 class="docSection1Title">9.1 How It Works</H3>
+
+<P class="docText">Interception caching involves some network trickery, so it is helpful
+for you to understand what happens between the client and Squid.
+I'll use <A class="docLink" HREF="#squid-CHP-9-FIG-1">Figure 9-1</A> and the
+following sample <I>tcpdump</I> output to explain how the
+packets are intercepted as they flow through your network.</P>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="squid-CHP-9-FIG-1"></A>Figure 9-1. How HTTP interception works</H5>
+<IMG BORDER="0" WIDTH="211" HEIGHT="325" SRC="images/0596001622/figs/SQ_0901.gif" ALT="figs/SQ_0901.gif"></CENTER>
+
+<span style="font-weight:bold"><OL class="docList" TYPE="1"><LI><span style="font-weight:normal"><P class="docList">The user-agent wants to request a resource, say <A class="docLink" target="_blank" HREF="/index.html">/index.html</A> from an origin server, say
+<span class="docEmphasis">www.oreilly.com</span>. It needs the
+origin server's IP address, so it makes a DNS
+request:</P><PRE>Packet 1
+TIME:   19:54:41.317310
+UDP:    206.168.0.3.2459 -&gt; 206.168.0.2.53
+DATA:   .d...........www.oreilly.com.....
+---------------------------------------------------------------------------
+Packet 2
+TIME:   19:54:41.317707 (0.000397)
+UDP:    206.168.0.2.53 -&gt; 206.168.0.3.2459
+DATA:   .d...........www.oreilly.com.............PR.....%........PR.
+        ....$........PR...ns1.sonic.net.........PR...ns2.Q........PR
+        ...ns...M...............h.............!.z.......b......</PRE></span></LI><LI><span style="font-weight:normal"><P class="docList">Now that it has the IP address, the user-agent initiates a TCP
+connection to the origin server on port 80:</P><PRE>Packet 3
+TIME:   19:54:41.320652 (0.002945)
+TCP:    206.168.0.3.3897 -&gt; 208.201.239.37.80 Syn
+DATA:   &lt;No data&gt;</PRE></span></LI><LI><span style="font-weight:normal"><P class="docList">The switch/router notices a TCP SYN packet with destination port 80.
+What happens next depends on the particular interception technology.
+In the case of layer four switches and policy routing, the device
+simply forwards the TCP packet to Squid's datalink
+layer (Ethernet) address. This works only when Squid is directly
+attached to the network device. For WCCP, the router encapsulates the
+TCP packet into a GRE packet. Because the GRE packet has its own IP
+address, it can be routed through multiple subnets. In other words,
+WCCP doesn't require Squid to be directly attached
+to the router.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">The Squid host's operating system receives the
+intercepted packet. For layer four switches, the TCP/IP packet is
+unchanged from the earlier explanation.</P><P class="docList">If the packet is encapsulated with GRE, the host removes the outer IP
+and GRE headers and places the original TCP/IP packet on the input
+queue.</P><P class="docList">Note that the Squid host receives an IP packet for a foreign address
+(the origin server's). Normally this packet is
+dropped because its destination address doesn't
+match any of the local interface addresses. To make the host accept
+the foreign packet, you must enable IP forwarding on most operating
+systems.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">The client's TCP/IP packet is processed by the
+packet filtering code. The packet matches a rule that instructs the
+kernel to forward or divert this packet to Squid. Without this rule,
+the kernel simply forwards this packet on its way to the origin
+server, which isn't what you want.</P><P class="docList">Note that the SYN packet's destination port is 80,
+but Squid may be listening on a different port, such as 3128. The
+packet filtering rules allow you to change the port number. You
+don't need to make Squid listen on port 80. You
+can't see this step with <I>tcpdump</I>
+because the diverted packet doesn't flow through the
+network interface code again.</P><P class="docList">The packet filter's redirection rule is still
+necessary even if you have Squid listen on port 80. Simply making the
+port numbers match doesn't allow Squid to receive
+the intercepted packets. The redirection rule is the magic that
+delivers foreign packets to Squid.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">Squid receives notification of the new connection, which it accepts.
+The kernel sends a SYN/ACK packet back to the client:</P><PRE>Packet 4
+TIME:   19:54:41.320735 (0.000083)
+TCP:    208.201.239.37.80 -&gt; 206.168.0.3.3897 SynAck
+DATA:   &lt;No data&gt;</PRE><P class="docList">As you can see, the source address is the origin
+server's, even though this packet
+didn't reach the origin. The operating system simply
+copies and swaps the source and destination IP addresses from the SYN
+packet into the reply.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">The user-agent receives the SYN/ACK packet, fully establishing the
+TCP connection. The user-agent now believes it is connected to the
+origin server, so it writes the HTTP request:</P><PRE>Packet 5
+TIME:   19:54:41.323080 (0.002345)
+TCP:    206.168.0.3.3897 -&gt; 208.201.239.37.80 Ack
+DATA:   &lt;No data&gt;
+---------------------------------------------------------------------------
+Packet 6
+TIME:   19:54:41.323482 (0.000402)
+TCP:    206.168.0.3.3897 -&gt; 208.201.239.37.80 AckPsh
+DATA:   GET / HTTP/1.0
+        User-Agent: Wget/1.8.2
+        Host: www.oreilly.com
+        Accept: */*
+        Connection: Keep-Alive</PRE></span></LI><LI><span style="font-weight:normal"><P class="docList">Squid receives the HTTP request. It uses the HTTP
+<TT>Host</TT> header to convert the partial URL into a full
+URL. In this case, you'll see <A class="docLink" target="_blank" HREF="http://www.oreilly.com/">http://www.oreilly.com/</A> in the
+<I>access.log</I> file.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">From this point on, Squid treats the request normally. As usual,
+cache hits are returned immediately. Cache misses are forwarded to
+the origin server.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">Lastly, here is the response that Squid receives from the origin
+server:</P><PRE>Packet 8
+TIME:   19:54:41.448391 (0.030030)
+TCP:    208.201.239.37.80 -&gt; 206.168.0.3.3897 AckPsh
+DATA:   HTTP/1.0 200 OK
+        Date: Mon, 29 Sep 2003 01:54:41 GMT
+        Server: Apache/1.3.26 (Unix) PHP/4.2.1 mod_gzip/1.3.19.1a mo
+        d_perl/1.27
+        P3P: policyref="http://www.oreillynet.com/w3c/p3p.xml",CP="C
+        AO DSP COR CURa ADMa DEVa TAIa PSAa PSDa IVAa IVDa CONo OUR
+        DELa PUBi OTRa IND PHY ONL UNI PUR COM NAV INT DEM CNT STA P
+        RE"
+        Last-Modified: Sun, 28 Sep 2003 23:54:44 GMT
+        ETag: "1b76bf-b910-3ede86c4"
+        Accept-Ranges: bytes
+        Content-Length: 47376
+        Content-Type: text/html
+        X-Cache: MISS from www.oreilly.com
+        X-Cache: MISS from 10.0.0.1
+        Connection: keep-alive</PRE></span></LI></OL></span>
+<P class="docText">You don't want your switch/router to intercept the
+connections that Squid makes to origin servers. If that happens,
+Squid ends up talking to itself and can't satisfy
+any cache misses. The best way to avoid forwarding loops like this is
+to make sure that your users and Squid connect to separate interfaces
+on the switch/router. Whenever feasible, you should apply the
+interception rules to specific interfaces. Obviously, you should not
+enable interception on the interface that Squid uses.</P>
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="squid-CHP-9.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="squid-CHP-9-SECT-2.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

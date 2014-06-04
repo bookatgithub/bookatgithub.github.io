@@ -1,0 +1,255 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;9.7.&nbsp;Storing Per-Thread Information</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-9-sect-6.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-9-sect-8.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-9-SECT-7"></a>
+<h3 class="docSection1Title">Recipe 9.7. Storing Per-Thread Information</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: John E. Barham, Sami Hangaslammi, Anthony
+Baxter</span></p>
+
+<a name="pythoncook2-CHP-9-SECT-7.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-9-ITERM-2553"></a>You need to allocate to
+each thread some storage that only that thread can use.</P>
+
+
+<a name="pythoncook2-CHP-9-SECT-7.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">Thread-specific storage is a useful design pattern, and Python 2.3
+did not yet support it directly. However, even in 2.3, we could code
+it up in terms of a dictionary protected by a lock. For once,
+it's slightly more general, and not significantly
+harder, to program to the lower-level <tt>thread</tt>
+module, rather than to the more commonly useful, higher-level
+<tt>tHReading</tt> module that Python offers on top of it:</p>
+
+<pre>_tss = {  }
+try:
+    import thread
+except ImportError:
+    # We're running on a single-threaded platform (or, at least, the Python
+    # interpreter has not been compiled to support threads), so we just return
+    # the same dict for every call -- there's only one thread around anyway!
+    def get_thread_storage( ):
+        return _tss
+else:
+    # We do have threads; so, to work:
+    _tss_lock = thread.allocate_lock( )
+    def get_thread_storage( ):
+        """ Return a thread-specific storage dictionary. """
+        thread_id = thread.get_ident( )
+        _tss_lock.acquire( )
+        try:
+            return _tss.set_default(thread_id, {  })
+        finally:
+            _tss_lock.release( )</pre><BR>
+
+
+<p class="docText">Python 2.4 offers a much simpler and faster implementation, of
+course, thanks to the new <tt>tHReading.local</tt>
+function:</p>
+
+<pre>try:
+    import threading
+except ImportError:
+    import dummy_threading as threading
+_tss = threading.local( )
+def get_thread_storage( ):
+    return _tss._ _dict_ _</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-9-SECT-7.3"></a>
+<H4 class="docSection2Title">Discussion</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-9-ITERM-2554"></a>The main benefit of multithreaded programs
+is that all of the threads can share global objects when they need to
+do so. Often, however, each thread also needs some storage of its
+ownfor example, to store a network or database connection
+unique to itself. Indeed, each such externally oriented object is
+generally best kept under the control of a single thread, to avoid
+multiple possibilities of highly peculiar behavior, race conditions,
+and so on. The <i>get_thread_storage</i> function in this
+recipe solves this problem by implementing the
+"thread-specific storage" design
+pattern, and specifically by returning a thread-specific storage
+dictionary. The calling thread can then use the returned dictionary
+to store any kind of data that is private to the thread. This recipe
+is, in a sense, a generalization of the
+<tt>get_transaction</tt> function from ZODB, the
+object-oriented database underlying Zope.</P>
+
+<p class="docText">One possible extension to this recipe is to add a
+<i>delete_thread_storage</i> function. Such a function
+would be useful, particularly if a way could be found to automate its
+being called upon thread termination. Python's
+threading architecture does not make this task particularly easy. You
+could spawn a watcher thread to do the deletion after a join with the
+calling thread, but that's a rather heavyweight
+approach. The recipe as presented, without deletion, is quite
+appropriate for the common and recommended architecture in which you
+have a pool of (typically daemonic) worker threads (perhaps some of
+them general workers, with others dedicated to interfacing to
+specific external resources) that are spawned at the start of the
+program and do not go away until the end of the whole process.</P>
+
+<p class="docText"><a name="pythoncook2-CHP-9-ITERM-2555"></a> <a name="pythoncook2-CHP-9-ITERM-2556"></a>
+<a name="pythoncook2-CHP-9-ITERM-2557"></a>
+<a name="pythoncook2-CHP-9-ITERM-2558"></a>
+<a name="pythoncook2-CHP-9-ITERM-2559"></a>When
+multithreading is involved, implementation must always be
+particularly careful to detect and prevent race conditions,
+deadlocks, and other such conflicts. In this recipe, I have decided
+not to assume that a dictionary's
+<tt>set_default</tt> method is
+<i>atomic</I> (meaning that no thread switch can
+occur while <tt>set_default</tt> executes)adding a
+key can potentially change the dictionary's whole
+structure, after all. If I was willing to make such an assumption, I
+could do away with the lock and vastly increase performance, but I
+suspect that such an assumption might make the code too fragile and
+dependent on specific versions of Python. (It seems to me that the
+assumption holds for Python 2.3, but, even if that is the case, I
+want my applications to survive subtle future changes to
+Python's internals.) Another risk is that, if a
+thread terminates and a new one starts, the new thread might end up
+with the same thread ID as the just-terminated one, and therefore
+accidentally share the "thread-specific
+storage" dictionary left behind by the
+just-terminated thread. This risk might be mitigated (though not
+eliminated) by providing the <i>delete_thread_storage</I>
+function mentioned in the previous paragraph. Again, this specific
+problem does not apply to me, given the kind of multithreading
+architecture that I use in my applications. If your architecture
+differs, you may want to modify this recipe's
+solution accordingly.</P>
+
+<p class="docText">If the performance of this recipe's version is
+insufficient for your application's needs, due to
+excessive overhead in acquiring and releasing the lock, then, rather
+than just removing the lock at the risk of making your application
+fragile, you might consider an alternative:</p>
+
+<pre>_creating_threads = True
+_tss_lock = thread.allocate_lock( )
+_tss = {  }
+class TssSequencingError(RuntimeError): pass
+def done_creating_threads( ):
+    """ switch from thread-creation to no-more-threads-created state """
+    global _creating_threads
+    if not _creating_threads:
+        raise TssSequencingError('done_creating_threads called twice')
+    _creating_threads = False
+def get_thread_storage( ):
+    """ Return a thread-specific storage dictionary. """
+    thread_id = thread.get_ident( )
+    # fast approach if thread-creation phase is finished
+    if not _creating_threads: return _tss[thread_id]
+    # careful approach if we're still creating threads
+    try:
+        _tss_lock.acquire( )
+        return _tss.setdefault(thread_id, {  })
+    finally:
+        _tss_lock.release( )</pre><br>
+
+
+<p class="docText">This variant adds a boolean switch
+<i>_creating_threads</i>, initially
+<tt>true</tt>. As long as the switch is
+<tt>true</tt>, the variant uses a careful locking-based
+approach, quite similar to the one presented in this
+recipe's Solution. At some point in time, when all
+threads that will ever exist (or at least all that will ever require
+access to <i>get_thread_storage</i>) have been started, and
+each of them has obtained its thread-local storage dictionary, your
+application calls <i>done_creating_threads</i>. This sets
+<i>_creating_threads</i> to <tt>False</tt>, and
+every future call to <i>get_thread_storage</I> then takes a
+fast path where it simply indexes into global dictionary
+<I>_tss</i>no more acquiring and releasing the lock,
+no more creating a thread's thread-local storage
+dictionary if it didn't yet exist.</p>
+
+<p class="docText">As long as your application can determine a moment in which it can
+truthfully call <I>done_creating_threads</i>, the variant
+in this subsection should definitely afford a substantial increase in
+speed compared to this recipe's Solution. Note that
+it is particularly likely that you can use this variant if your
+application follows the popular and recommended architecture
+mentioned previously: a bounded set of daemonic, long-lived worker
+threads, all created early in your program. This is fortunate,
+because, if your application is performance-sensitive enough to worry
+about the locking overhead of this recipe's
+solution, then no doubt you will want to structure your application
+that way. The alternative approach of having many short-lived threads
+is generally quite damaging to performance.</p>
+
+<p class="docText">If your application needs to run only under Python 2.4, you can get a
+much simpler, faster, and solid implementation by relying on the new
+<tt>threading.local</tt> function.
+<tt>threading.local</tt> returns a new object on which any
+thread can get and set arbitrary attributes, independently from
+whatever getting and setting other threads may be doing on the same
+object. This recipe, in the 2.4 variant, returns the per-thread
+<tt>_ _dict_ _</tt> of such an object, for uniformity with
+the 2.3 variant. This way, your applications can be made to run on
+both Python 2.3 and 2.4, using the best version in each case:</p>
+
+<pre>import sys
+if sys.version &gt;= '2.4':
+<i> # insert 2.4 definition of get_local_storage here</I>
+else:
+<i> # insert 2.3 definition of get_local_storage here</I></pre><br>
+
+
+<p class="docText">The 2.4 variant of this recipe also shows off the intended use of
+module <tt>dummy_threading</tt>, which, like its sibling
+<tt>dummy_thread</tt>, is also available in Python 2.3. By
+conditionally using these dummy modules, which are available on all
+platforms, whether or not Python was compiled with thread support,
+you may sometimes, with due care, be able to write applications that
+can run on any platform, taking advantage of threading where
+it's available but running anyway even where
+threading is not available. In the 2.3 variant, we did not use the
+similar approach based on <tt>dummy_thread</tt>, because
+the overhead would be too high to pay on nonthreaded platforms; in
+the 2.4 variant, overhead is pretty low anyway, so we went for the
+simplicity that <tt>dummy_threading</tt> affords.<a name="pythoncook2-CHP-9-ITERM-2560"></a></P>
+
+
+<a name="pythoncook2-CHP-9-SECT-7.4"></a>
+<h4 class="docSection2Title">See Also</H4>
+
+<p class="docText">For an exhaustive treatment of the design pattern that describes
+thread-specific storage (albeit aimed at C++ programmers), see
+Douglas Schmidt, Timothy Harrisson, Nat Pryce,
+<span class="docEmphasis">Thread-Specific Storage: An Object Behavioral Pattern for
+Efficiently Accessing per-Thread State</span> (<a class="docLink" target="_blank" href="http://www.cs.wustl.edu/~schmidt/PDF/TSS-pattern.pdf">http://www.cs.wustl.edu/~schmidt/PDF/TSS-pattern.pdf</a>);
+the <span class="docEmphasis">Library Reference</span> documentation
+<tt>dummy_thread</tt>, <tt>dummy_threading</tt>,
+and Python 2.4's <tt>tHReading.local</tt>;
+ZODB at <a class="docLink" target="_blank" href="http://zope.org/Wikis/ZODB/FrontPage">http://zope.org/Wikis/ZODB/FrontPage</a>.</p>
+
+
+
+<a href="5991535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><UL></UL></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-9-sect-6.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-9-sect-8.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

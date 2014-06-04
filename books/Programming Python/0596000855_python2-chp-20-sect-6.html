@@ -1,0 +1,654 @@
+<html><head>
+<META http-equiv="Content-Type" content="text/html">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="20.6 ppembed: A High-Level Embedding API"-->
+<link rel="STYLESHEET" type="text/css" href="FILES/style.css">
+<link rel="STYLESHEET" type="text/css" href="FILES/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+	<a href="0596000855_python2-CHP-20-SECT-5.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+	<a href="0596000855_python2-CHP-20-SECT-7.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr>
+<td valign="top"><A NAME="python2-CHP-20-SECT-6"></A>
+<H3 class="docSection1Title">20.6 ppembed: A High-Level Embedding API</H3>
+
+<P class="docText"><span class="docEmphasis">But don't do that</span><A NAME="python2-IDXTERM-2379"></A> <A NAME="python2-IDXTERM-2380"></A>
+<A NAME="python2-IDXTERM-2381"></A>
+<A NAME="python2-IDXTERM-2382"></A>. As you can probably
+tell from the last example, embedded-mode integration code can very
+quickly become as complicated as extending code for nontrivial use.
+Today, no automation solution solves the embedding problem as well as
+SWIG addresses extending. Because embedding does not impose the kind
+of structure that extension modules and types provide, it's
+much more of an open-ended problem; what automates one embedding
+strategy might be completely useless in another.
+</P>
+
+<P class="docText">With a little up-front work, though, you can still automate common
+embedding tasks by wrapping up calls in a higher-level API. These
+APIs could handle things such as error detection, reference counts,
+data conversions, and so on. One such API,
+<span class="docEmphasis">ppembed</span>, is available on this book's CD (see <A class="docLink" target="_blank" HREF="http://examples.oreilly.com/python2">http://examples.oreilly.com/python2</A>).
+It merely combines existing tools in Python's standard C API to
+provide a set of easier-to-use calls for running Python programs from
+C.
+</P>
+
+<A NAME="python2-CHP-20-SECT-6.1"></A>
+<H4 class="docSection2Title">20.6.1 Running Objects with ppembed</H4>
+
+<P class="docText"><A NAME="IXT-20-338245"></A> <A NAME="IXT-20-338246"></A><A class="docLink" HREF="#python2-CHP-20-EX-15">Example 20-15</A> demonstrates
+how to recode <I>objects-err-low.c </I>by linking
+ppembed's library files with your program.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-20-EX-15"></A>Example 20-15. PP2E\Integrate\Embed\ApiClients\object-api.c </H5>
+<PRE>#include &lt;stdio.h&gt;
+#include "ppembed.h"
+
+main (  ) {                                   /* with ppembed high-level api */
+  int failflag;
+  PyObject *pinst;
+  char *arg1="sir", *arg2="robin", *cstr;
+
+  failflag = PP_Run_Function("module", "klass", "O", &amp;pinst, "(  )") || 
+             PP_Run_Method(pinst, "method", "s", &amp;cstr, "(ss)", arg1, arg2);
+
+  printf("%s\n", (!failflag) ? cstr : "Can't call objects");
+  Py_XDECREF(pinst); free(cstr);
+}</PRE>
+
+
+<P class="docText">This file uses two ppembed calls (the names that start with
+"PP") to make the class instance and call its method.
+Because ppembed handles error checks, reference counts, data
+conversions, and so on, there isn't much else to do here. When
+this program is run and linked with ppembed library code, it works
+like the original, but is much easier to read, write, and debug:
+</P>
+
+<PRE>[mark@toy ~/.../PP2E/Integrate/Embed/ApiClients]$ <B>objects-api</B>
+brave sir robin</PRE>
+
+
+<A NAME="python2-CHP-20-SECT-6.2"></A>
+<H4 class="docSection2Title">20.6.2 Running Code Strings with ppembed</H4>
+
+<P class="docText"><A NAME="IXT-20-338247"></A>
+<A NAME="IXT-20-338248"></A>The ppembed API provides
+higher-level calls for most of the embedding techniques we've
+seen in this chapter. For example, the C program in <A class="docLink" HREF="#python2-CHP-20-EX-16">Example 20-16</A> runs code strings to make the
+<TT>string</TT> module capitalize a simple text.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-20-EX-16"></A>Example 20-16. PP2E\Integrate\Embed\ApiClients\codestring-low.c </H5>
+<PRE>#include &lt;Python.h&gt;          /* standard API defs  */
+void error(char *msg) { printf("%s\n", msg); exit(1); }
+
+main(  ) {
+    /* run strings with low-level calls */
+    char *cstr;
+    PyObject *pstr, *pmod, *pdict;               /* with error tests */
+    Py_Initialize(  );
+
+    /* result = string.upper('spam') + '!' */
+    pmod = PyImport_ImportModule("string");      /* fetch module */
+    if (pmod == NULL)                            /* for name-space */
+        error("Can't import module");
+
+    pdict = PyModule_GetDict(pmod);              /* string.__dict__ */
+    Py_DECREF(pmod);
+    if (pdict == NULL)
+        error("Can't get module dict");
+
+    pstr = PyRun_String("upper('spam') + '!'", Py_eval_input, pdict, pdict);
+    if (pstr == NULL)
+        error("Error while running string");
+
+    /* convert result to C */
+    if (!PyArg_Parse(pstr, "s", &amp;cstr))
+        error("Bad result type");
+    printf("%s\n", cstr);
+    Py_DECREF(pstr);        /* free exported objects, not pdict */
+}</PRE>
+
+
+<P class="docText">This C program file includes politically correct error tests after
+each API call. When run, it prints the result returned by running an
+uppercase conversion call in the namespace of the Python
+<TT>string</TT> module:
+</P>
+
+<PRE>[mark@toy ~/.../PP2E/Integrate/Embed/ApiClients]$ <B>codestring-low</B>
+SPAM!</PRE>
+
+<P class="docText">You can implement such integrations by calling Python API functions
+directly, but you don't necessarily have to. With a
+higher-level embedding API like ppembed, the task can be noticeably
+simpler, as shown in <A class="docLink" HREF="#python2-CHP-20-EX-17">Example 20-17</A>.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-20-EX-17"></A>Example 20-17. PP2E\Integrate\Embed\ApiClients\codestring-api.c </H5>
+<PRE>#include "ppembed.h"
+#include &lt;stdio.h&gt;
+                                          /* with ppembed high-level api */
+main(  ) { 
+    char *cstr;
+    int err = PP_Run_Codestr(
+                    PP_EXPRESSION,                       /* expr or stmt?  */
+                    "upper('spam') + '!'", "string",     /* code, module   */
+                    "s", &amp;cstr);                         /* expr result    */
+    printf("%s\n", (!err) ? cstr : "Can't run string");  /* and free(cstr) */
+}</PRE>
+
+
+<P class="docText">When linked with the ppembed library code, this version produces the
+same result as the former. Like most higher-level APIs, ppembed makes
+some usage mode assumptions that are not universally applicable; when
+they match the embedding task at hand, though, such wrapper calls can
+cut much clutter from programs that need to run embedded Python code.
+</P>
+
+
+<A NAME="python2-CHP-20-SECT-6.3"></A>
+<H4 class="docSection2Title">20.6.3 Running Customizable Validations</H4>
+
+<P class="docText"><A NAME="python2-IDXTERM-2387"></A> <A NAME="python2-IDXTERM-2388"></A>Embedded Python code can do useful
+work as well. For instance, the C program in <A class="docLink" HREF="#python2-CHP-20-EX-18">Example 20-18</A> calls ppembed functions to run a string of
+Python code fetched from a file that performs validation tests on
+inventory data. To save space, I'm not going list all the
+components used by this example (though you can find them at <A class="docLink" target="_blank" HREF="http://examples.oreilly.com/python2">http://examples.oreilly.com/python2</A>). Still, this file shows the embedding portions
+relevant to this chapter: it sets variables in the Python
+code's namespace to serve as input, runs the Python code, and
+then fetches names out of the code's namespace as
+results.<sup class="docFootnote"><A class="docLink" HREF="#">[8]</A></sup>
+</P>
+<blockquote><p class="docFootnote"><sup><A NAME="">[8]</A></sup> This is more or less the kind of structure
+used when Python is embedded in HTML files in the Active Scripting
+extension, except that the globals set here (e.g.,
+<TT>PRODUCT</TT>) become names preset to web browser
+objects, and the code is extracted from a web page, not fetched from
+a text file with a known name. See <A class="docLink" HREF="0596000855_python2-CHP-15.html#python2-CHP-15">Chapter 15</A>.</p></blockquote>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-20-EX-18"></A>Example 20-18. PP2E\Integrate\Embed\Inventory\order-string.c </H5>
+<PRE>/* run embedded code-string validations */
+
+#include &lt;ppembed.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+#include "ordersfile.h"
+
+run_user_validation(  )
+{                                 /* python is initialized automatically */
+    int i, status, nbytes;        /* caveat: should check status everywhere */
+    char script[4096];            /* caveat: should malloc a big-enough block */
+    char *errors, *warnings;
+    FILE *file;
+
+    file = fopen("validate1.py", "r");        /* customizable validations */
+    nbytes = fread(script, 1, 4096, file);    /* load python file text */
+    script[nbytes] = '\0';
+
+    status = PP_Make_Dummy_Module("orders");  /* application's own namespace */
+    for (i=0; i &lt; numorders; i++) {           /* like making a new dictionary */
+        printf("\n%d (%d, %d, '%s')\n", 
+            i, orders[i].product, orders[i].quantity, orders[i].buyer);
+
+        PP_Set_Global("orders", "PRODUCT",  "i", orders[i].product);   /* int */
+        PP_Set_Global("orders", "QUANTITY", "i", orders[i].quantity);  /* int */
+        PP_Set_Global("orders", "BUYER",    "s", orders[i].buyer);     /* str */
+
+        status = PP_Run_Codestr(PP_STATEMENT, script, "orders", "", NULL);
+        if (status == -1) {
+            printf("Python error during validation.\n");
+            PyErr_Print(  );  /* show traceback */
+            continue;
+        }
+
+        PP_Get_Global("orders", "ERRORS",   "s", &amp;errors);     /* can split */
+        PP_Get_Global("orders", "WARNINGS", "s", &amp;warnings);   /* on blanks */
+
+        printf("errors:   %s\n", strlen(errors)? errors : "none"); 
+        printf("warnings: %s\n", strlen(warnings)? warnings : "none"); 
+        free(errors); free(warnings);
+        PP_Run_Function("inventory", "print_files", "", NULL, "(  )"); 
+    }
+}
+
+main(int argc, char **argv)        /* C is on top, Python is embedded */
+{                                  /* but Python can use C extensions too */
+    run_user_validation(  );         /* don't need sys.argv in embedded code */
+}</PRE>
+
+
+<P class="docText">There are a couple of things worth noticing here. First of all, in
+practice this program might fetch the Python code file's name
+or path from configurable shell variables; here, it is loaded from
+the current directory. Secondly, you could also code this program by
+using straight API calls instead of ppembed, but each of the
+"PP" calls here would then grow into a chunk of more
+complex code. As coded, you can compile and link this file with
+Python and ppembed library files to build a program. The Python code
+run by the resulting C program lives in <A class="docLink" HREF="#python2-CHP-20-EX-19">Example 20-19</A>;
+it uses preset globals and is assumed to set globals to send result
+strings back to C.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-20-EX-19"></A>Example 20-19. PP2E\Integrate\Embed\Inventory\validate1.py </H5>
+<PRE># embedded validation code, run from C
+# input vars:  PRODUCT, QUANTITY, BUYER
+# output vars: ERRORS, WARNINGS
+
+import string              # all python tools are available to embedded code
+import inventory           # plus C extensions, Python modules, classes,..
+msgs, errs = [], []        # warning, error message lists
+
+def validate_order(  ):
+    if PRODUCT not in inventory.skus(  ):      # this function could be imported
+        errs.append('bad-product')           # from a user-defined module too
+    elif QUANTITY &gt; inventory.stock(PRODUCT):
+        errs.append('check-quantity')
+    else:
+        inventory.reduce(PRODUCT, QUANTITY)
+        if inventory.stock(PRODUCT) / QUANTITY &lt; 2:
+            msgs.append('reorder-soon:' + `PRODUCT`)
+
+first, last = BUYER[0], BUYER[1:]            # code is changeable on-site:
+if first not in string.uppercase:            # this file is run as one long
+    errs.append('buyer-name:' + first)       # code-string, with input and
+if BUYER not in inventory.buyers(  ):          # output vars used by the C app
+    msgs.append('new-buyer-added')
+    inventory.add_buyer(BUYER)
+validate_order(  )
+
+ERRORS   = string.join(errs)      # add a space between messages
+WARNINGS = string.join(msgs)      # pass out as strings: "" == none</PRE>
+
+
+<P class="docText">Don't sweat the details in this code; some components it uses
+are not listed here either (see <A class="docLink" target="_blank" HREF="http://examples.oreilly.com/python2">http://examples.oreilly.com/python2</A> for the full
+implementation). The thing you should notice, though, is that this
+code file can contain any kind of Python code -- it can define
+functions and classes, use sockets and threads, and so on. When you
+embed Python, you get a full-featured extension language for free.
+Perhaps even more importantly, because this file is Python code, it
+can be changed arbitrarily without having to recompile the C program.
+Such flexibility is especially useful after a system has been shipped
+and installed.
+</P>
+
+<P class="docText">As discussed earlier, there is a variety of ways to structure
+embedded Python code. For instance, you can implement similar
+flexibility by delegating actions to Python
+<span class="docEmphasis">functions</span> fetched from
+<span class="docEmphasis">module</span> files, as illustrated in <A class="docLink" HREF="#python2-CHP-20-EX-20">Example 20-20</A>.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-20-EX-20"></A>Example 20-20. PP2E\Integrate\Embed\Inventory\order-func.c </H5>
+<PRE>/* run embedded module-function validations */
+
+#include &lt;ppembed.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+#include "ordersfile.h"
+
+run_user_validation(  ) {
+    int i, status;                /* should check status everywhere */
+    char *errors, *warnings;      /* no file/string or namespace here */
+    PyObject *results;
+
+    for (i=0; i &lt; numorders; i++) {
+        printf("\n%d (%d, %d, '%s')\n", 
+            i, orders[i].product, orders[i].quantity, orders[i].buyer);
+
+        status = PP_Run_Function(                /* validate2.validate(p,q,b) */
+                         "validate2", "validate",  
+                         "O",          &amp;results,
+                         "(iis)",      orders[i].product, 
+                                       orders[i].quantity, orders[i].buyer);
+        if (status == -1) {
+            printf("Python error during validation.\n");
+            PyErr_Print(  );  /* show traceback */
+            continue;
+        }
+        PyArg_Parse(results, "(ss)", &amp;warnings, &amp;errors);
+        printf("errors:   %s\n", strlen(errors)? errors : "none"); 
+        printf("warnings: %s\n", strlen(warnings)? warnings : "none"); 
+        Py_DECREF(results);  /* ok to free strings */
+        PP_Run_Function("inventory", "print_files", "", NULL, "(  )");    
+    }
+}
+
+main(int argc, char **argv) {
+    run_user_validation(  );
+}</PRE>
+
+
+<P class="docText">The difference here is that the Python code file (shown in <A class="docLink" HREF="#python2-CHP-20-EX-21">Example 20-21</A>) is imported, and so must live on the Python
+module search path. It also is assumed to contain functions, not a
+simple list of statements. Strings can live anywhere -- files,
+databases, web pages, and so on, and may be simpler for end users to
+code. But assuming that the extra requirements of module functions
+are not prohibitive, functions provide a natural communication model
+in the form of arguments and return values.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-20-EX-21"></A>Example 20-21. PP2E\Integrate\Embed\Inventory\validate2.py </H5>
+<PRE># embedded validation code, run from C
+# input = args, output = return value tuple
+
+import string             
+import inventory         
+
+def validate(product, quantity, buyer):        # function called by name 
+    msgs, errs = [], []                        # via mod/func name strings 
+    first, last = buyer[0], buyer[1:]          
+    if first not in string.uppercase:         
+        errs.append('buyer-name:' + first)   
+    if buyer not in inventory.buyers(  ):     
+        msgs.append('new-buyer-added')
+        inventory.add_buyer(buyer)
+    validate_order(product, quantity, errs, msgs)     # mutable list args 
+    return string.join(msgs), string.join(errs)       # use "(ss)" format
+
+def validate_order(product, quantity, errs, msgs):
+    if product not in inventory.skus(  ): 
+        errs.append('bad-product') 
+    elif quantity &gt; inventory.stock(product):
+        errs.append('check-quantity')
+    else:
+        inventory.reduce(product, quantity)
+        if inventory.stock(product) / quantity &lt; 2:
+            msgs.append('reorder-soon:' + `product`)</PRE>
+
+
+
+<A NAME="python2-CHP-20-SECT-6.4"></A>
+<H4 class="docSection2Title">20.6.4 ppembed Implementation</H4>
+
+<P class="docText">The ppembed API originally appeared as an example in the first
+edition of this book. Since then, it has been utilized in real
+systems and become too large to present here in its entirety. For
+instance, ppembed also supports debugging embedded code (by routing
+it to the <TT>pdb</TT> debugger module), dynamically
+reloading modules containing embedded code, and other features too
+complex to illustrate usefully here.
+</P>
+
+<P class="docText">But if you are interested in studying another example of Python
+embedding calls in action, ppembed's full source code and
+makefile live in this directory on the enclosed CD (see <A class="docLink" target="_blank" HREF="http://examples.oreilly.com/python2">http://examples.oreilly.com/python2</A>):
+</P>
+
+<DL class="docList">
+<DD><span class="docEmphasis">PP2E\Integration\Embed\HighLevelApi</span></DD>
+</DL>
+
+<P class="docText">As a sample of the kinds of tools you can build to simplify
+embedding, the ppembed API's header file is shown in <A class="docLink" HREF="#python2-CHP-20-EX-22">Example 20-22</A>. You are invited to study, use, copy, and
+improve its code as you like. Or simply write an API of your own; the
+main point to take from this section is that embedding programs need
+only be complicated if you stick with the Python runtime API as
+shipped. By adding convenience functions such as those in ppembed,
+embedding can be as simple as you make it. It also makes your C
+programs immune to changes in the Python C core; ideally, only the
+API must change if Python ever does.
+</P>
+
+<P class="docText">Be sure to also see file <I>abstract.h</I> in the
+Python include directory if you are in the market for higher-level
+interfaces. That file provides generic type operation calls that make
+it easy to do things like creating, filling, indexing, slicing, and
+concatenating Python objects referenced by pointer from C. Also see
+the corresponding implementation file,
+<I>abstract.c</I>, as well as the Python built-in
+module and type implementations in the Python source distribution for
+more examples of lower-level object access. Once you have a Python
+object pointer in C, you can do all sorts of type-specific things to
+Python inputs and outputs.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-20-EX-22"></A>Example 20-22. PP2E\Integrate\Embed\HighLevelApi\ppembed.h </H5>
+<A NAME="IXTR3-561"></A><A NAME="IXTR3-562"></A><A NAME="IXTR3-563"></A><A NAME="IXTR3-564"></A><A NAME="IXTR3-565"></A><PRE>/*************************************************************************
+ * PPEMBED, VERSION 2.0
+ * AN ENHANCED PYTHON EMBEDDED-CALL INTERFACE 
+ *
+ * Wraps Python's run-time embedding API functions for easy use.
+ * Most utilities assume the call is qualified by an enclosing module
+ * (namespace). The module can be a file-name reference or a dummy module
+ * created to provide a namespace for file-less strings. These routines
+ * automate debugging, module (re)loading, input/output conversions, etc.
+ *
+ * Python is automatically initialized when the first API call occurs.
+ * Input/output conversions use the standard Python conversion format
+ * codes (described in the C API manual).  Errors are flagged as either 
+ * a -1 int, or a NULL pointer result.  Exported names use a PP_ prefix
+ * to minimize clashes; names in the built-in Python API use Py prefixes
+ * instead (alas, there is no "import" equivalent in C, just "from*").  
+ * Also note that the varargs code here may not be portable to certain
+ * C compilers; to do it portably, see the text or file 'vararg.txt' 
+ * here, or search for string STDARG in Python's source code files.
+ *
+ * New in this version/edition: names now have a PP_ prefix, files
+ * renamed, compiles to a single .a file, fixed pdb retval bug for 
+ * strings, and char* results returned by the "s" convert code now 
+ * point to new char arrays which the caller should free(  ) when no 
+ * longer needed (this was a potential bug in prior version).  Also 
+ * added new API interfaces for fetching exception info after errors, 
+ * precompiling code strings to byte code, and calling simple objects.
+ *
+ * Also fully supports Python 1.5 module package imports: module names 
+ * in this API can take the form "package.package.[...].module", where 
+ * Python maps the package names to a nested directories path in your 
+ * file system hierarchy;  package dirs all contain __init__.py files,
+ * and the leftmost one is in a directory found on PYTHONPATH. This
+ * API's dynamic reload feature also works for modules in packages;
+ * Python stores the full path name in the sys.modules dictionary.
+ *
+ * Caveats: there is no support for advanced things like threading or 
+ * restricted execution mode here, but such things may be added with 
+ * extra Python API calls external to this API (see the Python/C API 
+ * manual for C-level threading calls; see modules rexec and bastion 
+ * in the library manual for restricted mode details).  For threading,
+ * you may also be able to get by with C threads and distinct Python 
+ * namespaces per Python code segments, or Python language threads 
+ * started by Python code run from C (see the Python thread module).
+ * 
+ * Note that Python can only reload Python modules, not C extensions,
+ * but it's okay to leave the dynamic reload flag on even if you might 
+ * access dynamically-loaded C extension modules--in 1.5.2, Python
+ * simply resets C extension modules to their initial attribute state 
+ * when reloaded, but doesn't actually reload the C extension file.
+ *************************************************************************/
+
+#ifndef PPEMBED_H
+#define PPEMBED_H
+
+#ifdef __cplusplus
+extern "C" {             /* a C library, but callable from C++ */
+#endif     
+
+#include &lt;stdio.h&gt;
+#include &lt;Python.h&gt;
+
+extern int PP_RELOAD;    /* 1=reload py modules when attributes referenced */
+extern int PP_DEBUG;     /* 1=start debugger when string/function/member run */
+
+typedef enum {
+     PP_EXPRESSION,      /* which kind of code-string */
+     PP_STATEMENT        /* expressions and statements differ */
+} PPStringModes;
+
+
+/***************************************************/
+/*  ppembed-modules.c: load,access module objects  */
+/***************************************************/
+
+extern char     *PP_Init(char *modname);
+extern int       PP_Make_Dummy_Module(char *modname);
+extern PyObject *PP_Load_Module(char *modname);
+extern PyObject *PP_Load_Attribute(char *modname, char *attrname);
+extern int       PP_Run_Command_Line(char *prompt);
+
+
+/**********************************************************/
+/*  ppembed-globals.c: read,write module-level variables  */
+/**********************************************************/
+
+extern int
+    PP_Convert_Result(PyObject *presult, char *resFormat, void *resTarget);
+
+extern int 
+    PP_Get_Global(char *modname, char *varname, char *resfmt, void *cresult);
+
+extern int
+    PP_Set_Global(char *modname, char *varname, char *valfmt, ... /*val*/);
+
+
+/***************************************************/
+/*  ppembed-strings.c: run strings of Python code  */
+/***************************************************/
+
+extern int                                         /* run C string of code */
+    PP_Run_Codestr(PPStringModes mode,             /* code=expr or stmt?  */
+                   char *code,   char *modname,    /* codestr, modnamespace */
+                   char *resfmt, void *cresult);   /* result type, target */
+
+extern PyObject*
+    PP_Debug_Codestr(PPStringModes mode,           /* run string in pdb */
+                     char *codestring, PyObject *moddict);
+
+extern PyObject *
+    PP_Compile_Codestr(PPStringModes mode, 
+                       char *codestr);             /* precompile to bytecode */
+
+extern int
+    PP_Run_Bytecode(PyObject *codeobj,             /* run a bytecode object */
+                    char     *modname, 
+                    char     *resfmt, void *restarget);
+
+extern PyObject *                                  /* run bytecode under pdb */
+    PP_Debug_Bytecode(PyObject *codeobject, PyObject *moddict); 
+
+
+/*******************************************************/
+/*  ppembed-callables.c: call functions, classes, etc. */
+/*******************************************************/
+
+extern int                                                  /* mod.func(args) */
+    PP_Run_Function(char *modname, char *funcname,          /* func|classname */
+                    char *resfmt,  void *cresult,           /* result target  */
+                    char *argfmt,  ... /* arg, arg... */ ); /* input arguments*/
+
+extern PyObject*
+    PP_Debug_Function(PyObject *func, PyObject *args);   /* call func in pdb */
+
+extern int
+    PP_Run_Known_Callable(PyObject *object,              /* func|class|method */
+                          char *resfmt, void *restarget, /* skip module fetch */
+                          char *argfmt, ... /* arg,.. */ );
+
+
+/**************************************************************/
+/*  ppembed-attributes.c: run object methods, access members  */
+/**************************************************************/
+
+extern int 
+    PP_Run_Method(PyObject *pobject, char *method,     /* uses Debug_Function */
+                      char *resfmt,  void *cresult,              /* output */
+                      char *argfmt,  ... /* arg, arg... */ );    /* inputs */
+
+extern int 
+    PP_Get_Member(PyObject *pobject, char *attrname,
+                      char *resfmt,  void *cresult);             /* output */
+
+extern int 
+    PP_Set_Member(PyObject *pobject, char *attrname,
+                      char *valfmt,  ... /* val, val... */ );    /* input */
+
+
+/**********************************************************/
+/*  ppembed-errors.c: get exception data after api error  */ 
+/**********************************************************/
+
+extern void PP_Fetch_Error_Text(  );    /* fetch (and clear) exception */
+
+extern char PP_last_error_type[];     /* exception name text */
+extern char PP_last_error_info[];     /* exception data text */
+extern char PP_last_error_trace[];    /* exception traceback text */
+
+extern PyObject *PP_last_traceback;   /* saved exception traceback object */
+
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif (!PPEMBED_H)
+
+
+</PRE>
+
+
+
+<A NAME="python2-CHP-20-SECT-6.5"></A>
+<H4 class="docSection2Title">20.6.5 Other Integration Examples on the CD</H4>
+
+<P class="docText"><A NAME="IXT-20-338249"></A>While
+writing this chapter, I ran out of space before I ran out of
+examples. Besides the ppembed API example described in the last
+section, you can find a handful of additional Python/C integration
+self-study examples on this book's CD (see <A class="docLink" target="_blank" HREF="http://examples.oreilly.com/python2">http://examples.oreilly.com/python2</A>):
+</P>
+
+<DL class="docList">
+<DT><I><span class="docPubcolor">PP2E\Integration\Embed\Inventory</span></I></DT>
+<DD>
+<P class="docList">The full implementation of the validation examples listed earlier.
+This case study uses the ppembed API to run embedded Python order
+validations, both as embedded code strings and as functions fetched
+from modules. The inventory is implemented with and without shelves
+and pickle files for data persistence.
+</P>
+</DD><DT><I><span class="docPubcolor">PP2E\Integration\Mixed\Exports</span></I></DT>
+<DD>
+<P class="docList">A tool for exporting C variables for use in embedded Python programs.</P>
+</DD><DT><I><span class="docPubcolor">PP2E\Integration\Embed\TestApi</span></I></DT>
+<DD>
+<P class="docList">A simple ppembed test program, shown with and without package import
+paths to identify modules.
+</P>
+</DD>
+</DL>
+
+<P class="docText">Some of these are large C examples that are probably better studied
+than listed.
+</P>
+
+
+
+<ul></ul>
+</td>
+</tr>
+</table>
+<td></td>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+          <a href="0596000855_python2-CHP-20-SECT-5.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+          <a href="0596000855_python2-CHP-20-SECT-7.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+</body></html>

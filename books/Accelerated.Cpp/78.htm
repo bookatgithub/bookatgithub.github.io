@@ -1,0 +1,93 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
+<title>12.6 Conversions and memory management</title>
+<link rel="stylesheet" type="text/css" href="./acc.css" />
+</head>
+
+<body>
+<div class="prevnext">
+<a href="77.htm"><img src="images/Prev1.gif" /></a>&nbsp;&nbsp;<a href="79.htm"><img src="images/Next1.gif" /></a>
+</div>
+<h3>12.6 Conversions and memory management</h3>
+<p>Many C++ programs interface to systems written in C or assembly language that use 
+null-terminated arrays of characters to hold string data. As we saw in &sect;10.5.2/180, the 
+C++ standard library itself uses this convention to obtain the names of input and output 
+files. Because of this convention, we might conclude that our <code>Str</code> class should provide a 
+conversion from <code>Str</code> to a null-terminated array of characters. If we did so, then our users 
+could (automatically) pass <code>Str</code>s to functions that operate on null-terminated arrays. 
+Unfortunately, as we shall see, doing so is fraught with memory-management pitfalls.</p>
+<p>Assuming that we wanted to provide a conversion from <code>Str</code> to <code>char*</code>, we'd probably 
+want to provide both <code>const</code> and non<code>const</code> versions:</p>
+<div class="prebox"><pre>
+class Str {
+public:
+    // <i>plausible, but problematic conversion operations</i>
+    operator char*();                    // added
+    operator const char*() const;        // added
+
+    // as before
+private:
+    Vec&lt;char&gt; data;
+};
+</pre></div>
+<p>With this rewrite, <code>Str</code> users could write code such as</p>
+<div class="prebox"><pre>
+Str S;
+// ...
+ifstream in(s);    // <i>wishful thinking: convert </i>s <i>and then open the </i>stream <i>named</i> s
+</pre></div>
+<p>The only problem is that these conversions are almost impossible to implement well. We 
+can't just return <code>data</code>, most obviously because it's the wrong type: <code>data</code> is a <code>Vec&lt;char&gt;</code>, 
+and we need an array of <code>char</code>. More subtly, even if the types matched, returning <code>data</code> 
+would violate class <code>Str</code>'s encapsulation: A user who obtained a pointer to <code>data</code> could 
+use that pointer to change the value of the <code>string</code>. Just as bad, consider what happens 
+when the <code>Str</code> is destroyed. If the user tries to use the pointer after the <code>Str</code> object no 
+longer exists, then the pointer will point to memory that has been returned to the system 
+and is no longer valid.</p>
+<p>We can solve the encapsulation problem by providing only a conversion to <code>const char*</code>, 
+but doing so does not prevent a user from destroying the <code>Str</code> and then using the 
+pointer. We can solve this second problem by allocating new space for a copy of the characters 
+from <code>data</code>, and returning a pointer to this newly allocated space. The user would 
+then have to manage this space, freeing it when it is no longer needed.</p>
+<p>As it turns out, this design won't work either. Conversions may happen implicitly, in 
+which case the user has no pointer to destroy! Look again at</p>
+<div class="prebox"><pre>
+Str s;
+ifstream is(s);      // <i>implicit conversion—how can we free the array?</i>
+</pre></div>
+<p>If the <code>Str</code> class had the proposed conversion, then when we passed <code>s</code> to the <code>ifstream</code> 
+constructor, we would implicitly convert the <code>Str</code> to the <code>const char*</code> that the constructor 
+expects. This conversion would allocate new space to hold a copy of the value of 
+<code>s</code>. However, there is no explicit pointer to this space, and so the user cannot free it. 
+Clearly, a design that mandates memory leaks cannot be right.</p>
+<p>When we design a class, we want to avoid letting users trip up by writing innocuous-
+looking code that gets them in trouble. Before the C++ standard was finished, many 
+library vendors offered various kinds of <code>string</code>s. Some surely provided implicit conversions 
+to character arrays, but did so in a way that allowed users to make one or both of the 
+potential errors outlined earlier.</p>
+<p>The standard <code>string</code> library takes a different approach: It lets users get a copy of the 
+<code>string</code> in a character array, but makes them do so explicitly. The standard <code>string</code> class 
+provides three member functions for getting a char array from a <code>string</code>.  The first, 
+<code>c_str()</code>, copies the contents of the <code>string</code> into a null-terminated <code>char</code> array. The 
+<code>string</code> class owns the array, and the user is expected not to <code>delete</code> the pointer. Data in 
+the array are ephemeral, and will be valid only until the next call of a member function 
+that might change the <code>string</code>. Users are expected either to use the pointer immediately 
+or to copy the data into storage that they will manage. The second function, <code>data()</code>, is 
+like <code>c_str()</code>, except that it returns an array that is not null terminated. Finally, the <code>copy</code> 
+function takes a <code>char*</code> and an integer as arguments, and copies as many characters as 
+indicated by the integer into space pointed to by the <code>char*</code>, which space the user must 
+allocate and free. We leave the implementation of these functions as an exercise.</p>
+<p>Note that both <code>c_str</code> and <code>data</code> share the pitfalls of the implicit conversion to 
+<code>const char*</code>. On the other hand, because users must request the conversion explicitly, they are 
+more likely to know about the functions that they call. This knowledge should include 
+the pitfalls inherent in retaining a copy of the pointer. If the library allowed implicit conversions, 
+it would be easier for users to stumble into these problems. They might not 
+even be aware that they had caused a conversion to take place, so they might be less likely 
+to understand why things failed when they did.</p>
+<div class="prevnext">
+<a href="77.htm"><img src="images/Prev1.gif" /></a>&nbsp;&nbsp;<a href="79.htm"><img src="images/Next1.gif" /></a>
+</div>
+</body>
+</html>

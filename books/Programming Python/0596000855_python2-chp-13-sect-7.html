@@ -1,0 +1,310 @@
+<html><head>
+<META http-equiv="Content-Type" content="text/html">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="13.7 CGI Script Trade-offs"-->
+<link rel="STYLESHEET" type="text/css" href="FILES/style.css">
+<link rel="STYLESHEET" type="text/css" href="FILES/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+	<a href="0596000855_python2-CHP-13-SECT-6.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+	<a href="0596000855_python2-CHP-14.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr>
+<td valign="top"><A NAME="python2-CHP-13-SECT-7"></A>
+<H3 class="docSection1Title">13.7 CGI Script Trade-offs</H3>
+
+<P class="docText">As shown in this chapter, PyMailCgi is still something of a system in
+the making, but it does work as advertised: by pointing a browser at
+the main page's URL, I can check and send email from anywhere I
+happen to be, as long as I can find a machine with a web browser. In
+fact, any machine and browser will do: Python doesn't even have
+to be installed.<sup class="docFootnote"><A class="docLink" HREF="#">[5]</A></sup>
+That's not the case with the PyMailGui client-side program we
+wrote in <A class="docLink" HREF="0596000855_python2-CHP-11.html#python2-CHP-11">Chapter 11</A>.
+</P>
+<blockquote><p class="docFootnote"><sup><A NAME="">[5]</A></sup> This property can be especially
+useful when visiting government institutions, which seem to generally
+provide web browser accessibility, but restrict administrative
+functions and broader network connectivity to officially cleared
+system administrators (and international spies). </p></blockquote>
+
+<P class="docText">But before we all jump on the collective Internet bandwagon and
+utterly abandon traditional APIs like Tkinter, a few words of larger
+context are in order. Besides illustrating larger CGI applications in
+general, this example was chosen to underscore some of the trade-offs
+you run into when building applications to run on the Web. PyMailGui
+and PyMailCgi do roughly the same things, but are radically different
+in
+implementation:<A NAME="IXT-13-337668"></A>
+</P>
+
+<UL>
+<LI><P class="docList">PyMailGui is a traditional user-interface program: it runs entirely
+on the local machine, calls out to an in-process GUI API library to
+implement interfaces, and talks to the Internet through sockets only
+when it has to (e.g., to load or send email on demand). User requests
+are routed immediately to callback handler functions or methods
+running locally, with shared variables that automatically retain
+state between requests. For instance, PyMailGui only loads email
+once, keeps it in memory, and only fetches newly arrived messages on
+future loads because its memory is retained between events.
+</P></LI>
+<LI><P class="docList">PyMailCgi, like all CGI systems, consists of scripts that reside and
+run on a server machine, and generate HTML to interact with a user at
+a web browser on the client machine. It runs only in the context of a
+web browser, and handles user requests by running CGI scripts
+remotely on the server. Unless we add a real database system, each
+request handler runs autonomously, with no state information except
+that which is explicitly passed along by prior states as hidden form
+fields or URL parameters. As coded, PyMailCgi must reload all email
+whenever it needs to process incoming email in any way.
+</P></LI>
+</UL>
+<P class="docText">On a basic level, both systems use the Python POP and SMTP modules to
+fetch and send email through sockets. But the implementation
+alternatives they represent have some critical ramifications that you
+should know about when considering delivering systems on the Web:
+</P>
+
+<A NAME="IXT-13-337669"></A><A NAME="IXT-13-337670"></A><A NAME="IXT-13-337671"></A><A NAME="IXT-13-337672"></A><A NAME="IXT-13-337673"></A><A NAME="IXT-13-337674"></A><A NAME="IXT-13-337675"></A><A NAME="IXT-13-337676"></A><DL class="docList">
+<DT><I><span class="docPubcolor">Performance costs</span></I></DT>
+<DD>
+<P class="docList"><span class="docEmphasis">Networks are slower than
+CPUs</span><A NAME="IXT-13-337669"></A>
+<A NAME="IXT-13-337670"></A>. As
+implemented, PyMailCgi isn't nearly as fast or as complete as
+PyMailGui. In PyMailCgi, every time the user clicks a submit button,
+the request goes across the network. More specifically, every user
+request incurs a network transfer overhead, every callback handler
+(usually) takes the form of a newly spawned process on the server,
+parameters come in as text strings that must be parsed out, and the
+lack of state information on the server between pages means that mail
+needs to be reloaded often. In contrast, user clicks in PyMailGui
+trigger in-process function calls instead of network traffic and
+process forks, and state is easily saved as Python in-process
+variables (e.g., the loaded-mail list is retained between clicks).
+Even with an ultra-fast Internet connection, a server-side CGI system
+is slower than a client-side program.<sup class="docFootnote"><A class="docLink" HREF="#">[6]</A></sup>
+</P> <blockquote><p class="docFootnote"><sup><A NAME="">[6]</A></sup> To be fair,
+some Tkinter operations are sent to the underlying Tcl library as
+strings too, which must be parsed. This may change in time; but the
+contrast here is with CGI scripts versus GUI libraries in general,
+not with a particular library's implementation. </p></blockquote>
+
+
+<P class="docList">Some of these bottlenecks may be designed away at the cost of extra
+program complexity. For instance, some web servers use threads and
+process pools to minimize process creation for CGI scripts. Moreover,
+some state information can be manually passed along from page to page
+in hidden form fields and generated URL parameters, and state can be
+saved between pages in a concurrently accessible database to minimize
+mail reloads (see the PyErrata case study in <A class="docLink" HREF="0596000855_python2-CHP-14.html#python2-CHP-14">Chapter 14</A> for an example). But there's no getting
+past the fact that routing events over a network to scripts is much
+slower than calling a Python function directly.
+</P>
+</DD><DT><I><span class="docPubcolor">Complexity costs</span></I></DT>
+<DD>
+<P class="docList"><span class="docEmphasis">HTML isn't pretty</span><A NAME="IXT-13-337671"></A>
+<A NAME="IXT-13-337672"></A>.
+Because PyMailCgi must generate HTML to interact with the user in a
+web browser, it is also more complex (or at least, less readable)
+than PyMailGui. In some sense, CGI scripts embed HTML code in Python.
+Because the end result of this is a mixture of two very different
+languages, creating an interface with HTML in a CGI script can be
+much less straightforward than making calls to a GUI API such as
+Tkinter.
+</P>
+
+<P class="docList">Witness, for example, all the care we've taken to escape HTML
+and URLs in this chapter's examples; such constraints are
+grounded in the nature of HTML. Furthermore, changing the system to
+retain loaded-mail list state in a database between pages would
+introduce further complexities to the CGI-based solution. Secure
+sockets (e.g., OpenSSL, to be supported in Python 1.6) would
+eliminate manual encryption costs, but introduce other overheads.
+</P>
+</DD><DT><I><span class="docPubcolor">Functionality costs</span></I></DT>
+<DD>
+<P class="docList"><span class="docEmphasis">HTML can only say so much</span>. HTML is a portable
+way to specify simple pages and forms, but is poor to useless when it
+comes to describing more complex user interfaces. Because CGI scripts
+create user interfaces by writing HTML back to a browser, they are
+highly limited in terms of user-interface constructs.
+</P>
+
+<P class="docList">For example, consider implementing an image-processing and animation
+program as CGI scripts: HTML doesn't apply once we leave the
+domain of fill-out forms and simple interactions. This is precisely
+the limitation that Java applets were designed to
+address -- programs that are stored on a server but pulled down to
+run on a client on demand, and given access to a full-featured GUI
+API for creating richer user interfaces. Nevertheless, strictly
+server-side programs are inherently limited by the constraints of
+HTML. The animation scripts we wrote at the end of <A class="docLink" HREF="0596000855_python2-CHP-8.html#python2-CHP-8">Chapter 8</A>, for example, are well beyond the scope of
+server-side scripts.
+</P>
+</DD><DT><I><span class="docPubcolor">Portability benefits</span></I></DT>
+<DD>
+<P class="docList"><span class="docEmphasis">All you need is a
+browser</span><A NAME="IXT-13-337673"></A>
+<A NAME="IXT-13-337674"></A>. On
+the client side, at least. Because PyMailCgi runs over the Web, it
+can be run on any machine with a web browser, whether that machine
+has Python and Tkinter installed or not. That is, Python needs to be
+installed on only one computer: the web server machine where the
+scripts actually live and run. As long as you know that the users of
+your system have an Internet browser, installation is simple.
+</P>
+
+<P class="docList">Python and Tkinter, you will recall, are very portable too -- they
+run on all major window systems (X, Windows, Mac) -- but to run a
+client-side Python/Tk program such as PyMailGui, you need Python and
+Tkinter on the client machine itself. Not so with an application
+built as CGI scripts: they will work on Macintosh, Linux, Windows,
+and any other machine that can somehow render HTML web pages. In this
+sense, HTML becomes a sort of portable GUI API language in CGI
+scripts, interpreted by your web browser. You don't even need
+the source code or bytecode for the CGI scripts themselves -- they
+run on a remote server that exists somewhere else on the Net, not on
+the machine running the browser.
+</P>
+</DD><DT><I><span class="docPubcolor">Execution requirements</span></I></DT>
+<DD>
+<P class="docList"><span class="docEmphasis">But you do need a browser</span>. That is, the very
+nature of web-enabled systems can render them useless in some
+environments. Despite the pervasiveness of the Internet, there are
+still plenty of applications that run in settings that don't
+have web browsers or Internet access. Consider, for instance,
+embedded systems, real-time systems, and secure government
+applications. While an Intranet (a local network without external
+connections) can sometimes make web applications feasible in some
+such environments, I have recently worked at more than one company
+whose client sites had no web browsers to speak of. On the other
+hand, such clients may be more open to installing systems like Python
+on local machines, as opposed to supporting an internal or external
+network.
+</P>
+</DD><DT><I><span class="docPubcolor">Administration requirements</span></I></DT>
+<DD>
+<P class="docList"><span class="docEmphasis">You really need a server
+too</span><A NAME="IXT-13-337675"></A>
+<A NAME="IXT-13-337676"></A>. You can't write CGI-based
+systems at all without access to a web sever. Further, keeping
+programs on a centralized server creates some fairly critical
+administrative overheads. Simply put, in a pure client/server
+architecture, clients are simpler, but the server becomes a critical
+path resource and a potential performance bottleneck. If the
+centralized server goes down, you, your employees, and your customers
+may be knocked out of commission. Moreover, if enough clients use a
+shared server at the same time, the speed costs of web-based systems
+become even more pronounced. In fact, one could make the argument
+that moving towards a web server architecture is akin to stepping
+backwards in time -- to the time of centralized mainframes and
+dumb terminals. Whichever way we step, offloading and distributing
+processing to client machines at least partially avoids this
+processing bottleneck.
+</P>
+</DD>
+</DL>
+
+<P class="docText"><A NAME="IXT-13-337677"></A>So
+what's the best way to build applications for the
+Internet -- as client-side programs that talk to the Net, or as
+server-side programs that live and breathe on the Net? Naturally,
+there is no one answer to that question, since it depends upon each
+application's unique constraints. Moreover, there are more
+possible answers to it than we have proposed here; most common CGI
+problems already have common proposed solutions. For example:
+</P>
+
+<A NAME="IXT-13-337678"></A><A NAME="IXT-13-337679"></A><A NAME="IXT-13-337680"></A><A NAME="IXT-13-337681"></A><A NAME="IXT-13-337682"></A><DL class="docList">
+<DT><I><span class="docPubcolor">Client-side solutions</span></I></DT>
+<DD>
+<P class="docList">Client- and server-side programs can be mixed in many ways. For
+instance, <span class="docEmphasis">applet</span> programs live on a server, but
+are downloaded to and run as client-side programs with access to rich
+GUI libraries (more on applets when we discuss JPython in <A class="docLink" HREF="0596000855_python2-CHP-15.html#python2-CHP-15">Chapter 15</A>). Other technologies, such as embedding
+JavaScript or Python directly in HTML code, also support client-side
+execution and richer GUI possibilities; such scripts live in HTML on
+the server, but run on the client when downloaded and access browser
+components through an exposed object model (see the discussion <A class="docLink" HREF="0596000855_python2-CHP-15-SECT-8.html#python2-CHP-15-SECT-8">Section 15.8</A> near the end of <A class="docLink" HREF="0596000855_python2-CHP-15.html#python2-CHP-15">Chapter 15</A>). The emerging Dynamic HTML (DHTML) extensions
+provide yet another client-side scripting option for changing web
+pages after they have been constructed. All of these client-side
+technologies add extra complexities all their own, but ease some of
+the limitations imposed by straight HTML.<A NAME="IXT-13-337678"></A>
+<A NAME="IXT-13-337679"></A>
+</P>
+</DD><DT><I><span class="docPubcolor">State retention solutions</span></I></DT>
+<DD>
+<P class="docList">Some web application servers (e.g., Zope, described in <A class="docLink" HREF="0596000855_python2-CHP-15.html#python2-CHP-15">Chapter 15</A>) naturally support state retention between
+pages by providing concurrently accessible object databases. Some of
+these systems have a real underlying database component (e.g., Oracle
+and mySql); others may make use of files or Python persistent object
+shelves with appropriate locking (as we'll explore in the next
+chapter). Scripts can also pass state information around in hidden
+form fields and generated URL parameters, as done in PyMailCgi, or
+store it on the client machine itself using the standard cookie
+protocol.
+</P>
+
+<P class="docList"><span class="docEmphasis">Cookies</span><A NAME="IXT-13-337680"></A>
+<A NAME="IXT-13-337681"></A> are
+bits of information stored on the client upon request from the
+server. A cookie is created by sending special headers from the
+server to the client within the response HTML
+(<TT>Set-Cookie:</TT> <TT>name=value</TT>). It is
+then accessed in CGI scripts as the value of a special environment
+variable containing cookie data uploaded from the client
+(<TT>HTTP_COOKIE</TT>). Search <A class="docLink" target="_blank" HREF="http://www.python.org/default.htm">http://www.python.org</A> for more details on
+using cookies in Python scripts, including the freely available
+<I>cookie.py</I> module, which automates the cookie
+translation process.<sup class="docFootnote"><A class="docLink" HREF="#">[7]</A></sup> Cookies are more complex than program variables and are
+somewhat controversial (some see them as intrusive), but they can
+offload some simple state retention tasks.
+</P> <blockquote><p class="docFootnote"><sup><A NAME="">[7]</A></sup> Also see the new standard
+<TT>cookie</TT> module in Python release 2.0.</p></blockquote>
+
+</DD><DT><I><span class="docPubcolor">HTML generation solutions</span></I></DT>
+<DD>
+<P class="docList"><A NAME="IXT-13-337682"></A>Add-ons
+can also take some of the complexity out of embedding HTML in Python
+CGI scripts, albeit at some cost to execution speed. For instance,
+the HTMLgen system described in <A class="docLink" HREF="0596000855_python2-CHP-15.html#python2-CHP-15">Chapter 15</A> lets
+programs build pages as trees of Python objects that
+"know" how to produce HTML. When a system like this is
+employed, Python scripts deal only with objects, not the syntax of
+HTML itself. Other systems such as PHP and Active Server Pages
+(described in the same chapter) allow scripting language code to be
+embedded in HTML and executed on the server, to dynamically generate
+or determine part of the HTML that is sent back to a client in
+response to requests.
+</P>
+</DD>
+</DL>
+
+<P class="docText">Clearly, Internet technology does imply some design trade-offs, and
+is still evolving rapidly. It is nevertheless an appropriate delivery
+context for many (though not all) applications. As with every design
+choice, you must be the judge. While delivering systems on the Web
+may have some costs in terms of performance, functionality, and
+complexity, it is likely that the significance of those overheads
+will diminish with time.
+</P>
+
+
+<ul></ul>
+</td>
+</tr>
+</table>
+<td></td>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+          <a href="0596000855_python2-CHP-13-SECT-6.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+          <a href="0596000855_python2-CHP-14.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+</body></html>

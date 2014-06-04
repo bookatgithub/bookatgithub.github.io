@@ -1,0 +1,524 @@
+<HTML><HEAD><META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=iso-8859-1">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="13.6 Data Laundering with Python"-->
+<LINK REL="stylesheet" href="FILES/sbolM.css">
+</HEAD>
+<BODY link="#354278" vlink="#000066" alink="#000080" topmargin="0">
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right"><a href="pythonwin32_snode107.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a> <a href="pythonwin32_snode109.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a></td></table>
+<FONT>
+<h3>13.6
+Data Laundering with Python</h3>
+
+
+<p>
+<a NAME="idx1434"></a>We have covered a wide range of
+database APIs and data sources, and demonstrated that Python can
+connect to data from any modern database. Now we will look at some
+areas in which Python can do useful things with the data.</p>
+
+
+
+<p>The first major area of work is what we call <i>data
+laundering</I>. This involves writing programs to acquire data
+from a source database, reshape it in some way, and load it into a
+destination database. One major difference between database
+development and general application development is that databases are
+live; you can't just switch them off for a few months. This
+means that what would be a simple upgrade for a Windows application
+becomes a much more complex process of repeatedly migrating data and
+running in parallel. Here are some examples of areas where this type
+of work is needed:</P>
+
+
+
+<A Name="idx1435"></a><A NAMe="idx1436"></a><a name="idx1437"></a><dl>
+<dt>
+<i><font coloR="#990000">Database upgrades and changes</FONT></I></dT>
+<Dd>
+<P>
+<A nAME="idx1435"></A>When
+a database is replaced, the new database structure is almost always
+different. The new database needs to be developed with sample data
+available, then tested extensively, then run in parallel with the old
+one while all the users and client applications are moved across.
+Scripts are needed to migrate the data repeatedly (usually daily)
+from source to destination, often performing validity checks on the
+way in.</P>
+</Dd>
+<dt>
+<i><FONT coloR="#990000">Connecting databases</FONt></i></dt>
+<DD>
+<P>
+<A name="idx1436"></a>Businesses
+often have databases whose areas of interest overlap. A fund manager
+might have a core system for processing deals in its funds, and a
+marketing database for tracking sales calls; marketing needs a recent
+copy of some of the deal information to help serve the clients,
+possibly simplified and pre-digested in various ways. Again, a daily
+process of exporting, rearranging, and loading is needed.</p>
+</dd>
+<dt>
+<i><font color="#990000">Data warehouses</fONT></I></DT>
+<dD>
+<P>
+<a NAmE="idx1437"></A>The classic
+case for repeated data laundering is the data warehouse. A company
+has one or more transaction-processing databases, which usually have
+numerous highly normalized tables, optimized for insertion and
+lookups of small numbers of records at any one time. A data warehouse
+is a second, parallel database optimized for analysis. It's
+essentially read-only with a simple structure geared to computing
+averages and totals across the whole database. This is refreshed
+daily in a process known as the <I>production data
+load</I>. The production data load needs to acquire data from
+several databases, reshape it in ways that are often impossible for
+SQL, validate it in various ways, then load into the destination
+database. This is a perfect niche for Python.</P>
+</Dd>
+</dl>
+
+
+<p>All these tasks involve writing scripts to reshape the data.</P>
+
+
+
+<P>We'll now start to build a toolkit to help with these kinds of
+operations. The toolkit is based on real classes and functions that
+have been used in a number of serious projects and have proved their
+utility many times over (see the case study later on), although we
+have simplified and cut down the code considerably for this book. All
+the code for the rest of this chapter can be found in the
+module<A Name="idx1438"></a>
+<I>laundry.py</I> at <A TargeT="_blank" HREf="http://../starship.python.net/crew/mhammond/ppw32/default.htm">http://starship.python.net/crew/mhammond/ppw32/</a>.</p>
+
+
+
+
+<h4>13.6.1
+Data as Rows</h4>
+
+
+<p>
+<a name="idx1439"></a>There are several useful ways to represent
+data. The most obvious is as rows. The Python format for data as rows
+returned from database cursors is a list of tuples.</p>
+
+
+
+<p>This is such a common representation that we'll wrap it in a
+class called <tt class="monofont">DataSet</TT>
+<A NAMe="idx1440"></A>. The class doesn't serve to hide
+the data; it's just a convenient place to hang a load of
+data-manipulation methods (as well as to keep the field names).
+Here's part of its definition, showing how to construct a
+<Tt CLaSS="monofont">DataSet</TT> and display its contents:</P>
+
+
+
+<Pre clASS="monofont">class DataSet:
+    "wrapper around a tabular set of data"
+    def __init__(self):
+        self.data = []
+        self.fieldnames = []
+        
+    def pp(self):
+        "Pretty-print a row at a time - nicked from Gadfly"
+        from string import join
+        stuff = [repr(self.fieldnames)] + map(repr, self.data)
+        print join(stuff, "\n")
+        
+def DataSetFromCursor(cursor):
+    " a handy constructor"
+    ds = DataSet()
+    ds.fieldnames = getFieldNames(cursor)
+    ds.data = cursor.fetchall()
+    return ds</Pre>
+
+
+<p>You can use this as follows:</p>
+
+
+
+<PRE Class="monofont">&gt;&gt;&gt; import ODBC.Windows
+&gt;&gt;&gt; conn = ODBC.Windows.Connect('PYDBDEMOS')
+&gt;&gt;&gt; cursor = conn.cursor()
+&gt;&gt;&gt; cursor.execute('SELECT ClientID, PeriodEnding, Consultant, 
+    Hours FROM Invoices')
+&gt;&gt;&gt; import laundry
+&gt;&gt;&gt; ds = laundry.DataSetFromCursor(cursor)
+&gt;&gt;&gt; cursor.close()
+&gt;&gt;&gt; conn.close()
+&gt;&gt;&gt; ds.pp()
+('ClientID', 'PeriodEnding', 'Consultant', 'Hours')
+('MEGAWAD', 1999-04-18 00:00:00.00, 'Joe Hacker', 42.0)
+('MEGAWAD', 1999-04-18 00:00:00.00, 'Arthur Suit', 24.0)
+('MEGAWAD', 1999-04-25 00:00:00.00, 'Joe Hacker', 57.0)
+('NOSHCO', 1999-04-25 00:00:00.00, 'Tim Trainee', 18.0)
+('MEGAWAD', 1999-04-18 00:00:00.00, 'Joe Hacker', 42.0)
+&gt;&gt;&gt;</PRE>
+
+
+<P>The ability to see the field names becomes useful when writing
+data-cleaning scripts at an interactive prompt.</p>
+
+
+
+
+
+
+
+<h4>13.6.2
+Geometric Operations</h4>
+
+
+<p>
+<a name="idx1441"></a>Now
+that we have the data, what to do with it depends on the operation
+taking place. An approach that has stood the test of time is to keep
+adding operations to the <tt class="monofont">Dataset</tt> class, building
+over time a veritable Swiss army knife. Common families of
+<a nAME="idx1442"></A>operations can include:</P>
+
+
+
+<A nAMe="idx1443"></A><A nAME="idx1444"></A><A Name="idx1445"></a><A NAMe="idx1446"></a><a nAME="idx1447"></A><dl>
+<dt>
+<I><FONt color="#990000">Field transformations</font></i></dt>
+<dd>
+<p>
+<a name="idx1443"></A>Applying functions to entire
+columns in order to format numbers and dates, switch encodings, or
+build database keys.</P>
+</DD>
+<DT>
+<i><FOnT CoLOR="#990000">Row and column operations</FONt></i></dt>
+<DD>
+<P>
+<A name="idx1444"></A>
+<A NAme="idx1445"></a>Inserting,
+appending, and deleting whole columns, breaking into several separate
+datasets whenever a certain field changes, and sorting operations.</p>
+</DD>
+<DT>
+<i><font color="#990000">Filter operations</font></i></dt>
+<dd>
+<p>
+<a NAME="idx1446"></A>Extracting
+or dropping rows meeting user-defined criteria.</P>
+</dD>
+<Dt>
+<I><FoNT COLOr="#990000">Geometric operations</fonT></I></DT>
+<dd>
+<p>Cross-tabulate, detabulate (see <a href="pythonwin32_snode108.html#5">Figure 13.4</a>), and
+transpose.</p>
+</dd>
+<DT>
+<I><Font color="#990000">Storage operations</font></i></dt>
+<dd>
+<p>
+<a naME="idx1447"></A>Load and
+save to native Python data (<TT ClASs="monofont">marshal</TT>,
+<tT CLASS="monofont">cPickle</tt>), delimited text files, and fixed-width
+text files.</p>
+</dD>
+</DL>
+
+
+<P>Some of these operations are best understood diagrammatically.
+Consider the operation in <a href="pythonwin32_snode108.html#5">Figure 13.4</A>, which
+can't be performed by SQL.</P>
+
+
+
+<CenteR>
+<H5>
+<A Name="5"></a>Figure 13.4. Detabulating and adding constant columns</h5>
+
+<img border="0" width="502" heIGHT="198" src="FILES/ppw.1304.gif" ALt="figs/ppw.1304.gif"></CEnTER>
+
+
+<P>This operation was a mainstay of the case study that follows. Once
+the correct operations have been created, it can be reduced to a
+piece of Python code:</P>
+
+
+
+<Pre clASS="monofont">&gt;&gt;&gt; ds1.pp()   # presume we have the table above already
+('Patient', 'X', 'Y', 'Z')
+('Patient 1', 0.55, 0.08, 0.97)
+('Patient 2', 0.54, 0.11, 0.07)
+('Patient 3', 0.61, 0.08, 0.44)
+('Patient 4', 0.19, 0.46, 0.41)
+&gt;&gt;&gt; ds2 = ds1.detabulate()
+&gt;&gt;&gt; ds2.addConstantColumn('Date',DateTime(1999,5,1),1)
+&gt;&gt;&gt; ds2.addConstantColumn('Lab','QMH', 1)
+&gt;&gt;&gt; ds2.pp()
+('Row', 'Lab', 'Date', 'Column', 'Value')
+('Patient 1', 'QMH', 1999-05-01 00:00:00.00, 'X', 0.55)
+('Patient 2', 'QMH', 1999-05-01 00:00:00.00, 'X', 0.54)
+('Patient 3', 'QMH', 1999-05-01 00:00:00.00, 'X', 0.61)
+('Patient 4', 'QMH', 1999-05-01 00:00:00.00, 'X', 0.19)
+('Patient 1', 'QMH', 1999-05-01 00:00:00.00, 'Y', 0.08)
+('Patient 2', 'QMH', 1999-05-01 00:00:00.00, 'Y', 0.11)
+('Patient 3', 'QMH', 1999-05-01 00:00:00.00, 'Y', 0.08)
+('Patient 4', 'QMH', 1999-05-01 00:00:00.00, 'Y', 0.46)
+('Patient 1', 'QMH', 1999-05-01 00:00:00.00, 'Z', 0.97)
+('Patient 2', 'QMH', 1999-05-01 00:00:00.00, 'Z', 0.07)
+('Patient 3', 'QMH', 1999-05-01 00:00:00.00, 'Z', 0.44)
+('Patient 4', 'QMH', 1999-05-01 00:00:00.00, 'Z', 0.41)
+&gt;&gt;&gt;</Pre>
+
+
+<p>We won't show the methods to implement this; they involve
+straightforward Python loops and list slicing, as do most of the
+things we would want to do with a <tT CLAss="monofont">DataSet</tt>. Their
+effect is to take our data-laundering scripts to a higher level of
+abstraction and <A NAMe="idx1448"></a>clarity.</p>
+
+
+
+<p><table cellspacing="0" wIDTH="90%" BOrDEr="1"><TR><tD>
+<CENTEr><h2>
+Case Study: Applied Biometrics</h2></cENTEr>
+
+
+<p>
+<a nAME="idx1449"></A>Applied Biometrics, GmbH,
+in Berlin provides statistics and data quality assurance for medical
+studies. The company is run by Chris Tismer, the initiator and
+administrator of the Python Starship
+(<a namE="idx1450"></A>
+<A Name="idx1451"></a>
+<a name="idx1452"></a><a target="_blank" href="http://../starship.python.net)/default.htm">http://starship.python.net)</A>, a web site that
+provides home pages to many of the most interesting
+<A NAME="idx1453"></a>Python
+extensions.</P>
+
+
+<P>When drugs are being tested, case report
+forms are prepared on each patient in the study with literally
+hundreds of measurements of all kinds. Data needs to be keyboarded
+twice, normalized somehow, and analyzed, with the final result being
+a 100+ page report summarizing the data. Applied Biometrics automates
+the whole process with Python and Office, Access databases are built
+for each study, and the analysis and reporting are handled by Python
+scripts. The data never arrives all at once, so the whole process
+must be automated and repeatable.</p>
+
+
+<P>In 1997, Applied
+Biometrics took on a challenge no other rival would touch: try to
+combine everything known about a certain drug into one comprehensive
+database. Studies ranged from controlled short-term lab tests (few
+patients, same things measured on each) to badly kept patient diaries
+from thousands of patients. Data sources also varied from AB's
+own keyboarded data to tables from statistical packages and even text
+files to be parsed. Andy Robinson helped to formulate an overall
+approach in the early stages.</P>
+
+
+<p>It was necessary to find
+an approach that allowed medical and statistics graduates with little
+programming experience to write data-laundering scripts. We came up
+with the concept of a data warehouse of very general measurements (of
+a variable, on a patient, at a point in time). The
+<I>Dataset</I> concept was developed, and we wrote
+methods to provide common geometric operations—slicing and
+dicing by column or row, transposing, grouping, and detabulating. The
+students were able to understand these basic operations and write
+scripts to launder individual databases. The end product was a stream
+of measurements that went through a verification funnel before
+entering a target database.</P>
+
+
+<P>Chris has been optimizing
+this system for two years, and knows more about controlling Word and
+Access from Python than anyone. The current system builds a database
+of 315,000 measurements from 29 different source databases in 50
+minutes.</P>
+
+
+
+</Td></tr></tABLE></p>
+
+
+
+
+
+
+
+<h4>13.6.3
+Data as Dictionaries</h4>
+
+
+<p>
+<A NAMe="idx1454"></a>Another useful and powerful
+representation of data is as a dictionary of keys and values. This
+leads to a much easier syntax when you edit and modify records; the
+field names can be used rather than numeric indexes. It's also
+useful when putting together data about the same thing from different
+sources. There will be some overlap between fields, but not total
+agreement. Dictionaries can represent <a nAME="idx1455"></A>sparse data compactly. A classic example is
+found in the <tt class="monofont">Transaction</tt> architecture from <a href="pythonwin32_cnode47.html">Part II</a>, where there was a method to convert a
+transaction to a list of dictionaries. A sales transaction has
+different keys and values from a payroll transaction.</p>
+
+
+
+<p>You'll rarely want just one dictionary, so we have added the
+following method to convert a
+<tt clASS="monofont">DataSet</TT>
+<A nAMe="idx1456"></A> to a list of dictionaries:</P>
+
+
+
+<pRE CLASs="monofont">class DataSet:
+    &lt;continued...&gt;
+    def asDicts(self):
+        "returns a list of dictionaries, each with all fieldnames"
+        dicts = []
+        fieldcount = len(self.fieldnames)
+        for row in self.data:
+            dict = {}
+            for i in range(fieldcount):
+                dict[self.fieldnames[i]] = row[i]
+            dicts.append(dict)
+        return dicts</pre>
+
+
+<P>This enables you to get a row from a query and modify it flexibly:
+let's grab our first invoice from the sample database and look
+at it. Assume you've just done a <TT Class="monofont">'Select</TT>
+<TT clasS="monofont">*</TT> <Tt class="monofont">FROM</tt>
+<tt class="monofont">Invoices'</tt> in a cursor:</p>
+
+
+
+<pre CLASS="monofont">&gt;&gt;&gt; dict = ds.asDicts()[0]   # grab the first one
+&gt;&gt;&gt; pprint(dict)
+{'ClientID': 'MEGAWAD',
+ 'Comments': None,
+ 'Consultant': 'Joe Hacker',
+ 'DatePaid': None,
+ 'ExpenseDetails': None,
+ 'Expenses': 0.0,
+ 'HourlyRate': 50.0,
+ 'Hours': 42.0,
+ 'InvoiceDate': 1999-04-15 00:00:00.00,
+ 'InvoiceID': 199904001,
+ 'PeriodEnding': 1999-04-18 00:00:00.00,
+ 'TaxRate': 0.175}
+&gt;&gt;&gt;</PrE>
+
+
+<P>You can now modify this easily, overwriting, dropping, and adding
+keys as needed. It's also possible to build powerful relational
+joins in a few lines of code using Python dictionaries; that is part
+of what Gadfly does.</p>
+
+
+
+<P>When you want to do the opposite, tabulate a list of dictionaries
+easily by specifying the keys you want. The next function creates
+dictionaries:</P>
+
+
+
+<pRE CLASs="monofont">def DataSetFromDicts(dictlist, keylist=None):
+                                # tabulates shared keys
+    if not keylist:             # take all the keys
+        all_key_dict = dictlist[0]
+        for dict in dictlist:
+            all_key_dict.update(dict)
+        keylist = all_key_dict.keys()
+        keylist.sort()          # better than random order
+    ds = DataSet()
+    ds.fieldnames = tuple(keylist)
+    for dict in dictlist:       # loop over rows
+        row = []   
+        for key in keylist:     # loop over fields
+            try:
+                value = dict[key]
+            except:
+                value = None
+            row.append(value)
+        ds.data.append(tuple(row))
+    return ds</pre>
+
+
+<P>If you supply a list of the keys you want, this function builds a
+<TT Class="monofont">Dataset</TT> with columns to match; if you omit the
+keys, it shows the set of all keys found in all dictionaries. This
+can be used as follows:</P>
+
+
+
+<Pre clASS="monofont">&gt;&gt;&gt; pc1 = {'Name':'Yosemite', 'Maker':'Carrera','Speed':266}
+&gt;&gt;&gt; pc2 = {'Name':'Tahoe', 'Maker':'Gateway','Memory':64}
+&gt;&gt;&gt; pc3 = {'Name':'Gogarth','Maker':'NeXT','Speed':25,'Elegance':'Awesome'}
+&gt;&gt;&gt; pc4 = {'Name':'BoxHill','Maker':'Psion','Memory':2}
+&gt;&gt;&gt; my_kit = [pc1,pc2,pc3,pc4]
+&gt;&gt;&gt; comparison = laundry.DataSetFromDicts(my_kit, 
+... 	['Name','Model','Memory']
+... 	)
+... 	
+&gt;&gt;&gt; comparison.pp()
+('Name', 'Model', 'Memory')
+('BoxHill', None, 2)
+('Tahoe', None, 64)
+('Gogarth', None, None)
+('BoxHill', None, 2)
+&gt;&gt;&gt;</Pre>
+
+
+<p>You now have the ability to move back and forth from a tabular to a
+dictionary representation.</p>
+
+
+
+
+
+
+
+<h4>13.6.4
+Inserting Data into the Destination Database</h4>
+
+
+<p>
+<a name="idx1457"></a>
+<a name="idx1458"></a>Sooner or later you need to pump data into
+a destination database. We've already seen how DBAPI-compliant
+modules allow us to insert a list of tuples at one time, and how this
+provides optimal performance. In a case such as a data warehouse, the
+number of destination tables and fields will be quite small so
+it's no trouble to build the SQL statements by hand for each
+table; and we already have the list of tuples ready to go:</p>
+
+
+
+<pRE CLASs="monofont">mycursor.executemany(MyTableStatement, MyDataSet.data)</PRe>
+
+
+<P>Where there are many destination tables, a shortcut can be taken if
+the field names are simple and match the underlying database well;
+you can write a routine that uses the field names in the
+<Tt CLASS="monofont">DataSet</Tt> and generates an SQL
+<tt cLASS="monofont">INSERT</tt> statement to match.</p>
+
+
+
+<p>Often there are better ways to bulk-load data. The important thing is
+to know that you have correctly structured
+<TT CLass="monofont">DataSets</tT> for the destination database; if
+that's true, you can often save them to a tab- or
+comma-delimited file and use the database's bulk-load facility
+with far greater speed.<A NAme="idx1459"></a></p>
+
+
+</font>
+ 
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right"><a href="pythonwin32_snode107.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a> <a href="pythonwin32_snode109.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a></td></table>
+</BODY></HTML>

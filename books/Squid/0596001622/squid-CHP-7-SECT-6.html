@@ -1,0 +1,199 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>7.6 Removing Cached Objects</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="squid-CHP-7-SECT-5.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="squid-CHP-7-SECT-7.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="squid-CHP-7-SECT-6"></A>
+<H3 class="docSection1Title">7.6 Removing Cached Objects</H3>
+
+<P class="docText">At some point you may find <A NAME="squid-CHP-7-ITERM-1476"></A><A NAME="squid-CHP-7-ITERM-1477"></A>it
+<A NAME="squid-CHP-7-ITERM-1478"></A>necessary
+to manually remove one or more objects from Squid's
+cache. This might happen if:</P>
+
+<UL><LI><P class="docList">One of your users complains about always receiving stale data.</P></LI><LI><P class="docList">Your cache becomes "poisoned" with
+a forged response.</P></LI><LI><P class="docList">Squid's cache index becomes corrupted after
+experiencing disk I/O errors or frequent crashes and restarts.</P></LI><LI><P class="docList">You want to remove some large objects to free up room for new data.</P></LI><LI><P class="docList">Squid was caching responses from local servers, and now you
+don't want it to.</P></LI></UL>
+<P class="docText">Some of these problems can be solved by forcing a reload in a web
+browser. However, this doesn't always work. For
+example, some browsers display certain content types externally by
+launching another program; that program probably
+doesn't have a reload button or even know about
+caches.</P>
+
+<P class="docText">You can always use the <I>squidclient</I> program to
+reload a cached object if necessary. Simply insert the
+<I>-r</I> option before the URI:</P>
+
+<PRE>% squidclient -r http://www.lrrr.org/junk &gt;/tmp/foo</PRE>
+
+<P class="docText">If you happen to have a <span class="docEmphasis">refresh_pattern</span>
+directive with the <TT>ignore-reload</TT> option set, you
+and your users may be unable to force a validation of the cached
+response. In that case, you'll be better off purging
+the offending object or objects.</P>
+
+<A NAME="squid-CHP-7-SECT-6.1"></A>
+<H4 class="docSection2Title">7.6.1 Removing Individual Objects</H4>
+
+<P class="docText">Squid accepts a custom request method for removing cached objects.
+The <TT>PURGE</TT> method isn't one of the
+official HTTP request methods. It is different from
+<TT>DELETE</TT>, which Squid forwards to an origin server.
+A <TT>PURGE</TT> request asks Squid to remove the object
+given in the URI. Squid returns either 200 (Ok) or 404 (Not Found).</P>
+
+<P class="docText">The <TT>PURGE</TT> method is somewhat dangerous because it
+removes cached objects. Squid disables the <TT>PURGE</TT>
+method unless you define an ACL for it. Normally you should allow
+<TT>PURGE</TT> requests only from localhost and perhaps a
+small number of trusted hosts. The configuration may look like this:</P>
+
+<PRE>acl AdminBoxes src 127.0.0.1 172.16.0.1 192.168.0.1
+acl Purge method PURGE
+http_access allow AdminBoxes Purge
+http_access deny Purge</PRE>
+
+<P class="docText">The <I>squidclient</I> program provides an easy way to
+generate <TT>PURGE</TT> requests. For example:</P>
+
+<PRE>% squidclient -m PURGE http://www.lrrr.org/junk</PRE>
+
+<P class="docText">Alternatively, you could use something else (such as a Perl script)
+to generate your own HTTP request. It can be very simple:</P>
+
+<PRE>PURGE http://www.lrrr.org/junk HTTP/1.0
+Accept: */*</PRE>
+
+<P class="docText">Note that a URI alone doesn't uniquely identify a
+cached response. Squid also uses the original request method in the
+cache key. It may also use other request headers if the response
+contains a <TT>Vary</TT> header. When you issue a
+<TT>PURGE</TT> request, Squid looks for cached objects
+originally requested with the <TT>GET</TT> and
+<TT>HEAD</TT> methods. Furthermore, Squid also removes all
+variants of a response, unless you remove a specific variant by
+including the appropriate headers in the <TT>PURGE</TT>
+request. Squid removes only variants for <TT>GET</TT> and
+<TT>HEAD</TT> requests.</P>
+
+
+<A NAME="squid-CHP-7-SECT-6.2"></A>
+<H4 class="docSection2Title">7.6.2 Removing a Group of Objects</H4>
+
+<P class="docText">Unfortunately, Squid doesn't
+<A NAME="squid-CHP-7-ITERM-1479"></A>provide a good mechanism for removing a
+bunch of objects at once. This often comes up when someone wants to
+remove all objects belonging to a certain origin server.</P>
+
+<P class="docText">Squid lacks this feature for a couple of reasons. First, Squid would
+have to perform a linear search through all cached objects. This is
+CPU-intensive and takes a long time. While Squid is searching, your
+users can experience a performance degradation. Second, Squid keeps
+MD5s, rather than URIs, in memory. MD5s are one-way hashes, which
+means, for example, that you can't tell if a given
+MD5 hash was generated from a URI that contains the string
+"www.example.com." The only way to
+know is to recalculate the MD5 from the original URI and see if they
+match. Because Squid doesn't have the URI, it
+can't perform the calculation.</P>
+
+<P class="docText">So what can you do?</P>
+
+<P class="docText">You can use the data <A NAME="squid-CHP-7-ITERM-1480"></A><A NAME="squid-CHP-7-ITERM-1481"></A>in
+<I>access.log</I> to get a list of URIs that might be
+in the cache. Then, feed them to <I>squidclient</I> or
+another utility to generate <TT>PURGE</TT> requests. For
+example:</P>
+
+<PRE>% awk '{print $7}' /usr/local/squid/var/logs/access.log \
+        | grep www.example.com \
+        | xargs -n 1 squidclient -m PURGE</PRE>
+
+
+<A NAME="squid-CHP-7-SECT-6.3"></A>
+<H4 class="docSection2Title">7.6.3 Removing All Objects</H4>
+
+<P class="docText">In <A NAME="squid-CHP-7-ITERM-1482"></A>extreme circumstances you
+may need to wipe out the entire cache, or at least one of the cache
+directories. First, you must make sure that Squid
+isn't running.</P>
+
+<P class="docText">One of the easiest ways to make Squid forget about all cached objects
+is to overwrite the <I>swap.state</I> files. Note that
+you can't simply remove the
+<I>swap.state</I> files because Squid then scans the
+cache directories and opens all the object files. You also
+can't simply truncate
+<I>swap.state</I> to a zero-sized file. Instead, you
+should put a single byte there, like this:</P>
+
+<PRE># echo '' &gt; /usr/local/squid/var/cache/swap.state</PRE>
+
+<P class="docText">When Squid reads the <I>swap.state</I> file, it gets an
+error because the record that should be there is too short. The next
+read results in an end-of-file condition, and Squid completes the
+rebuild procedure without loading any object metadata.</P>
+
+<P class="docText">Note that this technique doesn't remove the cache
+files from your disk. You've only tricked Squid into
+thinking that the cache is empty. As Squid runs, it adds new files to
+the cache and may overwrite the old files. In some cases, this might
+cause your disk to run out of free space. If that happens to you, you
+need to remove the old files before restarting Squid again.</P>
+
+<P class="docText">One way to remove cache files is with <I>rm</I>. However,
+it often takes a very long time to remove all the files that Squid
+has created. To get Squid running faster, you can rename the cache
+directory, create a new one, start Squid, and remove the old one at
+the same time. For example:</P>
+
+<PRE># squid -k shutdown
+# cd /usr/local/squid/var
+# mv cache oldcache
+# mkdir cache
+# chown nobody:nobody cache
+# squid -z
+# squid -s
+# rm -rf oldcache &amp;</PRE>
+
+<P class="docText">Another technique is to simply run <I>newfs</I> (or
+<TT>mkfs</TT>) on the cache filesystem. This works only if
+you have the <span class="docEmphasis">cache_dir</span> on its own <A NAME="squid-CHP-7-ITERM-1483"></A><A NAME="squid-CHP-7-ITERM-1484"></A>disk partition.</P>
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="squid-CHP-7-SECT-5.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="squid-CHP-7-SECT-7.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

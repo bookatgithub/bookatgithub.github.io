@@ -1,0 +1,163 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;9.5.&nbsp;Executing a Function in Parallel on Multiple Argument Sets</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-9-sect-4.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-9-sect-6.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-9-SECT-5"></a>
+<h3 class="docSection1Title">Recipe 9.5. Executing a Function in Parallel on Multiple Argument Sets</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Guy Argo</span></p>
+
+<a name="pythoncook2-CHP-9-SECT-5.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-9-ITERM-2540"></a>
+<a name="pythoncook2-CHP-9-ITERM-2541"></a>You want to execute a function
+simultaneously over multiple sets of arguments. (Presumably the
+function is "I/O bound", meaning it
+spends substantial time doing input/output operations; otherwise,
+simultaneous execution would be useless.)</P>
+
+
+<a name="pythoncook2-CHP-9-SECT-5.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">Use one thread for each set of arguments. For good performance,
+it's best to limit our use of threads to a bounded
+pool:</p>
+
+<pre>import threading, time, Queue
+class MultiThread(object):
+    def _ _init_ _(self, function, argsVector, maxThreads=5, queue_results=False):
+        self._function = function
+        self._lock = threading.Lock( )
+        self._nextArgs = iter(argsVector).next
+        self._threadPool = [ threading.Thread(target=self._doSome)
+                             for i in range(maxThreads) ]
+        if queue_results:
+            self._queue = Queue.Queue( )
+        else:
+            self._queue = None
+    def _doSome(self):
+        while True:
+            self._lock.acquire( )
+            try:
+                try:
+                    args = self._nextArgs( )
+                except StopIteration:
+                    break
+            finally:
+                self._lock.release( )
+            result = self._function(args)
+            if self._queue is not None:
+                self._queue.put((args, result))
+    def get(self, *a, **kw):
+        if self._queue is not None:
+            return self._queue.get(*a, **kw)
+        else:
+            raise ValueError, 'Not queueing results'
+    def start(self):
+        for thread in self._threadPool:
+            time.sleep(0)    # necessary to give other threads a chance to run
+            thread.start( )
+    def join(self, timeout=None):
+        for thread in self._threadPool:
+            thread.join(timeout)
+if _ _name_ _=="_ _main_ _":
+    import random
+    def recite_n_times_table(n):
+        for i in range(2, 11):
+            print "%d * %d = %d" % (n, i, n * i)
+            time.sleep(0.3 + 0.3*random.random( ))
+    mt = MultiThread(recite_n_times_table, range(2, 11))
+    mt.start( )
+    mt.join( )
+    print "Well done kids!"</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-9-SECT-5.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">This recipe's <I>MultiThread</i> class
+offers a simple way to execute a function in parallel, on many sets
+of arguments, using a bounded pool of threads. Optionally, you can
+ask for results of the calls to the function to be queued, so you can
+retrieve them, but by default the results are just thrown away.</P>
+
+<p class="docText">The <I>MultiThread</i> class takes as its arguments a
+function, a sequence of argument tuples for said function, and
+optionally a boundary on the number of threads to use in its pool and
+an indicator that results should be queued. Beyond the constructor,
+it exposes three methods: <i>start</i>, to start all the
+threads in the pool and begin the parallel evaluation of the function
+over all argument tuples; <i>join</I>, to perform a join on
+all threads in the pool (meaning to wait for all the threads in the
+pool to have terminated); and <i>get</i>, to get queued
+results (if it was instantiated with the optional flag
+<I>queue_results</i> set to <tt>TRue</tt>, to ask
+for results to be queued). Internally, class
+<i>MultiThread</I> uses its private method
+<I>doSome</i> as the target callable for all threads in the
+pool. Each thread works on the next available tuple of arguments
+(supplied by the <tt>next</tt> method of an iterator on the
+iterable whose items are such tuples, with the call to
+<tt>next</tt> being guarded by the usual locking idiom),
+until all work has been completed.</p>
+
+<p class="docText">As is usual in Python, the module can also be run as a free-standing
+main script, in which case it runs a simple demonstration and
+self-test. In this case, the demonstration simulates a class of
+schoolchildren reciting multiplication tables as fast as they can.</p>
+
+<p class="docText"><a name="pythoncook2-CHP-9-ITERM-2542"></a>Real use cases for this recipe mostly
+involve functions that are I/O bound, meaning functions that spend
+substantial time performing I/O. If a function is
+"CPU bound", meaning the function
+spends its time using the CPU, you get better overall performance by
+performing the computations one after the other, rather than in
+parallel. In Python, this observation tends to hold even on machines
+that dedicate multiple CPUs to your program, because Python uses a
+GIL (Global Interpreter Lock), so that pure Python code from a single
+process does not run simultaneously on more than one CPU at a time.</p>
+
+<p class="docText">Input/output operations release the GIL, and so can (and should) any
+C-coded Python extension that performs substantial computations
+without callbacks into Python. So, it <span class="docEmphasis">is</span>
+possible that parallel execution may speed up your program, but only
+if either I/O or a suitable C-coded extension is involved, rather
+than pure computationally intensive Python code. (Implementations of
+Python on different virtual machines, such as Jython, which runs on a
+JVM [Java Virtual Machine], or IronPython, which runs on the
+Microsoft .NET runtime, are of course not bound by these
+observations: these observations apply only to the widespread
+"classical Python", meaning
+CPython, implementation.)<a name="pythoncook2-CHP-9-ITERM-2543"></a> <a name="pythoncook2-CHP-9-ITERM-2544"></a></p>
+
+
+<a name="pythoncook2-CHP-9-SECT-5.4"></a>
+<h4 class="docSection2Title">See Also</h4>
+
+<p class="docText"><span class="docEmphasis">Library Reference</span> and <span class="docEmphasis">Python in a
+Nutshell</span> docs on modules <tt>threading</tt> and
+<tt>Queue</tt>.</p>
+
+
+
+<a href="5991535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-9-sect-4.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-9-sect-6.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

@@ -1,0 +1,95 @@
+<html><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<link href="styles/globalstyle.css" type="text/css" rel="stylesheet"/>
+<link title="medium" href="styles/two.css" type="text/css" rel="stylesheet"/>
+<script src="scripts/main.js" type="text/javascript" language="javascript"></script>
+<title>Section 16.2. Reduced to Even Smaller Bits</title>
+</head><body>
+<DIV class=h3 style="MARGIN-TOP: 0px; PADDING-BOTTOM: 1em; WIDTH: 100%; PADDING-TOP: 0px"><SPAN>The Linux Kernel Driver Model: The Benefits of Working Together</SPAN><SPAN> &gt; Reduced to Even Smaller Bits</SPAN></DIV>
+<DIV></DIV>
+<DIV>
+<DIV><A name=reduced_to_even_smaller_bits></A>
+<H3 class=docSection1Title id=-100000>16.2. Reduced to Even Smaller Bits</H3>
+<P class=docText><A name="As the"></A>As the <A name=idx-CHP-16-1342></A><A name="rework was"></A>initial driver core rework was happening, another kernel developer, Al Viro, was working on fixing a number of issues regarding <A name=idx-CHP-16-1343></A><A name="in the"></A>object reference counting in the virtual filesystem layer.</P>
+<P class=docText><A name="problem with"></A>The main problem with structures in <A name=idx-CHP-16-1344></A><A name="in the"></A>multithreaded programs written in the C language is that it's very hard to determine when it is safe to free up any memory used by a structure. The <A name=idx-CHP-16-1345></A><A name="handle hostile"></A>Linux kernel is a massively multithreaded program that must properly handle hostile users as well as large numbers of processors all running at the same time. Because of this, <A name=idx-CHP-16-1346></A><A name="on any"></A>reference counting on any structure that can be found by more than one thread is a necessity.</P>
+<P class=docText>The <TT>struct device</TT><A name="It had"></A> structure was one such reference-counted structure. It had a single field that was used to determine when it was safe to free the structure:</P><PRE>	atomic_t          refcount;
+</PRE><BR>
+<P class=docText><A name="field was"></A>When the structure was initialized, this field was set to 1. Whenever any code wished to use the structure, it had to first increment the reference count by calling the function <TT>get_ device</TT><A name="which checked"></A>, which checked that the reference count was valid and incremented the reference count of the structure:</P><PRE>	static inline void get_device(struct device * dev)
+	{
+	        BUG_ON(!atomic_read(&amp;dev-&gt;refcount));
+	        atomic_inc(&amp;dev-&gt;refcount);
+	}
+</PRE><BR>
+<P class=docText><A name="was finished"></A>Similarly, when a thread was finished with the structure, it decremented the reference count by calling <TT>put_device</TT><A name="bit more"></A>, which was a bit more complex:</P><PRE>	void put_device(struct device * dev)
+	{
+	        if (!atomic_dec_and_lock(&amp;dev-&gt;refcount,&amp;device_lock))
+	                return;
+
+	    ...
+
+	        /* Tell the driver to clean up after itself.
+	         * Note that we likely didn't allocate the device,
+	         *so this is the driver's chance to free that up...
+	         */
+	        if (dev-&gt;driver &amp;&amp; dev-&gt;driver-&gt;remove)
+	                 dev-&gt;driver-&gt;remove(dev,REMOVE_FREE_RESOURCES);
+	}
+</PRE><BR>
+<P class=docText><A name="decremented the"></A>This function decremented the reference count and then, if it was the last user of the object, would tell the object to clean itself up and call a function that was previously set up to free it from the system.</P>
+<P class=docText><A name="the unification"></A>Al Viro liked the unification of the <TT>struct device</TT><A name="and how"></A> structure, the virtual filesystem that showed all of the different devices and how they were <A name=idx-CHP-16-1347></A><A name="the automatic"></A>linked together, and the automatic <A name=idx-CHP-16-1348></A><A name="was that"></A>reference counting. The only problem was that his virtual filesystem core did not work on "devices," nor did it have "drivers" that would attach to these <A name=idx-CHP-16-1349></A><A name="a bit"></A>objects. So, he decided to refactor things a bit and make the code simpler.</P>
+<P class=docText><A name="Al convinced"></A>Al convinced Pat to create something called <TT>struct kobject</TT><A name="the basic"></A>. This structure had the basic properties of the <TT>struct device</TT><A name="and did"></A> structure, but was smaller and did not have the "driver" and "device" relationship. It contained the following fields:<A name=idx-CHP-16-1350></A></P><PRE>	struct kobject {
+	        char                 name[KOBJ_NAME_LEN];
+	        atomic_t             refcount;
+	        struct list_head     entry;
+	        struct kobject       *parent;
+	        struct subsystem     *subsys;
+	        struct dentry        *dentry;
+	};
+</PRE><BR>
+<P class=docText><A name="is a"></A>This structure is a type of empty object. It has only the very basic ability to be reference-counted and to be inserted into a hierarchy of objects. The <TT>struct device</TT><A name="include this"></A> structure could now include this smaller <TT>struct kobject</TT> "base" structure to inherit all of its functionality:</P><PRE>	struct device {
+	        struct list_head g_list;      /* node in depth-first order list */
+	        struct list_head node;        /* node in sibling list */
+	        struct list_head bus_list;    /* node in bus's list */
+	        struct list_head driver_list;
+	        struct list_head children;
+	        struct list_head intf_list;
+	        struct device *parent;
+
+	        struct kobject kobj;
+	        char    bus_id[BUS_ID_SIZE];  /* position on parent bus */
+
+	...
+	}
+</PRE><BR>
+<P class=docText>The <TT>container_of</TT> macro is used to cast <A name=idx-CHP-16-1351></A>back from the core <TT>kobject</TT>, to the main <TT>struct device:</TT></P><PRE>	#define to_dev(obj) container_of(obj, struct device, kobj)
+</PRE><BR>
+<P class=docText><A name="of the"></A>During this development process, many other people were increasing the robustness of the <A name=idx-CHP-16-1352></A><A name="by allowing"></A>Linux kernel by allowing it to scale up to larger and larger numbers of processors all running in the same system image.<SUP class=docFootnote><A class=docLink href="javascript:moveTo('CHP-16-FNOTE-3');">[<IMG alt="double dagger" src="images/U2021.GIF">]</A></SUP><A name="developers were"></A> Because of this, many other developers were adding reference counts to their structures to properly handle their memory usage. Each developer had to duplicate the ability to initialize, increment, decrement, and clean up the structure. So it was decided that this simple functionality could be taken from the <TT>struct kobject</TT><A name="Thus was"></A> and made into its own structure. Thus was the <TT><A name="struct kref"></A>struct kref</TT> structure born:<A name=idx-CHP-16-1353></A><A name=idx-CHP-16-1354></A><A name=idx-CHP-16-1355></A><A name=idx-CHP-16-1356></A></P>
+<BLOCKQUOTE>
+<P class=docFootnote><SUP><A name=CHP-16-FNOTE-3>[<IMG alt="double dagger" src="images/U2021.GIF">]</A></SUP><A name="for the"></A> The current record for the number of processors with Linux running in a single system image is 4096 processors, so the scalability work has succeeded.</P></BLOCKQUOTE><PRE>	struct kref {
+	        atomic_t refcount;
+	};
+</PRE><BR>
+<P class=docText><TT>struct kref</TT><A name="simple functions"></A> has only three simple functions: <TT>kref_init</TT><A name="the reference"></A> to initialize the reference count, <TT>kref_get</TT><A name="reference count"></A> to increment the reference count, and <TT>kref_put</TT><A name="it is"></A> to decrement the reference count. The first two functions are very simple; it is the last one that's a bit interesting:</P><PRE>	int kref_put(struct kref *kref, void (*release)(struct kref *kref))
+	{
+	        WARN_ON(release == NULL);
+	        WARN_ON(release == (void (*)(struct kref *))kfree);
+
+	       if (atomic_dec_and_test(&amp;kref-&gt;refcount)) {
+	               release(kref);
+	               return 1; 
+	      }
+	      return 0; 
+	}
+</PRE><BR>
+<P class=docText>The <TT>kref_put</TT><A name="two parameters"></A> function has two parameters: a pointer to the <TT>struct kref</TT><A name="wish to"></A> whose reference count you wish to decrement, and a pointer to the function that you wish to have called if this was the last reference held on the object.</P>
+<P class=docText><A name="the function"></A>The first two lines of the function were added a while after the <TT><A name="struct kref"></A>struct kref</TT><A name="the kernel"></A> was added to the kernel, as a number of programmers were trying to get around the reference counting by passing in either no pointer to a release function or, when they realized that the kernel would complain about that, a pointer to the basic <TT>kfree</TT><A name="these two"></A> function. (Sad to say, but even these two checks are not enough these days. Some programmers have taken to just creating empty release functions that do not do anything, as they are trying to ignore the reference count altogether. Unfortunately, C doesn't have a simple way to determine whether a pointer to a function really does anything within that function; otherwise, that check would be added to <TT>kref_put</TT>, too.)</P>
+<P class=docText><A name="two checks"></A>After these two checks are made, the reference count is atomically decremented, and if this is the last reference, the release function is called and 1 is returned. If this is not the last reference on the object, <TT>0</TT><A name="value is"></A> is returned. This return value is used just to determine whether the caller was the last holder of the object, not whether the object is still in memory (it can't guarantee that the object still exists because someone else might come in and release it after the call returns).</P>
+<P class=docText>With the creation of <TT>struct kref</TT>, the <TT>struct kobject</TT> structure was <A name=idx-CHP-16-1357></A>changed to use it:</P><PRE>	struct kobject {
+	        char             name[KOBJ_NAME_LEN];
+	        struct kref      kref;
+	  ...
+	};
+</PRE><BR>
+<P class=docText>With all of these different <A name=idx-CHP-16-1358></A>structures embedded <A name=idx-CHP-16-1359></A>within other structures, the result is that the original <TT>struct usb_interface</TT> described earlier now contains a <TT>struct device</TT>, which contains a <TT>struct kobject</TT>, which contains a <TT>struct kref</TT><A name="the C"></A>. And who said it was hard to do object-oriented programming in the C language.…<A name=idx-CHP-16-1360></A></P></DIV></DIV>
+<p>&nbsp;</p><p>&nbsp;</p><!-- 仁·义 -->
+</body></html>

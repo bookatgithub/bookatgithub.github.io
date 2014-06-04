@@ -1,0 +1,174 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>10.7 Cache Digests</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="squid-CHP-10-SECT-6.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="squid-CHP-10-SECT-8.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="squid-CHP-10-SECT-7"></A>
+<H3 class="docSection1Title">10.7 Cache Digests</H3>
+
+<P class="docText">One of the most common <A NAME="squid-CHP-10-ITERM-1667"></A>complaints about ICP is the additional
+delay added for each request. In many cases, Squid waits for all ICP
+replies to arrive before making a forwarding decision.
+Squid's Cache Digest feature offers similar
+functionality but without per-request network delays.</P>
+
+<P class="docText">Cache Digests are based on a technique first published by Pei Cao,
+called Summary Cache. The fundamental idea is to
+<A NAME="squid-CHP-10-ITERM-1668"></A><A NAME="squid-CHP-10-ITERM-1669"></A>use a
+Bloom filter to represent the cache contents. Neighboring caches
+download each other's Bloom filters, or digests in
+this terminology. Then, they can query the digest to determine
+whether or not a particular URI is in the neighbor's
+cache.</P>
+
+<P class="docText">Compared to ICP, Cache Digests trade time for space. Whereas ICP
+queries incur time penalties (latency), digests incur space (memory,
+disk) penalties. In Squid, a neighbor's digest is
+stored entirely in memory. A typical digest requires about 625 KB of
+memory for every million objects.</P>
+
+<P class="docText">The Bloom filter is an interesting data structure that provides lossy
+encoding of a collection of items. The filter itself is simply a
+large array of bits. Given a Bloom filter (and the parameters used to
+generate it), you can find, with some uncertainty, if a particular
+item is in the collection. In Squid, items are URIs, and the digest
+is sized at 5 bits per cached object. For example, you can represent
+the collection of 1,000,000 cached objects with a filter of 5,000,000
+bits, or 625,000 bytes.</P>
+
+<P class="docText">Due to their nature, Bloom filters aren't a perfect
+representation of the collection. They sometimes incorrectly indicate
+that a particular item is present in the collection because two or
+more items may turn on the same bit. In other words, the filter can
+indicate that object <span class="docEmphasis">X</span> is in the cache, even
+though <span class="docEmphasis">X</span> was never cached or requested. These
+false positives occur with a certain probability you can control by
+adjusting the parameters of the filter. For example, increasing the
+number of bits per object decreases the false positive probability.
+See my O'Reilly book, <span class="docEmphasis">Web
+Caching</span>, for many more details about Cache Digests.</P>
+
+<A NAME="squid-CHP-10-SECT-7.1"></A>
+<H4 class="docSection2Title">10.7.1 Configuring Squid for Cache Digests</H4>
+
+<P class="docText">First of all, you must compile
+<A NAME="squid-CHP-10-ITERM-1670"></A><A NAME="squid-CHP-10-ITERM-1671"></A>Squid with the Cache Digest code enabled.
+Simply add the <I>—enable-cache-digests</I> option
+when running <I>./configure</I>. Taking this step causes
+two things to happen when you run Squid:</P>
+
+<UL><LI><P class="docList">Your Squid cache generates a digest of its own contents. Your
+neighbors may request this digest if they are also configured to use
+Cache Digests.</P></LI><LI><P class="docList">Your Squid requests a Cache Digest from each of its neighbors.</P></LI></UL>
+<P class="docText">If you don't want to request digests for a
+particular neighbor, use the <TT>no-digest</TT> option on
+the <span class="docEmphasis">cache_peer</span> line. For example:</P>
+
+<PRE>cache_peer neighbor.host.name parent 3128 3130 no-digest</PRE>
+
+<P class="docText">Squid stores its own digest under the following URL: <span class="docEmphasis">http://my.host.name:port/squid-internal-periodic/store_digest</span>.
+When Squid requests a neighbor's digest, it simply
+requests <span class="docEmphasis">http://neighbor.host.name:port/squid-internal-periodic/store_digest</span>.
+Obviously, this naming scheme is specific to Squid. If you have a
+non-Squid neighbor that supports Cache Digests, you may need to tell
+your Squid that the neighbor's digest has a
+different address. The <TT>digest-url=url</TT> option to
+<span class="docEmphasis">cache_peer</span> allows you to configure the URL for
+the neighbor's Cache Digest. For example:</P>
+
+<PRE>cache_peer neighbor.host.name parent 3128 3130 digest-url=http://blah/digest</PRE>
+
+<P class="docText"><I>squid.conf</I> has a number of directives that
+control the way in which Squid generates its own Cache Digest. First,
+the <span class="docEmphasis">digest_generation</span> directive controls whether
+or not Squid generates a digest of its cache. You might want to
+disable digest generation if your cache is a child to a parent, but
+not a parent or sibling to any other caches. The remaining directives
+control low-level underlying details of digest generation. You should
+change them only if you fully understand the Cache Digest
+implementation.</P>
+
+<P class="docText">The <span class="docEmphasis">digest_bits_per_entry</span> determines the size of
+the digest. The default value is 5. Increasing the value results in
+larger digests (consuming more memory and bandwidth) and lower
+false-hit probabilities. A lower setting results in smaller digests
+and more false hits. I feel that the default setting is a very nice
+tradeoff. A setting of 3 or lower has too many false hits to be
+useful, and a setting of 8 or higher simply wastes bandwidth.</P>
+
+<P class="docText">Squid uses a two-step process to create a cache digest. First, it
+builds the cache digest data structure. This is basically a large
+Bloom filter and small header that contains the digest parameters.
+Once the data structure is filled, Squid creates a cached HTTP
+response for the digest. This simply involves prepending some HTTP
+headers and storing the response on disk with the other cached
+responses.</P>
+
+<P class="docText">A Cache Digest represents a snapshot in time of the
+cache's contents. The
+<span class="docEmphasis">digest_rebuild_period</span> controls how frequently
+Squid rebuilds the digest data structure (but not the HTTP response).
+The default is once per hour. More frequent rebuilds mean
+Squid's digest is more up to date, at the expense of
+higher CPU utilization. The rebuild procedure is relatively
+CPU-intensive. Your users may experience a slowdown while Squid
+rebuilds its digest.</P>
+
+<P class="docText">The <span class="docEmphasis">digest_rebuild_chunk_percentage</span> directive
+controls how much of the cache to add to the digest each time the
+rebuild procedure is called. The default is 10%. During each
+invocation of the rebuild function, Squid adds some percentage of the
+cache to the digest. Squid doesn't process user
+requests while this function runs. After adding the specified
+percentage, the function reschedules itself and then exits so that
+Squid can process normal HTTP requests. After processing pending
+requests, Squid returns to the rebuild function and adds another
+chunk of the cache to the digest. Decreasing this value should give
+better response time to your users, while increasing the total time
+needed to rebuild the digest.</P>
+
+<P class="docText">The <span class="docEmphasis">digest_rewrite_period</span> directive controls how
+often Squid creates an HTTP response from the digest data structure.
+In most cases, this should match the
+<span class="docEmphasis">digest_rebuild_period</span> value. The default is one
+hour. The rewrite procedure consists of numerous calls to a function
+that simply appends some amount of the digest data structure to the
+cache entry (as though Squid were reading an origin server response
+from the network). Each time this function is called, Squid appends
+<span class="docEmphasis">digest_swapout_chunk_size</span> bytes of the digest.</P>
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="squid-CHP-10-SECT-6.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="squid-CHP-10-SECT-8.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

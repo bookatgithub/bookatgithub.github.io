@@ -1,0 +1,201 @@
+<html><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<link href="styles/globalstyle.css" type="text/css" rel="stylesheet"/>
+<link title="medium" href="styles/two.css" type="text/css" rel="stylesheet"/>
+<script src="scripts/main.js" type="text/javascript" language="javascript"></script>
+<title>Section 24.2. Software Transactional Memory</title>
+</head><body>
+<DIV class=h3 style="MARGIN-TOP: 0px; PADDING-BOTTOM: 1em; WIDTH: 100%; PADDING-TOP: 0px"><SPAN>Beautiful Concurrency</SPAN><SPAN> &gt; Software Transactional Memory</SPAN></DIV>
+<DIV></DIV>
+<DIV>
+<DIV><A name=software_transactional_memory></A>
+<H3 class=docSection1Title id=-100000>24.2. Software Transactional Memory</H3>
+<P class=docText><A name="Software Transactional"></A>Software Transactional Memory is a promising new approach to the challenge of <A name=idx-CHP-24-1987></A><A name="explain in"></A>concurrency, as I will explain in this section. I shall explain <A name=idx-CHP-24-1988></A>STM using <A name=idx-CHP-24-1989></A><A name="programming language"></A>Haskell, the most beautiful programming language I know, because STM fits into Haskell particularly elegantly. If you don't know any Haskell, don't worry; we'll learn it as we go.</P><A name=side_effects_and_inputoutput_in_haskell></A>
+<H4 class=docSection2Title id=title-ID0EFAEK>24.2.1. Side Effects and Input/Output in Haskell</H4>
+<P class=docText><A name="the beginning"></A>Here is the beginning of the code for <TT>transfer</TT> in Haskell:<A name=idx-CHP-24-1990></A><A name=I_indexterm24_tt469></A><A name=I_indexterm24_tt470></A></P><PRE>	transfer :: Account -&gt; Account -&gt; Int -&gt; IO ( )
+	-- Transfer 'amount' from account 'from' to account 'to'
+	transfer from to amount = ...
+</PRE><BR>
+<P class=docText><A name="of this"></A>The second line of this definition, starting with --, is a comment. The first line gives the <SPAN class=docEmphasis>type signature</SPAN> for <TT>transfer</TT>.<SUP class=docFootnote><A class=docLink href="javascript:moveTo('CHP-24-FNOTE-5');">[||]</A></SUP> This signature says that <TT>transfer</TT> takes as its arguments two values of type <TT>Account</TT> (the source and destination accounts) and an <TT>Int</TT> (the amount to transfer), and returns a value of type <TT>IO ( )</TT>. This result type says, "<TT>transfer</TT> returns an action that, when performed, may have some <A name=idx-CHP-24-1994></A>side effects, and then returns a value of type <TT>( )</TT>." The type <TT>( )</TT>, pronounced "unit," has just one value, which is also written <TT>( )</TT>; it is akin to <TT>void</TT> in C. So, <TT>transfer's</TT> result type <TT>IO ( )</TT><A name="calling it"></A> announces that its side effects constitute the only reason for calling it. Before we go further, we must explain how side effects are handled <A name=idx-CHP-24-1995></A>in Haskell.<A name=idx-CHP-24-1996></A></P>
+<BLOCKQUOTE>
+<P class=docFootnote><SUP><A name=CHP-24-FNOTE-5>[||]</A></SUP><A name="think it"></A> You may think it odd that there are three function arrows in this <A name=idx-CHP-24-1991></A>type signature, rather than one. That's because <A name=idx-CHP-24-1992></A>Haskell supports <SPAN class=docEmphasis>currying</SPAN><A name="described in"></A>, which you can find described in any book about <A name=idx-CHP-24-1993></A>Haskell (<SPAN class=docEmphasis>Haskell: The Craft of Functional Programming</SPAN><A name="the purposes"></A>, by S.J. Thompson [Addison-Wesley]), or on Wikipedia. For the purposes of this chapter, simply treat all the types except the final one as arguments.</P></BLOCKQUOTE>
+<P class=docText><A name=A></A>A <SPAN class=docEmphasis>side effect</SPAN><A name="reads or"></A> is anything that reads or writes mutable state. Input/output is a prominent example of a side effect. For example, here are the signatures of two Haskell functions with input/output effects:</P><PRE>	hPutStr  :: Handle -&gt; String -&gt; IO ()
+	hGetLine :: Handle -&gt; IO String
+</PRE><BR>
+<P class=docText><A name="value of"></A>We call any value of type <TT>IO t</TT> an <SPAN class=docEmphasis>action</SPAN>. So, (<TT>hPutStrh "hello"</TT>) is an action<SUP class=docFootnote><A class=docLink href="javascript:moveTo('CHP-24-FNOTE-6');">[#]</A></SUP><A name=print></A> that, when performed, will print <TT>hello</TT> on handle<SUP class=docFootnote><A class=docLink href="javascript:moveTo('CHP-24-FNOTE-7');">[**]</A></SUP> <TT>h</TT><A name="unit value"></A> and return the unit value. Similarly, (<TT>hGetLine h</TT><A name="from handle"></A>) is an action that, when performed, will read a line of input from handle <TT>h</TT><A name="it as"></A> and return it as a <TT>String</TT><A name="little side"></A>. We can glue together little side-effecting programs to make bigger side-effecting programs using Haskell's <TT>do</TT> notation. For example, <TT>EchoLine</TT><A name="input and"></A> reads a string from the input and prints it:<A name=idx-CHP-24-1998></A></P>
+<BLOCKQUOTE>
+<P class=docFootnote><SUP><A name=CHP-24-FNOTE-6>[#]</A></SUP> <A name=idx-CHP-24-1997></A><A name="In Haskell"></A>In Haskell, we write function application using simple juxtaposition. In most languages you would write <TT>hPutStr(h, "hello")</TT><A name="you write"></A>, but in Haskell you write simply (<TT>hPutStrh "hello"</TT>).</P></BLOCKQUOTE>
+<BLOCKQUOTE>
+<P class=docFootnote><SUP><A name=CHP-24-FNOTE-7>[**]</A></SUP> A <TT>Handle</TT><A name="the role"></A> in Haskell plays the role of a file descriptor in C: it says which file or pipe to read or write. As in Unix, there are three predefined handles: <TT>stdin, stdout</TT>, and <TT>stderr</TT>.</P></BLOCKQUOTE><PRE>	hEchoLine :: Handle -&gt; IO String
+	hEchoLine h = do { s &lt;- hGetLine h
+	                 ; hPutStr h ("I just read: " ++ s ++ "\n")
+	                 ; return s }
+</PRE><BR>
+<P class=docText>The notation <TT>do</TT> {<TT><I>a</I></TT><SPAN class=docEmphStrong><SUB>1</SUB></SPAN>; …; <TT><I>a</I></TT><SPAN class=docEmphStrong><SUB>n</SUB></SPAN><A name="action by"></A>} constructs an action by gluing together the smaller <A name=idx-CHP-24-1999></A>actions <TT><I>a</I></TT><SUB>1</SUB>…<TT><I>a</I></TT><SPAN class=docEmphasis><SUB>n</SUB></SPAN> in sequence. So <TT>hEchoLine h</TT><A name="when performed"></A> is an action that, when performed, will first perform <TT>hGetLine h</TT> to read a line from <TT>h</TT>, naming the result <TT>s</TT>. Then it will perform <TT>hPutStr</TT> to print <TT>s</TT>, preceded <SUP class=docFootnote><A class=docLink href="javascript:moveTo('CHP-24-FNOTE-8');">[<IMG alt=dagger src="images/U2020.GIF"><IMG alt=dagger src="images/U2020.GIF">]</A></SUP>by "<TT>I just read</TT>: ". Finally, it will return the string <TT>s</TT>. This last line is interesting because <TT>return</TT><A name="with type"></A> is not a built-in language construct: rather, it is a perfectly ordinary function with type:</P>
+<BLOCKQUOTE>
+<P class=docFootnote><SUP><A name=CHP-24-FNOTE-8>[<IMG alt=dagger src="images/U2020.GIF"><IMG alt=dagger src="images/U2020.GIF">]</A></SUP><A name="concatenates two"></A> The ++ operator concatenates two strings.</P></BLOCKQUOTE><PRE>	return :: a -&gt; IO a
+</PRE><BR>
+<P class=docText>The action <TT>return v</TT>, when performed, returns v without <A name=idx-CHP-24-2000></A>having caused any <A name=idx-CHP-24-2001></A>side effects. <SUP class=docFootnote><A class=docLink href="javascript:moveTo('CHP-24-FNOTE-9');">[<IMG alt="double dagger" src="images/U2021.GIF"><IMG alt="double dagger" src="images/U2021.GIF">]</A></SUP><A name="values of"></A>. This function works on values of any type, and we indicate this by using a type variable a in its type.</P>
+<BLOCKQUOTE>
+<P class=docFootnote><SUP><A name=CHP-24-FNOTE-9>[<IMG alt="double dagger" src="images/U2021.GIF"><IMG alt="double dagger" src="images/U2021.GIF">]</A></SUP> The <TT>IO</TT> type indicates the <SPAN class=docEmphasis>possibility</SPAN> of side effects, not the <SPAN class=docEmphasis>certainty</SPAN></P></BLOCKQUOTE>
+<P class=docText><A name="side effect"></A>Input/output is one important sort of side effect. Another is the act of reading or writing a <A name=idx-CHP-24-2002></A><A name="mutable variable"></A>mutable variable. For example, here is a function that increments the value of <A name=idx-CHP-24-2003></A>a mutable variable:</P><PRE>	incRef :: IORef Int -&gt; IO ( )
+	incRef var = do { val &lt;- readIORef var
+	                ; writeIORef var (val+1) }
+</PRE><BR>
+<P class=docText>Here, <TT>incRef var</TT><A name="that first"></A> is an action that first performs <TT>readIORef var</TT><A name="value of"></A> to read the value of the variable, naming its value <TT>val</TT><A name=performs></A>, and then performs <TT>writeIORef</TT><A name="value "></A> to write the value (<TT>val+1</TT>) into the variable. The types of <TT>readIORef</TT> and <TT>writeIORef</TT> are as follows:</P><PRE>	readIORef  :: IORef a -&gt; IO a
+	writeIORef :: IORef a -&gt; a -&gt; IO ( )
+</PRE><BR>
+<P class=docText>A value of type <TT>IORef t</TT><A name="location containing"></A> should be thought of as a pointer, or reference, to a mutable location containing a value of type <TT>t</TT><A name="like the"></A>, a bit like the type (<TT>t*</TT><A name=of></A>) in C. In the case of <TT>incRef</TT>, the argument has type <TT>IORef Int</TT> because <TT>incRef</TT><A name="contain an"></A> applies only to locations that contain an <TT>Int</TT>.</P>
+<P class=docText><A name="So far"></A>So far, I have explained how to build big actions by combining smaller ones together—but how does an action ever actually get performed? In <A name=idx-CHP-24-2004></A><A name="defines a"></A>Haskell, the whole program defines a single <TT>IO</TT> action, called <TT>main</TT><A name="program is"></A>. To run the program is to perform the action <TT>main</TT><A name="is a"></A>. For example, here is a complete program:<A name=idx-CHP-24-2005></A><A name=idx-CHP-24-2006></A></P><PRE>	main :: IO ( )
+	main = do { hPutStr stdout "Hello"
+	          ; hPutStr stdout " world\n" }
+</PRE><BR>
+<P class=docText><A name="a sequential"></A>This program is a sequential program because the <TT>do</TT><A name="we need"></A> notation combines IO actions in sequence. To construct a concurrent program we need one more primitive, <TT>forkIO</TT>:<A name=idx-CHP-24-2007></A></P><PRE>	forkIO :: IO a -&gt; IO ThreadId
+</PRE><BR>
+<P class=docText>The function <TT>forkIO</TT><A name="built into"></A>, which is built into Haskell, takes an <TT>IO</TT><A name="spawns it"></A> action as its argument, and spawns it as a concurrent Haskell thread. Once created, it is run concurrently with all the other Haskell threads by the Haskell runtime system. For example, suppose we modified our main program thus:<SUP class=docFootnote><A class=docLink href="javascript:moveTo('CHP-24-FNOTE-10');">[§§]</A></SUP></P>
+<BLOCKQUOTE>
+<P class=docFootnote><SUP><A name=CHP-24-FNOTE-10>[§§]</A></SUP> In the first line of <TT>main</TT>, we <TT>could</TT> instead have written <TT>tid &lt;-forkIO (hPutStr…</TT>), to bind the <TT>ThreadId</TT> returned by <TT>forkIO</TT> to <TT>tid</TT><A name="the returned"></A>. However, because we do not use the returned <TT>ThreadId</TT><A name="we are"></A>, we are free to discard it by omitting the <TT>tid&lt;-</TT>part.</P></BLOCKQUOTE><PRE>	main :: IO ( )
+	main = do { forkIO (hPutStr stdout "Hello")
+	          ; hPutStr stdout " world\n" }
+</PRE><BR>
+<P class=docText>Now, the two <TT>hPutStr</TT><A name="Which of"></A> actions would run concurrently. Which of them would "win" (by printing its string first) is unspecified. <A name=idx-CHP-24-2008></A><A name=by></A>Haskell threads spawned by <TT>forkIO</TT><A name="they occupy"></A> are extremely lightweight: they occupy a few hundred bytes of memory, and it is perfectly reasonable for a single program to spawn thousands of them.</P>
+<P class=docText><A name="by now"></A>Gentle reader, you may by now be feeling that Haskell is a very clumsy and verbose language. After all, our three-line definition of <TT>incRef</TT> accomplishes no more than <TT>x++</TT> does in C! Indeed, <A name=idx-CHP-24-2009></A>in Haskell <A name=idx-CHP-24-2010></A><A name="Haskell is"></A>side effects are extremely explicit and somewhat verbose. However, remember first that Haskell is primarily a <SPAN class=docEmphasis>functional</SPAN><A name="are written"></A> language. Most programs are written in the functional core of Haskell, which is rich, expressive, and concise. Haskell thereby gently encourages you to write programs that make sparing use of side effects.<A name=idx-CHP-24-2011></A></P>
+<P class=docText>Second, notice that <A name=idx-CHP-24-2012></A><A name="effects reveals"></A>being explicit about side effects reveals a good deal of useful information. Consider two functions:</P><PRE>	f :: Int -&gt; Int
+	g :: Int -&gt; IO Int
+</PRE><BR>
+<P class=docText><A name="we can"></A>From looking only at their types, we can see that <TT>f</TT><A name="is a"></A> is a pure function: it has no side effects. Given a particular <TT>Int</TT>, say <TT>42</TT>, the call (<TT>f 42</TT><A name="same value"></A>) will return the same value every time it is called. In contrast, <TT>g</TT><A name="this is"></A> has side effects, and this is apparent in its type. Each time <TT>g</TT><A name="may give"></A> is performed, it may give a different result—for example, it may read from <TT>stdin</TT><A name="mutable variable"></A> or modify a mutable variable—even if its argument is the same every time. This ability to make side effects explicit will prove very useful in what follows.</P>
+<P class=docText><A name="returned as"></A>Lastly, actions are first-class values: they may be passed as arguments, as well as returned as results. For example, here is the definition of a (simplified) <TT>for</TT><A name=entirely></A> loop function, written entirely <A name=idx-CHP-24-2013></A><A name="being built"></A>in Haskell rather than being built-in:</P><PRE>	nTimes :: Int -&gt; IO ( ) -&gt; IO ( )
+	nTimes 0 do_this = return ( )
+	nTimes n do_this = do { do_this; nTimes (n-1) do_this }
+</PRE><BR>
+<P class=docText>This recursive function takes an <TT>Int</TT><A name="and an"></A> saying how many times to loop, and an action <TT>do_this</TT><A name="it returns"></A>; it returns an action that, when performed, performs the <TT>do_this</TT> action <TT>n</TT><A name="example that"></A> times. Here is an example that uses <TT>nTimes</TT> to print <TT>Hello</TT> 10 times:</P><PRE>	main = nTimes 10 (hPutStr stdout "Hello\n")
+</PRE><BR>
+<P class=docText><A name=actions></A>In effect, by treating actions <A name=idx-CHP-24-2014></A><A name=supports></A>as first-class values, Haskell supports <SPAN class=docEmphasis>user-defined control structures</SPAN>.<A name=idx-CHP-24-2015></A></P>
+<P class=docText><A name="not the"></A>This chapter is not the place for a full introduction to Haskell, or even to side effects in Haskell. A good starting point for further reading is my tutorial "Tackling the awkward squad."<SUP class=docFootnote><A class=docLink href="javascript:moveTo('CHP-24-FNOTE-11');">[||||]</A></SUP><A name=I_indexterm24_tt483></A><A name=I_indexterm24_tt484></A><A name=I_indexterm24_tt485></A></P>
+<BLOCKQUOTE>
+<P class=docFootnote><SUP><A name=CHP-24-FNOTE-11>[||||]</A></SUP> Simon Peyton <A name=idx-CHP-24-2016></A>Jones, "Tackling the awkward squad: monadic input/output, <A name=idx-CHP-24-2017></A>concurrency, exceptions, and foreign-language calls in Haskell," C. A. R. Hoare, M. Broy, and R. Steinbrueggen, editors, <SPAN class=docEmphasis>Engineering theories of software construction</SPAN>, Marktoberdorf Summer School 2000, NATO ASI Series, pp. 47–96, IOS Press, 2001.</P></BLOCKQUOTE><A name=transactions_in_haskell></A>
+<H4 class=docSection2Title id=title-ID0E5REK>24.2.2. Transactions in Haskell</H4>
+<P class=docText>Now, we can return to our <TT>transfer</TT> function. Here is its code:<A name=idx-CHP-24-2018></A><A name=idx-CHP-24-2019></A></P><PRE>	transfer :: Account -&gt; Account -&gt; Int -&gt; IO ( )
+	-- Transfer 'amount' from account 'from' to account 'to'
+	transfer from to amount
+	 = <A name=idx-CHP-24-2020></A>atomically (do { deposit to amount
+	                  ; withdraw from amount })
+</PRE><BR>
+<P class=docText>The inner <TT>do</TT> block should by now be fairly self-explanatory: we call <TT>deposit</TT> to deposit <TT>amount</TT> in <TT>to</TT>, and <TT>withdraw</TT> to withdraw <TT>amount</TT> from account <TT>from</TT><A name="look at"></A>. We will write these auxiliary functions in a moment, but first let's look at the call to <TT>atomically</TT><A name="an action"></A>. It takes an action as its argument and performs it atomically. More precisely, it makes two guarantees:</P><A name=idx-CHP-24-2021></A><A name=idx-CHP-24-2022></A>
+<DL class=docList>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docEmphasis>Atomicity</SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList>The effects of <TT>atomically act</TT><A name="thread all"></A> become visible to another thread all at once. This ensures that no other thread can see a state in which money has been deposited in <TT>to</TT> but not yet withdrawn from <TT>from</TT>.<A name=idx-CHP-24-2021></A></P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docEmphasis>Isolation</SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList>During a call <TT>atomically act</TT>, the action <TT>act</TT><A name="It is"></A> is completely unaffected by other threads. It is as if <TT>act</TT><A name="takes a"></A> takes a snapshot of the state of the world when it begins running, and then executes against that snapshot.<A name=idx-CHP-24-2022></A></P></DD></DL>
+<P class=docText><A name="simple execution"></A>Here is a simple execution model for <TT>atomically</TT><A name="a single"></A>. Suppose there is a single, global lock. Then <TT>atomically act</TT><A name="performs the"></A> grabs the lock, performs the action <TT>act</TT><A name="This implementation"></A>, and releases the lock. This implementation brutally ensures that no two atomic blocks can be executed simultaneously, and thereby ensures atomicity.</P>
+<P class=docText><A name="isolation at"></A>There are two problems with this model. First, it does not ensure isolation at all: while one thread is accessing an <TT>IORef</TT><A name="atomic block"></A> inside an atomic block (holding the Global Lock), there is nothing to stop <SPAN class=docEmphasis>another</SPAN><A name=same></A> thread from writing the same <TT>IORef</TT> directly (i.e., outside <TT>atomically</TT><A name="destroying the"></A>, without holding the Global Lock), thereby destroying the isolation guarantee. Second, performance is dreadful because every atomic block is serialized even if no actual interference is possible.</P>
+<P class=docText><A name="I will"></A>I will discuss the second problem shortly, in the section "Implementing Transactional Memory." Meanwhile, the first objection is easily addressed with the type system. We give <TT>atomically</TT> the following type:</P><PRE>	atomically :: <A name=idx-CHP-24-2023></A>STM a -&gt; IO a
+</PRE><BR>
+<P class=docText>The argument of <TT>atomically</TT><A name="of type"></A> is an action of type <TT>STM a</TT>. An <TT>STM</TT><A name=an></A> action is like an <TT>IO</TT><A name="it can"></A> action, in that it can have side effects, but the range of side effects for <TT>STM</TT><A name="The main"></A> actions is much smaller. The main thing you can do in an STM action is to read or write a transactional variable, of type (<TT>TVar a</TT>), much as we could read or write <TT>IORefs</TT> in an <TT>IO</TT> action:<SUP class=docFootnote><A class=docLink href="javascript:moveTo('CHP-24-FNOTE-12');">[##]</A></SUP><A name=idx-CHP-24-2024></A></P>
+<BLOCKQUOTE>
+<P class=docFootnote><SUP><A name=CHP-24-FNOTE-12>[##]</A></SUP><A name="use either"></A> The nomenclature is inconsistent here: it would be more consistent to use either <TT>TVar</TT> and <TT>IOVar</TT>,or <TT>TRef</TT> and <TT>IORef</TT><A name="would be"></A>. But it would be disruptive to change at this stage; for better or worse, we have <TT>TVar</TT> and <TT>IORef</TT>.</P></BLOCKQUOTE><PRE>	readTVar  :: TVar a -&gt; STM a
+	writeTVar :: TVar a -&gt; a -&gt; <A name=idx-CHP-24-2025></A><A name=idx-CHP-24-2026></A>STM ( )
+</PRE><BR>
+<P class=docText><TT>STM</TT><A name="together with"></A> actions can be composed together with the same <TT>do</TT> notation as <TT>IO</TT><A name="work on"></A> actions—the do notation is overloaded to work on both types, as is <TT>return</TT>.<SUP class=docFootnote><A class=docLink href="javascript:moveTo('CHP-24-FNOTE-13');">[***]</A></SUP><A name="for example"></A> Here, for example, is the code for <TT>withdraw</TT>:<A name=idx-CHP-24-2029></A></P>
+<BLOCKQUOTE>
+<P class=docFootnote><SUP><A name=CHP-24-FNOTE-13>[***]</A></SUP> This overloading of <TT>do</TT> notation and <TT>return</TT><A name="ad hoc"></A> is not an ad hoc trick to support <TT>IO</TT> and <TT>STM</TT><A name="are both"></A>. Rather, IO and STM are both examples of a common pattern, called a <SPAN class=docEmphasis>monad</SPAN><A name="of functional"></A> (described in P. L. Wadler, "The essence of functional programming," <SPAN class=docEmphasis><A name="Principles of"></A>20th ACM Symposium on Principles of Programming Languages [POPL '92</SPAN><A name="pattern using"></A>], Albuquerque, pp. 1–14, ACM, January 1992), and the overloading is achieved by expressing that common pattern using <A name=idx-CHP-24-2027></A>Haskell's very general <SPAN class=docEmphasis>type-class</SPAN><A name="Wadler and"></A> mechanism (described in P. L. Wadler and S. Blott, "How to make ad-hoc polymorphism less ad hoc," <SPAN class=docEmphasis><A name="Principles of"></A>Proc 16th ACM Symposium on Principles of Programming Languages</SPAN>, Austin, Texas, ACM, January 1989; and Simon Peyton <A name=idx-CHP-24-2028></A><A name="of the"></A>Jones, Mark Jones, and Erik Meijer, "Type classes: an exploration of the design space," J. Launch-bury, editor, <SPAN class=docEmphasis><A name="Haskell workshop"></A>Haskell workshop</SPAN>, Amsterdam, 1997).</P></BLOCKQUOTE><PRE>	type Account = TVar Int
+
+	withdraw :: Account -&gt; Int -&gt; STM ( )
+	withdraw acc amount
+	  = do { bal &lt;- readTVar acc
+	       ; writeTVar acc (bal - amount) }
+</PRE><BR>
+<P class=docText>We represent an <TT>Account</TT><A name="variable containing"></A> by a transactional variable containing an <TT>Int</TT><A name=Then></A> for the account balance. Then <TT>withdraw</TT> is an <TT>STM</TT><A name="decrements the"></A> action that decrements the balance in the account by <TT>amount</TT>.</P>
+<P class=docText><A name="definition of"></A>To complete the definition of <TT>transfer</TT>, we can define <TT>deposit</TT> in terms of <TT>withdraw</TT>:</P><PRE>	deposit :: Account -&gt; Int -&gt; STM ( )
+	deposit acc amount = withdraw acc (- amount)
+</PRE><BR>
+<P class=docText>Notice that <TT>transfer</TT><A name=account></A> ultimately performs four primitive read/write actions: a read and then write on account <TT>to</TT><A name="a read"></A>, followed by a read and then write on account <TT>from</TT><A name="and that"></A>. These four actions execute atomically, and that meets the specification given at the start of the section "A Simple Example: Bank Accounts."</P>
+<P class=docText><A name="us from"></A>The type system neatly prevents us from reading or writing a <TT>TVar</TT><A name="outside of"></A> outside of a transaction. For example, suppose we tried this:</P><PRE>	bad :: Account -&gt; IO ( )
+	bad acc = do { hPutStr stdout "Withdrawing..."
+	             ; withdraw acc 10 }
+</PRE><BR>
+<P class=docText><A name="rejected because"></A>This program is rejected because the <TT>hPutStr</TT> is an <TT>IO</TT> action, while the <TT>withdraw</TT> is an <TT>STM</TT><A name="cannot be"></A> action, and the two cannot be combined in a single <TT>do</TT><A name="wrap a"></A> block. If we wrap a call to <TT>atomically</TT> around the <TT>withdraw</TT>, all is well:</P><PRE>	good :: Account -&gt; IO ( )
+	good acc = do { hPutStr stdout "Withdrawing..."
+	              ; atomically (withdraw acc 10) }
+</PRE><BR><A name=implementing_transactional_memory></A>
+<H4 class=docSection2Title id=title-ID0EA3EK>24.2.3. Implementing Transactional Memory</H4>
+<P class=docText><A name="atomicity and"></A>The guarantees of atomicity and isolation that I described earlier should be all that a programmer needs in order to use <A name=idx-CHP-24-2030></A><A name="implementation model"></A>STM. Even so, I often find it helpful to have a reasonable implementation model to guide my intuitions, and I will sketch one such implementation in this section. But remember that this is just <SPAN class=docEmphasis>one</SPAN><A name="of the"></A> possible implementation. One of the beauties of the STM abstraction is that it presents a small, clean interface that can be implemented in a variety of ways, some simple and some sophisticated.<A name=idx-CHP-24-2031></A></P>
+<P class=docText><A name="is well"></A>One particularly attractive implementation is well established in the database world, namely <SPAN class=docEmphasis>optimistic execution</SPAN>. When <TT>atomically act</TT> is performed, a thread-local <SPAN class=docEmphasis>transaction log</SPAN> is allocated, initially empty. Then the action <TT>act</TT><A name="at all"></A> is performed, without taking any locks at all. While performing <TT>act</TT><A name="each call"></A>, each call to <TT>writeTVar</TT><A name="of the"></A> writes the address of the <TT>TVar</TT><A name="value into"></A> and its new value into the log; it does not write to the <TT>TVar</TT><A name=to></A> itself. Each call to <TT>readTVar</TT><A name="log "></A> first searches the log (in case the <TT>TVar</TT> was written by an earlier call to <TT>writeTVar</TT><A name=the></A>); if no such record is found, the value is read from the <TT>TVar</TT> itself, and the <TT>TVar</TT><A name="read are"></A> and value read are recorded in the log. In the meantime, other threads might be running their own atomic blocks, reading and writing <TT>TVars</TT> like crazy.<A name=idx-CHP-24-2032></A><A name=idx-CHP-24-2033></A></P>
+<P class=docText>When the action <TT>act</TT> is finished, the implementation first <SPAN class=docEmphasis>validates</SPAN><A name="is successful"></A> the log and, if validation is successful, <SPAN class=docEmphasis>commits</SPAN><A name=each></A> the log. The validation step examines each <TT>readTVar</TT><A name="recorded in"></A> recorded in the log and checks that the value in the log matches the value currently in the real <TT>TVar</TT><A name="the commit"></A>. If so, validation succeeds, and the commit step takes all the writes recorded in the log and writes them into the real <TT>TVars</TT>.<A name=idx-CHP-24-2034></A></P>
+<P class=docText><A name="performed truly"></A>These steps are performed truly indivisibly: the implementation disables interrupts, or uses locks or compare-and-swap instructions—whatever is necessary to ensure that validation and commit are perceived by other threads as completely indivisible. All of this is handled by the implementation, however, and the programmer does not need to know or care how it is done.</P>
+<P class=docText><A name="validation fails"></A>What if validation fails? Then the transaction has had an inconsistent view of memory. So, we abort the transaction, reinitialize the log, and run <TT>act</TT><A name="process is"></A> all over again. This process is called <SPAN class=docEmphasis>re-execution</SPAN>. Because none of <TT>act</TT><A name="run it"></A>'s writes have been committed to memory, it is perfectly safe to run it again. However, notice that it is crucial that <TT>act</TT><A name=effects></A> contains no effects <SPAN class=docEmphasis>other than</SPAN> reads and writes on <TT>TVars</TT>. For example, consider:<A name=idx-CHP-24-2035></A></P><PRE>	atomically (do { x &lt;- readTVar xv
+	               ; y &lt;- readTVar yv
+	               ; if x&gt;y then launchMissiles
+	                           else return () })
+</PRE><BR>
+<P class=docText>where <TT>launchMissiles::IO ( )</TT><A name="Because the"></A> causes serious international side effects. Because the atomic block is executed without taking locks, it might have an inconsistent view of memory if other threads are concurrently modifying <TT>xv</TT> and <TT>yv</TT><A name="a mistake"></A>. If that happens, it would be a mistake to launch the missiles, and only <SPAN class=docEmphasis>then</SPAN><A name="discover that"></A> discover that validation fails so the transaction should be rerun. Fortunately, the <A name=idx-CHP-24-2036></A><A name="us from"></A>type system prevents us from running <TT>IO</TT> actions inside <TT>STM</TT><A name="fragment would"></A> actions, so the above fragment would be rejected by the type checker. This is another big advantage of distinguishing the types of <TT>IO</TT> and <TT>STM</TT> actions.<A name=idx-CHP-24-2037></A></P><A name=blocking_and_choice></A>
+<H4 class=docSection2Title id=title-ID0EOAFK>24.2.4. Blocking and Choice</H4>
+<P class=docText><A name="as we"></A>Atomic blocks as we have introduced them so far are utterly inadequate to coordinate concurrent programs. They lack two key facilities: <SPAN class=docEmphasis>blocking</SPAN> and <SPAN class=docEmphasis>choice</SPAN><A name="how the"></A>. In this section, I'll describe how the basic STM interface is elaborated to include them in a fully modular way.</P>
+<P class=docText>Suppose that a thread should <SPAN class=docEmphasis>block</SPAN><A name="the current"></A> if it attempts to overdraw an account (i.e., withdraw more than the current balance). Situations like this are common in concurrent programs: for example, a thread should block if it reads from an empty buffer, or when it waits for an event. We achieve this in STM by adding the single function <TT>retry</TT>, whose type is:</P><PRE>	retry :: STM a
+</PRE><BR>
+<P class=docText><A name="a modified"></A>Here is a modified version of <TT>withdraw</TT><A name="balance would"></A> that blocks if the balance would go negative:</P><PRE>	limitedWithdraw :: Account -&gt; Int -&gt; STM ( )
+	limitedWithdraw acc amount
+	  = do { bal &lt;- readTVar acc
+	       ; if amount &gt; 0 &amp;&amp; amount &gt; bal
+	         then retry
+	         else writeTVar acc (bal - amount) }
+</PRE><BR>
+<P class=docText>The semantics of <TT>retry</TT> are simple: if a <TT>retry</TT><A name="is abandoned"></A> action is performed, the current transaction is abandoned and retried at some later time. It would be correct to retry the transaction immediately, but it would also be inefficient: the state of the account will probably be unchanged, so the transaction will again hit the <TT>retry</TT><A name="An efficient"></A>. An efficient implementation would instead block the thread until some other thread writes to <TT>acc</TT><A name="implementation know"></A>. How does the implementation know to wait on <TT>acc?</TT><A name=reads></A> Because the transaction reads <TT>acc</TT><A name="way to"></A> on the way to the <TT>retry</TT><A name="is conveniently"></A>, and that fact is conveniently recorded in the transaction log.</P>
+<P class=docText>The conditional in <TT>limitedWithdraw</TT><A name="satisfied and"></A> has a very common pattern: check that a Boolean condition is satisfied and, if not, <TT>retry</TT><A name="is easy"></A>. This pattern is easy to abstract as a function, <TT>check</TT>:</P><PRE>	check :: Bool -&gt; STM ( )
+	check True = return ( )
+	check False = retry
+</PRE><BR>
+<P class=docText>Now, we can use <TT>check</TT> to re-express <TT>limitedWithdraw</TT> a little more neatly:</P><PRE>	limitedWithdraw :: Account -&gt; Int -&gt; STM ( )
+	limitedWithdraw acc amount
+	  = do { bal &lt;- readTVar acc
+	       ; check (amount &lt;= 0 || amount &lt;= bal)
+	       ; writeTVar acc (bal - amount) }
+</PRE><BR>
+<P class=docText><A name="attention to"></A>We now turn our attention to <SPAN class=docEmphasis>choice</SPAN><A name="money from"></A>. Suppose you want to withdraw money from account A if it has enough money, but if not then withdraw it from account B? For that, we need the ability to choose an alternative action if the first one retries. To support choice, STM <A name=idx-CHP-24-2038></A><A name="Haskell has"></A>Haskell has one further primitive action, called <TT>orElse</TT>, whose type is:</P><PRE>	orElse :: STM a -&gt; STM a -&gt; STM a
+</PRE><BR>
+<P class=docText>Like <TT>atomically</TT>, <TT>orElse</TT><A name="its arguments"></A> takes actions as its arguments, and glues them together to make a bigger action. Its semantics are as follows. The action (<TT>orElse a1 a2</TT>) first performs <TT>a1</TT>. If <TT>a1</TT> retries (i.e., calls <TT>retry</TT>), it tries <TT>a2</TT><A name="whole action"></A> instead. If a2 also retries, the whole action retries. It may be easier to see how <TT>orElse</TT> is used:</P><PRE>	limitedWithdraw2 :: Account -&gt; Account -&gt; Int -&gt; <A name=idx-CHP-24-2039></A>STM ( )
+	-- (limitedWithdraw2 acc1 acc2 amt) withdraws amt from acc1,
+	-- if acc1 has enough money, otherwise from acc2.
+	-- If neither has enough, it retries.
+	limitedWithdraw2 acc1 acc2 amt
+	  = orElse (limitedWithdraw acc1 amt) (limitedWithdraw acc2 amt)
+</PRE><BR>
+<P class=docText><A name="result of"></A>Because the result of <TT>orElse</TT> is itself an <TT>STM</TT><A name="it to"></A> action, you can feed it to another call to <TT>orElse</TT> and so choose among an arbitrary number of alternatives.</P><A name=summary_of_basic_stm_operations></A>
+<H4 class=docSection2Title id=title-ID0EREFK>24.2.5. Summary of Basic STM Operations</H4>
+<P class=docText><A name="operations supported"></A>In this section, I have introduced all the key transactional memory operations supported by STM <A name=idx-CHP-24-2040></A><A name="summarized in"></A>Haskell. They are summarized in <A class=docLink href="javascript:moveTo('the_key_operations_of_stm_haskell');">Table 24-1</A><A name="operation that"></A>. This table includes one operation that has not so far arisen: <TT>newTVar</TT><A name="you can"></A> is the way in which you can create new <TT>TVar</TT><A name="and we"></A> cells, and we will use it in the following section.<A name=idx-CHP-24-2041></A></P><A name=the_key_operations_of_stm_haskell></A>
+<P>
+<TABLE cellSpacing=0 width="100%" border=1>
+<CAPTION>
+<H5 class=docTableTitle><A name="operations of"></A>Table 24-1. The key operations of STM Haskell</H5></CAPTION>
+<COLGROUP span=2>
+<COL>
+<COL></COLGROUP>
+<THEAD>
+<TR>
+<TH class="docTableCell thead" scope=col>Operation </TH>
+<TH class="docTableCell thead" scope=col>Type signature </TH></TR></THEAD>
+<TBODY>
+<TR>
+<TD class=docTableCell><TT>atomically</TT> </TD>
+<TD class=docTableCell><TT>STM a -&gt; IO a</TT> </TD></TR>
+<TR>
+<TD class=docTableCell><TT>retry</TT> </TD>
+<TD class=docTableCell><TT>STM a</TT> </TD></TR>
+<TR>
+<TD class=docTableCell><TT>orElse</TT> </TD>
+<TD class=docTableCell><TT><A name="a "></A>STM a -&gt; STM a -&gt; STM a</TT> </TD></TR>
+<TR>
+<TD class=docTableCell><TT>newTVar</TT> </TD>
+<TD class=docTableCell><TT>a -&gt; STM (TVar a)</TT> </TD></TR>
+<TR>
+<TD class=docTableCell><TT>readTVar</TT> </TD>
+<TD class=docTableCell><TT><A name="STM a"></A>TVar a -&gt; STM a</TT> </TD></TR>
+<TR>
+<TD class=docTableCell><TT>writeTVar</TT> </TD>
+<TD class=docTableCell><TT><A name="STM "></A>TVar a -&gt; a -&gt; STM ( )</TT> </TD></TR></TBODY></TABLE></P><BR></DIV></DIV>
+<p>&nbsp;</p><p>&nbsp;</p><!-- 仁·义 -->
+</body></html>

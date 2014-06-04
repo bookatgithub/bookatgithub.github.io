@@ -1,0 +1,429 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Section 6.4.&nbsp; Benchmarking</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=regex3-CHP-6-SECT-3.html><img src="images/prev.gif" width="60" height="17" border="0" align="absmiddle" alt="Previous Page"></a>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=regex3-CHP-6-SECT-5.html><img src="images/next.gif" width="60" height="17" border="0" align="absmiddle" alt="Next Page"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><a name="regex3-CHP-6-SECT-4"></a>
+<H3 id="title-IDAWMYCH" class="docSection1Title">6.4. Benchmarking</H3>
+<p class="docText">Because this chapter talks a lot about speed and efficiency, and I often mention benchmarks I've done, I'd like to mention a few principles of benchmarking.<a name="IDX-CHP-6-1802"></a> 
+ I'll also show simple ways to benchmark in a few languages.</P>
+<p class="docText">Basic benchmarking is simply timing how long it takes to do some work. To do the timing, get the system time, do the work, get the system time again, and report the difference between the times as the time it took to do the work. As an example, let's compare <img src=images/U2308.jpg border=0><tt>^(a|b|c|d|e|f|g)+$</tt><img src=images/U230B.jpg border=0> with <img src=images/U2308.jpg border=0><tt>^[a-g]+$</tt><img src=images/U230B.jpg border=0>. We'll first look at benchmarking in Perl, but will see it in other languages in a bit. Here's a simple (but as we'll see, somewhat lacking) Perl script:</P>
+<pre>
+    use Time::HiRes<a name="IDX-CHP-6-1803"></a> 
+ 'time'; # <span class="docEmphasis">So time()<a name="IDX-CHP-6-1804"></a> 
+ gives a
+ high-resolution value</span>.
+    $StartTime = time();
+    "abababdedfg" =~ m/^(a|b|c|d|e|f|g)+$/;
+    $EndTime = time();
+    printf("Alternation takes %.3f seconds.\n", $EndTime - $StartTime);
+    $StartTime = time();
+    "abababdedfg" =~ m/^[a-g]+$/;
+    $EndTime = time();
+    printf("Character class takes %.3f seconds.\n", $EndTime - $StartTime);
+</pre><br>
+
+<p class="docText">It looks (and is) simple, but there are some important points to keep in mind while constructing a test for benchmarking:</P>
+<ul><li><p class="docList"><span class="docEmphStrong">Time only "interesting" work</span>. Time as much of the "work" as possible, but as little "non-work" as possible. If there is some initialization or other setup that must be done, do it before the starting time is taken. If there's cleanup, do it after the ending time is taken.</P></LI><li><p class="docList"><span class="docEmphStrong">Do "enough" work</span>. Often, the time it takes to do what you want to test is very short, and a computer's clock doesn't have enough granularity to give meaning to the timing.</p><p class="docList">When I run the simple Perl test on my system, I get</P><pre>
+    Alternation takes 0.000 seconds.
+    Character class takes 0.000 seconds.
+</pre><BR>
+<p class="docList">which really doesn't tell me anything other than both are faster than the shortest time that can be measured. So, if something is fast, do it twice, or 10 times, or even 10,000,000 timeswhatever is required to make "enough" work. What is "enough" depends on the granularity of the system clock, but most systems now have clocks accurate down to 1/100<sup>th</sup> of a second, and in such cases, timing even half a second of work may be sufficient for meaningful results.</P></li><LI><p class="docList"><span class="docEmphStrong">Do the "right" work</span>. Doing a very fast operation ten million times involves the overhead of ten million updates of a counter variable in the block being timed. If possible, it's best to increase the amount of <span class="docEmphasis">real</span> work being done in a way that doesn't increase the <span class="docEmphasis">overhead</span> work. In our Perl example, the regular expressions are being applied to fairly short strings: if applied to much longer strings, they'd do more "real" work each time.</P></li></ul>
+<p class="docText">So, taking these into account, here's another version:</p>
+<pre>
+    use Time::HiRes 'time'; # <span class="docEmphasis">So time() gives a high-resolution value</span>.
+    $TimesToDo = 1000;                     # <span class="docEmphasis">Simple setup</span>
+    $TestString = "abababdedfg" x 1000;    # <span class="docEmphasis">Makes a huge string</span>
+
+    $Count = $TimesToDo;
+    $StartTime = time();
+    while ($Count-- &gt; 0) {
+        $TestString =~ m/^(a|b|c|d|e|f|g)+$/;
+    }
+    $EndTime = time();
+    printf("Alternation takes %.3f seconds.\n", $EndTime - $StartTime);
+
+    $Count = $TimesToDo;
+    $StartTime = time();
+    while ($Count-- &gt; 0) {
+        $TestString =~ m/^[a-g]+$/;
+    }
+    $EndTime = time();
+    printf("Character class takes %.3f seconds.\n", $EndTime - $StartTime);
+</pre><br>
+
+<p class="docText">Notice how the <tt>$TestString</tt> and <tt>$Count</tt> are initialized before the timing starts? <tt>($TestString</tt> is initialized with Perl's convenient <tt>x</tt> operator, which replicates the string on its left as many times as the number on its right.) On my system, with Perl 5.8, this prints:</P>
+<pre>
+    Alternation takes 7.276 seconds.
+    Character class takes 0.333 seconds.
+</pre><br>
+
+<p class="docText">So, with this test case, one is about 22x faster than the other. The benchmark should be executed a few times, with the fastest times taken, to lessen the impact of sporadic background system activity.</p>
+<a name="regex3-CHP-6-SECT-4.1"></a>
+<H4 id="title-IDA0PYCH" class="docSection2Title">6.4.1. Know What You're Measuring</h4>
+<a name="IDX-CHP-6-1805"></a> 
+
+<p class="docText">It might be interesting to see what happens when the initialization is changed to:</p>
+<pre>
+    $TimesToDo = 1000000;
+    $TestString = "abababdedfg";
+</pre><br>
+
+<p class="docText">Now, the test string is 1,000x shorter, but the test is done 1,000x more times. The total number of characters tested and matched by each regex remains the same, so conceptually, one might think that the amount of "work" should also remain the same. However, the results are quite different:</p>
+<pre>
+    Alternation takes 18.167 seconds.
+    Character class takes 5.231 seconds.
+</pre><br>
+
+<p class="docText">Both are now much slower than before. This is due to all the extra "non-work" overheadthe update and testing of <tt>$Count</tt>, and the setup of the regex engine, now each happen 1,000x more than before.</p>
+<p class="docText">The extra overhead adds almost 5 seconds to the faster test, but more than 10 seconds to the alternation test. Why is the latter affected so much more? It's mostly due to the extra overhead of the capturing parentheses (which require their own extra processing before and after each test, and doing that 1,000x more adds up).</p>
+<p class="docText">In any case, the point of this change is to illustrate that the results are strongly influenced by how much real work versus non-work overtime is part of the timing.</p>
+
+<a name="regex3-CHP-6-SECT-4.2"></a>
+<h4 id="title-IDA0QYCH" class="docSection2Title">6.4.2. Benchmarking with PHP</h4>
+<a name="IDX-CHP-6-1806"></a> 
+
+<p class="docText">Here's the benchmark example in PHP, using the preg engine:</p>
+<pre>
+    $TimesToDo = 1000;
+    /* <span class="docEmphasis">Prepare the test string</span> */
+    $TestString = "";
+    for ($i = 0; $i &lt; 1000; $i++)
+        $TestString .= "abababdedfg";
+    /* <span class="docEmphasis">Do the first test</span> */
+    $start = gettimeofday();<a name="IDX-CHP-6-1807"></a> 
+
+    for ($i = 0; $i &lt; $TimesToDo; $i++)
+         preg_match('/^(a|b|c|e|f|g)+$/', $TestString);
+    $final = gettimeofday();
+    $sec = ($final['sec'] + $final['usec']/1000000) -
+           ($start['sec'] + $start['usec']/1000000);
+    printf("Alternation takes %.3f seconds\n", $sec);
+    /* <span class="docEmphasis">And now the second test</span> */
+    $start = gettimeofday();
+    for ($i = 0; $i &lt; $TimesToDo; $i++)
+         preg_match('/^[a-g]+$/', $TestString);
+    $final = gettimeofday();
+    $sec = ($final['sec'] + $final['usec']/1000000) -
+           ($start['sec'] + $start['usec']/1000000);
+    printf("Character class takes %.3f seconds\n", $sec);
+</pre><br>
+
+<p class="docText">On my system, it produces:</p>
+<pre>
+    Alternation takes 27.404 seconds
+    Character class takes 0.288 seconds
+</pre><br>
+
+<p class="docText">If, while benchmarking,<a name="IDX-CHP-6-1808"></a> 
+ you get a PHP error about it "not being safe to rely on the system's timezone settings," add the following to the top of your test program:</p>
+<pre>
+    if (phpversion() &gt;= 5)
+        date_default_timezone_set("GMT");<a name="IDX-CHP-6-1809"></a> 
+
+</pre><br>
+
+
+<a name="regex3-CHP-6-SECT-4.3"></a>
+<h4 id="title-IDAISYCH" class="docSection2Title">6.4.3. Benchmarking with Java</H4>
+<a name="IDX-CHP-6-1810"></a> 
+
+<a name="IDX-CHP-6-1811"></a> 
+
+<a name="IDX-CHP-6-1812"></a> 
+<a name="IDX-CHP-6-1813"></a> 
+<a name="IDX-CHP-6-1814"></a> 
+<a name="IDX-CHP-6-1815"></a> 
+<a name="IDX-CHP-6-1816"></a> 
+<a name="IDX-CHP-6-1817"></a> 
+<a name="IDX-CHP-6-1818"></a> 
+
+<p class="docText">Benchmarking Java can be a slippery science, for a number of reasons. Let's first look at a somewhat na&iuml;ve example, and then look at why it's na&iuml;ve, and at what can be done to make it less so:</p>
+<pre>
+    import java.util.regex.*;
+    public class JavaBenchmark {
+     public static void main(String [] args)
+     {
+       Matcher regex1 = Pattern.compile("^(a|b|c|d|e|f|g)+$").matcher("");
+       Matcher regex2 = Pattern.compile("^[a-g]+$").matcher("");
+       long timesToDo = 1000;
+
+       StringBuffer temp = new StringBuffer();
+       for (int i = 1000; i &gt; 0; i--)
+               temp.append("abababdedfg");
+       String testString = temp.toString();
+
+       // <span class="docEmphasis">Time first one</span> ...
+       long count = timesToDo;
+       long startTime = System.currentTimeMillis();
+       while (--count &gt; 0)
+             regex1.reset(testString).find();
+       double seconds = (System.currentTimeMillis() - startTime)/1000.0;
+       System.out.println("Alternation takes " + seconds + " seconds");
+
+       // <span class="docEmphasis">Time second one</span> ...
+      count = timesToDo;
+      startTime = System.currentTimeMillis();
+      while (--count &gt; 0)
+            regex2.reset(testString).find();
+      seconds = (System.currentTimeMillis() - startTime)/1000.0;
+      System.out.println("Character class takes " + seconds + " seconds");
+    }
+  }
+</pre><BR>
+
+<p class="docText">Notice how the regular expressions are compiled in the initialization part of the program? We want to benchmark the matching speed, not the compile speed.</p>
+<p class="docText">Speed is dependent upon which virtual machine<a name="IDX-CHP-6-1819"></a> 
+ (VM)<a name="IDX-CHP-6-1820"></a> 
+<a name="IDX-CHP-6-1821"></a> 
+ is used. Sun standard JRE<a name="IDX-CHP-6-1822"></a> 
+ comes with two virtual machines, a <span class="docEmphasis">client</span> VM optimized for fast startup, and a <span class="docEmphasis">server</span> VM optimized for heavy-duty long-haul work.</p>
+<p class="docText">On my system, running the benchmark on the client VM<a name="IDX-CHP-6-1823"></a> 
+ produces:</P>
+<pre>
+    Alternation takes 19.318 seconds
+    Character class takes 1.685 seconds
+</pre><BR>
+
+<p class="docText">while the server VM<a name="IDX-CHP-6-1824"></a> 
+ yields:</P>
+<pre>
+    Alternation takes 12.106 seconds
+    Character class takes 0.657 seconds
+</pre><BR>
+
+<p class="docText">What makes benchmarking slippery, and this example somewhat na&iuml;ve, is that the timing can be highly dependent on how well the automatic pre-execution compiler works, or how the run-time compiler interacts with the code being tested. Some VM have a JIT<a name="IDX-CHP-6-1825"></a> 
+<a name="IDX-CHP-6-1826"></a> 
+ (Just-In-Time compiler), which compiles code on the fly, just before it's needed.</p>
+<p class="docText">Java<a name="IDX-CHP-6-1827"></a> 
+<a name="IDX-CHP-6-1828"></a> 
+<a name="IDX-CHP-6-1829"></a> 
+ has what I call a BLTN<a name="IDX-CHP-6-1830"></a> 
+<a name="IDX-CHP-6-1831"></a> 
+<a name="IDX-CHP-6-1832"></a> 
+ (Better-Late-Than-Never)<a name="IDX-CHP-6-1833"></a> 
+ compiler, which kicks in <span class="docEmphasis">during</span> execution, compiling and optimizing heavily-used code on the fly. The nature of a BLTN is that it doesn't "kick in" until it senses that some code is "hot" (being used a lot). A VM that's been running for a while, such as in a server environment, will be "warmed up," while our simple test ensures a "cold" server (nothing yet optimized by the BLTN).</P>
+<p class="docText">One way to see "warmed up" times is to run the benchmarked parts in a loop:</p>
+<pre>
+    // <span class="docEmphasis">Time first one</span> ...
+    for (int i = 4; i &gt; 0; i--)
+    {
+        long count = timesToDo;
+        long startTime = System.currentTimeMillis();<a name="IDX-CHP-6-1834"></a> 
+<a name="IDX-CHP-6-1835"></a> 
+
+        while (--count &gt; 0)
+              regex1.reset(testString).find();
+        double seconds = (System.currentTimeMillis() - startTime)/1000.0;
+        System.out.println("Alternation takes " + seconds + " seconds");
+    }
+</pre><br>
+
+<p class="docText">If the extra loop runs enough times (say, for 10 seconds), the BLTN will have optimized the hot code, leaving the last times reported as representative of a warmed up system. Testing again with the server VM, these times are indeed a bit faster by about 8 percent and 25 percent:</P>
+<pre>
+    Alternation takes 11.151 seconds
+    Character class takes 0.483 seconds
+</pre><BR>
+
+<p class="docText">Another issue that makes Java benchmarking slippery is the unpredictable nature of thread scheduling and garbage collection. Again, running the test long enough helps amortize their unpredictable influence.</p>
+
+<a name="regex3-CHP-6-SECT-4.4"></a>
+<h4 id="title-IDAVXYCH" class="docSection2Title">6.4.4. Benchmarking with VB.NET</H4>
+<a name="IDX-CHP-6-1836"></a> 
+<a name="IDX-CHP-6-1837"></a> 
+<a name="IDX-CHP-6-1838"></a> 
+<a name="IDX-CHP-6-1839"></a> 
+
+<p class="docText">Here's the benchmark example in VB.NET:</P>
+<pre>
+    Option Explicit On
+    Option Strict On
+
+    Imports System.Text.RegularExpressions
+
+    Module Benchmark
+    Sub Main()
+      Dim Regex1 as Regex = New Regex("^(a|b|c|d|e|f|g)+$")
+      Dim Regex2 as Regex = New Regex("^[a-g]+$")
+      Dim TimesToDo as Integer = 1000
+      Dim TestString as String = ""
+      Dim I as Integer
+      For I = 1 to 1000
+         TestString = TestString &amp; "abababdedfg"
+      Next
+
+      Dim StartTime as Double = Timer()<a name="IDX-CHP-6-1840"></a> 
+
+      For I = 1 to TimesToDo
+         Regex1.Match(TestString)
+      Next
+      Dim Seconds as Double = Math.Round(Timer() - StartTime, 3)
+      Console.WriteLine("Alternation takes " &amp; Seconds &amp; " seconds")
+
+      StartTime = Timer()
+      For I = 1 to TimesToDo
+         Regex2.Match(TestString)
+      Next
+      Seconds = Math.Round(Timer() - StartTime, 3)
+      Console.WriteLine("Character class takes " &amp; Seconds &amp; " seconds")
+    End Sub
+    End Module
+</pre><BR>
+
+<p class="docText">On my system, it produces:</p>
+<pre>
+    Alternation takes 13.311 seconds
+    Character class takes 1.680 seconds
+</pre><BR>
+
+<p class="docText">The .NET<a name="IDX-CHP-6-1841"></a> 
+ Framework allows a regex to be compiled to an even more efficient form, by providing <tt>RegexOptions.Compiled</tt><a name="IDX-CHP-6-1842"></a> 
+ as a second argument to each <tt>Regex</tt> constructor (&#9758; 410). Doing that results in:</P>
+<pre>
+    Alternation takes 5.499 seconds
+    Character class takes 1.157 seconds
+</pre><br>
+
+<p class="docText">Both tests are faster using the <tt>Compiled</tt> option, but alternation sees a greater relative benefit (its almost 3x faster when <tt>Compiled</tt>, but the class version is only about 1.5x faster), so it seems that alternation benefits from the more efficient compilation relatively more than a character class does.</p>
+
+<a name="regex3-CHP-6-SECT-4.5"></a>
+<h4 id="title-IDAYZYCH" class="docSection2Title">6.4.5. Benchmarking with Ruby</h4>
+<a name="IDX-CHP-6-1843"></a> 
+
+<a name="IDX-CHP-6-1844"></a> 
+<a name="IDX-CHP-6-1845"></a> 
+
+<p class="docText">Here's the benchmark example in Ruby:</P>
+<pre>
+    TimesToDo=1000
+    testString=""
+    for i in 1..1000
+        testString += "abababdedfg"
+    end
+
+    Regex1 = Regexp::new("^(a|b|c|d|e|f|g)+$");
+    Regex2 = Regexp::new("^[a-g]+$");
+
+    startTime = Time.new.to_f<a name="IDX-CHP-6-1846"></a> 
+
+    for i in 1..TimesToDo
+        Regex1.match(testString)
+    end
+    print "Alternation takes %.3f seconds\n" % (Time.new.to_f - startTime);
+
+    startTime = Time.new.to_f
+    for i in 1..TimesToDo
+        Regex2.match(testString)
+    end
+    print "Character class takes %.3f seconds\n" % (Time.new.to_f - startTime);
+</pre><br>
+
+<p class="docText">On my system, it produces:</p>
+<pre>
+    Alternation takes 16.311 seconds
+    Character class takes 3.479 seconds
+</pre><BR>
+
+
+<a name="regex3-CHP-6-SECT-4.6"></a>
+<h4 id="title-IDA10YCH" class="docSection2Title">6.4.6. Benchmarking with Python</h4>
+<a name="IDX-CHP-6-1847"></a> 
+
+<p class="docText">Here's the benchmark example in Python:</p>
+<pre>
+    import re
+    import time
+    import fpformat
+
+    Regex1 = re.compile("^(a|b|c|d|e|f|g)+$")
+    Regex2 = re.compile("^[a-g]+$")
+
+    TimesToDo = 1250;
+    TestString = ""
+    for i in range(800):
+        TestString += "abababdedfg"
+
+    StartTime = time.time()
+    for i in range(TimesToDo):
+        Regex1.search(TestString)
+    Seconds = time.time() - StartTime
+    print "Alternation takes " + fpformat.fix(Seconds,3) + " seconds"
+    StartTime = time.time()
+    for i in range(TimesToDo):
+        Regex2.search(TestString)
+    Seconds = time.time() - StartTime
+    print "Character class takes " + fpformat.fix(Seconds,3) + " seconds"
+</pre><br>
+
+<p class="docText">For Python's regex engine, I had to cut the size of the string a bit because the original causes an internal error ("maximum recursion limit exceeded") within the regex engine. This is like a pressure release valve, stopping what seems like a neverending match from running too wild.</p>
+<p class="docText">To compensate, I increased the number of times the test is done by a proportional amount. On my system, the benchmark produces:</p>
+<pre>
+    Alternation takes 10.357 seconds
+    Character class takes 0.769 seconds
+</pre><br>
+
+
+<a name="regex3-CHP-6-SECT-4.7"></a>
+<h4 id="title-IDAR1YCH" class="docSection2Title">6.4.7. Benchmarking with Tcl</h4>
+<a name="IDX-CHP-6-1848"></a> 
+
+<a name="IDX-CHP-6-1849"></a> 
+<a name="IDX-CHP-6-1850"></a> 
+<a name="IDX-CHP-6-1851"></a> 
+
+<p class="docText">Here's the benchmark example in Tcl:</p>
+<pre>
+    set TimesToDo 1000
+    set TestString ""
+    for {set i 1000} {$i &gt; 0} {incr i -1} {
+        append TestString "abababdedfg"
+    }
+
+    set Count $TimesToDo
+    set StartTime [clock clicks<a name="IDX-CHP-6-1852"></a> 
+ -milliseconds]
+    for {} {$Count &gt; 0} {incr Count -1} {
+        regexp {^(a|b|c|d|e|f|g)+$} $TestString
+    }
+    set EndTime [clock clicks -milliseconds]
+    set Seconds [expr ($EndTime - $StartTime)/1000.0]
+    puts [format "Alternation takes %.3f seconds" $Seconds]
+
+    set Count $TimesToDo
+    set StartTime [clock clicks -milliseconds]
+    for {} {$Count &gt; 0} {incr Count -1} {
+        regexp {^[a-g]+$} $TestString
+    }
+    set EndTime [clock clicks -milliseconds]
+    set Seconds [expr ($EndTime - $StartTime)/1000.0]
+    puts [format "Character class takes %.3f seconds" $Seconds]
+</pre><br>
+
+<p class="docText">On my system, this benchmark produces:</p>
+<pre>
+    Alternation takes 0.362 seconds
+     Character class takes 0.352 seconds
+</pre><br>
+
+<p class="docText">Wow, they're both about the same speed! Well, recall from the table on page 145 that Tcl has a hybrid<a name="IDX-CHP-6-1853"></a> 
+ NFA/DFA engine, and these regular expressions are exactly the same to a DFA engine. Most of what this chapter talks about simplydoes not apply to Tcl. See the sidebar on page 243 for more.</p>
+
+
+<a href="7041536.html"><img src="images/pixel.jpg" alt="" width="1" height="1" border="0"></a></TD></TR></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=regex3-CHP-6-SECT-3.html><img src="images/prev.gif" width="60" height="17" border="0" align="absmiddle" alt="Previous Page"></a>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=regex3-CHP-6-SECT-5.html><img src="images/next.gif" width="60" height="17" border="0" align="absmiddle" alt="Next Page"></a>
+</div></td></tr></table>
+</body></html>

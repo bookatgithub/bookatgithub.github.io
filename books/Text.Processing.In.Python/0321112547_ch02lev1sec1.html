@@ -1,0 +1,573 @@
+<html><head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="2.1 Some Common Tasks"-->
+<link rel="STYLESHEET" type="text/css" href="FILES/style.css">
+<link rel="STYLESHEET" type="text/css" href="FILES/docsafari.css">
+<style type="text/css">	.tt1    {font-size: 10pt;}</style>
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<td class="tt1"><a href="NFO/lib.html">[ Team LiB ]</a></td><td valign="top" class="tt1" align="right">
+	<a href="0321112547_ch02.html"><img src="FILES/btn_prev.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+	<a href="0321112547_ch02lev1sec2.html"><img src="FILES/btn_next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="ch02lev1sec1"></A><H3 class="docSection1Title">2.1 Some Common Tasks</H3>
+<A NAME="ch02lev2sec1"></A><H4 class="docSection2Title">2.1.1 Problem: Quickly sorting lines on custom criteria</H4>
+<P class="docText">Sorting is one of the real meat-and-potatoes algorithms of text processing and, in fact, of most programming. Fortunately for Python developers, the native <span class="docEmphasis"><TT>[].sort</TT></span> method is extraordinarily fast. Moreover, Python lists with almost any heterogeneous objects as elements can be sorted—Python cannot rely on the uniform arrays of a language like C (an unfortunate exception to this general power was introduced in recent Python versions where comparisons of complex numbers raise a <TT>TypeError</TT>; and <TT>[1+1j,2+2j].sort()</TT> dies for the same reason; Unicode strings in lists can cause similar problems).</P>
+<p class="docText"><span class="docEmphRoman">S<span class="docEmphSmaller">EE</span> A<span class="docEmphSmaller">LSO</span></span>: 
+complex <span class="docEmphasis">22</span>;</p>
+<P class="docText">The list sort method is wonderful when you want to sort items in their "natural" order—or in the order that Python considers natural, in the case of items of varying types. Unfortunately, a lot of times, you want to sort things in "unnatural" orders. For lines of text, in particular, any order that is not simple alphabetization of the lines is "unnatural." But often text lines contain meaningful bits of information in positions other than the first character position: A last name may occur as the second word of a list of people (for example, with first name as the first word); an IP address may occur several fields into a server log file; a money total may occur at position 70 of each line; and so on. What if you want to sort lines based on this style of meaningful order that Python doesn't quite understand?</P>
+<P class="docText">The list sort method <span class="docEmphasis"><TT>[].sort()</TT></span> supports an optional custom comparison function argument. The job this function has is to return -1 if the first thing should come first, return 0 if the two things are equal order-wise, and return 1 if the first thing should come second. The built-in function <span class="docEmphasis"><TT>cmp()</TT></span> does this in a manner identical to the default <span class="docEmphasis"><TT>[].sort()</TT></span> (except in terms of speed, <TT>1st.sort()</TT> is much faster than <TT>1st.sort(cmp)</TT>). For short lists and quick solutions, a custom comparison function is probably the best thing. In a lot of cases, you can even get by with an in-line <TT>lambda</TT> function as the custom comparison function, which is a pleasant and handy idiom.</P>
+<P class="docText">When it comes to speed, however, use of custom comparison functions is fairly awful. Part of the problem is Python's function call overhead, but a lot of other factors contribute to the slowness. Fortunately, a technique called "Schwartzian Transforms" can make for much faster custom sorts. Schwartzian Transforms are named after Randal Schwartz, who proposed the technique for working with Perl; but the technique is equally applicable to Python.</P>
+<P class="docText">The pattern involved in the Schwartzian Transform technique consists of three steps (these can more precisely be called the Guttman-Rosler Transform, which is based on the Schwartzian Transform):</P>
+<A NAME="ch02pr01"></A>
+
+
+<span style="font-weight:bold"><OL class="docList" START="1"><LI><span style="font-weight:normal" value="1"><P class="docText">Transform the list in a reversible way into one that sorts "naturally."</P></span></LI><LI><span style="font-weight:normal" value="2"><P class="docText">Call Python's native <span class="docEmphasis"><TT>[].sort()</TT></span> method.</P></span></LI><LI><span style="font-weight:normal" value="3"><P class="docText">Reverse the transformation in (1) to restore the original list items (in new sorted order).</P></span></LI></OL></span>
+<P class="docText">The reason this technique works is that, for a list of size N, it only requires O(2N) transformation operations, which is easy to amortize over the necessary O(N log N) compare/flip operations for large lists. The sort dominates computational time, so anything that makes the sort more efficient is a win in the limit case (this limit is reached quickly).</P>
+<P class="docText">Below is an example of a simple, but plausible, custom sorting algorithm. The sort is on the fourth and subsequent words of a list of input lines. Lines that are shorter than four words sort to the bottom. Running the test against a file with about 20,000 lines—about 1 megabyte—performed the Schwartzian Transform sort in less than 2 seconds, while taking over 12 seconds for the custom comparison function sort (outputs were verified as identical). Any number of factors will change the exact relative timings, but a better than six times gain can generally be expected.</P>
+<H5 class="docExampleTitle"><A NAME="ch02list01"></A> schwartzian_sort.py</H5>
+
+<PRE>
+# Timing test for "sort on fourth word"
+# Specifically, two lines &gt;= 4 words will be sorted
+#   lexographically on the 4th, 5th, etc.. words.
+#   Any line with fewer than four words will be sorted to
+#   the end, and will occur in "natural" order.
+
+import sys, string, time
+wrerr = sys.stderr.write
+
+# naive custom sort
+def fourth_word(ln1,ln2):
+    lst1 = string.split(ln1)
+    lst2 = string.split(ln2)
+    #-- Compare "long" lines
+    if len(lst1) &gt;= 4 and len(lst2) &gt;= 4:
+        return cmp(lst1[3:],lst2[3:])
+    #-- Long lines before short lines
+    elif len(lst1) &gt;= 4 and len(lst2) &lt; 4:
+        return -1
+    #-- Short lines after long lines
+    elif len(lst1) &lt; 4 and len(lst2) &gt;= 4:
+        return 1
+    else:                   # Natural order
+        return cmp(ln1,ln2)
+
+# Don't count the read itself in the time
+lines = open(sys.argv[1]).readlines()
+
+# Time the custom comparison sort
+start = time.time()
+lines.sort(fourth_word)
+
+end = time.time()
+wrerr("Custom comparison func in %3.2f secs\n" % (end-start))
+# open('tmp.custom','w').writelines(lines)
+
+# Don't count the read itself in the time
+lines = open(sys.argv[1]).readlines()
+
+# Time the Schwartzian sort
+start = time.time()
+for n in range(len(lines)):       # Create the transform
+    1st = string.split(lines[n])
+    if len(lst) &gt;= 4:             # Tuple w/ sort info first
+        lines[n] = (1st[3:], lines[n])
+    else:                         # Short lines to end
+        lines[n] = (['\377'], lines[n])
+
+lines.sort()                      # Native sort
+
+for n in range(len(lines)):       # Restore original lines
+    lines[n] = lines[n] [1]
+
+end = time.time()
+wrerr("Schwartzian transform sort in %3.2f secs\n" % (end-start))
+# open('tmp.schwartzian','w').writelines(lines)
+</PRE>
+<P class="docText">Only one particular example is presented, but readers should be able to generalize this technique to any sort they need to perform frequently or on large files.</P>
+<A NAME="ch02lev2sec2"></A><H4 class="docSection2Title">2.1.2 Problem: Reformatting paragraphs of text</H4>
+<P class="docText">While I mourn the decline of plaintext ASCII as a communication format—and its eclipse by unnecessarily complicated and large (and often proprietary) formats—there is still plenty of life left in text files full of prose. READMEs, HOWTOs, email, Usenet posts, and this book itself are written in plaintext (or at least something close enough to plaintext that generic processing techniques are valuable). Moreover, many formats like HTML and <IMG BORDER="0" WIDTH="40" HEIGHT="17" src="FILES/latex.gif" ALT="graphics/latex.gif"> are frequently enough hand-edited that their plaintext appearance is important.</P>
+<P class="docText">One task that is extremely common when working with prose text files is reformatting paragraphs to conform to desired margins. Python 2.3 adds the module <span class="docEmphasis"><TT>textwrap</TT></span>, which performs more limited reformatting than the code below. Most of the time, this task gets done within text editors, which are indeed quite capable of performing the task. However, sometimes it would be nice to automate the formatting process. The task is simple enough that it is slightly surprising that Python has no standard module function to do this. There <span class="docEmphasis">is</span> the class <span class="docEmphasis"><TT>formatter.DumbWriter</TT></span>, or the possibility of inheriting from and customizing <span class="docEmphasis"><TT>formatter.AbstractWriter</TT></span>. These classes are discussed in <A class="docLink" HREF="0321112547_ch05.html#ch05">Chapter 5</A>; but frankly, the amount of customization and sophistication needed to use these classes and their many methods is way out of proportion for the task at hand.</P>
+<P class="docText">Below is a simple solution that can be used either as a command-line tool (reading from STDIN and writing to STDOUT) or by import to a larger application.</P>
+<H5 class="docExampleTitle"><A NAME="ch02list02"></A> reformat_para.py</H5>
+
+<PRE>
+# Simple paragraph reformatter.  Allows specification
+# of left and right margins, and of justification style
+# (using constants defined in module).
+
+LEFT,RIGHT,CENTER = 'LEFT','RIGHT','CENTER'
+
+def reformat_para(para='',left=0,right=72,just=LEFT):
+    words = para.split()
+    lines = []
+    line  = ''
+    word = 0
+    end_words = 0
+    while not end_words:
+        if len(words[word]) &gt; right-left: # Handle very long words
+            line = words[word]
+            word +=1
+            if word &gt;= len(words):
+                end_words = 1
+        else:                             # Compose line of words
+            while len(line)+len(words[word]) &lt;= right-left:
+                line += words[word]+' '
+                word += 1
+                if word &gt;= len(words):
+                    end_words = 1
+                    break
+        lines.append(line)
+        line = ''
+    if just==CENTER:
+        r, 1 = right, left
+        return '\n'.join([' '*left+ln.center(r-l) for ln in lines])
+    elif just==RIGHT:
+        return '\n'.join([line.rjust(right) for line in lines])
+    else: # left justify
+        return '\n'.join([' '*left+line for line in lines])
+
+if __name__=='__main__':
+    import sys
+    if len(sys.argv) &lt;&gt; 4:
+        print "Please specify left_margin, right_marg, justification"
+    else:
+        left  = int(sys.argv[1])
+        right = int(sys.argv[2])
+        just  = sys.argv[3].upper()
+
+              # Simplistic approach to finding initial paragraphs
+              for p in sys.stdin.read().split('\n\n'):
+                  print reformat_para(p,left,right,just),'\n'
+</PRE>
+<P class="docText">A number of enhancements are left to readers, if needed. You might want to allow hanging indents or indented first lines, for example. Or paragraphs meeting certain criteria might not be appropriate for wrapping (e.g., headers). A custom application might also determine the input paragraphs differently, either by a different parsing of an input file, or by generating paragraphs internally in some manner.</P>
+<A NAME="ch02lev2sec3"></A><H4 class="docSection2Title">2.1.3 Problem: Column statistics for delimited or flat-record files</H4>
+<P class="docText">Data feeds, DBMS dumps, log files, and flat-file databases all tend to contain ontologically similar records—one per line—with a collection of fields in each record. Usually such fields are separated either by a specified delimiter or by specific column positions where fields are to occur.</P>
+<P class="docText">Parsing these structured text records is quite easy, and performing computations on fields is equally straightforward. But in working with a variety of such "structured text databases," it is easy to keep writing almost the same code over again for each variation in format and computation.</P>
+<P class="docText">The example below provides a generic framework for every similar computation on a structured text database.</P>
+<H5 class="docExampleTitle"><A NAME="ch02list03"></A> fields_stats.py</H5>
+
+<PRE>
+# Perform calculations on one or more of the
+# fields in a structured text database.
+
+import operator
+from types import *
+from xreadlines import xreadlines # req 2.1, but is much faster...
+                                  # could use .readline() meth &lt; 2.1
+#-- Symbolic Constants
+DELIMITED = 1
+FLATFILE = 2
+
+#-- Some sample "statistical" func (in functional programming style)
+nillFunc = lambda 1st: None
+toFloat = lambda 1st: map(float, 1st)
+avg_1st = lambda 1st: reduce(operator.add, toFloat(lst))/len(lst)
+sum_1st = lambda 1st: reduce(operator.add, toFloat(lst))
+max_1st = lambda 1st: reduce(max, toFloat(lst))
+
+class FieldStats:
+    """Gather statistics about structured text database fields
+text_db may be either string (incl. Unicode) or file-like object
+style may be in (DELIMITED, FLATFILE)
+delimiter specifies the field separator in DELIMITED style text_db
+column_positions lists all field positions for FLATFILE style,
+                 using one-based indexing (first column is 1).
+          E.g.:  (1, 7, 40) would take fields one, two, three
+                 from columns 1, 7, 40 respectively.
+field_funcs is a dictionary with column positions as keys,
+            and functions on lists as values.
+     E.g.:  {1:avg_1st, 4:sum_lst, 5:max_lst} would specify the
+            average of column one, the sum of column 4, and the
+            max of column 5.  All other cols--incl 2,3, &gt;=6--
+            are ignored.
+
+"""
+def __init__(self,
+             text_db='',
+             style=DELIMITED,
+             delimiter=',',
+             column_positions=(1,),
+             field_funcs={} ):
+    self.text_db = text_db
+    self.style = style
+    self.delimiter = delimiter
+    self.column_positions = column_positions
+    self.field_funcs = field_funcs
+
+def calc(self):
+    """Calculate the column statistics
+    """
+    #-- 1st, create a list of lists for data (incl. unused flds)
+    used_cols = self.field_funcs.keys()
+    used_cols.sort()
+    # one-based column naming: column[0] is always unused
+    columns = []
+    for n in range(1+used_cols[-1]):
+        # hint: '[[]]*num' creates refs to same list
+        columns.append([])
+
+          #-- 2nd, fill lists used for calculated fields
+                  # might use a string directly for text_db
+          if type(self.text_db) in (StringType,UnicodeType):
+              for line in self.text_db.split('\n'):
+                  fields = self.splitter(line)
+                  for col in used_cols:
+                      field = fields[col-1]   # zero-based index
+                        columns[col].append(field)
+            else:   # Something file-like for text_db
+                for line in xreadlines(self.text_db):
+                    fields = self.splitter(line)
+                    for col in used_cols:
+                        field = fields[col-1]   # zero-based index
+                        columns[col].append(field)
+
+            #-- 3rd, apply the field funcs to column lists
+            results = [None] * (1+used_cols[-1])
+            for col in used_cols:
+                results[col] = \
+                     apply(self.field_funcs[col],(columns[col],))
+
+            #-- Finally, return the result list
+            return results
+
+    def splitter(self, line):
+        """Split a line into fields according to curr inst specs"""
+        if self.style == DELIMITED:
+            return line.split(self.delimiter)
+        elif self.style == FLATFILE:
+            fields = []
+            # Adjust offsets to Python zero-based indexing,
+            # and also add final position after the line
+            num_positions = len(self.column_positions)
+            offsets = [(pos-1) for pos in self.column_positions]
+            offsets.append(len(line))
+            for pos in range(num_positions):
+                start = offsets[pos]
+                end = offsets[pos+1]
+                fields.append(line[start:end])
+            return fields
+        else:
+            raise ValueError, \
+                  "Text database must be DELIMITED or FLATFILE"
+
+#-- Test data
+# First Name, Last Name, Salary, Years Seniority, Department
+delim = '''
+Kevin,Smith,50000,5,Media Relations
+Tom,Woo,30000,7,Accounting
+Sally,Jones,62000,10,Management
+'''.strip()     # no leading/trailing newlines
+
+# Comment     First     Last      Salary    Years  Dept
+flat = '''
+tech note     Kevin     Smith     50000     5      Media Relations
+more filler   Tom       Woo       30000     7      Accounting
+yet more...   Sally     Jones     62000     10     Management
+'''.strip()     # no leading/trailing newlines
+
+#-- Run self-test code
+if __name__ == '__main__':
+    getdelim = FieldStats(delim, field_funcs={3:avg_lst,4:max_lst})
+    print 'Delimited Calculations:'
+    results = getdelim.calc()
+    print '  Average salary -', results[3]
+    print '  Max years worked -', results[4]
+
+    getflat = FieldStats(flat, field_funcs={3:avg_lst,4:max_lst},
+                               style=FLATFILE,
+                               column_positions=(15,25,35,45,52))
+    print 'Flat Calculations:'
+    results = getflat.calc()
+    print '  Average salary -', results[3]
+    print '  Max years worked -', results[4]
+</PRE>
+<P class="docText">The example above includes some efficiency considerations that make it a good model for working with large data sets. In the first place, class <TT>FieldStats</TT> can (optionally) deal with a file-like object, rather than keeping the whole structured text database in memory. The generator <span class="docEmphasis"><TT>xreadlines.xreadlines()</TT></span> is an extremely fast and efficient file reader, but it requires Python 2.1+—otherwise use <span class="docEmphasis"><TT>FILE.readline()</TT></span> or <span class="docEmphasis"><TT>FILE.readlines()</TT></span> (for either memory or speed efficiency, respectively). Moreover, only the data that is actually of interest is collected into lists, in order to save memory. However, rather than require multiple passes to collect statistics on multiple fields, as many field columns and summary functions as wanted can be used in one pass.</P>
+<P class="docText">One possible improvement would be to allow multiple summary functions against the same field during a pass. But that is left as an exercise to the reader, if she desires to do it.</P>
+<A NAME="ch02lev2sec4"></A><H4 class="docSection2Title">2.1.4 Problem: Counting characters, words, lines, and paragraphs</H4>
+<P class="docText">There is a wonderful utility under Unix-like systems called <TT>wc</TT>. What it does is so basic, and so obvious, that it is hard to imagine working without it. <TT>wc</TT> simply counts the characters, words, and lines of files (or STDIN). A few command-line options control which results are displayed, but I rarely use them.</P>
+<P class="docText">In writing this chapter, I found myself on a system without <TT>wc</TT>, and felt a remedy was in order. The example below is actually an "enhanced" <TT>wc</TT> since it also counts paragraphs (but it lacks the command-line switches). Unlike the external <TT>wc</TT>, it is easy to use the technique directly within Python and is available anywhere Python is. The main trick—inasmuch as there is one—is a compact use of the <span class="docEmphasis"><TT>"".join()</TT></span> and <span class="docEmphasis"><TT>"".split()</TT></span> methods (<span class="docEmphasis"><TT>string.join()</TT></span> and <span class="docEmphasis"><TT>string.split()</TT></span> could also be used, for example, to be compatible with Python 1.5.2 or below).</P>
+<H5 class="docExampleTitle"><A NAME="ch02list04"></A> wc.py</H5>
+
+<PRE>
+# Report the chars, words, lines, paragraphs
+# on STDIN or in wildcard filename patterns
+import sys, glob
+if len(sys.argv) &gt; 1:
+    c, w, 1, p = 0, 0, 0, 0
+    for pat in sys.argv[1:]:
+        for file in glob.glob(pat):
+            s = open(file).read()
+            wc = len(s), len(s.split()), \
+                 len(s.split('\n')), len(s.split('\n\n'))
+            print '\t'.join(map(str, wc)),'\t'+file
+            c, w, 1, p = c+wc[0], w+wc[1], l+wc[2], p+wc[3]
+    wc = (c,w,l,p)
+    print '\t'.join(map(str, wc)), '\tTOTAL'
+else:
+    s = sys.stdin.read()
+    wc = len(s), len(s.split()), len(s.split('\n')), \
+         len(s.split('\n\n'))
+    print '\t'.join(map(str, wc)), '\tSTDIN'
+</PRE>
+<P class="docText">This little functionality could be wrapped up in a function, but it is almost too compact to bother with doing so. Most of the work is in the interaction with the shell environment, with the counting basically taking only two lines.</P>
+<P class="docText">The solution above is quite likely the "one obvious way to do it," and therefore Pythonic. On the other hand a slightly more adventurous reader might consider this assignment (if only for fun):</P>
+<pre>
+&gt;&gt;&gt; wc  = map(len,[s]+map(s.split,(None,'\n','\n\n')))
+</pre>
+<P class="docText">A real daredevil might be able to reduce the entire program to a single <TT>print</TT> statement.</P>
+<A NAME="ch02lev2sec5"></A><H4 class="docSection2Title">2.1.5 Problem: Transmitting binary data as ASCII</H4>
+<P class="docText">Many channels require that the information that travels over them is 7-bit ASCII. Any bytes with a high-order first bit of one will be handled unpredictably when transmitting data over protocols like Simple Mail Transport Protocol (SMTP), Network News Transport Protocol (NNTP), or HTTP (depending on content encoding), or even just when displaying them in many standard tools like editors. In order to encode 8-bit binary data as ASCII, a number of techniques have been invented over time.</P>
+<P class="docText">An obvious, but obese, encoding technique is to translate each binary byte into its hexadecimal digits. UUencoding is an older standard that developed around the need to transmit binary files over the Usenet and on BBSs. Binhex is a similar technique from the MacOS world. In recent years, base64—which is specified by RFC1521—has edged out the other styles of encoding. All of the techniques are basically 4/3 encodings—that is, four ASCII bytes are used to represent three binary bytes—but they differ somewhat in line ending and header conventions (as well as in the encoding as such). Quoted printable is yet another format, but of variable encoding length. In quoted printable encoding, most plain ASCII bytes are left unchanged, but a few special characters and all high-bit bytes are escaped.</P>
+<P class="docText">Python provides modules for all the encoding styles mentioned. The high-level wrappers <span class="docEmphasis"><TT>uu</TT>, <TT>binhex</TT>, <TT>base64</TT></span>, and <span class="docEmphasis"><TT>quopri</TT></span> all operate on input and output file-like objects, encoding the data therein. They also each have slightly different method names and arguments. <span class="docEmphasis"><TT>binhex</TT></span>, for example, closes its output file after encoding, which makes it unusable in conjunction with a <span class="docEmphasis"><TT>cStringlO</TT></span> file-like object. All of the high-level encoders utilize the services of the low-level C module <span class="docEmphasis"><TT>binascii</TT>. <TT>binascii</TT></span>, in turn, implements the actual low-level block conversions, but assumes that it will be passed the right size blocks for a given encoding.</P>
+<P class="docText">The standard library, therefore, does not contain quite the right intermediate-level functionality for when the goal is just encoding the binary data in arbitrary strings. It is easy to wrap that up, though:</P>
+<H5 class="docExampleTitle"><A NAME="ch02list05"></A> encode_binary.py</H5>
+
+<PRE>
+# Provide encoders for arbitrary binary data
+# in Python strings.  Handles block size issues
+# transparently, and returns a string.
+# Precompression of the input string can reduce
+# or eliminate any size penalty for encoding.
+
+import sys
+import zlib
+import binascii
+
+UU = 45
+BASE64 = 57
+BINHEX = sys.maxint
+
+def ASCIIencode(s='', type=BASE64, compress=1):
+    """ASCII encode a binary string"""
+    # First, decide the encoding style
+    if type == BASE64:   encode = binascii.b2a_base64
+    elif type == UU:     encode = binascii.b2a_uu
+    elif type == BINHEX: encode = binascii.b2a_hqx
+    else: raise ValueError, "Encoding must be in UU, BASE64, BINHEX"
+    # Second, compress the source if specified
+    if compress: s = zlib.compress(s)
+    # Third, encode the string, block-by-block
+    offset = 0
+    blocks = []
+    while 1:
+        blocks.append(encode(s[offset:offset+type]))
+        offset += type
+        if offset &gt; len(s):
+            break
+    # Fourth, return the concatenated blocks
+    return ''.join(blocks)
+
+def ASCIIdecode(s='', type=BASE64, compress=1):
+    """Decode ASCII to a binary string"""
+    # First, decide the encoding style
+    if type == BASE64:   s = binascii.a2b_base64(s)
+    elif type == BINHEX: s = binascii.a2b_hqx(s)
+    elif type == UU:
+        s = ''.join([binascii.a2b_uu(line) for line in s.split('\n')])
+    # Second, decompress the source if specified
+    if compress: s = zlib.decompress(s)
+    # Third, return the decoded binary string
+    return s
+
+# Encode/decode STDIN for self-test
+if __name__ == '__main__':
+    decode, TYPE = 0, BASE64
+    for arg in sys.argv:
+        if   arg.lower()=='-d': decode = 1
+        elif arg.upper()=='UU': TYPE=UU
+        elif arg.upper()=='BINHEX': TYPE=BINHEX
+        elif arg.upper()=='BASE64': TYPE=BASE64
+    if decode:
+        print ASCIIdecode(sys.stdin.read(),type=TYPE)
+    else:
+        print ASCIIencode(sys.stdin.read(),type=TYPE)
+</PRE>
+<P class="docText">The example above does not attach any headers or delimit the encoded block (by design); for that, a wrapper like <span class="docEmphasis"><TT>uu</TT>, <TT>mimify</TT></span>, or <span class="docEmphasis"><TT>MimeWriter</TT></span> is a better choice. Or a custom wrapper around <TT>encode_binary.py</TT>.</P>
+<A NAME="ch02lev2sec6"></A><H4 class="docSection2Title">2.1.6 Problem: Creating word or letter histograms</H4>
+<P class="docText">A histogram is an analysis of the relative occurrence frequency of each of a number of possible values. In terms of text processing, the occurrences in question are almost always either words or byte values. Creating histograms is quite simple using Python dictionaries, but the technique is not always immediately obvious to people thinking about it. The example below has a good generality, provides several utility functions associated with histograms, and can be used in a command-line operation mode.</P>
+<H5 class="docExampleTitle"><A NAME="ch02list06"></A> histogram.py</H5>
+
+<PRE>
+# Create occurrence counts of words or characters
+# A few utility functions for presenting results
+# Avoids requirement of recent Python features
+
+from string import split, maketrans, translate, punctuation, digits
+import sys
+from types import *
+import types
+
+def word_histogram(source):
+    """Create histogram of normalized words (no punct or digits)"""
+    hist = {}
+    trans = maketrans('','')
+    if type(source) in (StringType,UnicodeType):  # String-like src
+        for word in split(source):
+            word = translate(word, trans, punctuation+digits)
+            if len(word) &gt; 0:
+                hist[word] = hist.get(word,0) + 1
+    elif hasattr(source,'read'):                  # File-like src
+        try:
+            from xreadlines import xreadlines     # Check for module
+            for line in xreadlines(source):
+                for word in split(line):
+                    word = translate(word, trans, punctuation+digits)
+                    if len(word) &gt; 0:
+                        hist[word] = hist.get(word,0) + 1
+        except ImportError:                       # Older Python ver
+            line = source.readline()          # Slow but mem-friendly
+            while line:
+                for word in split(line):
+                    word = translate(word, trans, punctuation+digits)
+                    if len(word) &gt; 0:
+                        hist[word] = hist.get(word,0) + 1
+                line = source.readline()
+    else:
+        raise TypeError, \
+              "source must be a string-like or file-like object"
+    return hist
+
+def char_histogram(source, sizehint=1024*1024):
+    hist = {}
+    if type(source) in (StringType,UnicodeType):  # String-like src
+        for char in source:
+            hist[char] = hist.get(char,0) + 1
+    elif hasattr(source,'read'):                  # File-like src
+        chunk = source.read(sizehint)
+        while chunk:
+            for char in chunk:
+                hist[char] = hist.get(char,0) + 1
+            chunk = source.read(sizehint)
+    else:
+        raise TypeError, \
+              "source must be a string-like or file-like object"
+    return hist
+
+def most_common(hist, num=1):
+    pairs = []
+    for pair in hist.items():
+        pairs.append((pair[1],pair[0]))
+    pairs.sort()
+    pairs.reverse()
+    return pairs[:num]
+
+def first_things(hist, num=1):
+    pairs = []
+    things = hist.keys()
+    things.sort()
+    for thing in things:
+        pairs.append((thing,hist[thing]))
+    pairs.sort()
+    return pairs[:num]
+
+if __name__ == '__main__':
+    if len(sys.argv) &gt; 1:
+        hist = word_histogram(open(sys.argv[1]))
+    else:
+        hist = word_histogram(sys.stdin)
+
+    print "Ten most common words:"
+    for pair in most_common(hist, 10):
+        print '\t', pair[1], pair[0]
+
+    print "First ten words alphabetically:"
+    for pair in first_things(hist, 10):
+        print '\t', pair[0], pair[1]
+
+    # a more practical command-line version might use:
+    # for pair in most_common(hist,len(hist)):
+    #     print pair[1],'\t',pair[0]
+</PRE>
+<P class="docText">Several of the design choices are somewhat arbitrary. Words have all their punctuation stripped to identify "real" words. But on the other hand, words are still case-sensitive, which may not be what is desired. The sorting functions <TT>first_things()</TT> and <TT>most_common()</TT> only return an initial sublist. Perhaps it would be better to return the whole list, and let the user slice the result. It is simple to customize around these sorts of issues, though.</P>
+<A NAME="ch02lev2sec7"></A><H4 class="docSection2Title">2.1.7 Problem: Reading a file backwards by record, line, or paragraph</H4>
+<P class="docText">Reading a file line by line is a common task in Python, or in most any language. Files like server logs, configuration files, structured text databases, and others frequently arrange information into logical records, one per line. Very often, the job of a program is to perform some calculation on each record in turn.</P>
+<P class="docText">Python provides a number of convenient methods on file-like objects for such line-by-line reading. <span class="docEmphasis"><TT>FILE.readlines()</TT></span> reads a whole file at once and returns a list of lines. The technique is very fast, but requires the whole contents of the file be kept in memory. For very large files, this can be a problem. <span class="docEmphasis"><TT>FILE.readline()</TT></span> is memory-friendly—it just reads a line at a time and can be called repeatedly until the EOF is reached—but it is also much slower. The best solution for recent Python versions is <span class="docEmphasis"><TT>xreadlines.xreadlines()</TT></span> or <span class="docEmphasis"><TT>FILE.xreadlines()</TT></span> in Python 2.1+. These techniques are memory-friendly, while still being fast and presenting a "virtual list" of lines (by way of Python's new generator/iterator interface).</P>
+<P class="docText">The above techniques work nicely for reading a file in its natural order, but what if you want to start at the end of a file and work backwards from there? This need is frequently encountered when you want to read log files that have records appended over time (and when you want to look at the most recent records first). It comes up in other situations also. There is a very easy technique if memory usage is not an issue:</P>
+<pre>
+&gt;&gt;&gt; open('lines','w').write('\n'.join(['n' for n in range(100)]))
+&gt;&gt;&gt; fp = open('lines')
+&gt;&gt;&gt; lines = fp.readlines()
+&gt;&gt;&gt; lines.reverse()
+&gt;&gt;&gt; for line in lines [1:5]:
+...     # Processing suite here
+...     print line,
+...
+98
+97
+96
+95
+</pre>
+<P class="docText">For large input files, however, this technique is not feasible. It would be nice to have something analogous to <span class="docEmphasis"><TT>xreadlines</TT></span> here. The example below provides a good starting point (the example works equally well for file-like objects).</P>
+<H5 class="docExampleTitle"><A NAME="ch02list07"></A> read_backwards.py</H5>
+
+<PRE>
+# Read blocks of a file from end to beginning.
+# Blocks may be defined by any delimiter, but the
+#  constants LINE and PARA are useful ones.
+# Works much like the file object method '.readline()':
+#  repeated calls continue to get "next" part, and
+#  function returns empty string once BOF is reached.
+
+# Define constants
+from os import linesep
+LINE = linesep
+PARA = linesep*2
+READSIZE = 1000
+
+# Global variables
+buffer = ''
+
+def read_backwards(fp, mode=LINE, sizehint=READSIZE, _init=[0]):
+    """Read blocks of file backwards (return empty string when done)"""
+    # Trick of mutable default argument to hold state between calls
+    if not _init[0]:
+        fp.seek(0,2)
+        _init[0] = 1
+    # Find a block (using global buffer)
+    global buffer
+    while 1:
+        # first check for block in buffer
+        delim = buffer.rfind(mode)
+        if delim &lt;&gt; -1:     # block is in buffer, return it
+            block = buffer[delim+len(mode):]
+            buffer = buffer[:delim]
+            return block+mode
+        #-- BOF reached, return remainder (or empty string)
+        elif fp.tell()==0:
+            block = buffer
+            buffer = ''
+            return block
+        else:           # Read some more data into the buffer
+            readsize = min(fp.tell(),sizehint)
+            fp.seek(-readsize,1)
+            buffer = fp.read(readsize) + buffer
+            fp.seek(-readsize,1)
+#-- Self test of read_backwards()
+if __name__ == '__main__':
+    # Let's create a test file to read in backwards
+    fp = open('lines','wb')
+    fp.write(LINE.join(['--- %d ---'%n for n in range(15)]))
+    # Now open for reading backwards
+    fp = open('lines','rb')
+    # Read the blocks in, one per call (block==line by default)
+    block = read_backwards(fp)
+    while block:
+        print block,
+        block = read_backwards(fp)
+</PRE>
+<P class="docText">Notice that <span class="docEmphasis">anything</span> could serve as a block delimiter. The constants provided just happened to work for lines and block paragraphs (and block paragraphs only with the current OS's style of line breaks). But other delimiters could be used. It would <span class="docEmphasis">not</span> be immediately possible to read backwards word-by-word—a space delimiter would come close, but would not be quite right for other whitespace. However, reading a line (and maybe reversing its words) is generally good enough.</P>
+<P class="docText">Another enhancement is possible with Python 2.2+. Using the new <TT>yield</TT> keyword, <TT>read_backwards()</TT> could be programmed as an iterator rather than as a multi-call function. The performance will not differ significantly, but the function might be expressed more clearly (and a "list-like" interface like <span class="docEmphasis"><TT>FILE.readlines()</TT></span> makes the application's loop simpler).</P>
+<A NAME="ch02lev3sec1"></A><H5 class="docSection3Title"> QUESTIONS</H5>
+<P><TABLE BORDER="0" cellspacing="16" cellpadding="0"><TR valign="top"><TD align="right" class="docText"><A NAME="ch02qa1q1"></A><B>1:</B></TD><TD><P class="docText">Write a generator-based version of <TT>read_backwards()</TT> that uses the <TT>yield</TT> keyword. Modify the self-test code to utilize the generator instead.</P></TD></TR><TR valign="top"><TD align="right" class="docText"><A NAME="ch02qa1q2"></A><B>2:</B></TD><TD><P class="docText">Explore and explain some pitfalls with the use of a mutable default value as a function argument. Explain also how the style allows functions to encapsulate data and contrast with the encapsulation of class instances.</P></TD></TR></TABLE></P>
+<a href="0321112547_10061533.html"><img src="FILES/pixel.gif" width="1" height="1" border="0"></a><ul></ul></td></tr></table>
+<td></td>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<td class="tt1"><a href="NFO/lib.html">[ Team LiB ]</a></td><td valign="top" class="tt1" align="right">
+          <a href="0321112547_ch02.html"><img src="FILES/btn_prev.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+          <a href="0321112547_ch02lev1sec2.html"><img src="FILES/btn_next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+</body></html>

@@ -1,0 +1,201 @@
+<html><head>
+<META http-equiv="Content-Type" content="text/html">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="5.2 The xmllib Module"-->
+<link rel="STYLESHEET" type="text/css" href="FILES/style.css">
+<link rel="STYLESHEET" type="text/css" href="FILES/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+	<a href="0596000960_pythonsl-CHP-5-SECT-1.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+	<a href="0596000960_pythonsl-CHP-5-SECT-3.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr>
+<td valign="top"><A NAME="pythonsl-CHP-5-SECT-2"></A>
+<H3 class="docSection1Title">5.2 The xmllib Module</H3>
+
+<P class="docText">
+
+<A NAME="pythonsl-IDXTERM-442"></A>
+<A NAME="pythonsl-IDXTERM-443"></A>
+<A NAME="pythonsl-IDXTERM-444"></A>
+
+
+
+The <TT>xmlib</TT> module provides a simple XML parser, using regular expressions to
+pull the XML data apart, as shown in <A class="docLink" HREF="#pythonsl-CHP-5-EX-1">Example 5-1</A>.  The parser does basic checks on the
+document, such as a check to see that there is only one top-level element
+and a check to see that all tags are balanced.</P>
+
+<P class="docText">You feed XML data to this parser piece by piece (as data arrives over
+a network, for example).  The parser calls methods in itself for start
+tags, data sections, end tags, and entities, among other things.</P>
+
+<P class="docText">
+
+<A NAME="IXT-5-189631"></A>
+<A NAME="IXT-5-189632"></A>
+
+
+
+If you're only interested in a few tags, you can define special
+<TT>start_tag</TT> and <TT>end_tag</TT>
+methods, where <TT>tag</TT> is the tag name.  The
+<TT>start</TT> functions are called with the attributes
+given as a dictionary.</P>
+
+
+<H5 class="docExampleTitle"><A NAME="pythonsl-CHP-5-EX-1"></A>Example 5-1. Using the xmllib Module to Extract Information from an Element</H5>
+
+<PRE>
+File: xmllib-example-1.py
+
+import xmllib
+
+class Parser(xmllib.XMLParser):
+    # get quotation number
+
+    def _ _init_ _(self, file=None):
+        xmllib.XMLParser._ _init_ _(self)
+        if file:
+            self.load(file)
+
+    def load(self, file):
+        while 1:
+            s = file.read(512)
+            if not s:
+                break
+            self.feed(s)
+        self.close()
+
+    def start_quotation(self, attrs):
+        print "id =&gt;", attrs.get("id")
+        raise EOFError
+
+try:
+    c = Parser()
+    c.load(open("samples/sample.xml"))
+except EOFError:
+    pass
+
+<B>id =&gt; 031</B></PRE>
+
+
+<P class="docText"><A class="docLink" HREF="#pythonsl-CHP-5-EX-2">Example 5-2</A> contains a simple (and incomplete) rendering
+engine.  The parser maintains an element stack
+(<TT>_ _tags</TT>), which it passes to the renderer, together
+with text fragments.  The renderer looks up the current tag hierarchy
+in a style dictionary, and if it isn't already there, it creates a new
+style descriptor by combining bits and pieces from the stylesheet.</P>
+
+
+<H5 class="docExampleTitle"><A NAME="pythonsl-CHP-5-EX-2"></A>Example 5-2. Using the xmllib Module</H5>
+
+<PRE>
+File: xmllib-example-2.py
+
+import xmllib
+import string, sys
+
+STYLESHEET = {
+    # each element can contribute one or more style elements
+    "quotation": {"style": "italic"},
+    "lang": {"weight": "bold"},
+    "name": {"weight": "medium"},
+}
+
+class Parser(xmllib.XMLParser):
+    # a simple styling engine
+
+    def _ _init_ _(self, renderer):
+        xmllib.XMLParser._ _init_ _(self)
+        self._ _data = []
+        self._ _tags = []
+        self._ _renderer = renderer
+
+    def load(self, file):
+        while 1:
+            s = file.read(8192)
+            if not s:
+                break
+            self.feed(s)
+        self.close()
+
+    def handle_data(self, data):
+        self._ _data.append(data)
+
+    def unknown_starttag(self, tag, attrs):
+        if self._ _data:
+            text = string.join(self._ _data, "")
+            self._ _renderer.text(self._ _tags, text)
+        self._ _tags.append(tag)
+        self._ _data = []
+
+    def unknown_endtag(self, tag):
+        self._ _tags.pop()
+        if self._ _data:
+            text = string.join(self._ _data, "")
+            self._ _renderer.text(self._ _tags, text)
+        self._ _data = []
+
+class DumbRenderer:
+
+    def _ _init_ _(self):
+        self.cache = {}
+
+    def text(self, tags, text):
+        # render text in the style given by the tag stack
+        tags = tuple(tags)
+        style = self.cache.get(tags)
+        if style is None:
+            # figure out a combined style
+            style = {}
+            for tag in tags:
+                s = STYLESHEET.get(tag)
+                if s:
+                    style.update(s)
+            self.cache[tags] = style # update cache
+        # write to standard output
+        sys.stdout.write("%s =&gt;\n" % style)
+        sys.stdout.write("  " + repr(text) + "\n")
+
+#
+# try it out
+
+r = DumbRenderer()
+c = Parser(r)
+c.load(open("samples/sample.xml"))
+
+<B>{'style': 'italic'} =&gt;
+  'I\'ve had a lot of developers come up to me and\012say,
+  "I haven\'t had this much fun in a long time. It sure
+  beats\012writing '
+{'style': 'italic', 'weight': 'bold'} =&gt;
+  'Cobol'
+{'style': 'italic'} =&gt;
+  '" -- '
+{'style': 'italic', 'weight': 'medium'} =&gt;
+  'James Gosling'
+{'style': 'italic'} =&gt;
+  ', on\012'
+{'weight': 'bold'} =&gt;
+  'Java'
+{'style': 'italic'} =&gt;
+  '.'</B></PRE>
+
+
+<a href="0596000960_"><img src="FILES/pixel.gif" width="1" height="1" border="0"></a><ul></ul>
+</td>
+</tr>
+</table>
+<td></td>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+          <a href="0596000960_pythonsl-CHP-5-SECT-1.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+          <a href="0596000960_pythonsl-CHP-5-SECT-3.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+</body></html>

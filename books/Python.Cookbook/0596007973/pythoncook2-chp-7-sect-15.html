@@ -1,0 +1,197 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;7.15.&nbsp;Pretty-Printing the Contents of Database Cursors</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-7-sect-14.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-7-sect-16.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-7-SECT-15"></a>
+<h3 class="docSection1Title" id="409771-842">Recipe 7.15. Pretty-Printing the Contents of Database Cursors</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Steve Holden, Farhad Fouladi, Rosendo Martinez,
+David Berry, Kevin Ryan</span><a name="pythoncook2-CHP-7-ITERM-2376"></a> <a name="pythoncook2-CHP-7-ITERM-2377"></a></p>
+
+<a name="pythoncook2-CHP-7-SECT-15.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText">You want to present a query's result with
+appropriate column headers (and optionally widths), but you do not
+want to hard-code this information in your program. Indeed, you may
+not even know the column headers and widths at the time
+you're writing the code.</P>
+
+
+<a name="pythoncook2-CHP-7-SECT-15.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">Discovering the column headers and widths dynamically is the most
+flexible approach, and it gives you code that's
+highly reusable over many such presentation tasks:</p>
+
+<pre>def pp(cursor, data=None, check_row_lengths=False):
+    if not data:
+        data = cursor.fetchall( )
+    names = [  ]
+    lengths = [  ]
+    rules = [  ]
+    for col, field_description in enumerate(cursor.description):
+        field_name = field_description[0]
+        names.append(field_name)
+        field_length = field_description[2] or 12
+        field_length = max(field_length, len(field_name))
+        if check_row_lengths:
+            # double-check field length, if it's unreliable
+            data_length = max([ len(str(row[col])) for row in data ])
+            field_length = max(field_length, data_length)
+        lengths.append(field_length)
+        rules.append('-' * field_length)
+    format = " ".join(["%%-%ss" % l for l in lengths])
+    result = [ format % tuple(names), format % tuple(rules) ]
+    for row in data:
+        result.append(format % tuple(row))
+    return "\n".join(result)</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-7-SECT-15.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">Relational databases are often perceived as difficult to use. The
+Python DB API can make them much easier to use, but if your programs
+work with several different DB engines, it's
+sometimes tedious to reconcile the implementation differences between
+the various modules, and, even more, between the engines they connect
+to. One of the problems of dealing with databases is presenting the
+result of a query when you may not know much about the data. This
+recipe uses the cursor's
+<tt>description</tt> attribute to try to provide
+appropriate headings. The recipe optionally examines each output row
+to ensure that column widths are
+adequate.<a name="pythoncook2-CHP-7-ITERM-2378"></a></P>
+
+<p class="docText">In some cases, a cursor can yield a solid description of the data it
+returns, but not all database modules are kind enough to supply
+cursors that do so. The pretty printer function <i>pp</I>
+shown in this recipe's Solution takes as its first
+argument a cursor, on which you have just executed a retrieval
+operation (generally the <tt>execute</tt> of an SQL
+<tt>SELECT</tt> statement). It also takes an optional
+argument for the returned data; to use the data for other purposes,
+retrieve the data from the cursor, typically with
+<tt>fetchall</tt>, and pass it in as
+<I>pp</i>'s <i>data</i>
+argument. The second optional argument tells the pretty printer to
+determine the column lengths from the data, rather than trusting the
+cursor's description; checking the data for column
+lengths can be time-consuming, but is helpful with some RDBMS engines
+and DB API module combinations, where the widths given by the
+cursor's <tt>description</tt> attribute
+can be inaccurate.</p>
+
+<p class="docText">A simple test program shows the value of the second optional argument
+when a Microsoft Jet database is used through the
+<tt>mxODBC</tt> module:</P>
+
+<pre>import mx.ODBC.Windows as odbc
+import dbcp # contains pp function
+conn = odbc.connect("MyDSN")
+curs = conn.cursor( )
+curs.execute("""SELECT Name, LinkText, Pageset FROM StdPage
+                ORDER BY PageSet, Name""")
+rows = curs.fetchall( )
+print "\n\nWithout rowlens:"
+print dbcp.pp(curs, rows)
+print "\n\nWith rowlens:"
+print dbcp.pp(curs, rows, rowlens=1)
+conn.close( )</pre><br>
+
+
+<p class="docText">In this case, the cursor's
+<tt>description</tt> does not include column lengths. The
+first output shows that the default column length of 12 is too short.
+The second output corrects this by examining the data:</p>
+
+<pre>Without rowlens:
+Name         LinkText     Pageset
+------------ ------------ ------------
+ERROR        ERROR: Cannot Locate Page None
+home         Home None
+consult      Consulting Activity Std
+ffx          FactFaxer    Std
+hardware     Hardware Platforms Std
+python       Python       Std
+rates        Rates        Std
+technol      Technologies Std
+wcb          WebCallback  Std
+With rowlens:
+Name         LinkText                  Pageset
+------------ ------------------------- ------------
+ERROR        ERROR: Cannot Locate Page None
+home         Home                      None
+consult      Consulting Activity       Std
+ffx          FactFaxer                 Std
+hardware     Hardware Platforms        Std
+python       Python                    Std
+rates        Rates                     Std
+technol      Technologies              Std
+wcb          WebCallback               Std</pre><BR>
+
+
+<p class="docText"><a name="pythoncook2-CHP-7-ITERM-2379"></a>Module
+<tt>pysqlite</tt>, which handles relational databases in
+memory or in files by wrapping the <span class="docEmphasis">SQLite</span>
+library, is another example of a DB API module whose
+cursors' descriptions do not contain reliable values
+for field lengths. Moreover, <tt>pysqlite</tt> does not
+return real <tt>tuple</tt>s from such methods as
+<tt>fetchall</tt>: rather, it returns instances of a
+convenience class which wraps <tt>tuple</tt> and also
+allocws field access with attribute access syntax, much like the
+approaches presented in <a class="docLink" href="pythoncook2-CHP-7-SECT-14.html#pythoncook2-CHP-7-SECT-14">Recipe 7.14</a>. To deal with such small
+variations from the DB API specifications, this recipe carefully uses
+<tt>tuple(row)</tt>, not just <i>row</I>, as the
+right-hand operand of operator <tt>%</tt> in the statement
+<tt>result.append(format % tuple(row))</tt>.
+Python's semantics specify that if the right-hand
+operand is not a <tt>tuple</tt>, then the left-hand (format
+string) operand may contain only one format specifier. This recipe
+uses a <tt>tuple</tt> as the right-hand operand because the
+whole point of the recipe is to build and use a format string with
+many format specifiers, one per field.</p>
+
+<p class="docText">This recipe's function is useful during testing,
+since it lets you easily verify that you are indeed retrieving what
+you expect from the database. The output is pretty enough to display
+ad hoc query outputs to users. The function currently makes no
+attempt to represent null values other than the
+<tt>None</tt> the DB API returns, though it could easily be
+modified to show a null string or some other significant
+value.<a name="pythoncook2-CHP-7-ITERM-2380"></a>
+<a name="pythoncook2-CHP-7-ITERM-2381"></a></P>
+
+
+<a name="pythoncook2-CHP-7-SECT-15.4"></a>
+<H4 class="docSection2Title">See Also</h4>
+
+<p class="docText">The <tt>mxODBC</tt> package, a DB API-compatible interface
+to ODBC (<a class="docLink" target="_blank" href="http://www.egenix.com/files/python/mxODBC.html">http://www.egenix.com/files/python/mxODBC.html</a>);
+SQLite, a fast, lightweight embedded relational database (<a class="docLink" target="_blank" href="http://www.sqlite.org/">http://www.sqlite.org/</a>), and its Python DB
+API interface module <tt>pysqlite</tt> (<a class="docLink" target="_blank" href="http://pysqlite.sourceforge.net/">http://pysqlite.sourceforge.net/</a>).</p>
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-7-sect-14.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-7-sect-16.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

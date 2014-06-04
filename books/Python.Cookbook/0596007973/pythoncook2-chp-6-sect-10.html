@@ -1,0 +1,199 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;6.10.&nbsp;Keeping References to Bound Methods Without Inhibiting Garbage Collection</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-6-sect-9.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-6-sect-11.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-6-SECT-10"></a>
+<h3 class="docSection1Title">Recipe 6.10. Keeping References to Bound Methods Without Inhibiting Garbage Collection</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Joseph A. Knapka, Fr&eacute;d&eacute;ric
+Jolliton, Nicodemus</span></p>
+
+<a name="pythoncook2-CHP-6-SECT-10.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-6-ITERM-2149"></a> <a name="pythoncook2-CHP-6-ITERM-2150"></a>You want to hold
+references to bound methods, while still allowing the associated
+object to be garbage-collected.</P>
+
+
+<a name="pythoncook2-CHP-6-SECT-10.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText"><a name="pythoncook2-CHP-6-ITERM-2151"></a>
+<a name="pythoncook2-CHP-6-ITERM-2152"></a>Weak
+references (i.e., references that indicate an object as long as that
+object is alive but don't <span class="docEmphasis">keep</span>
+that object alive if there are no other, <span class="docEmphasis">normal</span>
+references to it) are an important tool in some advanced programming
+situations. The <tt>weakref</tt> module in the Python
+Standard Library lets you use weak references.</p>
+
+<p class="docText">However, <tt>weakref</tt>'s functionality
+cannot directly be used for bound methods unless you take some
+precautions. To allow an object to be garbage-collected despite
+outstanding references to its bound methods, you need some wrappers.
+Put the following code in a file named
+<I>weakmethod.py</i> in some directory on your Python
+<tt>sys.path</tt>:</P>
+
+<pre>import weakref, new
+class ref(object):
+    """ Wraps any callable, most importantly a bound method, in
+        a way that allows a bound method's object to be GC'ed, while
+        providing the same interface as a normal weak reference. """
+    def _ _init_ _(self, fn):
+        try:
+            # try getting object, function, and class
+            o, f, c = fn.im_self, fn.im_func, fn.im_class
+        except AttributeError:                # It's not a bound method
+            self._obj = None
+            self._func = fn
+            self._clas = None
+        else:                                 # It is a bound method
+            if o is None: self._obj = None    # ...actually UN-bound
+            else: self._obj = weakref.ref(o)  # ...really bound
+            self._func = f
+            self._clas = c
+    def _ _call_ _(self):
+        if self.obj is None: return self._func
+        elif self._obj( ) is None: return None
+        return new.instancemethod(self._func, self.obj( ), self._clas)</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-6-SECT-10.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">A normal bound method holds a strong reference to the bound
+method's object. That means that the object
+can't be garbage-collected until the bound method is
+disposed of:</P>
+
+<pre>&gt;&gt;&gt; class C(object):
+...     def f(self):
+...         print "Hello"
+...     def _ _del_ _(self):
+...         print "C dying"
+...
+&gt;&gt;&gt; c = C( ) 
+&gt;&gt;&gt; cf = c.f
+&gt;&gt;&gt; del c      # c continues to wander about with glazed eyes...
+&gt;&gt;&gt; del cf     # ...until we stake its bound method, only then it goes away:
+<b>C dying</b></pre><br>
+
+
+<p class="docText">This behavior is most often handy, but sometimes
+it's not what you want. For example, if
+you're implementing an event-dispatch system, it
+might not be desirable for the mere presence of an event handler
+(i.e., a bound method) to prevent the associated object from being
+reclaimed. The instinctive idea should then be to use weak
+references. However, a normal <tt>weakref.ref</tt> to a
+bound method doesn't quite work the way one might
+expect, because bound methods are first-class objects. Weak
+references to bound methods are dead-on-arrivalthat is, they
+always return <tt>None</tt> when dereferenced, unless
+another strong reference to the same bound-method object
+exists.<a name="pythoncook2-CHP-6-ITERM-2153"></a> <a name="pythoncook2-CHP-6-ITERM-2154"></a> <a name="pythoncook2-CHP-6-ITERM-2155"></a></p>
+
+<p class="docText">For example, the following code, based on the
+<tt>weakref</tt> module from the Python Standard Library,
+doesn't print
+"Hello" but raises an exception
+instead:</p>
+
+<pre>&gt;&gt;&gt; import weakref
+&gt;&gt;&gt; c = C( )
+&gt;&gt;&gt; cf = weakref.ref(c.f)
+&gt;&gt;&gt; cf         # Oops, better try the lightning again, Igor...
+<B>&lt;weakref at 80ce394; dead&gt;</b>
+&gt;&gt;&gt; cf( )( )
+<b>Traceback (most recent call last):</b>
+<b>File "", line 1, in ?</b>
+<B>TypeError: object of type 'None' is not callable</b></pre><br>
+
+
+<p class="docText">On the other hand, the class <I>ref</i> in the
+<I>weakmethod</I> module shown in this recipe allows you to
+have weak references to bound methods in a useful way:</p>
+
+<pre>&gt;&gt;&gt; import weakmethod
+&gt;&gt;&gt; cf = weakmethod.ref(c.f)
+&gt;&gt;&gt; cf( )( )     # It LIVES! Bwahahahaha!
+<b>Hello</b>
+&gt;&gt;&gt; del c      # ...and it dies
+<b>C dying</b>
+&gt;&gt;&gt; print cf( )
+<b>None</b></pre><br>
+
+
+<p class="docText">Calling the <i>weakmethod.ref</i> instance, which refers to
+a bound method, has the same semantics as calling a
+<tt>weakref.ref</tt> instance that refers to, say, a
+function object: if the referent has died, it returns
+<tt>None</tt>; otherwise, it returns the referent.
+Actually, in this case, it returns a freshly minted
+<tt>new.instancemethod (</tt>holding a strong reference to
+the objectso, be sure not to hold on to that, unless you
+<span class="docEmphasis">do</span> want to keep the object alive for a while!).</p>
+
+<p class="docText">Note that the recipe is carefully coded so you can wrap into a
+<i>ref</i> instance any callable you want, be it a method
+(bound or unbound), a function, whatever; the weak references
+semantics, however, are provided only when you're
+wrapping a bound method; otherwise, <i>ref</i> acts as a
+normal (strong) reference, holding the callable alive. This basically
+lets you use <i>ref</I> for wrapping arbitrary callables
+without needing to check for special cases.</P>
+
+<p class="docText"><a name="pythoncook2-CHP-6-ITERM-2156"></a>If you want
+semantics closer to that of a <tt>weakref.proxy</tt>,
+they're easy to implement, for example by
+subclassing the <i>ref</i> class given in this recipe. When
+you call a proxy, the proxy calls the referent with the same
+arguments. If the referent's object no longer lives,
+then <tt>weakref.ReferenceError</tt> gets raised instead.
+Here's an implementation of such a
+<I>proxy</i> class:<a name="pythoncook2-CHP-6-ITERM-2157"></a></p>
+
+<pre>class proxy(ref):
+    def _ _call_ _(self, *args, **kwargs):
+        func = ref._ _call_ _(self)
+        if func is None:
+            raise weakref.ReferenceError('referent object is dead')
+        else:
+            return func(*args, **kwargs)
+    def _ _eq_ _(self, other):
+        if type(other) != type(self):
+            return False
+        return ref._ _call_ _(self) == ref._ _call_ _(other)</pre><br>
+
+
+
+<a name="pythoncook2-CHP-6-SECT-10.4"></a>
+<h4 class="docSection2Title">See Also</h4>
+
+<p class="docText">The <span class="docEmphasis">Library Reference</span> and <span class="docEmphasis">Python in
+a Nutshell</span> sections on the <tt>weakref</tt> and
+<tt>new</tt> modules and on bound-method objects.</p>
+
+
+
+<a href="5991535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><UL></ul></TD></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-6-sect-9.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-6-sect-11.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

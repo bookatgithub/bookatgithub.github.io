@@ -1,0 +1,213 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;16.6.&nbsp;Colorizing Python Source Using the Built-in Tokenizer</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-16-sect-5.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-16-sect-7.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-16-SECT-6"></a>
+<h3 class="docSection1Title">Recipe 16.6. Colorizing Python Source Using the Built-in Tokenizer</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: J&uuml;rgen Hermann, Mike Brown</span></p>
+
+<a name="pythoncook2-CHP-16-SECT-6.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-16-ITERM-3020"></a> <a name="pythoncook2-CHP-16-ITERM-3021"></a>You need to
+convert Python source code into HTML markup, rendering comments,
+keywords, operators, and numeric and string literals in different
+colors.</P>
+
+
+<a name="pythoncook2-CHP-16-SECT-6.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText"><tt>tokenize.generate_tokens</tt> does most of the work. We
+just need to loop over all tokens it finds, to output them with
+appropriate colorization:</p>
+
+<pre>""" MoinMoin - Python Source Parser """
+import cgi, sys, cStringIO
+import keyword, token, tokenize
+# Python Source Parser (does highlighting into HTML)
+_KEYWORD = token.NT_OFFSET + 1
+_TEXT    = token.NT_OFFSET + 2
+_colors = {
+    token.NUMBER:       '#0080C0',
+    token.OP:           '#0000C0',
+    token.STRING:       '#004080',
+    tokenize.COMMENT:   '#008000',
+    token.NAME:         '#000000',
+    token.ERRORTOKEN:   '#FF8080',
+    _KEYWORD:           '#C00000',
+    _TEXT:              '#000000',
+}
+class Parser(object):
+    """ Send colorized Python source HTML to output file (normally stdout).
+    """
+    def _ _init_ _(self, raw, out=sys.stdout):
+        """ Store the source text. """
+        self.raw = raw.expandtabs( ).strip( )
+        self.out = out
+    def format(self):
+        """ Parse and send the colorized source to output. """
+        # Store line offsets in self.lines
+        self.lines = [0, 0]
+        pos = 0
+        while True:
+            pos = self.raw.find('\n', pos) + 1
+            if not pos: break
+            self.lines.append(pos)
+        self.lines.append(len(self.raw))
+        # Parse the source and write it
+        self.pos = 0
+        text = cStringIO.StringIO(self.raw)
+        self.out.write('&lt;pre&gt;&lt;font face="Lucida, Courier New"&gt;')
+        try:
+            for token in tokenize.generate_tokens(text.readline):
+                # unpack the components of each token
+                toktype, toktext, (srow, scol), (erow, ecol), line = token
+                if False:  # You may enable this for debugging purposes only
+                    print "type", toktype, token.tok_name[toktype],
+                    print "text", toktext,
+                    print "start", srow,scol, "end", erow,ecol, "&lt;br&gt;"
+                # Calculate new positions
+                oldpos = self.pos
+                newpos = self.lines[srow] + scol
+                self.pos = newpos + len(toktext)
+                # Handle newlines
+                if toktype in (token.NEWLINE, tokenize.NL):
+                    self.out.write('\n')
+                    continue
+                # Send the original whitespace, if needed
+                if newpos &gt; oldpos:
+                    self.out.write(self.raw[oldpos:newpos])
+                # Skip indenting tokens, since they're whitespace-only
+                if toktype in (token.INDENT, token.DEDENT):
+                    self.pos = newpos
+                    continue
+                # Map token type to a color group
+                if token.LPAR &lt;= toktype &lt;= token.OP:
+                    toktype = token.OP
+                elif toktype == token.NAME and keyword.iskeyword(toktext):
+                    toktype = _KEYWORD
+                color = _colors.get(toktype, _colors[_TEXT])
+                style = ''
+                if toktype == token.ERRORTOKEN:
+                    style = ' style="border: solid 1.5pt #FF0000;"'
+                # Send text
+                self.out.write('&lt;font color="%s"%s&gt;' % (color, style))
+                self.out.write(cgi.escape(toktext))
+                self.out.write('&lt;/font&gt;')
+        except tokenize.TokenError, ex:
+            msg = ex[0]
+            line = ex[1][0]
+            self.out.write("&lt;h3&gt;ERROR: %s&lt;/h3&gt;%s\n" % (
+                msg, self.raw[self.lines[line]:]))
+        self.out.write('&lt;/font&gt;&lt;/pre&gt;')
+if _ _name_ _ == "_ _main_ _":
+    print "Formatting..."
+    # Open own source
+    source = open('python.py').read( )
+    # Write colorized version to "python.html"
+    Parser(source, open('python.html', 'wt')).format( )
+    # Load HTML page into browser
+    import webbrowser
+    webbrowser.open("python.html")</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-16-SECT-6.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">This code is part of MoinMoin (see <a class="docLink" target="_blank" href="http://moin.sourceforge.net/">http://moin.sourceforge.net/</a>) and shows how
+to use the built-in <tt>keyword</tt>,
+<tt>token</tt>, and <tt>tokenize</tt> modules to
+scan Python source code and re-emit it with appropriate color markup
+but no changes to its original formatting ("no
+changes" is the hard part!).</P>
+
+<p class="docText">The <i>Parser</I> class' constructor saves
+the multiline string that is the Python source to colorize, and the
+file object, which is open for writing, where you want to output the
+colorized results. Then, the <I>format</i> method prepares
+a <i>self.lines</i> list that holds the offset (i.e., the
+index into the source string, <i>self.raw</I>) of each
+line's start.</p>
+
+<p class="docText"><i>format</I> then loops over the result of generator
+<tt>tokenize.tokenize</tt>, unpacking each token tuple into
+items specifying the token type and starting and ending positions in
+the source (each expressed as line number and offset within the
+line). The body of the loop reconstructs the exact position within
+the original source code string <tt>self.raw</tt>, so it
+can emit exactly the same whitespace that was present in the original
+source. It then picks a color code from the <i>_colors</I>
+dictionary (which uses HTML color coding), with help from the
+<tt>keyword</tt> standard module to determine whether a
+<tt>NAME</tt> token is actually a Python keyword (to be
+output in a different color than that used for ordinary identifiers).</p>
+
+<p class="docText">The test code at the bottom of the module formats the module itself
+and launches a browser with the result, using the standard Python
+library module <tt>webbrowser</tt> to enable you to see and
+enjoy the result in your favorite browser.</P>
+
+<p class="docText">If you put this recipe's code into a module, you can
+then import the module and reuse its functionality in CGI scripts
+(using the <tt>PATH_TRANSLATED</tt> CGI environment
+variable to know what file to colorize), command-line tools (taking
+filenames as arguments), filters that colorize anything they get from
+standard input, and so on. See <a class="docLink" target="_blank" href="http://skew.org/~mike/colorize.py">http://skew.org/~mike/colorize.py</a> for
+versions that support several of these various possibilities.</P>
+
+<p class="docText">With small changes, it's also easy to turn this
+recipe into an Apache handler, so your Apache web site can serve
+colorized <i>.py</i> files. Specifically, if you set up
+this script as a handler in Apache, then the file is served up as
+colorized HTML whenever a visitor to the site requests a
+<i>.py</i> file.</p>
+
+<p class="docText">For the purpose of using this recipe as an Apache handler, you need
+to save the script as <i>colorize.cgi</i> (not
+<i>.py</i>, lest it confuses Apache), and add, to your
+<i>.htaccess</i> or <i>httpd.conf</i>
+Apache configuration files, the following lines:</P>
+
+<pre>AddHandler application/x-python .py
+Action application/x-python /full/virtual/path/to/colorize.cgi</pre><BR>
+
+
+<p class="docText">Also, make sure you have the <tt>Action</tt> module enabled
+in your <i>httpd.conf</i> Apache configuration file.</P>
+
+
+<a name="pythoncook2-CHP-16-SECT-6.4"></a>
+<h4 class="docSection2Title">See Also</h4>
+
+<p class="docText">Documentation for the <tt>webbrowser</tt>,
+<tt>token</tt>, <tt>tokenize</tt>, and
+<tt>keyword</tt> modules in the <span class="docEmphasis">Library
+Reference</span> and <span class="docEmphasis">Python in a
+Nutshell</span>; the colorizer is available at <a class="docLink" target="_blank" href="http://purl.net/wiki/python/MoinMoinColorizer">http://purl.net/wiki/python/MoinMoinColorizer</a>,
+as part of MoinMoin (<a class="docLink" target="_blank" href="http://moin.sourceforge.net">http://moin.sourceforge.net</a>), and, in a
+somewhat different variant, also at <a class="docLink" target="_blank" href="http://skew.org/~mike/colorize.py">http://skew.org/~mike/colorize.py</a>; the Apache
+web server is available and documented at <a class="docLink" target="_blank" href="http://httpd.apache.org">http://httpd.apache.org</a>.<a name="pythoncook2-CHP-16-ITERM-3022"></a> <a name="pythoncook2-CHP-16-ITERM-3023"></a></p>
+
+
+
+<a href="5991535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><ul></ul></td></TR></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-16-sect-5.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-16-sect-7.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

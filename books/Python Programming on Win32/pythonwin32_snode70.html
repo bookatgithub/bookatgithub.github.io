@@ -1,0 +1,168 @@
+<HTML><HEAD><META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=iso-8859-1">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="9.3 Putting It All Together: Importing Financial Data"-->
+<LINK REL="stylesheet" href="FILES/sbolM.css">
+</HEAD>
+<BODY link="#354278" vlink="#000066" alink="#000080" topmargin="0">
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right"><a href="pythonwin32_snode69.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a> <a href="pythonwin32_snode71.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a></td></table>
+<FONT>
+<h3>9.3
+Putting It All Together: Importing Financial Data</h3>
+
+
+<p>
+<a NAME="idx866"></a> <a naME="idx867"></A>Now we'll write an import script
+using our wrapper. Excel is a good medium for entering financial
+data; users can enter data more quickly in Excel than in a database;
+Excel builds pick lists automatically; and it's easy to copy,
+paste, and rearrange the data quickly. However, data entered in this
+way isn't always properly validated. Imagine that someone in
+your organization is preparing a list of new invoices raised once a
+month and emailing the data in a standardized spreadsheet. You want
+to import it, validate it, get the data into double-entry format, and
+save it in a <Tt claSS="monofont">BookSet</TT>, as part of assembling
+monthly management accounts. The examples for this chapter include a
+spreadsheet called <i>invoices.xls</i>, which looks
+like <a href="pythonwin32_snode70.html#3">Figure 9.3</a>.</p>
+
+
+
+<center>
+<h5>
+<a name="3"></A>Figure 9.3. Invoices to be imported</H5>
+
+<IMG BoRDeR="0" WiDtH="502" HEIght="253" src="FILES/ppw.0903.gif" ALt="figs/ppw.0903.gif"></cenTER>
+
+
+<P>You want to open this up, grab the three facts near the top, and
+import the matrix of cells describing the invoices. You're not
+sure how many invoices to expect, so you need to count down. If
+it's a cash sale (i.e., Date Raised is the same as Date Paid),
+create one transaction; otherwise create two: one for the bill and
+one for the payment. Note that some invoices are not yet paid; in
+this case, estimate a payment date for your forecasts and tag it as a
+scheduled transaction so that it can be filtered out of real
+accounts.</p>
+
+
+
+<p>The full script to do this is in the file <i>exceldemos.py,
+</i>
+<A NAMe="idx868"></a>which
+you can find at <a name="idx869"></a> <a name="idx870"></a> <a name="idx871"></a><a TARGET="_blank" hREf="http://../starship.python.net/crew/mhammond/ppw32/default.htm">http://starship.python.net/crew/mhammond/ppw32/</A>.
+Using the wrapper class, it becomes easy to acquire the desired data:</P>
+
+
+
+<pRe CLASs="monofont">def getInvoices():
+    # the demo - get some data from a spreadsheet, parse it, make
+    # transactions, save
+    
+    # step 1 - acquire the data
+    spr = easyExcel('Invoices.xls')
+
+    MonthEnd = int(spr.getCell('Sheet1', 3, 2))
+    PreparedBy = spr.getCell('Sheet1', 4, 2)
+    Submitted = int(spr.getCell('Sheet1', 5, 2))
+    print 'Month end %s, prepared by %s, submitted %s' % (
+                    time.ctime(MonthEnd), 
+                    PreparedBy,
+                    time.ctime(Submitted)
+                    )
+     
+    # do not know how many rows
+    rawInvoices = spr.getContiguousRange('Sheet1',8,1)
+    rows = spr.fixStringsAndDates(rawInvoices)</pre>
+
+
+<P>
+<A NAme="idx872"></a>We've
+extracted the needed data and cleaned it up in just a few lines.
+Logically, the next stage is to validate the data. You could go a
+long way with this, but let's just check that the main table is
+in the correct place and hasn't been rearranged:</p>
+
+
+
+<PRE Class="monofont">    # check correct columns
+    assert rows[0] == ('Invoice No', 'Date Raised', 
+        'Customer', 'Comment', 'Category', 
+        'Amount', 'Terms', 'Date Paid'
+         ), 'Column structure is wrong!'
+    print '%d invoices found, processing' % len(rows)</PRE>
+
+
+<P>The data looks fine; now all you have to do is build the transactions
+you want:</p>
+
+
+
+<pre class="monofont">    # make a BookSet to hold the data
+    bs = BookSet()
+
+    # process the rows after the headings
+    for row in rows[1:]:
+         # unpack it into separate variables
+        (invno, date, customer, comment, 
+        category, fmt_amount, terms, datepaid) = row
+
+        # amounts formatted as currency may be returned as strings
+        amount = string.atof(fmt_amount)
+    
+        if date == datepaid:
+            # cash payment, only one transaction
+            tran = Transaction()
+            tran.date = date
+            tran.comment = 'Invoiced - ' + comment
+            tran.customer = customer
+            tran.invoiceNo = invno
+            tran.addLine('MyCo.Capital.PL.Income.' + category, - amount)
+            tran.addLine('MyCo.Assets.NCA.CurAss.Cash', amount)
+            bs.add(tran)
+
+        else:
+            # need to create an invoice and a (possibly future) payment
+            # first the bill
+            tran = Transaction()
+            tran.date = date
+            tran.comment = 'Invoiced - ' + comment
+            tran.customer = customer
+            tran.invoiceNo = invno
+            tran.addLine('MyCo.Capital.PL.Income.' + category, - amount)
+            tran.addLine('MyCo.Assets.NCA.CurAss.Creditors', amount)
+            bs.add(tran)
+ 
+            # now the payment.  If not paid, use the terms to estimate a
+            # date, and flag it as a Scheduled transaction (i.e., not real)
+            tran = Transaction()
+            if datepaid == None:
+                datepaid = date + (terms * 86400)
+                tran.mode = 'Scheduled'    # tag it as not real
+            tran.date = date
+            tran.comment = 'Invoice Paid - ' + comment
+            tran.customer = customer
+            tran.invoiceNo = invno
+            tran.addLine('MyCo.Assets.NCA.CurAss.Creditors', - amount)
+            tran.addLine('MyCo.Assets.NCA.CurAss.Cash', amount)
+            bs.add(tran)
+ 
+    # we're done, save and pack up
+    filename = 'invoices.dtj'
+    bs.save(filename)
+    print 'Saved in file', filename
+    spr.close()</pre>
+
+
+<p>Although the code is fairly lengthy, most of it is transferring a
+field at a time from the input to the relevant field or line of a
+transaction. If you define classes to represent invoices and
+payments, each with a standard set of attributes and the right
+constructors, this is simplified even further.<a name="idx873"></a> <a nAME="idx874"></A></P>
+
+</FoNT>
+ 
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right"><a href="pythonwin32_snode69.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a> <a href="pythonwin32_snode71.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a></td></table>
+</BODY></HTML>

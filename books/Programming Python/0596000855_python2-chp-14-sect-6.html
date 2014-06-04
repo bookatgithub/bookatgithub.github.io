@@ -1,0 +1,1225 @@
+<html><head>
+<META http-equiv="Content-Type" content="text/html">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="14.6 PyErrata Database Interfaces"-->
+<link rel="STYLESHEET" type="text/css" href="FILES/style.css">
+<link rel="STYLESHEET" type="text/css" href="FILES/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+	<a href="0596000855_python2-CHP-14-SECT-5.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+	<a href="0596000855_python2-CHP-14-SECT-7.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr>
+<td valign="top"><A NAME="python2-CHP-14-SECT-6"></A>
+<H3 class="docSection1Title">14.6 PyErrata Database Interfaces</H3>
+
+<P class="docText"><A NAME="python2-IDXTERM-1507"></A> <A NAME="python2-IDXTERM-1508"></A> <A NAME="python2-IDXTERM-1509"></A>Now that we've seen the user
+interfaces and top-level implementations of browse and submit
+operations, this section proceeds down one level of abstraction to
+the third and last major functional area in the PyErrata system.
+</P>
+
+<P class="docText">Compared to other systems in this part of the book, one of the most
+unique technical features of PyErrata is that it must manage
+<span class="docEmphasis">persistent data</span>. Information posted by readers
+needs to be logged in a database for later review. PyErrata stores
+reports as dictionaries, and includes logic to support two database
+storage mediums -- flat pickle files and shelves -- as well as
+tools for synchronizing data access.
+</P>
+
+<A NAME="python2-CHP-14-SECT-6.1"></A>
+<H4 class="docSection2Title">14.6.1 The Specter of Concurrent Updates</H4>
+
+<P class="docText"><A NAME="python2-IDXTERM-1510"></A>
+<A NAME="python2-IDXTERM-1511"></A> <A NAME="python2-IDXTERM-1512"></A>There is a variety of ways for Python
+scripts to store data persistently: files, object pickling, object
+shelves, real databases, and so on. In fact, <A class="docLink" HREF="0596000855_python2-CHP-16.html#python2-CHP-16">Chapter 16</A> is devoted exclusively to this topic and
+provides more in-depth coverage than we require here.<sup class="docFootnote"><A class="docLink" HREF="#">[3]</A></sup> Those storage mediums all work in the context of
+server-side CGI scripts too, but the CGI environment almost
+automatically introduces a new challenge: <span class="docEmphasis">concurrent
+updates</span>. Because the CGI model is inherently parallel,
+scripts must take care to ensure that database writes and reads are
+properly synchronized to avoid data corruption and incomplete
+records.
+</P>
+<blockquote><p class="docFootnote"><sup><A NAME="">[3]</A></sup> But see <A class="docLink" HREF="0596000855_python2-CHP-16.html#python2-CHP-16">Chapter 16</A> if you could use a bit of
+background information on this topic. The current chapter introduces
+and uses only the simplest interfaces of the object <TT>pickle</TT>
+and <TT>shelve</TT> modules, and most module
+interface details are postponed until that later chapter.</p></blockquote>
+
+<P class="docText">Here's why. With PyErrata, a given reader may visit the site
+and post a report or view prior posts. But in the context of a web
+application, there is no way to know how many readers may be posting
+or viewing at once: any number of people may press a form's
+submit button at the same time. As we've seen, form submissions
+generally cause the HTTP server to spawn a new process to handle the
+request. Because these handler processes all run in parallel, if one
+hundred users all press submit at the same time, there will be one
+hundred CGI script processes running in parallel on the server, all
+of which may try to update (or read) the reports database at the same
+time.
+</P>
+
+<P class="docText"><A NAME="IXT-14-337708"></A>Due
+to all this potential parallel traffic, server-side programs that
+maintain a database must somehow guarantee that database updates
+happen one at a time, or the database could be corrupted. The
+likelihood of two particular scenarios increases with the number of
+site users:
+</P>
+
+<UL>
+<LI><P class="docList"><span class="docEmphasis">Concurrent writers</span>: If two processes try to
+update the same file at once, we may wind up with part of one
+process's new data intermixed with another's, lose part
+of one process's data, or otherwise corrupt stored data.
+</P></LI>
+<LI><P class="docList"><span class="docEmphasis">Concurrent reader and writer</span>: Similarly, if a
+process attempts to read a record that is being written by another,
+it may fetch an incomplete report. In effect, the database must be
+managed as a shared resource among all possible CGI handler
+processes, whether they update or not.
+</P></LI>
+</UL>
+<P class="docText">Constraints vary per database medium, and while it's generally
+okay for multiple processes to <span class="docEmphasis">read</span> a database
+at the same time, <span class="docEmphasis">writers</span> (and updates in
+general) almost always need to have exclusive access to a shared
+database. There is a variety of ways to make database access safe in
+a potentially concurrent environment such as CGI-based web sites:
+</P>
+
+<A NAME="IXT-14-337709"></A><A NAME="IXT-14-337710"></A><A NAME="IXT-14-337711"></A><A NAME="IXT-14-337712"></A><A NAME="IXT-14-337713"></A><DL class="docList">
+<DT><I><span class="docPubcolor">Database systems</span></I></DT>
+<DD>
+<P class="docList"><A NAME="IXT-14-337709"></A>If you
+are willing to accept the extra complexity of using a full-blown
+database system in your application (e.g, Sybase, Oracle, mySql),
+most provide support for concurrent access in one form or another.
+</P>
+</DD><DT><I><span class="docPubcolor">Central database servers</span></I></DT>
+<DD>
+<P class="docList"><A NAME="IXT-14-337710"></A>
+<A NAME="IXT-14-337711"></A>It's
+also possible to coordinate access to shared data stores by routing
+all data requests to a perpetually running manager program that you
+implement yourself. That is, each time a CGI script needs to hit the
+database, it must ask a data server program for access via a
+communications protocol such as socket calls.
+</P>
+</DD><DT><I><span class="docPubcolor">File naming conventions</span></I></DT>
+<DD>
+<P class="docList"><A NAME="IXT-14-337712"></A>If it is feasible to
+store each database record in a separate flat file, we can sometimes
+avoid or minimize the concurrent access problems altogether by giving
+each flat file a distinct name. For instance, if each record's
+filename includes both the file's creation time and the ID of
+the process that created it, it will be unique for all practical
+purposes, since a given process updates only one particular file. In
+this scheme, we rely on the operating system's filesystem to
+make records distinct, by storing them in unique files.
+</P>
+</DD><DT><I><span class="docPubcolor">File locking protocols</span></I></DT>
+<DD>
+<P class="docList"><A NAME="IXT-14-337713"></A>If
+the entire database is physically stored as a single file, we can use
+operating-system tools to lock the file during update operations. On
+Unix and Linux servers, exclusively locking a file will block other
+processes that need it until the lock is released; when used
+consistently by all processes, such a mechanism automatically
+synchronizes database accesses. Python shelves support concurrent
+readers but not concurrent updates, so we must add locks of our own
+to use them as dynamic data stores in CGI scripting.
+</P>
+</DD>
+</DL>
+
+<P class="docText">In this section, we implement both of the last two schemes for
+PyErrata to illustrate concurrent data-access fundamentals.
+<A NAME="IXTR3-392"></A><A NAME="IXTR3-393"></A>
+</P>
+
+
+<A NAME="python2-CHP-14-SECT-6.2"></A>
+<H4 class="docSection2Title">14.6.2 Database Storage Structure</H4>
+
+<P class="docText"><A NAME="python2-IDXTERM-1521"></A> <A NAME="python2-IDXTERM-1522"></A>First
+of all, let's get a handle on what the system really stores. If
+you flip back to <A class="docLink" HREF="0596000855_python2-CHP-14-SECT-2.html#python2-CHP-14-FIG-1">Figure 14-1</A>, you'll notice
+that there are two top-level database directories:
+<I>DbaseShelve</I> (for the shelve mechanism) and
+<I>DbaseFiles</I> (for file-based storage). Each of
+these directories has unique contents.
+</P>
+
+<A NAME="python2-CHP-14-SECT-6.2.1"></A>
+<H5 class="docSection3Title">14.6.2.1 Shelve database</H5>
+
+<P class="docText"><A NAME="python2-IDXTERM-1523"></A>
+<A NAME="python2-IDXTERM-1524"></A>
+<A NAME="python2-IDXTERM-1525"></A>For
+shelve-based databases, the <I>DbaseShelve</I>
+directory's contents are shown in <A class="docLink" HREF="#python2-CHP-14-FIG-27">Figure 14-27</A>.
+The <TT>commentDB</TT> and <TT>errataDB</TT>
+files are the shelves used to store reports, and the
+<I>.lck</I> and <I>.log</I> files are
+lock and log files generated by the system. To start a new
+installation from scratch, only the two <I>.lck</I>
+files are needed initially (and can be simply empty files); the
+system creates the shelve and log files as records are stored.
+</P>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="python2-CHP-14-FIG-27"></A>Figure 14-27. PyErrata shelve-based directory contents</H5>
+<IMG BORDER="0" WIDTH="346" HEIGHT="210" src="FILES/ppy2_1427.gif" ALT="figs/ppy2_1427.gif"></CENTER>
+
+<P class="docText">We'll explore the Python <TT>shelve</TT> module in
+more detail in the next part of this book, but the parts of it used
+in this chapter are straightforward. Here are the basic
+<TT>shelve</TT> interfaces we'll use in this
+example:<A NAME="IXT-14-337714"></A>
+</P>
+
+<PRE>import shelve                       # load the standard shelve module
+dbase = shelve.open('filename')     # open shelve (create if doesn't yet exist)
+dbase['key'] = object               # store almost any object in shelve file
+object = dbase['key']               # fetch object from shelve in future run
+dbase.keys(  )                        # list of keys stored in the shelve
+dbase.close(  )                       # close shelve's file</PRE>
+
+<P class="docText">In other words, shelves are like dictionaries of Python objects that
+are mapped to an external file, and so persist between program runs.
+Objects in a shelve are stored away and later fetched with a key. In
+fact, it's not inaccurate to think of shelves as dictionaries
+that live on after a program exits, and must be explicitly opened.
+<A NAME="IXT-14-337715"></A>
+<A NAME="IXT-14-337716"></A>
+</P>
+
+<P class="docText">Like dictionaries, each distinct value stored in a shelve must have a
+<span class="docEmphasis">unique key</span>. Because there is no field in a
+comment or errata report that is reliably unique among all reports,
+we need to generate one of our own. Record submit time is close to
+being unique, but there is no guarantee that two users (and hence two
+processes) won't submit a report in the same second.
+</P>
+
+<P class="docText">To assign each record a unique slot in the shelve, the system
+generates a uniquekey string for each,
+containing the submission time (seconds since the Unix
+"epoch" as a floating-point value) and the process ID of
+the storing CGI script. Since the dictionary values stored in the
+shelve contain all the report information we're interested in,
+shelve keys need only be unique, not meaningful. Records are loaded
+by blindly iterating over the shelve's keys list.
+</P>
+
+<P class="docText">In addition to generating unique keys for records, shelves must
+accommodate <span class="docEmphasis">concurrent updates</span>. Because shelves
+are mapped to single files in the filesystem (here,
+<TT>errataDB</TT> and <TT>commentDB</TT>), we
+must synchronize all access to them in a potentially parallel process
+environment such as CGI scripting.
+</P>
+
+<P class="docText">In its current form, the Python <TT>shelve</TT> module
+supports concurrent readers but not concurrent updates, so we need to
+add such functionality ourselves. The PyErrata implementation of the
+shelve database-storage scheme uses locks on the
+<I>.lck</I> files to make sure that writers (submit
+processes) gain exclusive access to the shelve before performing
+updates. Any number of readers may run in parallel, but writers must
+run alone and block all other processes -- readers and
+writers -- while they update the shelve.
+</P>
+
+<P class="docText">Notice that we use a separate <I>.lck</I> file for
+locks, rather than locking the shelve file itself. In some systems,
+shelves are mapped to multiple files, and in others (e.g., GDBM),
+locks on the underlying shelve file are reserved for use by the DBM
+filesystem itself. Using our own lock file subverts such reservations
+and is more portable among DBM implementations.<A NAME="IXTR3-394"></A>
+</P>
+
+
+
+<A NAME="python2-CHP-14-SECT-6.2.2"></A>
+<H5 class="docSection3Title">14.6.2.2 Flat-file database</H5>
+
+<P class="docText"><A NAME="IXT-14-337717"></A>
+<A NAME="IXT-14-337718"></A>Things
+are different with the flat-files database medium; <A class="docLink" HREF="#python2-CHP-14-FIG-28">Figure 14-28</A> shows the contents of the file-based errata
+database subdirectory, <I>DbaseFiles/errataDB. </I>In
+this scheme, each report is stored in a distinct and uniquely named
+flat file containing a pickled report-data dictionary. A similar
+directory exists for comments,
+<I>DbaseFiles/commentDB.</I> To start from scratch
+here, only the two subdirectories must exist; files are added as
+reports are submitted.
+</P>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="python2-CHP-14-FIG-28"></A>Figure 14-28. PyErrata file-based directory contents</H5>
+<IMG BORDER="0" WIDTH="346" HEIGHT="214" src="FILES/ppy2_1428.gif" ALT="figs/ppy2_1428.gif"></CENTER>
+
+<P class="docText"><A NAME="IXT-14-337719"></A>Python's
+object pickler converts ("serializes") in-memory objects
+to and from specially coded strings in a single step, and therefore
+comes in handy for storing complex objects like the dictionaries
+PyErrata uses to represent report records.<sup class="docFootnote"><A class="docLink" HREF="#">[4]</A></sup> We'll also study the
+<TT>pickle</TT> module in depth in <A class="docLink" HREF="0596000855_python2-PART-IV.html#python2-PART-IV">Part IV</A>, but its interfaces employed by PyErrata are
+simple as well:
+</P>
+<blockquote><p class="docFootnote"><sup><A NAME="">[4]</A></sup> PyErrata
+could also simply write report record dictionaries to files with one
+field key and value per text line, and split lines later to rebuild
+the record. It could also just convert the record dictionary to its
+string representation with the <TT>str</TT> built-in
+function, write that string to the file manually, and convert the
+string back to a dictionary later with the built-in
+<TT>eval</TT> function (which may or may not be slower, due
+to the general parsing overhead of <TT>eval</TT>). As
+we'll see in the next part of this book, though, object
+pickling is a much more powerful and general approach to object
+storage -- it also handles things like class instance objects and
+shared and cyclic object references well. See table wrapper classes
+in the PyForm example in <A class="docLink" HREF="0596000855_python2-CHP-16.html#python2-CHP-16">Chapter 16</A> for similar
+topics.</p></blockquote>
+
+<PRE>pickle.dump(object, outputfile)         # store object in a file
+object = pickle.load(inputfile)         # load object back from file</PRE>
+
+<P class="docText">For flat files, the system-generated <span class="docEmphasis">key</span>
+assigned to a record follows the same format as for shelves, but here
+it is used to name the report's file. Because of that, record
+keys are more apparent (we see them when listing the directory), but
+still don't need to convey any real information. They need only
+be unique for each stored record to yield a unique file. In this
+storage scheme, records are processed by iterating over directory
+listings returned by the standard <TT>glob.glob</TT> call
+on name pattern <TT>*.data</TT> (see <A class="docLink" HREF="0596000855_python2-CHP-2.html#python2-CHP-2">Chapter 2</A>, for a refresher on the
+<TT>glob</TT> module).
+</P>
+
+<P class="docText">In a sense, this flat-file approach uses the filesystem as a shelve
+and relies on the operating system to segregate records as files. It
+also doesn't need to care much about <span class="docEmphasis">concurrent
+access</span> issues; because generated filenames make sure that
+each report is stored in its own separate file, it's impossible
+for two submit processes to be writing the same file at once.
+Moreover, it's okay to read one report while another is being
+created; they are truly distinct files.
+</P>
+
+<P class="docText">We still need to be careful, though, to avoid making a file visible
+to reader directory listings until it is complete, or else we may
+read a half-finished file. This case is unlikely in practice -- it
+can happen only if the writer still hasn't finished by the time
+the reader gets around to that file in its directory listing. But to
+avoid problems, submit scripts first write data to a temporary file,
+and move the temporary file to the real <TT>*.data</TT>
+name only after it is complete.<A NAME="IXTR3-395"></A> <A NAME="IXTR3-396"></A>
+</P>
+
+
+
+<A NAME="python2-CHP-14-SECT-6.3"></A>
+<H4 class="docSection2Title">14.6.3 Database Switch</H4>
+
+<P class="docText"><A NAME="IXT-14-337720"></A>On
+to code listings. The first database module, shown in <A class="docLink" HREF="#python2-CHP-14-EX-13">Example 14-13</A>, simply selects between a file-based mechanism
+and shelve-based mechanism; we make the choice here alone to avoid
+impacting other files when we change storage schemes.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-14-EX-13"></A>Example 14-13. PP2E\Internet\Cgi-Web\PyErrata\dbswitch.py </H5>
+<PRE>############################################################
+# for testing alternative underlying database mediums; 
+# since the browse, submit, and index cgi scripts import
+# dbase names from here only, they'll get whatever this 
+# module loads; in other words, to switch mediums, simply
+# change the import here; eventually we could remove this
+# interface module altogether, and load the best medium's
+# module directly, but the best may vary by use patterns;
+############################################################
+
+#
+# one directory per dbase, one flat pickle file per submit
+#
+
+from dbfiles import DbaseErrata, DbaseComment
+
+
+#
+# one shelve per dbase, one key per submit, with mutex update locks
+#
+
+# from dbshelve import DbaseErrata, DbaseComment </PRE>
+
+
+
+<A NAME="python2-CHP-14-SECT-6.4"></A>
+<H4 class="docSection2Title">14.6.4 Storage-Specific Classes for Files and Shelves</H4>
+
+<P class="docText"><A NAME="python2-IDXTERM-1536"></A>
+<A NAME="python2-IDXTERM-1537"></A> <A NAME="python2-IDXTERM-1538"></A>The
+next two modules implement file- and shelve-based database-access
+objects; the classes they define are the objects passed and used in
+the browse and submit scripts. Both are really just subclasses of the
+more generic class in <TT>dbcommon</TT>; in <A class="docLink" HREF="#python2-CHP-14-EX-14">Example 14-14</A>, we fill in methods that define storage
+scheme-specific behavior, but the superclass does most of the work.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-14-EX-14"></A>Example 14-14. PP2E\Internet\Cgi-Web\PyErrata\dbfiles.py </H5>
+<PRE>###############################################################
+# store each item in a distinct flat file, pickled;
+# dbcommon assumes records are dictionaries, but we don't here;
+# chmod to 666 to allow admin access (else 'nobody' owns);
+# subtlety: unique filenames prevent multiple writers for any
+# given file, but it's still possible that a reader (browser)
+# may try to read a file while it's being written, if the 
+# glob.glob call returns the name of a created but still 
+# incomplete file;  this is unlikely to happen (the file 
+# would have to still be incomplete after the time from glob
+# to unpickle has expired), but to avoid this risk, files are 
+# created with a temp name, and only moved to the real name
+# when they have been completely written and closed; 
+# cgi scripts with persistent data are prone to parallel
+# updates, since multiple cgi scripts may be running at once;
+###############################################################
+
+import dbcommon, pickle, glob, os
+
+class Dbase(dbcommon.Dbase):
+    def writeItem(self, newdata):
+        name = self.dirname + self.makeKey(  )
+        file = open(name, 'w') 
+        pickle.dump(newdata, file)         # store in new file
+        file.close(  )
+        os.rename(name, name+'.data')      # visible to globs
+        os.chmod(name+'.data', 0666)       # owned by 'nobody'
+
+    def readTable(self):
+        reports = []
+        for filename in glob.glob(self.dirname + '*.data'):
+            reports.append(pickle.load(open(filename, 'r')))
+        return reports
+
+class DbaseErrata(Dbase):
+    dirname = 'DbaseFiles/errataDB/'
+
+class DbaseComment(Dbase):
+    dirname = 'DbaseFiles/commentDB/'</PRE>
+
+
+<P class="docText"><A NAME="IXT-14-337721"></A>
+<A NAME="IXT-14-337722"></A>The shelve interface module listed in
+<A class="docLink" HREF="#python2-CHP-14-EX-15">Example 14-15</A> provides the same methods interface, but
+implements them to talk to shelves. Its class also mixes in the
+mutual-exclusion class to get file locking; we'll study that
+class's code in a few pages.
+</P>
+
+<P class="docText">Notice that this module extends <TT>sys.path</TT> so that a
+platform-specific <TT>FCNTL</TT> module (described later in
+this chapter) becomes visible to the file-locking tools. This is
+necessary in the CGI script context only, because the module search
+path given to CGI user "nobody" doesn't include the
+platform-specific extension modules directory. Both the file and
+shelve classes set newly created file permissions to octal 0666, so
+that users besides "nobody" can read and write. If
+you've forgotten whom "nobody" is, see earlier
+discussions of permission and ownership issues in this and the
+previous two chapters.<A NAME="IXT-14-337723"></A>
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-14-EX-15"></A>Example 14-15. PP2E\Internet\Cgi-Web\PyErrata\dbshelve.py </H5>
+<A NAME="IXTR3-397"></A><A NAME="IXTR3-398"></A><A NAME="IXTR3-399"></A><PRE>########################################################
+# store items in a shelve, with file locks on writes;
+# dbcommon assumes items are dictionaries (not here);
+# chmod call assumes single file per shelve (e.g., gdbm);
+# shelve allows simultaneous reads, but if any program
+# is writing, no other reads or writes are allowed,
+# so we obtain the lock before all load/store ops 
+# need to chown to 0666, else only 'nobody' can write;
+# this file doen't know about fcntl, but mutex doesn't
+# know about cgi scripts--one of the 2 needs to add the
+# path to FCNTL module for cgi script use only (here);
+# we circumvent whatever locking mech the underlying
+# dbm system may have, since we acquire alock on our own
+# non-dbm file before attempting any dbm operation;
+# allows multiple simultaneous readers, but writers 
+# get exclusive access to the shelve; lock calls in  
+# MutexCntl block and later resume callers if needed; 
+########################################################
+
+# cgi runs as 'nobody' without 
+# the following default paths
+import sys
+sys.path.append('/usr/local/lib/python1.5/plat-linux2')
+
+import dbcommon, shelve, os
+from Mutex.mutexcntl import MutexCntl
+
+class Dbase(MutexCntl, dbcommon.Dbase):             # mix mutex, dbcommon, mine
+    def safe_writeItem(self, newdata):                         
+        dbase = shelve.open(self.filename)          # got excl access: update
+        dbase[self.makeKey(  )] = newdata             # save in shelve, safely
+        dbase.close(  )
+        os.chmod(self.filename, 0666)               # else others can't change
+
+    def safe_readTable(self):
+        reports = []                                # got shared access: load
+        dbase = shelve.open(self.filename)          # no writers will be run
+        for key in dbase.keys(  ):                   
+            reports.append(dbase[key])              # fetch data, safely
+        dbase.close(  )
+        return reports
+
+    def writeItem(self, newdata):
+        self.exclusiveAction(self.safe_writeItem, newdata)
+
+    def readTable(self):
+        return self.sharedAction(self.safe_readTable)
+
+class DbaseErrata(Dbase):
+    filename = 'DbaseShelve/errataDB'
+
+class DbaseComment(Dbase):
+    filename = 'DbaseShelve/commentDB'
+
+</PRE>
+
+
+
+<A NAME="python2-CHP-14-SECT-6.5"></A>
+<H4 class="docSection2Title">14.6.5 Top-Level Database Interface Class</H4>
+
+<P class="docText"><A NAME="IXT-14-337724"></A>Here, we reach the top-level
+database interfaces that our CGI scripts actually call. The class in
+<A class="docLink" HREF="#python2-CHP-14-EX-16">Example 14-16</A> is "abstract" in the sense
+that it cannot do anything by itself. We must provide and create
+instances of subclasses that define storage-specific methods, rather
+than making instances of this class directly.
+</P>
+
+<P class="docText">In fact, this class deliberately leaves the underlying storage scheme
+undefined and raises assertion errors if a subclass doesn't
+fill in the required details. Any storage-specific class that
+provides <TT>writeItem</TT> and
+<TT>readTable</TT> methods can be plugged into this
+top-level class's interface model. This includes classes that
+interface with flat files, shelves, and other specializations we
+might add in the future (e.g., schemes that talk to full-blown SQL or
+object databases, or that cache data in persistent servers).
+</P>
+
+<P class="docText">In a sense, subclasses take the role of embedded component objects
+here; they simply need to provide expected interfaces. Because the
+top-level interface has been factored out to this single class, we
+can change the underlying storage scheme simply by selecting a
+different storage-specific subclass (as in
+<TT>dbswitch</TT>); the top-level database calls remain
+unchanged. Moreover, changes and optimizations to top-level
+interfaces will likely impact this file alone.
+</P>
+
+<P class="docText">Since this is a superclass common to storage-specific classes, we
+also here define record key generation methods and insert common
+generated attributes (submit date, initial report state) into new
+records before they are written.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-14-EX-16"></A>Example 14-16. PP2E\Internet\Cgi-Web\PyErrata\dbcommon.py </H5>
+<PRE>##############################################################
+# an abstract superclass with shared dbase access logic;
+# stored records are assumed to be dictionaries (or other
+# mapping), one key per field; dbase medium is undefined;
+# subclasses: define writeItem and readTable as appropriate 
+# for the underlying file medium--flat files, shelves, etc.
+# subtlety: the 'Submit date' field added here could be kept
+# as a tuple, and all sort/select logic will work; but since
+# these values may be embedded in a url string, we don't want
+# to convert from string to tuple using eval in index.cgi;
+# for consistency and safety, we convert to strings here;
+# if not for the url issue, tuples work fine as dict keys;
+# must use fixed-width columns in time string to sort;
+# this interface may be optimized in future releases;
+##############################################################
+
+import time, os
+
+class Dbase:
+
+    # store
+
+    def makeKey(self):
+        return "%s-%s" % (time.time(), os.getpid(  ))    
+
+    def writeItem(self, newdata):
+        assert 0, 'writeItem must be customized'
+
+    def storeItem(self, newdata):
+        secsSinceEpoch          = time.time(  )
+        timeTuple               = time.localtime(secsSinceEpoch)
+        y_m_d_h_m_s             = timeTuple[:6]      
+        newdata['Submit date']  = '%s/%02d/%02d, %02d:%02d:%02d' % y_m_d_h_m_s
+        newdata['Report state'] = 'Not yet verified'
+        self.writeItem(newdata)
+
+    # load
+
+    def readTable(self):
+        assert 0, 'readTable must be customized'
+
+    def loadSortedTable(self, field=None):            # returns a simple list
+        reports = self.readTable(  )                    # ordered by field sort
+        if field:
+            reports.sort(lambda x, y, f=field: cmp(x[f], y[f]))
+        return reports
+
+    def loadIndexedTable(self, field):
+        reports = self.readTable(  )
+        index = {}
+        for report in reports:
+            try: 
+                index[report[field]].append(report)   # group by field values
+            except KeyError:
+                index[report[field]] = [report]       # add first for this key
+        keys = index.keys(  )
+        keys.sort(  )                                   # sorted keys, groups dict
+        return keys, index</PRE>
+
+
+
+<A NAME="python2-CHP-14-SECT-6.6"></A>
+<H4 class="docSection2Title">14.6.6 Mutual Exclusion for Shelves</H4>
+
+<P class="docText"><A NAME="python2-IDXTERM-1543"></A>
+<A NAME="python2-IDXTERM-1544"></A>We've at last reached the
+bottom of the PyErrata code hierarchy: code that encapsulates file
+locks for synchronizing shelve access. The class listed in <A class="docLink" HREF="#python2-CHP-14-EX-17">Example 14-17</A> provides tools to synchronize operations,
+using a lock on a file whose name is provided by systems that use the
+class.
+</P>
+
+<P class="docText">It includes methods for locking and unlocking the file, but also
+exports higher-level methods for running function calls in exclusive
+or shared mode. Method <TT>sharedAction</TT> is used to run
+read operations, and <TT>exclusiveAction</TT> handles
+writes. Any number of <span class="docEmphasis">shared</span> actions can occur
+in parallel, but <span class="docEmphasis">exclusive</span> actions occur all by
+themselves and block all other action requests in parallel processes.
+Both kinds of actions are run in <TT>try-finally</TT>
+statements to guarantee that file locks are unlocked on action exit,
+normal or
+otherwise.<A NAME="IXT-14-337725"></A>
+<A NAME="IXT-14-337726"></A><A NAME="IXT-14-337727"></A>
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-14-EX-17"></A>Example 14-17. PP2E\Internet\Cgi-Web\PyErrata\Mutex\mutexcntl.py </H5>
+<PRE>########################################################
+# generally useful mixin, so a separate module; 
+# requires self.filename attribute to be set, and 
+# assumes self.filename+'.lck' file already exists;
+# set mutexcntl.debugMutexCntl to toggle logging;
+# writes lock log messages to self.filename+'.log';
+########################################################
+
+import fcntl, os, time
+from FCNTL import LOCK_SH, LOCK_EX, LOCK_UN
+
+debugMutexCntl = 1
+processType = {LOCK_SH: 'reader', LOCK_EX: 'writer'}
+
+class MutexCntl:
+    def lockFile(self, mode):
+        self.logPrelock(mode)
+        self.lock = open(self.filename + '.lck')    # lock file in this process
+        fcntl.flock(self.lock.fileno(  ), mode)       # waits for lock if needed
+        self.logPostlock(  )
+
+    def lockFileRead(self):                         # allow &gt; 1 reader: shared
+        self.lockFile(LOCK_SH)                      # wait if any write lock
+
+    def lockFileWrite(self):                        # writers get exclusive lock
+        self.lockFile(LOCK_EX)                      # wait if any lock: r or w
+
+    def unlockFile(self):
+        self.logUnlock(  )
+        fcntl.flock(self.lock.fileno(  ), LOCK_UN)    # unlock for other processes
+
+    def sharedAction(self, action, *args):          # higher level interface
+        self.lockFileRead(  )                         # block if a write lock
+        try:
+            result = apply(action, args)            # any number shared at once
+        finally:                                    # but no exclusive actions
+            self.unlockFile(  )                       # allow new writers to run 
+        return result
+
+    def exclusiveAction(self, action, *args):
+        self.lockFileWrite(  )                        # block if any other locks
+        try:
+            result = apply(action, args)            # no other actions overlap
+        finally: 
+            self.unlockFile(  )                       # allow new readers/writers
+        return result
+
+    def logmsg(self, text):
+        if not debugMutexCntl: return
+        log = open(self.filename + '.log', 'a')       # append to the end
+        log.write('%s\t%s\n' % (time.time(  ), text))   # output won't overwrite
+        log.close(  )                                   # but it may intermingle
+
+    def logPrelock(self, mode):
+        self.logmsg('Requested: %s, %s' % (os.getpid(  ), processType[mode]))
+    def logPostlock(self):
+        self.logmsg('Aquired: %s' % os.getpid(  ))
+    def logUnlock(self):
+        self.logmsg('Released: %s' % os.getpid(  ))</PRE>
+
+
+<P class="docText">This file lock management class is coded in its own module by design,
+because it is potentially worth reusing. In PyErrata, shelve database
+classes mix it in with <span class="docEmphasis">multiple inheritance</span> to
+implement mutual exclusion for database writers.
+</P>
+
+<P class="docText">This class assumes that a lockable file exists as name
+<TT>self.filename</TT> (defined in client classes) with a
+<I>.lck</I> extension; like all instance attributes,
+this name can vary per client of the class. If a global variable is
+true, the class also optionally logs all lock operations in a file of
+the same name as the lock, but with a <I>.log</I>
+extension.
+</P>
+
+<P class="docText">Notice that the log file is opened in <TT>a</TT> append
+mode; on Unix systems, this mode guarantees that the log file text
+written by each process appears on a line of its own, not intermixed
+(multiple copies of this class may write to the log from parallel CGI
+script processes). To really understand how this class works, though,
+we need to say more about Python's file-locking interface.
+</P>
+
+<A NAME="python2-CHP-14-SECT-6.6.1"></A>
+<H5 class="docSection3Title">14.6.6.1 Using fcntl.flock to lock files</H5>
+
+<P class="docText"><A NAME="IXT-14-337728"></A>
+<A NAME="IXT-14-337729"></A>
+<A NAME="IXT-14-337730"></A>When we studied
+threads in <A class="docLink" HREF="0596000855_python2-CHP-3.html#python2-CHP-3">Chapter 3</A>, we saw that the Python
+thread module includes a mutual-exclusion lock mechanism that can be
+used to synchronize threads' access to shared global memory
+resources. This won't usually help us much in the CGI
+environment, however, because each database request generally comes
+from a distinct process spawned by the HTTP server to handle an
+incoming request. That is, thread locks work only within the same
+process, because all threads run within a <span class="docEmphasis">single</span>
+process.
+</P>
+
+<P class="docText">For CGI scripts, we usually need a locking mechanism that spans
+multiple processes instead. On Unix systems, the Python standard
+library exports a tool based on locking files, and therefore may be
+used across process boundaries. All of this magic happens in these
+two lines in the PyErrata mutex class:
+</P>
+
+<PRE>fcntl.flock(self.lock.fileno(  ), mode)       # waits for lock if needed
+fcntl.flock(self.lock.fileno(  ), LOCK_UN)    # unlock for other processes</PRE>
+
+<P class="docText">The <TT>fcntl.flock</TT> call in the standard Python
+library attempts to acquire a lock associated with a file, and by
+default blocks the calling process if needed until the lock can be
+acquired. The call accepts a <span class="docEmphasis">file descriptor</span>
+integer code (the <TT>stdio</TT> file object's
+<TT>fileno</TT> method returns one for us) and a
+<span class="docEmphasis">mode flag</span> defined in standard module
+<TT>FCNTL</TT>, which takes one of three values in our
+system:
+</P>
+
+<UL>
+<LI><P class="docList"><TT>LOCK_EX</TT> requests an exclusive lock, typically used
+for writers. This lock is granted only if no other locks are held
+(exclusive or shared) and blocks all other lock requests (exclusive
+or shared) until the lock is released. This guarantees that exclusive
+lock holders run alone.
+</P></LI>
+<LI><P class="docList"><TT>LOCK_SH</TT> requests a shared lock, typically used for
+readers. Any number of processes can hold shared locks at the same
+time, but one is granted only if no exclusive lock is held, and new
+exclusive lock requests are blocked until all shared locks are
+released.
+</P></LI>
+<LI><P class="docList"><TT>LOCK_UN</TT> unlocks a lock previously acquired by the
+calling process so that other processes can acquire locks and resume
+execution.
+</P></LI>
+</UL>
+<P class="docText">In database terms, the net effect is that readers wait only if a
+write lock is held by another process, and writers wait if any lock
+is held -- read or write. Though used to synchronize processes,
+this scheme is more complex and powerful than the simple
+acquire/release model for locks in the Python
+<TT>thread</TT> module, and is different from the class
+tools available in the higher-level <TT>threading</TT>
+module. However, it could be emulated by both these thread modules.
+</P>
+
+<P class="docText"><TT>fcntl.flock</TT> internally calls out to whatever
+file-locking mechanism is available in the underlying operating
+system,<sup class="docFootnote"><A class="docLink" HREF="#">[5]</A></sup> and therefore you can
+consult the corresponding Unix or Linux manpage for more details.
+It's also possible to avoid blocking if a lock can't be
+acquired, and there are other synchronization tools in the Python
+library (e.g., "fifos"), but we will ignore such options
+here.
+</P>
+<blockquote><p class="docFootnote"><sup><A NAME="">[5]</A></sup> Locking mechanisms vary per platform and may
+not exist at all. For instance, the <TT>flock</TT> call is
+not currently supported on Windows as of Python 1.5.2, so you may
+need to replace this call with a platform-specific alternative on
+some server machines.</p></blockquote>
+
+
+
+<A NAME="python2-CHP-14-SECT-6.6.2"></A>
+<H5 class="docSection3Title">14.6.6.2 Mutex test scripts</H5>
+
+<P class="docText"><A NAME="python2-IDXTERM-1551"></A>To
+help us understand the PyErrata synchronization model, let's
+get a better feel for the underlying file-locking primitives by
+running a few simple experiments. Examples <A class="docLink" HREF="#python2-CHP-14-EX-18">Example 14-18</A> and <A class="docLink" HREF="#python2-CHP-14-EX-19">Example 14-19</A> implement
+simple reader and writer processes using the <TT>flock</TT>
+call directly instead of our class. They request shared and exclusive
+locks, respectively.
+<A NAME="IXT-14-337731"></A>
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-14-EX-18"></A>Example 14-18. PP2E\Internet\Cgi-Web\PyErrata\Mutex\testread.py </H5>
+<PRE>#!/usr/bin/python
+
+import os, fcntl, time
+from FCNTL import LOCK_SH, LOCK_UN
+print os.getpid(), 'start reader', time.time(  )
+
+file = open('test.lck', 'r')                     # open the lock file for fd
+fcntl.flock(file.fileno(  ), LOCK_SH)              # block if a writer has lock
+print os.getpid(), 'got read lock', time.time(  )  # any number of readers can run
+
+time.sleep(3)
+print 'lines so far:', os.popen('wc -l Shared.txt').read(  ),
+
+print os.getpid(  ), 'unlocking\n'
+fcntl.flock(file.fileno(  ), LOCK_UN)              # resume blocked writers now </PRE>
+
+
+<P class="docText">In this simple test, locks on text file <I>test.lck</I>
+are used to synchronize read and write access to a text file appended
+by writers. The appended text file plays the role of PyErrata shelve
+databases, and the reader and writer scripts in Examples <A class="docLink" HREF="#python2-CHP-14-EX-18">Example 14-18</A> and <A class="docLink" HREF="#python2-CHP-14-EX-19">Example 14-19</A> stand in for
+its browse and submit script processes.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-14-EX-19"></A>Example 14-19. PP2E\Internet\Cgi-Web\PyErrata\Mutex\testwrite.py </H5>
+<PRE>#!/usr/bin/python
+
+import os, fcntl, time
+from FCNTL import LOCK_EX, LOCK_UN
+print os.getpid(), 'start writer', time.time(  )
+
+file = open('test.lck', 'r')                      # open the lock file
+fcntl.flock(file.fileno(  ), LOCK_EX)               # block if any read or write
+print os.getpid(), 'got write lock', time.time(  )  # only 1 writer at a time
+
+log = open('Shared.txt', 'a')
+time.sleep(3)
+log.write('%d Hello\n' % os.getpid(  ))
+
+print os.getpid(  ), 'unlocking\n'
+fcntl.flock(file.fileno(  ), LOCK_UN)               # resume blocked read or write</PRE>
+
+
+<P class="docText">To start a set of readers and writers running in parallel, <A class="docLink" HREF="#python2-CHP-14-EX-20">Example 14-20</A> uses the Unix
+<TT>fork</TT>/<TT>execl</TT> call combination to
+launch program processes (both calls are described in <A class="docLink" HREF="0596000855_python2-CHP-3.html#python2-CHP-3">Chapter 3</A>).<A NAME="IXT-14-337732"></A> <A NAME="IXT-14-337733"></A>
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-14-EX-20"></A>Example 14-20. PP2E\Internet\Cgi-Web\PyErrata\Mutex\launch-test.py </H5>
+<PRE>#!/usr/bin/python
+######################################################
+# launch test program processes
+# run with ./launch-test.py &gt; launch-test.out 
+# try spawning reader before writer, then writer
+# before reader--second process blocks till first 
+# unlocks in both cases; if launches 2 readers 
+# initially, both get lock and block writer; if
+# launch 2 writers first then 2 readers, 2nd writer
+# waits for first, both readers wait for both
+# writers, and both readers get lock at same time;
+# in test below, the first writer runs, then all 
+# readers run before any writer;  if readers are 
+# first, all run before any writer; (all on linux)
+######################################################
+
+import os
+
+for i in range(1):
+    if os.fork(  ) == 0:            
+        os.execl("./testwrite.py") 
+
+for i in range(2):                      # copy this process
+    if os.fork(  ) == 0:                  # if in new child process
+        os.execl("./testread.py")       # overlay with test program
+
+for i in range(2):                
+    if os.fork(  ) == 0:             
+        os.execl("./testwrite.py")      # same, but start writers
+
+for i in range(2):
+    if os.fork(  ) == 0:            
+        os.execl("./testread.py") 
+
+for i in range(1):
+    if os.fork(  ) == 0:            
+        os.execl("./testwrite.py") </PRE>
+
+
+<P class="docText">Comments in this script give the results for running its logic
+various ways on Linux. Pragmatic note: after copying these files over
+from Windows in an FTP'd <TT>tar</TT> file, I first
+had to give them executable permissions and convert them from DOS to
+Unix line-feed format before Linux would treat them as executable
+programs:<sup class="docFootnote"><A class="docLink" HREF="#">[6]</A></sup>
+</P>
+<blockquote><p class="docFootnote"><sup><A NAME="">[6]</A></sup> The <TT>+x</TT> syntax in the
+<I>chmod</I> shell command here means "set the
+executable bit" in the file's permission bit-string for
+"self", the current user. At least on my machine,
+<I>chmod</I> accepts both the integer bit-strings used
+earlier and symbolic forms like this. Note that we run these tests on
+Linux because the Python <TT>os.fork</TT> call
+doesn't work on Windows, at least as of Python 1.5.2. It may
+eventually, but for now Windows scripts use
+<TT>os.spawnv</TT> instead (see <A class="docLink" HREF="0596000855_python2-CHP-3.html#python2-CHP-3">Chapter 3</A> for details). </p></blockquote>
+
+<PRE>[mark@toy .../PyErrata/Mutex]$ <B>chmod +x *.py</B>
+[mark@toy .../PyErrata/Mutex]$ <B>python $X/PyTools/fixeoln_all.py tounix "*.py"</B>
+__init__.py
+launch-mutex-simple.py
+launch-mutex.py
+launch-test.py
+mutexcntl.py
+testread-mutex.py
+testread.py
+testwrite-mutex.py
+testwrite.py</PRE>
+
+<P class="docText">Once they've been so configured as executables, we can run all
+three of these scripts from the Linux command line. The reader and
+writer scripts access a <I>Shared.txt</I> file, which
+is meant to simulate a shared resource in a real parallel application
+(e.g., a database in the CGI realm):
+</P>
+
+<PRE>[mark@toy ...PyErrata/Mutex]$ <B>./testwrite.py</B>
+1010 start writer 960919842.773
+1010 got write lock 960919842.78
+1010 unlocking
+
+[mark@toy ...PyErrata/Mutex]$ <B>./testread.py</B>
+1013 start reader 960919900.146
+1013 got read lock 960919900.153
+lines so far:     132 Shared.txt
+1013 unlocking</PRE>
+
+<P class="docText">The <TT>launch-test</TT> script simply starts a batch of
+the reader and writer scripts that run as parallel processes to
+simulate a concurrent environment (e.g., web browsers contacting a
+CGI script all at once):
+</P>
+
+<PRE>[mark@toy ...PyErrata/Mutex]$ <B>python launch-test.py</B>
+1016 start writer 960919933.206
+1016 got write lock 960919933.213
+1017 start reader 960919933.416
+1018 start reader 960919933.455
+1022 start reader 960919933.474
+1021 start reader 960919933.486
+1020 start writer 960919933.497
+1019 start writer 960919933.508
+1023 start writer 960919933.52
+1016 unlocking
+
+1017 got read lock 960919936.228
+1018 got read lock 960919936.234
+1021 got read lock 960919936.24
+1022 got read lock 960919936.246
+lines so far:     133 Shared.txt
+1022 unlocking
+
+lines so far:     133 Shared.txt
+1018 unlocking
+
+lines so far:     133 Shared.txt
+1017 unlocking
+
+lines so far:     133 Shared.txt
+1021 unlocking
+
+1019 got write lock 960919939.375
+1019 unlocking
+
+1020 got write lock 960919942.379
+1020 unlocking
+
+1023 got write lock 960919945.388
+1023 unlocking</PRE>
+
+<P class="docText">This output is a bit cryptic; most lines list process ID, text, and
+system time, and each process inserts a three-second delay (via
+<TT>time.sleep</TT>) to simulate real activities. If you
+look carefully, you'll notice that all processes start at
+roughly the same time, but access to the shared file is synchronized
+into this sequence:
+</P>
+
+<span style="font-weight:bold"><OL class="docList" TYPE="1">
+<LI><span style="font-weight:normal"><P class="docList">One writer grabs the file first.</P></span></LI>
+<LI><span style="font-weight:normal"><P class="docList">Next, all readers get it at the same time, three seconds later.</P></span></LI>
+<LI><span style="font-weight:normal"><P class="docList">Finally, all other writers get the file one after another, three
+seconds apart.
+</P></span></LI>
+</OL></span>
+<P class="docText">The net result is that writer processes always access the file alone
+while all others are blocked. Such a sequence will avoid concurrent
+update problems.
+</P>
+
+
+
+<A NAME="python2-CHP-14-SECT-6.6.3"></A>
+<H5 class="docSection3Title">14.6.6.3 Mutex class test scripts</H5>
+
+<P class="docText"><A NAME="IXT-14-337734"></A>To test our
+mutex class outside the scope of PyErrata, we simply rewrite these
+scripts to hook into the class's interface. The output of
+Examples <A class="docLink" HREF="#python2-CHP-14-EX-21">Example 14-21</A> and <A class="docLink" HREF="#python2-CHP-14-EX-22">Example 14-22</A> is similar to the raw <TT>fcntl</TT>
+versions shown previously, but an additional log file is produced to
+help trace lock operations.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-14-EX-21"></A>Example 14-21. PP2E\Internet\Cgi-Web\PyErrata\Mutex\testread-mutex.py </H5>
+<PRE>#!/usr/bin/python
+import os, time
+from mutexcntl import MutexCntl
+
+class app(MutexCntl):
+    def go(self):
+        self.filename = 'test'
+        print os.getpid(  ), 'start mutex reader'
+        self.sharedAction(self.report)                # can report with others
+                                                      # but not during update
+    def report(self):
+        print os.getpid(  ), 'got read lock'
+        time.sleep(3)
+        print 'lines so far:', os.popen('wc -l Shared.txt').read(  ),
+        print os.getpid(  ), 'unlocking\n'
+
+if __name__ == '__main__': app().go(  )</PRE>
+
+
+<P class="docText">Unlike PyErrata, we don't need to change
+<TT>sys.path</TT> to allow <TT>FCNTL</TT> imports
+in the <TT>mutexcntl</TT> module in Examples <A class="docLink" HREF="#python2-CHP-14-EX-21">Example 14-21</A> and <A class="docLink" HREF="#python2-CHP-14-EX-22">Example 14-22</A>, because
+we'll run these scripts as ourself, not the CGI user
+"nobody" (my path includes the directory where
+<TT>FCNTL</TT> lives).<A NAME="IXT-14-337735"></A>
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-14-EX-22"></A>Example 14-22. PP2E\Internet\Cgi-Web\PyErrata\Mutex\testwrite-mutex.py </H5>
+<PRE>#!/usr/bin/python
+import os, time
+from mutexcntl import MutexCntl
+
+class app(MutexCntl):
+    def go(self):
+        self.filename = 'test'
+        print os.getpid(  ), 'start mutex writer'
+        self.exclusiveAction(self.update)               # must do this alone;
+                                                        # no update or report
+    def update(self):                                   # can run at same time
+        print os.getpid(  ), 'got write lock'
+        log = open('Shared.txt', 'a')
+        time.sleep(3)
+        log.write('%d Hello\n' % os.getpid(  ))
+        print os.getpid(  ), 'unlocking\n'
+
+if __name__ == '__main__': app().go(  )</PRE>
+
+
+<P class="docText">The launcher is the same as <A class="docLink" HREF="#python2-CHP-14-EX-20">Example 14-20</A>, but <A class="docLink" HREF="#python2-CHP-14-EX-23">Example 14-23</A> starts multiple copies of the class-based
+readers and writers. Run <A class="docLink" HREF="#python2-CHP-14-EX-23">Example 14-23</A> on your server
+with various process counts to follow the locking mechanism.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-14-EX-23"></A>Example 14-23. PP2E\Internet\Cgi-Web\PyErrata\launch-mutex.py </H5>
+<PRE>#!/usr/bin/python
+# launch test program processes
+# same, but start mutexcntl clients
+
+import os
+
+for i in range(1):
+    if os.fork(  ) == 0:            
+        os.execl("./testwrite-mutex.py") 
+
+for i in range(2):                
+    if os.fork(  ) == 0:           
+        os.execl("./testread-mutex.py") 
+
+for i in range(2):                
+    if os.fork(  ) == 0:             
+        os.execl("./testwrite-mutex.py")
+
+for i in range(2):
+    if os.fork(  ) == 0:            
+        os.execl("./testread-mutex.py") 
+
+for i in range(1):
+    if os.fork(  ) == 0:            
+        os.execl("./testwrite-mutex.py") </PRE>
+
+
+<P class="docText">The output of the class-based test is more or less the same.
+Processes start up in a different order, but the synchronization
+behavior is identical -- one writer writes, all readers read, then
+remaining writers write one at a time:
+</P>
+
+<PRE>[mark@toy .../PyErrata/Mutex]$ <B>python launch-mutex.py</B>
+1035 start mutex writer
+1035 got write lock
+1037 start mutex reader
+1040 start mutex reader
+1038 start mutex writer
+1041 start mutex reader
+1039 start mutex writer
+1036 start mutex reader
+1042 start mutex writer
+1035 unlocking
+
+1037 got read lock
+1041 got read lock
+1040 got read lock
+1036 got read lock
+lines so far:     137 Shared.txt
+1036 unlocking
+
+lines so far:     137 Shared.txt
+1041 unlocking
+
+lines so far:     137 Shared.txt
+1040 unlocking
+
+lines so far:     137 Shared.txt
+1037 unlocking
+
+1038 got write lock
+1038 unlocking
+
+1039 got write lock
+1039 unlocking
+
+1042 got write lock
+1042 unlocking</PRE>
+
+<P class="docText">All times have been removed from launcher output this time, because
+our mutex class automatically logs lock operations in a separate
+file, with times and process IDs; the three-second sleep per process
+is more obvious in this format:
+</P>
+
+<PRE>[mark@toy .../PyErrata/Mutex]$ <B>cat test.log</B>
+960920109.518   Requested: 1035, writer
+960920109.518   Aquired: 1035
+960920109.626   Requested: 1040, reader
+960920109.646   Requested: 1038, writer
+960920109.647   Requested: 1037, reader
+960920109.661   Requested: 1041, reader
+960920109.674   Requested: 1039, writer
+960920109.69    Requested: 1036, reader
+960920109.701   Requested: 1042, writer
+960920112.535   Released: 1035
+960920112.542   Aquired: 1037
+960920112.55    Aquired: 1041
+960920112.557   Aquired: 1040
+960920112.564   Aquired: 1036
+960920115.601   Released: 1036
+960920115.63    Released: 1041
+960920115.657   Released: 1040
+960920115.681   Released: 1037
+960920115.681   Aquired: 1038
+960920118.689   Released: 1038
+960920118.696   Aquired: 1039
+960920121.709   Released: 1039
+960920121.716   Aquired: 1042
+960920124.728   Released: 1042</PRE>
+
+<P class="docText">Finally, this is what the shared text file looks like after all these
+processes have exited stage left. Each writer simply added a line
+with its process ID; it's not the most amazing of parallel
+process results, but if you pretend that this is our PyErrata
+shelve-based <span class="docEmphasis">database</span>, these tests seem much
+more meaningful:
+</P>
+
+<A NAME="IXTR3-400"></A><A NAME="IXTR3-401"></A><A NAME="IXTR3-402"></A><A NAME="IXTR3-403"></A><A NAME="IXTR3-404"></A><A NAME="IXTR3-405"></A><A NAME="IXTR3-406"></A><PRE>[mark@toy .../PyErrata/Mutex]$ <B>cat Shared.txt</B>
+1010 Hello
+1016 Hello
+1019 Hello
+1020 Hello
+1023 Hello
+1035 Hello
+1038 Hello
+1039 Hello
+1042 Hello
+
+
+
+</PRE>
+
+
+
+
+<a href="0596000855_"><img src="FILES/pixel.gif" width="1" height="1" border="0"></a><ul></ul>
+</td>
+</tr>
+</table>
+<td></td>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+          <a href="0596000855_python2-CHP-14-SECT-5.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+          <a href="0596000855_python2-CHP-14-SECT-7.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+</body></html>

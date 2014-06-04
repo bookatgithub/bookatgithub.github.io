@@ -1,0 +1,202 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Section 10.4.&nbsp; "Missing" Preg Functions</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=regex3-CHP-10-SECT-3.html><img src="images/prev.gif" width="60" height="17" border="0" align="absmiddle" alt="Previous Page"></a>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=regex3-CHP-10-SECT-5.html><img src="images/next.gif" width="60" height="17" border="0" align="absmiddle" alt="Next Page"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><a name="regex3-CHP-10-SECT-4"></a>
+<H3 id="686700-855" class="docSection1Title">10.4. "Missing" Preg Functions</H3>
+<a name="IDX-CHP-10-3557"></a> 
+<a name="IDX-CHP-10-3558"></a> 
+<a name="IDX-CHP-10-3559"></a> 
+
+<p class="docText">PHP's built-in preg functions provide a good range of functionality, but there have been times that I've found certain aspects a bit lacking. One example we've already seen is my special version of <tt>preg_match</tt> (&#9758; 454).</P>
+<p class="docText">Another area where I've felt the need to build my own support functions involves situations where regular expressions are not provided directly in the program via literal pattern-argument strings, but brought in from outside the program (e.g., read from a file, or provided by a user via a web form). As we'll see in the next section, converting from a raw regular-expression string to a preg-appropriate patter n-argument can be tricky.</P>
+<p class="docText">Also, before using such a regular expression, it's generally a good idea to validate that it's syntactically correct. We'll look into that as well.</p>
+<p class="docText">As with all the code samples in this book, the functions on the coming pages are all available for download at my web site: <a class="docLink" target="_blank" href="http://regex.info/">http://regex.info/</a>.<a name="IDX-CHP-10-3560"></a> 
+</P>
+<a name="IDX-CHP-10-3561"></a><a name="IDX-CHP-10-3562"></a><dl class="docList">
+<dt><br><p><I><span class="docPubcolor"></span></I></p></dt>
+<dd><p class="docList">If you have a raw regular expression in a string (perhaps read from a configuration file, or submitted via a web form) that you'd like to use with a preg function, you must first wrap it in delimiters to make a preg-appropriate pattern argument.<a name="IDX-CHP-10-3562"></a> 
+</P></dd>
+</dl>
+<a name="regex3-CHP-10-SECT-4.1"></a>
+<H4 id="title-IDAUZBQI" class="docSection2Title">10.4.1. </h4>
+<a name="regex3-CHP-10-SECT-4.1.1"></a>
+<h5 id="title-IDA0ZBQI" class="docSection3Title">10.4.1.1. The problem</h5>
+<p class="docText">In many cases, converting a regular expression into a pattern argument is as simple as wrapping the regex with forward slashes. This would convert, for example, a regular-expression string '<tt>[a-z]+</tt>' to '<tt>/[a-z]+/</tt>', a string appropriate for use as a preg pattern argument.</P>
+<p class="docText">However, the conversion becomes more complex if the regular expression actually contains the delimiter in which you choose to wrap it. For example, if the regex string is '<tt>^http://([^/:]+)</tt>', simply wrapping it in forward slashes yields '<tt>/^http://([^/:]+)/</tt>', which results in an "Unknown modifier <tt>/</tt>" error when used as a pattern modifier.</P>
+<p class="docText">As described in the sidebar on page 448, the odd error message is generated because the first and second forward slashes in the string are taken as the delimiters, and whatever follows (in this case, the third forward slash in the string) is taken as the start of the pattern-modifier list.</p>
+
+<a name="regex3-CHP-10-SECT-4.1.2"></a>
+<h5 id="title-IDAT0BQI" class="docSection3Title">10.4.1.2. The solution</h5>
+<p class="docText">There are two ways to avoid the embedded-delimiter conflict. One is to choose a delimiter character that doesn't appear within the regular expression, and this is certainly the recommend way when you're composing a pattern-modifier string by hand. That's why I used <tt>{&#8943;}</tt> as the delimiters in the examples on pages 444, 449, and 450 (to name only a few).</p>
+<p class="docText">It may not be easy (or even possible) to choose a delimiter that doesn't appear in the regex, because the text could contain every delimiter, or you may not know in advance what text you have to work with. This becomes a particular concern when working programatically with a regex in a string, so it's easier to simply use a second approach: select a delimiter character, then escape any occurrence of that character within the regex string.</P>
+<p class="docText">It's actually quite a bit trickier than it might seem at first, because you must pay attention to some important details. For example, an escape at the end of the target text requires special handling so it won't escape the appended delimiter.</p>
+<p class="docText">Here's a function that accepts a regular-expression string and, optionally, a pattern-modifiers string, and returns a pattern string ready for use with preg functions. The code's cacophony of backslashes (both regex and PHP string escapes) is one of the most complex you're likely to see; this code is not light reading by any measure. (If you need a refresher in PHP single-quoted string semantics, refer to page 444.)</p>
+<pre>
+    /*
+    * <span class="docEmphasis">Given a raw regex in a string (and, optionally, a pattern-modifiers
+string), return a string suitable</span>
+* <span class="docEmphasis">for use as a preg pattern. The regex is wrapped in delimiters,
+with the modifiers (if any) appended</span>.
+*/
+function preg_regex_to_pattern($raw_regex, $modifiers = "")
+{
+/*
+* <span class="docEmphasis">To convert a regex to a pattern, we must wrap the pattern
+in delimiters (we'll use a pair of</span>
+* <span class="docEmphasis">forward slashes) and append the modifiers. We must also be sure
+to escape any unescaped</span>
+* <span class="docEmphasis">occurrences of the delimiter within the regex, and to
+escape a regex-ending escape</span>
+* <span class="docEmphasis">(which, if left alone, would end up escaping the delimiter we append)</span>.
+*
+* <span class="docEmphasis">We can't just blindly escape embedded delimiters, because it
+would break a regex containing</span>
+* <span class="docEmphasis">an already-escaped delimiter. For example, if the
+regex is '\/', a blind escape results</span>
+* <span class="docEmphasis">in '\\/' which would not work when eventually wrapped
+with delimiters: '/\\//'</span>.
+*
+* <span class="docEmphasis">Rather, we'll break down the regex into sections: escaped
+characters, unescaped forward</span>
+* <span class="docEmphasis">slashes (which we'll need to escape), and everything else.
+As a special case, we also look out</span>
+* <span class="docEmphasis">for, and escape, a regex-ending escape</span>.
+*/
+if (! preg_match('{\\\\(?:/;$)}', $raw_regex)) /* '/' followed by '\' or EOS */
+{
+/* <span class="docEmphasis">There are no already-escaped forward slashes, and no
+escape at the end, so it's</span>
+* <span class="docEmphasis">safe to blindly escape forward slashes</span>. */
+$cooked = preg_replace('!/!', '\/', $raw_regex);
+}
+else
+{
+/* <span class="docEmphasis">This is the pattern we'll use to parse $raw_regex</span>.
+* <span class="docEmphasis">The two parts whose matches we'll need to escape are
+within capturing parens</span>. */
+$pattern = '{ [^\\\\/]+ |\\\\. |( / |\\\\$ ) }sx';
+/* <span class="docEmphasis">Our callback function is called upon each successful
+match of $pattern in $raw-regex</span>.
+* <span class="docEmphasis">If $matches[1] is not empty, we return an escaped version of it</span>.
+* <span class="docEmphasis">Otherwise, we simply return what was matched unmodified</span>. */
+$f = create_function('$matches', '     // <span class="docEmphasis">This long</span>
+if (empty($matches[1]))           // <span class="docEmphasis">singlequoted</span>
+return $matches[0];           // <span class="docEmphasis">string becomes</span>
+else                              // <span class="docEmphasis">our function</span>
+return "\\\\" . $matches[1];  // <span class="docEmphasis">code</span>.
+');
+/* <span class="docEmphasis">Actually apply $pattern to $raw_regex, yielding $cooked</span> */
+$cooked = preg_replace_callback($pattern, $f, $raw_regex);
+}
+/* <span class="docEmphasis">$cooked is now safe to wrap -- do so, append the modifiers, and return</span> */
+return "/$cooked/$modifiers";
+}
+</pre><BR>
+
+<p class="docText">This is a bit more involved than I'd like to recode each time I need it, which is why I've encapsulated it into a function (one I'd like to see become part of the built-in preg suite).</p>
+<p class="docText">It's instructive to look at the regular expression used in the lower half of the function, with <tt>preg__replace_callback</tt>, and how it and the callback work to walk through the pattern string, escaping any unescaped forward slashes, yet leaving escaped ones alone.</p>
+
+
+<a name="regex3-CHP-10-SECT-4.2"></a>
+<H4 id="title-IDAE3BQI" class="docSection2Title">10.4.2. Syntax-Checking an Unknown Pattern Argument</h4>
+<a name="IDX-CHP-10-3563"></a> 
+
+<p class="docText">After wrapping the regex in delimiters, you've ensured that it's in the proper form for a preg pattern argument, but not that the original raw regex is syntactically valid in the first place.</P>
+<p class="docText">For example, if the original regex string is '<tt>*.txt</tt>'perhaps because someone accidentally entered a file glob (&#9758; 4) instead of a regular expressionthe result from our <tt>preg_regex_to_pattern</tt> is <tt>/*.txt/</tt>. That doesn't contain a valid regular expression, so it fails with the warning (if warnings are turned on):</p>
+<pre>
+    Compilation failed:<a name="IDX-CHP-10-3564"></a> 
+ nothing to repeat at offset 0
+</pre><br>
+
+<p class="docText">PHP doesn't have a built-in function to test whether a pattern argument and its regular expression are syntactically valid, but I have one for you below.</p>
+<p class="docText"><tt>preg_pattern_error</tt><a name="IDX-CHP-10-3565"></a> 
+ tests the pattern argument simply enough, by trying to use itthat's the one-line <tt>preg_match</tt> call in the middle of the function. The rest of the function concerns itself with PHP administrative issues of corralling the error message that <tt>preg_match</tt> might try to display.</p>
+<pre>
+    /*
+    * <span class="docEmphasis">Return an error message if the given pattern argument or
+    its underlying regular expression</span>
+    * <span class="docEmphasis">are not syntactically valid. Otherwise (if they are valid),
+    false is returned</span>.
+    */
+    function preg_pattern_error($pattern)
+    {
+    /*
+    * <span class="docEmphasis">To tell if the pattern has errors, we simply try to use it</span>.
+    * <span class="docEmphasis">To detect and capture the error is not so simple, especially
+    if we want to be sociable and not</span>
+    * <span class="docEmphasis">tramp on global state (e.g., the value of $php_errormsg).
+    So, if 'track_errors' is on, we preserve</span>
+    * <span class="docEmphasis">the $php_errormsg value and restore it later.
+    If 'track_errors' is not on, we turn it on (because</span>
+    * <span class="docEmphasis">we need it) but turn it off when we're done</span>.
+    */
+    if ($old_track = ini_get("track_errors"))
+    $old_message = isset($php_errormsg) ? $php_errormsg : false;
+    else
+    ini_set('track_errors', 1);
+    /* <span class="docEmphasis">We're now sure that track_errors is on</span>. */
+
+    unset($php_errormsg);
+    @ <span class="docEmphStrong">preg_match($pattern, "")</span>; /*<span class="docEmphasis">actually give the pattern a try!</span> */
+    $return_value = isset($php_errormsg) ? $php_errormsg : false;
+
+    /* <span class="docEmphasis">We've now captured what we need; restore global state to what it was</span>. */
+    if ($old_track)
+    $php_errormsg = isset($old_message) ? $old_message : false;
+    else
+    ini_set('track_errors', 0);
+    return $return_value;
+    }
+</pre><br>
+
+
+<a name="regex3-CHP-10-SECT-4.3"></a>
+<h4 id="title-IDAK5BQI" class="docSection2Title">10.4.3. Syntax-Checking an Unknown Regex</h4>
+<a name="IDX-CHP-10-3566"></a> 
+<a name="IDX-CHP-10-3567"></a> 
+<a name="IDX-CHP-10-3568"></a> 
+<a name="IDX-CHP-10-3569"></a> 
+<a name="IDX-CHP-10-3570"></a> 
+<a name="IDX-CHP-10-3571"></a> 
+<a name="IDX-CHP-10-3572"></a> 
+<a name="IDX-CHP-10-3573"></a> 
+<a name="IDX-CHP-10-3574"></a> 
+<a name="IDX-CHP-10-3575"></a> 
+<a name="IDX-CHP-10-3576"></a> 
+
+<p class="docText">Finally, here's a function that utilizes what we've already developed to test a raw regular expression (one without delimiters and pattern modifiers). It returns an appropriate error string if the regular expression is not syntactically valid, and returns false if it is syntactically valid.</p>
+<pre>
+    /*
+    * <span class="docEmphasis">Return a descriptive error message if the given regular
+    expression is invalid</span>.
+    * <span class="docEmphasis">If it's valid, false is returned</span>.
+    */
+    function preg_regex_error($regex)<a name="IDX-CHP-10-3577"></a> 
+
+    {
+        return preg_pattern_error(preg_regex_to_pattern($regex));
+    }
+</pre><br>
+
+
+
+</TD></TR></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=regex3-CHP-10-SECT-3.html><img src="images/prev.gif" width="60" height="17" border="0" align="absmiddle" alt="Previous Page"></a>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=regex3-CHP-10-SECT-5.html><img src="images/next.gif" width="60" height="17" border="0" align="absmiddle" alt="Next Page"></a>
+</div></td></tr></table>
+</body></html>

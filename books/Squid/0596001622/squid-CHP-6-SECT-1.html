@@ -1,0 +1,1645 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>6.1 Access Control Elements</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="squid-CHP-6.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="squid-CHP-6-SECT-2.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="squid-CHP-6-SECT-1"></A>
+<H3 class="docSection1Title">6.1 Access Control Elements</H3>
+
+<P class="docText">ACL elements are the <A NAME="squid-CHP-6-ITERM-1283"></A>building
+<A NAME="squid-CHP-6-ITERM-1284"></A>blocks of
+Squid's access control implementation. These are how
+you specify things such as IP addresses, port numbers, hostnames, and
+URL patterns. Each ACL element has a name, which you refer to when
+writing the access list rules. The basic syntax of
+an<A NAME="squid-CHP-6-ITERM-1285"></A> ACL element is as follows:</P>
+
+<PRE>acl <TT><I>name type value1 value2 ...</I></TT></PRE>
+
+<P class="docText">For example:</P>
+
+<PRE>acl Workstations src 10.0.0.0/16</PRE>
+
+<P class="docText">In most cases, you can list <A NAME="squid-CHP-6-ITERM-1286"></A>multiple
+values for one ACL element. You can also have multiple
+<TT>acl</TT> lines with the same name. For example, the
+following two configurations are equivalent:</P>
+
+<PRE>acl Http_ports port 80 8000 8080
+
+acl Http_ports port 80
+acl Http_ports port 8000
+acl Http_ports port 8080</PRE>
+
+<A NAME="squid-CHP-6-SECT-1.1"></A>
+<H4 class="docSection2Title">6.1.1 A Few Base ACL Types</H4>
+
+<P class="docText">Squid has approximately 25 different ACL types, some of which have a
+common base type. For example, both <span class="docEmphasis">src</span> and
+<span class="docEmphasis">dst</span> ACLs use IP addresses as their base type. To
+avoid being redundant, I'll cover the base types
+first and then describe each type of ACL in the following sections.</P>
+
+<A NAME="squid-CHP-6-SECT-1.1.1"></A>
+<H5 class="docSection3Title">6.1.1.1 IP addresses</H5>
+
+<P class="docText">Used by: <span class="docEmphasis">src</span>, <span class="docEmphasis">dst</span>,
+<span class="docEmphasis">myip</span></P>
+
+<P class="docText">Squid has a powerful syntax <A NAME="squid-CHP-6-ITERM-1287"></A><A NAME="squid-CHP-6-ITERM-1288"></A><A NAME="squid-CHP-6-ITERM-1289"></A>for specifying IP addresses in ACLs.
+You can write addresses as subnets, address ranges, and domain names.
+Squid supports both "dotted quad"
+and CIDR prefix<sup class="docFootnote"><A class="docLink" HREF="#squid-CHP-6-FNOTE-1">[1]</A></sup> subnet specifications. In
+addition, if you omit a netmask, Squid calculates the appropriate
+netmask for you. For example, each group in the next example are
+equivalent:</P><blockquote><p class="docFootnote"><sup><A NAME="squid-CHP-6-FNOTE-1">[1]</A></sup> CIDR stands for Classless
+Inter-Domain Routing. It is from an Internet-wide effort to support
+routing by any prefix length, instead of the old class A, B, and C
+subnet lengths.</p></blockquote>
+
+<PRE>acl Foo src 172.16.44.21/255.255.255.255
+acl Foo src 172.16.44.21/32
+acl Foo src 172.16.44.21
+
+acl Xyz src 172.16.55.32/255.255.255.248
+acl Xyz src 172.16.55.32/28
+
+acl Bar src 172.16.66.0/255.255.255.0
+acl Bar src 172.16.66.0/24
+acl Bar src 172.16.66.0</PRE>
+
+<P class="docText">When you specify a netmask, Squid
+<A NAME="squid-CHP-6-ITERM-1290"></A>checks your work.
+If your netmask masks out non-zero bits of the IP address, Squid
+issues a warning. For example, the following lines results in the
+subsequent warning:</P>
+
+<PRE>acl Foo src 127.0.0.1/8
+
+aclParseIpData: WARNING: Netmask masks away part of the specified IP in 'Foo'</PRE>
+
+<P class="docText">The problem here is that the /8 netmask (255.0.0.0) has all zeros in
+the last three octets, but the IP address 127.0.0.1
+doesn't. Squid warns you about the problem so you
+can eliminate the ambiguity. To be correct, you should write:</P>
+
+<PRE>acl Foo src 127.0.0.1/32</PRE>
+
+<P class="docText">or:</P>
+
+<PRE>acl Foo src 127.0.0.0/8</PRE>
+
+<P class="docText">Sometimes you may need to list multiple, contiguous subnets. In these
+cases, it may be easier to specify an address range. For example:</P>
+
+<PRE>acl Bar src 172.16.10.0-172.16.19.0/24</PRE>
+
+<P class="docText">This is equivalent to, and more efficient than, this approach:</P>
+
+<PRE>acl Foo src 172.16.10.0/24
+acl Foo src 172.16.11.0/24
+acl Foo src 172.16.12.0/24
+acl Foo src 172.16.13.0/24
+acl Foo src 172.16.14.0/24
+acl Foo src 172.16.15.0/24
+acl Foo src 172.16.16.0/24
+acl Foo src 172.16.18.0/24
+acl Foo src 172.16.19.0/24</PRE>
+
+<P class="docText">Note that with IP address ranges, the netmask goes only at the very
+end. You can't specify different netmasks for the
+beginning and ending range values.</P>
+
+<P class="docText">You can also specify hostnames in IP ACLs. For example:</P>
+
+<PRE>acl Squid dst www.squid-cache.org</PRE>
+
+<P><table border="0" bgcolor="black" cellspacing="0" cellpadding="1" width="90%" align="center"><tr><td><table bgcolor="white" width="100%" border="0" cellspacing="0" cellpadding="6"><tr><td width="60" valign="top"><img src="images/tip_yellow.gif" width="50" height="54"></td><td valign="top">
+<P class="docText">Squid converts hostnames to IP addresses at startup. Once started,
+Squid never makes another DNS lookup for the
+hostname's address. Thus, Squid never notices if the
+address changes while it's running.</P>
+</td></tr></table></td></tr></table></P><br>
+
+<P class="docText">If the hostname resolves to multiple addresses, Squid adds each to
+the ACL. Also note that you can't use netmasks with
+hostnames.</P>
+
+<P class="docText">Using hostnames in address-based ACLs is usually a bad idea. Squid
+parses the configuration file before initializing other components,
+so these DNS lookups don't use
+Squid's nonblocking IP cache interface. Instead,
+they use the blocking <I>gethostbyname( )</I> function.
+Thus, the need to convert ACL hostnames to addresses can delay
+Squid's startup procedure. Avoid using hostnames in
+<span class="docEmphasis">src</span>, <span class="docEmphasis">dst</span>, and
+<span class="docEmphasis">myip</span> ACLs unless absolutely necessary.</P>
+
+<P class="docText">Squid stores IP address ACLs in memory with a data structure known as
+an <I>splay tree</I> (see <A class="docLink" target="_blank" HREF="http://www.link.cs.cmu.edu/splay/">http://www.link.cs.cmu.edu/splay/</A>). The splay
+tree has some interesting self-organizing properties, one of which
+being that the list automatically adjusts itself as lookups occur.
+When a matching element is found in the list, that element becomes
+the new root of the tree. In this way frequently referenced items
+migrate to the top of the tree, which reduces the time for future
+lookups.</P>
+
+<P class="docText">All subnets and ranges belonging to a single ACL element must not
+overlap. Squid warns you if you make a mistake. For example, this
+isn't allowed:</P>
+
+<PRE>acl Foo src 1.2.3.0/24
+acl Foo src 1.2.3.4/32</PRE>
+
+<P class="docText">It causes Squid to print a warning in <I>cache.log</I>:</P>
+
+<PRE>WARNING: '1.2.3.4' is a subnetwork of '1.2.3.0/255.255.255.0'
+WARNING: because of this '1.2.3.4' is ignored to keep splay tree searching
+         predictable
+WARNING: You should probably remove '1.2.3.4' from the ACL named 'Foo'</PRE>
+
+<P class="docText">In this case, you need to fix the problem, either by removing one of
+the ACL values or by placing them into different ACL lists.</P>
+
+
+
+<A NAME="squid-CHP-6-SECT-1.1.2"></A>
+<H5 class="docSection3Title">6.1.1.2 Domain names</H5>
+
+<P class="docText">Used by: <span class="docEmphasis">srcdomain</span>,
+<span class="docEmphasis">dstdomain</span>, and the
+<span class="docEmphasis">cache_host_domain</span> directive</P>
+
+<P class="docText">A domain name is simply <A NAME="squid-CHP-6-ITERM-1291"></A><A NAME="squid-CHP-6-ITERM-1292"></A>a DNS name or zone. For example, the
+following are all valid domain names:</P>
+
+<PRE>www.squid-cache.org
+squid-cache.org
+org</PRE>
+
+<P class="docText">Domain name ACLs are tricky because of a subtle difference relating
+to matching domain names and subdomains. When the ACL domain name
+begins with a period, Squid treats it as a wildcard, and it matches
+any hostname in that domain, even the domain name itself. If, on the
+other hand, the ACL domain name doesn't begin with a
+period, Squid uses exact string comparison, and the hostname must be
+exactly the same for a match.</P>
+
+<P class="docText"><A class="docLink" HREF="#squid-CHP-6-TABLE-1">Table 6-1</A> shows Squid's rules for
+matching domain and hostnames. The first column shows hostnames taken
+from requested URLs (or client hostnames for
+<span class="docEmphasis">srcdomain</span> ACLs). The second column indicates
+whether or not the hostname matches <span class="docEmphasis">lrrr.org</span>.
+The third column shows whether the hostname matches an
+<span class="docEmphasis">.lrrr.org</span> ACL. As you can see, the only
+difference is in the second case.</P>
+
+<A NAME="squid-CHP-6-TABLE-1"></A><P><TABLE CELLSPACING="0" BORDER="1" RULES="all" CELLPADDING="4" WIDTH="100%"><CAPTION><h5 class="docTableTitle">Table 6-1. Domain name matching</h5></CAPTION><COLGROUP span="3"><THEAD><TR><TH class="docTableHeader">
+<P class="docText">URL hostname</P>
+</TH><TH class="docTableHeader">
+<P class="docText">Matches ACL lrrr.org?</P>
+</TH><TH class="docTableHeader">
+<P class="docText">Matches ACL .lrrr.org?</P>
+</TH></TR></THEAD><TR><TD class="docTableCell">
+<P class="docText"><A class="docLink" target="_blank" HREF="lrrr.org">lrrr.org</A></P>
+</TD><TD class="docTableCell">
+<P class="docText">Yes</P>
+</TD><TD class="docTableCell">
+<P class="docText">Yes</P>
+</TD></TR><TR><TD class="docTableCell">
+<P class="docText"><A class="docLink" target="_blank" HREF="i.am.lrrr.org">i.am.lrrr.org</A></P>
+</TD><TD class="docTableCell">
+<P class="docText">No</P>
+</TD><TD class="docTableCell">
+<P class="docText">Yes</P>
+</TD></TR><TR><TD class="docTableCell">
+<P class="docText"><A class="docLink" target="_blank" HREF="iamlrrr.org">iamlrrr.org</A></P>
+</TD><TD class="docTableCell">
+<P class="docText">No</P>
+</TD><TD class="docTableCell">
+<P class="docText">No</P>
+</TD></TR></COLGROUP></TABLE></P>
+
+<P class="docText">Domain name matching can be confusing, so let's look
+at another example so that you really understand it. Here are two
+slightly different ACLs:</P>
+
+<PRE>acl A dstdomain foo.com
+acl B dstdomain .foo.com</PRE>
+
+<P class="docText">A user's request to get <A class="docLink" target="_blank" HREF="http://www.foo.com/">http://www.foo.com/</A> matches ACL
+<TT>B</TT>, but not <TT>A</TT>. ACL
+<TT>A</TT> requires an exact string match, but the leading
+dot in ACL <TT>B</TT> is like a wildcard.</P>
+
+<P class="docText">On the other hand, a user's request to get
+<span class="docEmphasis">http://foo.com/</span> matches both ACLs
+<TT>A</TT> and <TT>B</TT>. Even though there is
+no word before <span class="docEmphasis">foo.com</span> in the URL hostname, the
+leading dot in ACL <TT>B</TT> still causes a match.</P>
+
+<P class="docText">Squid uses splay trees to store domain name ACLs, just as it does for
+IP addresses. However, Squid's domain name matching
+algorithm presents an interesting problem for splay trees. The splay
+tree technique requires that only one key can match any particular
+search term. For example, let's say the search term
+(from a URL) is <span class="docEmphasis">i.am.lrrr.org</span>. This hostname
+would be a match for both <span class="docEmphasis">.lrrr.org</span> and
+<span class="docEmphasis">.am.lrrr.org</span>. The fact that two ACL values match
+one hostname confuses the splay algorithm. In other words, it is a
+mistake to put something like this in your configuration file:</P>
+
+<PRE>acl Foo dstdomain .lrrr.org .am.lrrr.org</PRE>
+
+<P class="docText">If you do, Squid generates the following warning message:</P>
+
+<PRE>WARNING: '.am.lrrr.org' is a subdomain of '.lrrr.org'
+WARNING: because of this '.am.lrrr.org' is ignored to keep splay tree searching predictable
+WARNING: You should probably remove '.am.lrrr.org' from the ACL named 'Foo'</PRE>
+
+<P class="docText">You should follow Squid's advice in this case.
+Remove one of the related domains so that Squid does exactly what you
+intend. Note that you can use both domain names as long as you put
+them in different ACLs:</P>
+
+<PRE>acl Foo dstdomain .lrrr.org
+acl Bar dstdomain .am.lrrr.org</PRE>
+
+<P class="docText">This is allowed because each named ACL uses its own splay tree.</P>
+
+
+
+<A NAME="squid-CHP-6-SECT-1.1.3"></A>
+<H5 class="docSection3Title">6.1.1.3 Usernames</H5>
+
+<P class="docText">Used by: <span class="docEmphasis">ident</span>, <span class="docEmphasis">proxy_auth</span></P>
+
+<P class="docText">ACLs of this type are designed to <A NAME="squid-CHP-6-ITERM-1293"></A><A NAME="squid-CHP-6-ITERM-1294"></A>match usernames. Squid may learn a
+username through the RFC 1413 ident protocol or via HTTP
+authentication headers. Usernames must be matched exactly. For
+example, <TT>bob</TT> doesn't match
+<TT>bobby</TT>. Squid also has related ACLs
+(<span class="docEmphasis">ident_regex</span> and
+<span class="docEmphasis">proxy_auth_regex</span>) that use regular-expression
+pattern matching on usernames.</P>
+
+<P class="docText">You can use the word <TT>REQUIRED</TT> as a special value
+to match any username. If Squid can't determine the
+username, the ACL isn't matched. This is how Squid
+is usually configured when using username-based access controls.</P>
+
+
+
+<A NAME="squid-CHP-6-SECT-1.1.4"></A>
+<H5 class="docSection3Title">6.1.1.4 Regular expressions</H5>
+
+<P class="docText">Used by: <span class="docEmphasis">srcdom_regex</span>,
+<span class="docEmphasis">dstdom_regex</span>, <span class="docEmphasis">url_regex</span>,
+<span class="docEmphasis">urlpath_regex</span>, <span class="docEmphasis">browser</span>,
+<span class="docEmphasis">referer_regex</span>, <span class="docEmphasis">ident_regex</span>,
+<span class="docEmphasis">proxy_auth_regex</span>,
+<span class="docEmphasis">req_mime_type</span>,
+<span class="docEmphasis">rep_mime_type</span></P>
+
+<P class="docText">A number <A NAME="squid-CHP-6-ITERM-1295"></A><A NAME="squid-CHP-6-ITERM-1296"></A>of ACLs use
+<I>regular expressions</I> (regex) to match character
+strings. (For a complete regular-expression reference, see
+O'Reilly's <span class="docEmphasis">Mastering
+Regular Expressions</span>.) For Squid, the most commonly used
+regex features match the beginning and/or end of a string. For
+example, the <TT>^</TT> character is special because it
+matches the beginning of a line or string:</P>
+
+<PRE>^http://</PRE>
+
+<P class="docText">This regex matches any URL that begins with
+<TT>http://</TT>. The <TT>$</TT> character is
+also special because it matches the end of a line or string:</P>
+
+<PRE>.jpg$</PRE>
+
+<P class="docText">Actually, the previous example is slightly wrong because the
+. character is special too. It is a wildcard that
+matches any character. What we really want is this:</P>
+
+<PRE>\.jpg$</PRE>
+
+<P class="docText">The backslash escapes the . so that its
+specialness is taken away. This regex matches any string that ends
+with <TT>.jpg</TT>. If you don't use the
+<TT>^</TT> or <TT>$</TT> characters, regular
+expressions behave like standard substring searches. They match an
+occurrence of the word (or words) anywhere in the string.</P>
+
+<P class="docText">With all of Squid's regex types, you have the option
+to use case-insensitive comparison. Matching is case-sensitive by
+default. To make it case-insensitive, use the <I>-i</I>
+option after the ACL type. For example:</P>
+
+<PRE>acl Foo url_regex -i ^http://www</PRE>
+
+
+
+<A NAME="squid-CHP-6-SECT-1.1.5"></A>
+<H5 class="docSection3Title">6.1.1.5 TCP port numbers</H5>
+
+<P class="docText">Used by: <span class="docEmphasis">port</span>, <span class="docEmphasis">myport</span></P>
+
+<P class="docText">This type is relatively <A NAME="squid-CHP-6-ITERM-1297"></A><A NAME="squid-CHP-6-ITERM-1298"></A><A NAME="squid-CHP-6-ITERM-1299"></A>straightforward. The values
+are individual port numbers or port number ranges. Recall that TCP
+port numbers are 16-bit values and, therefore, must be greater than 0
+and less than 65,536. Here are some examples:</P>
+
+<PRE>acl Foo port 123
+acl Bar port 1-1024</PRE>
+
+
+
+<A NAME="squid-CHP-6-SECT-1.1.6"></A>
+<H5 class="docSection3Title">6.1.1.6 Autonomous system numbers</H5>
+
+<P class="docText">Used by: <span class="docEmphasis">src_as</span>, <span class="docEmphasis">dst_as</span></P>
+
+<P class="docText">Internet routers use <A NAME="squid-CHP-6-ITERM-1300"></A><A NAME="squid-CHP-6-ITERM-1301"></A>Autonomous System (AS) numbers to
+construct routing tables. Essentially, an AS number refers to a
+collection of IP networks managed by a single organization. For
+example, my ISP has been assigned the following network blocks:
+134.116.0.0/16, 137.41.0.0/16, 206.168.0.0/16, and many more. In the
+Internet routing tables, these networks are advertised as belonging
+to AS 3404. When routers forward packets, they typically select the
+path that traverses the fewest autonomous systems. If none of this
+makes sense to you, don't worry. AS-based ACLs
+should only be used by networking gurus.</P>
+
+<P class="docText">Here's how the AS-based types work: when Squid first
+starts up, it sends a special query to a <span class="docEmphasis">whois</span>
+server. The query essentially says, "Tell me which
+IP networks belong to this AS number." This
+information is collected and managed by the Routing Arbiter Database
+(RADB). Once Squid receives the list of IP networks, it treats them
+similarly to the IP address-based ACLs.</P>
+
+<P class="docText">AS-based types only work well when ISPs keep their RADB information
+up to date. Some ISPs are better than others about updating their
+RADB entries; many don't bother with it at all. Also
+note that Squid converts AS numbers to networks only at startup or
+when you signal it to reconfigure. If the ISP updates its RADB entry,
+your cache won't know about the changes until you
+restart or reconfigure Squid.</P>
+
+<P class="docText">Another problem is that the RADB server may be unreachable when your
+Squid process starts. If Squid can't contact the
+RADB server, it removes the AS entries from the access control
+configuration. The default server, <A class="docLink" target="_blank" HREF="whois.ra.net">whois.ra.net</A>, may be too far away from many
+users to be reliable.</P>
+
+
+
+<A NAME="squid-CHP-6-SECT-1.2"></A>
+<H4 class="docSection2Title">6.1.2 ACL Types</H4>
+
+<P class="docText">Now we can focus on the ACL types themselves. I present them here
+roughly in order of decreasing importance.</P>
+
+<A NAME="squid-CHP-6-SECT-1.2.1"></A>
+<H5 class="docSection3Title">6.1.2.1 src</H5>
+
+<P class="docText">IP addresses are the <A NAME="squid-CHP-6-ITERM-1302"></A><A NAME="squid-CHP-6-ITERM-1303"></A>most commonly used access control elements.
+Most sites use IP address controls to specify clients that are
+allowed to access Squid and those that aren't. The
+<span class="docEmphasis">src</span> type refers to client (source) IP addresses.
+That is, when an <span class="docEmphasis">src</span> ACL appears in an access
+list, Squid compares it to the IP address of the client issuing the
+request.</P>
+
+<P class="docText">Normally you want to allow requests from hosts inside your network
+and block all others. For example, if your organization is using the
+192.168.0.0 subnet, you can use an ACL like this:</P>
+
+<PRE>acl MyNetwork src 192.168.0.0</PRE>
+
+<P class="docText">If you have many subnets, you can list them all on the same
+<span class="docEmphasis">acl</span> line:</P>
+
+<PRE>acl MyNetwork src 192.168.0.0 10.0.1.0/24 10.0.5.0/24 172.16.0.0/12</PRE>
+
+<P class="docText">Squid has a number of other ACL types that check the
+client's address. The <span class="docEmphasis">srcdomain</span>
+type compares the client's fully qualified domain
+name. It requires a reverse DNS lookup, which may add some delay to
+processing the request. The <span class="docEmphasis">srcdom_regex</span> ACL is
+similar, but it allows you to use a regular expression to compare
+domain names. Finally, the <span class="docEmphasis">src_as</span> type compares
+the client's AS number.</P>
+
+
+
+<A NAME="squid-CHP-6-SECT-1.2.2"></A>
+<H5 class="docSection3Title">6.1.2.2 dst</H5>
+
+<P class="docText">The <span class="docEmphasis">dst</span> type refers to <A NAME="squid-CHP-6-ITERM-1304"></A><A NAME="squid-CHP-6-ITERM-1305"></A>origin server (destination) IP addresses.
+Among other things, you can use this to prevent some or all of your
+users from visiting certain web sites. However, you need to be a
+little careful with the <span class="docEmphasis">dst</span> ACL. Most of the
+requests received by Squid have origin server hostnames. For example:</P>
+
+<PRE>GET http://www.web-cache.com/ HTTP/1.0</PRE>
+
+<P class="docText">Here, <span class="docEmphasis">www.web-cache.com</span> is the
+hostname. When an access list rule includes a
+<span class="docEmphasis">dst</span> element, Squid must find the IP addresses
+for the hostname. If Squid's IP cache contains a
+valid entry for the hostname, the ACL is checked immediately.
+Otherwise, Squid postpones request processing while the DNS lookup is
+in progress. This can add significant delay to some requests. To
+avoid those delays, you should use the <span class="docEmphasis">dstdomain</span>
+ACL type (instead of <span class="docEmphasis">dst</span>) whenever
+possible.<sup class="docFootnote"><A class="docLink" HREF="#squid-CHP-6-FNOTE-2">[2]</A></sup></P><blockquote><p class="docFootnote"><sup><A NAME="squid-CHP-6-FNOTE-2">[2]</A></sup> Apart from access controls, Squid only
+needs an origin server's IP address when
+establishing a connection to that server. DNS lookups normally occur
+much later in request processing. If the HTTP request results in a
+cache hit, Squid doesn't need to know the
+server's address. Additionally, Squid
+doesn't need IP addresses for cache misses that are
+forwarded to a neighbor cache.</p></blockquote>
+
+<P class="docText">Here is a simple <span class="docEmphasis">dst</span> ACL example:</P>
+
+<PRE>acl AdServers dst 1.2.3.0/24</PRE>
+
+<P class="docText">Note that one problem with <span class="docEmphasis">dst</span> ACLs is that the
+origin server you are trying to allow or deny may change its IP
+address. If you don't notice the change, you
+won't bother to update
+<I>squid.conf</I>. You can put a hostname on the
+<span class="docEmphasis">acl</span> line, but that adds some delay at startup.
+If you need many hostnames in ACLs, you may want to preprocess the
+configuration file and turn the hostnames into IP addresses.</P>
+
+
+
+<A NAME="squid-CHP-6-SECT-1.2.3"></A>
+<H5 class="docSection3Title">6.1.2.3 myip</H5>
+
+<P class="docText">The <span class="docEmphasis">myip</span> type refers to the IP address
+<A NAME="squid-CHP-6-ITERM-1306"></A><A NAME="squid-CHP-6-ITERM-1307"></A>where clients connect to Squid. This is
+what you see under the <span class="docEmphasis">Local Address</span> column when
+you run <I>netstat -n</I> on the Squid box. Most Squid
+installations don't use this type. Usually, all
+clients connect to the same IP address, so this ACL element is useful
+only on systems that have more than one IP address.</P>
+
+<P class="docText">To understand how <span class="docEmphasis">myip</span> may be useful, consider a
+simple company local area network with two subnets. All users on
+subnet-1 are programmers and engineers. Subnet-2 consists of
+accounting, marketing, and other administrative departments. The
+system on which Squid runs has three network interfaces: one on
+subnet-1, one on subnet-2, and the third connecting to the outbound
+Internet connection (see <A class="docLink" HREF="#squid-CHP-6-FIG-1">Figure 6-1</A>).</P>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="squid-CHP-6-FIG-1"></A>Figure 6-1. An application of the myip ACL</H5>
+<IMG BORDER="0" WIDTH="374" HEIGHT="221" SRC="images/0596001622/figs/SQ_0601.gif" ALT="figs/SQ_0601.gif"></CENTER>
+
+<P class="docText">When properly configured, all users on subnet-1 connect to
+Squid's IP address on that subnet, and similarly,
+all subnet-2 users connect to Squid's second IP
+address. You can use this to give the technical staff on subnet-1
+full access, while limiting the administrative staff to only
+work-related web sites.</P>
+
+<P class="docText">The ACLs might look like this:</P>
+
+<PRE>acl Eng myip 172.16.1.5
+acl Admin myip 172.16.2.5</PRE>
+
+<P class="docText">Note, however, that with this scheme you must take special measures
+to prevent users on one subnet from connecting to
+Squid's address on the other subnet. Otherwise,
+clever users on the accounting and marketing subnet can connect
+through the programming and engineering subnet and bypass your
+restrictions.</P>
+
+
+
+<A NAME="squid-CHP-6-SECT-1.2.4"></A>
+<H5 class="docSection3Title">6.1.2.4 dstdomain</H5>
+
+<P class="docText">In some cases, you're likely <A NAME="squid-CHP-6-ITERM-1308"></A><A NAME="squid-CHP-6-ITERM-1309"></A>to find that name-based access controls
+make a lot of sense. You can use them to block access to certain
+sites, to control how Squid forwards requests and to make some
+responses uncachable. The <span class="docEmphasis">dstdomain</span> type is very
+useful because it checks the hostname in requested URLs.</P>
+
+<P class="docText">First, however, I want to clarify the difference between the
+following two lines:</P>
+
+<PRE>acl A dst www.squid-cache.org
+acl B dstdomain www.squid-cache.org</PRE>
+
+<P class="docText"><TT>A</TT> is really an IP address ACL. When Squid parses
+the configuration file, it looks up the IP address for <span class="docEmphasis">www.squid-cache.org</span> and stores the address in
+memory. It doesn't store the name. If the IP address
+for <span class="docEmphasis">www.squid-cache.org</span> changes
+while Squid is running, Squid continues using the old address.</P>
+
+<P class="docText">The <span class="docEmphasis">dstdomain</span> ACL, on the other hand, is stored
+as a domain name (i.e., a string), not as an IP address. When Squid
+checks ACL <TT>B</TT>, it uses string comparison functions
+on the hostname part of the URL. In this case, it
+doesn't really matter if the <span class="docEmphasis">www.squid-cache.org</span> IP changes while Squid is
+running.</P>
+
+<P class="docText">The primary problem with <span class="docEmphasis">dstdomain</span> ACLs is that
+some URLs have IP addresses instead of hostnames. If your goal is to
+block access to certain sites with <span class="docEmphasis">dstdomain</span>
+ACLs, savvy users can simply look up the site's IP
+address manually and insert it into the URL. For example, these two
+URLs bring up the same page:</P>
+
+<PRE>http://www.squid-cache.org/docs/FAQ/
+http://206.168.0.9/docs/FAQ/</PRE>
+
+<P class="docText">The first can be easily matched with <span class="docEmphasis">dstdomain</span>
+ACLs, but the second can't. Thus, if you elect to
+rely on <span class="docEmphasis">dstdomain</span> ACLs, you may want to also
+block all requests that use an IP address instead of a hostname. See
+the <A class="docLink" HREF="squid-CHP-6-SECT-3.html#squid-CHP-6-SECT-3.8">Section 6.3.8</A> for
+an example.</P>
+
+
+
+<A NAME="squid-CHP-6-SECT-1.2.5"></A>
+<H5 class="docSection3Title">6.1.2.5 srcdomain</H5>
+
+<P class="docText">The <span class="docEmphasis">srcdomain</span> ACL is somewhat
+<A NAME="squid-CHP-6-ITERM-1310"></A><A NAME="squid-CHP-6-ITERM-1311"></A>tricky as well. It requires a so-called
+reverse DNS lookup on each client's IP address.
+Technically, Squid requests a DNS PTR record for the address. The
+answer—a fully qualified domain name (FQDN)—is what Squid
+compares to the ACL value. (Refer to
+O'Reilly's <span class="docEmphasis">DNS and
+BIND</span> for more information about DNS PTR records.)</P>
+
+<P class="docText">As with <span class="docEmphasis">dst</span> ACLs, FQDN lookups are a potential
+source of significant delay. The request is postponed until the FQDN
+answer comes back. FQDN answers are cached, so the
+<span class="docEmphasis">srcdomain</span> lookup delay usually occurs only for
+the client's first request.</P>
+
+<P class="docText">Unfortunately, <span class="docEmphasis">srcdomain</span> lookups sometimes
+don't work. Many organizations fail to keep their
+reverse lookup databases current. If an address
+doesn't have a PTR record, the ACL check fails. In
+some cases, requests may be postponed for a very long time (e.g., two
+minutes) until the DNS lookup times out. If you choose to use the
+<span class="docEmphasis">srcdomain</span> ACL, make sure that your own DNS
+<span class="docEmphasis">in-addr.arpa</span> zones are properly configured and
+working. Assuming that they are, you can use an ACL like this:</P>
+
+<PRE>acl LocalHosts srcdomain .users.example.com</PRE>
+
+
+
+<A NAME="squid-CHP-6-SECT-1.2.6"></A>
+<H5 class="docSection3Title">6.1.2.6 port</H5>
+
+<P class="docText">Most likely, you'll want <A NAME="squid-CHP-6-ITERM-1312"></A><A NAME="squid-CHP-6-ITERM-1313"></A>to use
+the <span class="docEmphasis">port</span> ACL to limit access to certain origin
+server port numbers. As I'll explain shortly, Squid
+really shouldn't connect to certain services, such
+as email and IRC servers. The <span class="docEmphasis">port</span> ACL allows
+you to define individual ports, and port ranges. Here is an example:</P>
+
+<PRE>acl HTTPports port 80 8000-8010 8080</PRE>
+
+<P class="docText">HTTP is similar in design to other protocols, such as SMTP. This
+means that clever users can trick Squid into relaying email messages
+to an SMTP server. Email relays are one of the primary reasons we
+must deal with a daily deluge of spam. Historically, spam relays have
+been actual mail servers. Recently, however, more and more spammers
+are using open HTTP proxies to hide their tracks. You definitely
+don't want your Squid cache to be used as a spam
+relay. If it is, your IP address is likely to end up on one of the
+many mail-relay blacklists (MAPS, ORDB, spamhaus, etc.). In addition
+to email, there are a number of other TCP/IP services that Squid
+shouldn't normally communicate with. These include
+IRC, Telnet, DNS, POP, and NNTP. Your policy regarding port numbers
+should be either to deny the known-to-be-dangerous ports and allow
+the rest, or to allow the known-to-be-safe ports and deny the rest.</P>
+
+<P class="docText">My preference is to be conservative and allow only the safe ports.
+The default <I>squid.conf</I> includes the following
+<TT>Safe_ports</TT> ACL:</P>
+
+<PRE>acl Safe_ports port 80          # http
+acl Safe_ports port 21          # ftp
+acl Safe_ports port 443 563     # https, snews
+acl Safe_ports port 70          # gopher
+acl Safe_ports port 210         # wais
+acl Safe_ports port 1025-65535  # unregistered ports
+acl Safe_ports port 280         # http-mgmt
+acl Safe_ports port 488         # gss-http
+acl Safe_ports port 591         # filemaker
+acl Safe_ports port 777         # multiling http
+
+http_access deny !Safe_ports</PRE>
+
+<P class="docText">This is a sensible approach. It allows users to connect to any
+nonprivileged port (1025-65535), but only specific ports in the
+privileged range. If one of your users tries to request a URL, such
+as <span class="docEmphasis">http://www.lrrr.org:123/</span>, Squid returns an
+access denied error message. In some cases, you may need to add
+additional port numbers to the <TT>Safe_ports</TT> ACL to
+keep your users happy.</P>
+
+<P class="docText">A more liberal approach is to deny access to certain ports that are
+known to be particularly dangerous. The Squid FAQ includes an example
+of this:</P>
+
+<PRE>acl Dangerous_ports 7 9 19 22 23 25 53 109 110 119
+
+http_access deny Dangerous_ports</PRE>
+
+<P class="docText">One drawback to the <span class="docEmphasis">Dangerous_ports</span> approach is
+that Squid ends up searching the entire list for almost every
+request. This places a little extra burden on your CPU. Most likely,
+99% of the requests reaching Squid are for port 80, which
+doesn't appear in the
+<span class="docEmphasis">Dangerous_ports</span> list. The list is searched for
+all of these requests without resulting in a match. However, integer
+comparison is a fast operation and should not significantly impact
+performance.</P>
+
+
+
+<A NAME="squid-CHP-6-SECT-1.2.7"></A>
+<H5 class="docSection3Title">6.1.2.7 myport</H5>
+
+<P class="docText">Squid also has a <span class="docEmphasis">myport</span> ACL. Whereas
+<A NAME="squid-CHP-6-ITERM-1314"></A><A NAME="squid-CHP-6-ITERM-1315"></A>the
+<span class="docEmphasis">port</span> ACL refers to the origin server port
+number, <span class="docEmphasis">myport</span> refers to the port where Squid
+receives client requests. Squid listens on different port numbers if
+you specify more than one with the <span class="docEmphasis">http_port</span>
+directive.</P>
+
+<P class="docText">The <span class="docEmphasis">myport</span> ACL is particularly useful if you use
+Squid as an HTTP accelerator for your web site and as a proxy for
+your users. You can accept the accelerator requests on port 80 and
+the proxy requests on port 3128. You probably want the world to
+access the accelerator, but only your users should access Squid as a
+proxy. Your ACLs may look something like this:</P>
+
+<PRE>acl AccelPort myport 80
+acl ProxyPort myport 3128
+acl MyNet src 172.16.0.0/22
+
+http_access allow AccelPort         # anyone
+http_access allow ProxyPort MyNet   # only my users
+http_access deny ProxyPort          # deny others</PRE>
+
+
+
+<A NAME="squid-CHP-6-SECT-1.2.8"></A>
+<H5 class="docSection3Title">6.1.2.8 method</H5>
+
+<P class="docText">The <span class="docEmphasis">method</span> ACL refers to the HTTP request
+<A NAME="squid-CHP-6-ITERM-1316"></A><A NAME="squid-CHP-6-ITERM-1317"></A>method. <TT>GET</TT> is typically
+the most common method, followed by <TT>POST</TT>,
+<TT>PUT</TT>, and others. This example demonstrates how to
+use the <span class="docEmphasis">method</span> ACL:</P>
+
+<PRE>acl Uploads method PUT POST</PRE>
+
+<P class="docText">Squid knows about the following standard HTTP methods:
+<TT>GET</TT>, <TT>POST</TT>,
+<TT>PUT</TT>, <TT>HEAD</TT>,
+<TT>CONNECT</TT>, <TT>TRACE</TT>,
+<TT>OPTIONS</TT>, and <TT>DELETE</TT>. In
+addition, Squid knows about the following methods from the WEBDAV
+specification, RFC 2518: <TT>PROPFIND</TT>,
+<TT>PROPPATCH</TT>, <TT>MKCOL</TT>,
+<TT>COPY</TT>, <TT>MOVE</TT>,
+<TT>LOCK</TT>, <TT>UNLOCK</TT>.<sup class="docFootnote"><A class="docLink" HREF="#squid-CHP-6-FNOTE-3">[3]</A></sup> Certain Microsoft products use nonstandard WEBDAV
+methods, so Squid knows about them as well: <TT>BMOVE</TT>,
+<TT>BDELETE</TT>, <TT>BPROPFIND</TT>. Finally,
+you can configure Squid to understand additional request methods with
+the <span class="docEmphasis">extension_methods</span> directive. See <A class="docLink" HREF="appa-77630.html#appa-77630">Appendix A</A>.</P><blockquote><p class="docFootnote"><sup><A NAME="squid-CHP-6-FNOTE-3">[3]</A></sup> For the RFC database, visit <A class="docLink" target="_blank" HREF="http://www.rfc-editor.org/rfc.html">http://www.rfc-editor.org/rfc.html</A>.</p></blockquote>
+
+<P class="docText">Note that the <TT>CONNECT</TT> method is special in a
+number of ways. It is the method used for tunneling certain requests
+through HTTP proxies (see also RFC 2817: Upgrading to TLS Within
+HTTP/1.1). Be especially careful with the <TT>CONNECT</TT>
+method and remote server port numbers. As I talked about in the
+previous section, you don't want Squid to connect to
+certain remote services. You should limit the
+<TT>CONNECT</TT> method to only the HTTPS/SSL and perhaps
+NNTPS ports (443 and 563, respectively). The default
+<I>squid.conf</I> does this:</P>
+
+<PRE>acl CONNECT method CONNECT
+acl SSL_ports 443 563
+
+http_access allow CONNECT SSL_ports
+http_access deny CONNECT</PRE>
+
+<P class="docText">With this configuration, Squid only allows tunneled requests to ports
+443 (HTTPS/SSL) and 563 (NNTPS). <TT>CONNECT</TT> method
+requests to all other ports are denied.</P>
+
+<P class="docText"><TT>PURGE</TT> is another special request method. It is
+specific to Squid and not defined in any of the RFCs. It provides a
+way for the administrator to forcibly remove cached objects. Since
+this method is somewhat dangerous, Squid denies
+<TT>PURGE</TT> requests by default, unless you define an
+ACL that references the method. Otherwise, anyone with access to the
+cache may be able to remove any cached object. I recommend allowing
+<TT>PURGE</TT> from <span class="docEmphasis">localhost</span> only:</P>
+
+<PRE>acl Purge method PURGE
+acl Localhost src 127.0.0.1
+http_access allow Purge Localhost
+http_access deny Purge</PRE>
+
+<P class="docText">See <A class="docLink" HREF="squid-CHP-7-SECT-6.html#squid-CHP-7-SECT-6">Section 7.6</A> for more information on removing
+objects from Squid's cache.</P>
+
+
+
+<A NAME="squid-CHP-6-SECT-1.2.9"></A>
+<H5 class="docSection3Title">6.1.2.9 proto</H5>
+
+<P class="docText">This type refers to a URI's access (or transfer)
+<A NAME="squid-CHP-6-ITERM-1318"></A><A NAME="squid-CHP-6-ITERM-1319"></A>protocol. Valid values are the following:
+<TT>http</TT>, <TT>https</TT> (same as HTTP/TLS),
+<TT>ftp</TT>, <TT>gopher</TT>,
+<TT>urn</TT>, <TT>whois</TT>, and
+<TT>cache_object</TT>. In other words, these are the URL
+scheme names (RFC 1738 terminology) supported by Squid. For example,
+suppose that you want to deny all FTP requests. You can use the
+following directives:</P>
+
+<PRE>acl FTP proto FTP
+http_access deny FTP</PRE>
+
+<P class="docText">The <span class="docEmphasis">cache_object</span> scheme is a feature specific to
+Squid. It is used to access Squid's cache management
+interface, which I'll talk about in <A class="docLink" HREF="squid-CHP-14-SECT-2.html#squid-CHP-14-SECT-2">Section 14.2</A>. Unfortunately, it's not a
+very good name, and it should probably be changed.</P>
+
+<P class="docText">The default <I>squid.conf</I> file has a couple of
+lines that restrict cache manager access:</P>
+
+<PRE>acl Manager proto cache_object
+acl Localhost src 127.0.0.1
+
+http_access allow Manager Localhost
+http_access deny Manager</PRE>
+
+<P class="docText">These configuration lines allow cache-manager requests only when they
+come from the localhost address. All other cache-manager requests are
+denied. This means that any user with an account on the Squid machine
+can access the potentially sensitive cache-manager information. You
+may want to modify the cache-manager access controls or protect
+certain pages with passwords. I'll talk about that
+in <A class="docLink" HREF="squid-CHP-14-SECT-2.html#squid-CHP-14-SECT-2.2">Section 14.2.2</A>.</P>
+
+
+
+<A NAME="squid-CHP-6-SECT-1.2.10"></A>
+<H5 class="docSection3Title">6.1.2.10 time</H5>
+
+<P class="docText">The <span class="docEmphasis">time</span> ACL allows you to
+<A NAME="squid-CHP-6-ITERM-1320"></A><A NAME="squid-CHP-6-ITERM-1321"></A>control
+access based on the time of day and the day of the week. The syntax
+is somewhat cryptic:</P>
+
+<PRE>acl <TT><I>name</I></TT> [days] [h1:m1-h2:m2]</PRE>
+
+<P class="docText">You can specify days of the week, starting and stopping times, or
+both. Days are specified by the single-letter codes shown in <A class="docLink" HREF="#squid-CHP-6-TABLE-2">Table 6-2</A>. Times are specified in 24-hour format. The
+starting time must be less than the ending time, which makes it
+awkward to write <span class="docEmphasis">time</span> ACLs that span
+"midnights."</P>
+
+<A NAME="squid-CHP-6-TABLE-2"></A><P><TABLE CELLSPACING="0" BORDER="1" RULES="all" CELLPADDING="4" WIDTH="100%"><CAPTION><h5 class="docTableTitle">Table 6-2. Day codes for the time ACL</h5></CAPTION><COLGROUP span="2"><THEAD><TR><TH class="docTableHeader">
+<P class="docText">Code</P>
+</TH><TH class="docTableHeader">
+<P class="docText">Day</P>
+</TH></TR></THEAD><TR><TD class="docTableCell">
+<P class="docText">S</P>
+</TD><TD class="docTableCell">
+<P class="docText">Sunday</P>
+</TD></TR><TR><TD class="docTableCell">
+<P class="docText">M</P>
+</TD><TD class="docTableCell">
+<P class="docText">Monday</P>
+</TD></TR><TR><TD class="docTableCell">
+<P class="docText">T</P>
+</TD><TD class="docTableCell">
+<P class="docText">Tuesday</P>
+</TD></TR><TR><TD class="docTableCell">
+<P class="docText">W</P>
+</TD><TD class="docTableCell">
+<P class="docText">Wednesday</P>
+</TD></TR><TR><TD class="docTableCell">
+<P class="docText">H</P>
+</TD><TD class="docTableCell">
+<P class="docText">Thursday</P>
+</TD></TR><TR><TD class="docTableCell">
+<P class="docText">F</P>
+</TD><TD class="docTableCell">
+<P class="docText">Friday</P>
+</TD></TR><TR><TD class="docTableCell">
+<P class="docText">A</P>
+</TD><TD class="docTableCell">
+<P class="docText">Saturday</P>
+</TD></TR><TR><TD class="docTableCell">
+<P class="docText">D</P>
+</TD><TD class="docTableCell">
+<P class="docText">All weekdays (M-F)</P>
+</TD></TR></COLGROUP></TABLE></P>
+
+<P><table border="0" bgcolor="black" cellspacing="0" cellpadding="1" width="90%" align="center"><tr><td><table bgcolor="white" width="100%" border="0" cellspacing="0" cellpadding="6"><tr><td width="60" valign="top"><img src="images/tip_yellow.gif" width="50" height="54"></td><td valign="top">
+<P class="docText">Days and times are interpreted with the <I>localtime(
+)</I> function, which takes into account your local time zone
+and daylight savings time settings. Make sure that your computer
+knows what time zone it is in! You'll also want to
+make sure that your clock is synchronized to the correct time.</P>
+</td></tr></table></td></tr></table></P><br>
+
+<P class="docText">To specify a <span class="docEmphasis">time</span> ACL that matches your weekday
+working hours, you can write:</P>
+
+<PRE>acl Working_hours MTWHF 08:00-17:00</PRE>
+
+<P class="docText">or:</P>
+
+<PRE>acl Working_hours D 08:00-17:00</PRE>
+
+<P class="docText">Let's look at a trickier example. Perhaps
+you're an ISP that relaxes access during off-peak
+hours, say 8 P.M. to 4 A.M. Since this time spans midnight, you
+can't write
+"20:00-04:00." Instead
+you'll need either to split this into two ACLs or
+define the peak hours and use negation. For example:</P>
+
+<PRE>acl Offpeak1 20:00-23:59
+acl Offpeak2 00:00-04:00
+http_access allow Offpeak1 ...
+http_access allow Offpeak2 ...</PRE>
+
+<P class="docText">Alternatively, you can do it like this:</P>
+
+<PRE>acl Peak 04:00-20:00
+http_access allow !Peak ...</PRE>
+
+<P class="docText">Although Squid allows it, you probably shouldn't put
+more than one day list and time range on a single
+<span class="docEmphasis">time</span> ACL line. The parser isn't
+always smart enough to figure out what you want. For example, if you
+enter this:</P>
+
+<PRE>acl Blah time M 08:00-10:00 W 09:00-11:00</PRE>
+
+<P class="docText">what you really end up with is this:</P>
+
+<PRE>acl Blah time MW 09:00-11:00</PRE>
+
+<P class="docText">The parser ORs weekdays together and uses only the last time range.
+It does work, however, if you write it like this, on two separate
+lines:</P>
+
+<PRE>acl Blah time M 08:00-10:00
+acl Blah time W 09:00-11:00</PRE>
+
+
+
+<A NAME="squid-CHP-6-SECT-1.2.11"></A>
+<H5 class="docSection3Title">6.1.2.11 ident</H5>
+
+<P class="docText">The <span class="docEmphasis">ident</span> ACL matches <A NAME="squid-CHP-6-ITERM-1322"></A><A NAME="squid-CHP-6-ITERM-1323"></A>usernames returned by the ident protocol.
+This is a simple protocol, that's documented in RFC
+1413. It works something like this:</P>
+
+<span style="font-weight:bold"><OL class="docList" TYPE="1"><LI><span style="font-weight:normal"><P class="docList">A user-agent (client) establishes a TCP connection to Squid.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">Squid connects to the ident port (113) on the
+client's system.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">Squid writes a line containing the two TCP port numbers of the
+client's first connection. The Squid-side port
+number is probably 3128 (or whatever you configured in
+<I>squid.conf</I>). The client-side port is more or
+less random.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">The client's ident server writes back the username
+belonging to the process that opened the first connection.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">Squid records the username for access control purposes and for
+logging in <I>access.log</I>.</P></span></LI></OL></span>
+<P class="docText">When Squid encounters an <span class="docEmphasis">ident</span> ACL for a
+particular request, that request is postponed until the ident lookup
+is complete. Thus, the <span class="docEmphasis">ident</span> ACL may add some
+significant delays to your users' requests.</P>
+
+<P class="docText">We recommend using the <span class="docEmphasis">ident</span> ACL only on local
+area networks and only if all or most of the client workstations run
+the ident server. If Squid and the client workstations are connected
+to a LAN with low latency, the <span class="docEmphasis">ident</span> ACL can
+work well. Using <span class="docEmphasis">ident</span> for clients connecting
+over WAN links is likely to frustrate both you and your users.</P>
+
+<P class="docText">The ident protocol isn't very secure. Savvy users
+will be able to replace their normal ident server with a fake server
+that returns any username they select. For example, if I know that
+connections from the user <TT>administrator</TT> are always
+allowed, I can write a simple program that answers every ident
+request with that username.</P>
+
+<P><table border="0" bgcolor="black" cellspacing="0" cellpadding="1" width="90%" align="center"><tr><td><table bgcolor="white" width="100%" border="0" cellspacing="0" cellpadding="6"><tr><td width="60" valign="top"><img src="images/tip_yellow.gif" width="50" height="54"></td><td valign="top">
+<P class="docText">You can't use <span class="docEmphasis">ident</span> ACLs with
+interception caching (see <A class="docLink" HREF="squid-CHP-9.html#squid-CHP-9">Chapter 9</A>). When Squid
+is configured for interception caching, the operating system pretends
+that it is the origin server. This means that the local socket
+address for intercepted TCP connections has the origin
+server's IP address. If you run
+<I>netstat</I> <I>-n</I> on Squid,
+you'll see a lot of foreign IP addresses in the
+<span class="docEmphasis">Local Address</span> column. When Squid makes an ident
+query, it creates a new TCP socket and binds the local endpoint to
+the same IP address as the local end of the client's
+TCP connection. Since the local address isn't really
+local (it's some far away origin
+server's IP address), the <I>bind(
+)</I> system call fails. Squid handles this as a failed ident
+query.</P>
+</td></tr></table></td></tr></table></P><br>
+
+<P class="docText">Note that Squid also has a feature to perform
+"lazy" ident lookups on clients. In
+this case, requests aren't delayed while waiting for
+the ident query. Squid logs the ident information if it is available
+by the time the HTTP request is complete. You can enable this feature
+with the <span class="docEmphasis">ident_lookup_access</span> directive, which
+I'll discuss later in this chapter.</P>
+
+
+
+<A NAME="squid-CHP-6-SECT-1.2.12"></A>
+<H5 class="docSection3Title">6.1.2.12 proxy_auth</H5>
+
+<P class="docText">Squid has a powerful, and <A NAME="squid-CHP-6-ITERM-1324"></A><A NAME="squid-CHP-6-ITERM-1325"></A>somewhat confusing, set of features to
+support HTTP proxy authentication. With proxy authentication, the
+client's HTTP request includes a header containing
+authentication credentials. Usually, this is simply a username and
+password. Squid decodes the credential information and then queries
+an external authentication process to find out if the credentials are
+valid.</P>
+
+<P class="docText">Squid currently supports three techniques for receiving user
+credentials: the HTTP Basic protocol, Digest authentication protocol,
+and NTLM. Basic authentication has been around for a long time. By
+today's standards, it is a very insecure technique.
+Usernames and passwords are sent together, essentially in cleartext.
+Digest authentication is more secure, but also more complicated. Both
+Basic and Digest authentication are documented in RFC 2617. NTLM also
+has better security than Basic authentication. However, it is a
+proprietary protocol developed by Microsoft. A handful of Squid
+developers have essentially reverse-engineered it.</P>
+
+<P class="docText">In order to use proxy authentication, you must also configure Squid
+to spawn a number of external helper processes. The Squid source code
+includes some programs that authenticate against a number of standard
+databases, including LDAP, NTLM, NCSA-style password files, and the
+standard Unix password database. The <span class="docEmphasis">auth_param</span>
+directive controls the configuration of all helper programs.
+I'll go through it in detail in <A class="docLink" HREF="squid-CHP-12.html#squid-CHP-12">Chapter 12</A>.</P>
+
+<P class="docText">The <span class="docEmphasis">auth_param</span> directive and
+<span class="docEmphasis">proxy_auth</span> ACL is one of the few cases where
+their order in the configuration file is important. You must define
+at least one authentication helper (with
+<span class="docEmphasis">auth_param</span>) before any
+<span class="docEmphasis">proxy_auth</span> ACLs. If you don't,
+Squid prints an error message and ignores the
+<span class="docEmphasis">proxy_auth</span> ACLs. This isn't a
+fatal error, so Squid may start anyway, and all your
+users' requests may be denied.</P>
+
+<P class="docText">The <span class="docEmphasis">proxy_auth</span> ACL takes usernames as values.
+However, most installations simply use the special value
+<TT>REQUIRED</TT>:</P>
+
+<PRE>auth_param ...
+acl Auth1 proxy_auth REQUIRED</PRE>
+
+<P class="docText">In this case, any request with valid credentials matches the ACL. If
+you need fine-grained control, you can specify individual usernames:</P>
+
+<PRE>auth_param ...
+acl Auth1 proxy_auth allan bob charlie
+acl Auth2 proxy_auth dave eric frank</PRE>
+
+<P><table border="0" bgcolor="black" cellspacing="0" cellpadding="1" width="90%" align="center"><tr><td><table bgcolor="white" width="100%" border="0" cellspacing="0" cellpadding="6"><tr><td width="60" valign="top"><img src="images/tip_yellow.gif" width="50" height="54"></td><td valign="top">
+<P class="docText">Proxy authentication doesn't work with HTTP
+interception because the user-agent doesn't realize
+it's talking to a proxy rather than the origin
+server. The user-agent doesn't know that it should
+send a <TT>Proxy-Authorization</TT> header in its requests.
+See <A class="docLink" HREF="squid-CHP-9-SECT-2.html#squid-CHP-9-SECT-2">Section 9.2</A> for additional details.</P>
+</td></tr></table></td></tr></table></P><br>
+
+
+
+<A NAME="squid-CHP-6-SECT-1.2.13"></A>
+<H5 class="docSection3Title">6.1.2.13 src_as</H5>
+
+<P class="docText">This type checks that <A NAME="squid-CHP-6-ITERM-1326"></A><A NAME="squid-CHP-6-ITERM-1327"></A>the
+client (source) IP address belongs to a specific AS number. (See 
+<A class="docLink" HREF="#squid-CHP-6-SECT-1.1.6">Section 6.1.1.6</A> for
+information on how Squid maps AS numbers to IP addresses.) As an
+example, consider the fictitious ISP that uses AS 64222 and
+advertises the 10.0.0.0/8, 172.16.0.0/12, and 192.168.0.0/16
+networks. You can write an ACL like this, which allows requests from
+any host in the ISP's address space:</P>
+
+<PRE>acl TheISP src 10.0.0.0/8
+acl TheISP src 172.16.0.0/12
+acl TheISP src 192.168.0.0/16
+http_access allow TheISP</PRE>
+
+<P class="docText">Alternatively, you can write it like this:</P>
+
+<PRE>acl TheISP src_as 64222
+http_access allow TheISP</PRE>
+
+<P class="docText">Not only is the second form shorter, it also means that if the ISP
+adds more networks, you won't have to update your
+ACL configuration.</P>
+
+
+
+<A NAME="squid-CHP-6-SECT-1.2.14"></A>
+<H5 class="docSection3Title">6.1.2.14 dst_as</H5>
+
+<P class="docText">The <span class="docEmphasis">dst_as</span> ACL is often used
+<A NAME="squid-CHP-6-ITERM-1328"></A><A NAME="squid-CHP-6-ITERM-1329"></A>with
+the <span class="docEmphasis">cache_peer_access</span> directive. In this way,
+Squid can forward cache misses in a manner consistent with IP
+routing. Consider an ISP that exchanges routes with a few other ISPs.
+Each ISP operates their own caching proxy, and these proxies can
+forward requests to each other. Ideally, ISP A forwards cache misses
+for servers on ISP B's network to ISP
+B's caching proxy. An easy way to do this is with AS
+ACLs and the <span class="docEmphasis">cache_peer_access</span> directive:</P>
+
+<PRE>acl ISP-B-AS dst_as 64222
+acl ISP-C-AS dst_as 64333
+cache_peer proxy.isp-b.net parent 3128 3130
+cache_peer proxy.isp-c.net parent 3128 3130
+cache_peer_access proxy.isb-b.net allow ISP-B-AS
+cache_peer_access proxy.isb-c.net allow ISP-C-AS</PRE>
+
+<P class="docText">These access controls make sure that the only requests sent to the
+two ISPs are for their own origin servers. I'll talk
+further about cache cooperation in <A class="docLink" HREF="squid-CHP-10.html#squid-CHP-10">Chapter 10</A>.</P>
+
+
+
+<A NAME="squid-CHP-6-SECT-1.2.15"></A>
+<H5 class="docSection3Title">6.1.2.15 snmp_community</H5>
+
+<P class="docText">The <span class="docEmphasis">snmp_community</span> ACL is meaningful
+<A NAME="squid-CHP-6-ITERM-1330"></A><A NAME="squid-CHP-6-ITERM-1331"></A>only for SNMP queries, which are controlled
+by the <span class="docEmphasis">snmp_access</span> directive. For example, you
+might write:</P>
+
+<PRE>acl OurCommunityName snmp_community hIgHsEcUrItY
+acl All src 0/0
+snmp_access allow OurCommunityName
+snmp_access deny All</PRE>
+
+<P class="docText">In this case, an SNMP query is allowed only if the community name is
+set to <TT>hIgHsEcUrItY</TT>.</P>
+
+
+
+<A NAME="squid-CHP-6-SECT-1.2.16"></A>
+<H5 class="docSection3Title">6.1.2.16 maxconn</H5>
+
+<P class="docText">The <span class="docEmphasis">maxconn</span> ACL refers to the
+<A NAME="squid-CHP-6-ITERM-1332"></A><A NAME="squid-CHP-6-ITERM-1333"></A>number of simultaneous connections from a
+client's IP address. Some Squid administrators find
+this a useful way to prevent users from abusing the proxy or
+consuming too many resources.</P>
+
+<P class="docText">The <span class="docEmphasis">maxconn</span> ACL matches a request when that
+request exceeds the number you specify. For this reason, you should
+use <span class="docEmphasis">maxconn</span> ACLs only in
+<span class="docEmphasis">deny</span> rules. Consider this example:</P>
+
+<PRE>acl OverConnLimit maxconn 4
+http_access deny OverConnLimit</PRE>
+
+<P class="docText">In this case, Squid allows up to four connections at once from each
+IP address. When a client makes the fifth connection, the
+<span class="docEmphasis">OverConnLimit</span> ACL is matched, and the
+<span class="docEmphasis">http_access</span> rule denies the request.</P>
+
+<P class="docText">The <span class="docEmphasis">maxconn</span> ACL feature relies on
+Squid's client database. This database keeps a small
+data structure in memory for each client IP address. If you have a
+lot of clients, this database may consume a significant amount of
+memory. You can disable the client database in the configuration file
+with the <span class="docEmphasis">client_db</span> directive. However, if you
+disable the client database, the <span class="docEmphasis">maxconn</span> ACL
+will no longer work.</P>
+
+
+
+<A NAME="squid-CHP-6-SECT-1.2.17"></A>
+<H5 class="docSection3Title">6.1.2.17 arp</H5>
+
+<P class="docText">The <span class="docEmphasis">arp</span> ACL is used to check
+<A NAME="squid-CHP-6-ITERM-1334"></A><A NAME="squid-CHP-6-ITERM-1335"></A>the
+Media Access Control (MAC) address (typically Ethernet) of cache
+clients. The Address Resolution Protocol (ARP) is the way that hosts
+find the MAC address corresponding to an IP address. This feature
+came about when some university students discovered that, under
+Microsoft Windows, they could set a system's IP
+address to any value. Thus, they were able to circumvent
+Squid's address-based controls. To escalate this
+arms race, a savvy system administrator gave Squid the ability to
+check the client's Ethernet addresses.</P>
+
+<P class="docText">Unfortunately, this feature uses nonportable code. If you use Solaris
+or Linux, you should be able to use <span class="docEmphasis">arp</span> ACLs. If
+not, you're out of luck. The best way to find out is
+to add the <I>—enable-arp-acl</I> option when you run
+<I>./configure</I>.</P>
+
+<P class="docText">The <span class="docEmphasis">arp</span> ACL feature contains another important
+limitation. ARP is a datalink layer protocol. It works only for hosts
+on the same subnet as Squid. You can't easily
+discover the MAC address of a host on a different subnet. If you have
+routers between Squid and your users, you probably
+can't use <span class="docEmphasis">arp</span> ACLs.</P>
+
+<P class="docText">Now that you know when not to use them, let's see
+how <span class="docEmphasis">arp</span> ACLs actually look. The values are
+Ethernet addresses, as you would see in <I>ifconfig</I>
+and <I>arp</I> output. For example:</P>
+
+<PRE>acl WinBoxes arp 00:00:21:55:ed:22
+acl WinBoxes arp 00:00:21:ff:55:38</PRE>
+
+
+
+<A NAME="squid-CHP-6-SECT-1.2.18"></A>
+<H5 class="docSection3Title">6.1.2.18 srcdom_regex</H5>
+
+<P class="docText">The <span class="docEmphasis">srcdom_regex</span> ACL allows you
+<A NAME="squid-CHP-6-ITERM-1336"></A><A NAME="squid-CHP-6-ITERM-1337"></A>to use regular expression matching on
+client domain names. This is similar to the
+<span class="docEmphasis">srcdomain</span> ACL, which uses modified substring
+matching. The same caveats apply here: some client addresses
+don't resolve back to domain names. As an example,
+the following ACL matches hostnames that begin with
+<TT>dhcp</TT>:</P>
+
+<PRE>acl DHCPUser srcdom_regex -i ^dhcp</PRE>
+
+<P class="docText">Because of the leading <TT>^</TT> symbol, this ACL matches
+the hostname <span class="docEmphasis">dhcp12.example.com</span>,
+but not <span class="docEmphasis">host12.dhcp.example.com</span>.</P>
+
+
+
+<A NAME="squid-CHP-6-SECT-1.2.19"></A>
+<H5 class="docSection3Title">6.1.2.19 dstdom_regex</H5>
+
+<P class="docText">The <span class="docEmphasis">dstdom_regex</span> ACL is obviously
+<A NAME="squid-CHP-6-ITERM-1338"></A><A NAME="squid-CHP-6-ITERM-1339"></A>similar, except that it applies to origin
+server names. The issues with <span class="docEmphasis">dstdomain</span> are
+relevant here, too. The following example matches hostnames that
+begin with <span class="docEmphasis">www</span>:</P>
+
+<PRE>acl WebSite dstdom_regex -i ^www\.</PRE>
+
+<P class="docText">Here is another useful regular expression that matches IP addresses
+given in URL hostnames:</P>
+
+<PRE>acl IPaddr dstdom_regex [0-9]$</PRE>
+
+<P class="docText">This works because Squid requires URL hostnames to be fully
+qualified. Since none of the global top-level domains end with a
+digit, this ACL matches only IP addresses, which do end with a
+number.</P>
+
+
+
+<A NAME="squid-CHP-6-SECT-1.2.20"></A>
+<H5 class="docSection3Title">6.1.2.20 url_regex</H5>
+
+<P class="docText">You can use the <span class="docEmphasis">url_regex</span> ACL to match
+<A NAME="squid-CHP-6-ITERM-1340"></A><A NAME="squid-CHP-6-ITERM-1341"></A>any
+part of a requested URL, including the transfer protocol and origin
+server hostname. For example, this ACL matches MP3 files requested
+from FTP servers:</P>
+
+<PRE>acl FTPMP3 url_regex -i ^ftp://.*\.mp3$</PRE>
+
+
+
+<A NAME="squid-CHP-6-SECT-1.2.21"></A>
+<H5 class="docSection3Title">6.1.2.21 urlpath_regex</H5>
+
+<P class="docText">The <span class="docEmphasis">urlpath_regex</span> ACL is very similar to
+<span class="docEmphasis">url_regex</span>, except
+<A NAME="squid-CHP-6-ITERM-1342"></A><A NAME="squid-CHP-6-ITERM-1343"></A>that the transfer protocol and hostname
+aren't included in the comparison. This makes
+certain types of checks much easier. For example,
+let's say you need to deny requests with
+<TT>sex</TT> in the URL, but still possibly allow requests
+that have <TT>sex</TT> in their hostname:</P>
+
+<PRE>acl Sex urlpath_regex sex</PRE>
+
+<P class="docText">As another example, let's say you want to provide
+special treatment for cgi-bin requests. You can catch some of them
+with this ACL:</P>
+
+<PRE>acl CGI1 urlpath_regex ^/cgi-bin</PRE>
+
+<P class="docText">Of course, CGI programs aren't necessarily kept
+under <I>/cgi-bin/</I>, so you'd
+probably want to write additional ACLs to catch the others.</P>
+
+
+
+<A NAME="squid-CHP-6-SECT-1.2.22"></A>
+<H5 class="docSection3Title">6.1.2.22 browser</H5>
+
+<P class="docText">Most HTTP requests <A NAME="squid-CHP-6-ITERM-1344"></A><A NAME="squid-CHP-6-ITERM-1345"></A>include a <TT>User-Agent</TT>
+header. The value of this header is typically something strange like:</P>
+
+<PRE>Mozilla/4.51 [en] (X11; I; Linux 2.2.5-15 i686)</PRE>
+
+<P class="docText">The <span class="docEmphasis">browser</span> ACL performs regular expression
+matching on the value of the <TT>User-Agent</TT> header.
+For example, to deny requests that don't come from a
+Mozilla browser, you can use:</P>
+
+<PRE>acl Mozilla browser Mozilla
+http_access deny !Mozilla</PRE>
+
+<P class="docText">Before using the <span class="docEmphasis">browser</span> ACL, be sure that you
+fully understand the <TT>User-Agent</TT> strings your cache
+receives. Some user-agents lie about their identity. Even Squid has a
+feature to rewrite <TT>User-agent</TT> headers in requests
+that it forwards. With browsers such as Opera and
+KDE's Konqueror, users can send different user-agent
+strings to different origin servers or omit them altogether.</P>
+
+
+
+<A NAME="squid-CHP-6-SECT-1.2.23"></A>
+<H5 class="docSection3Title">6.1.2.23 req_mime_type</H5>
+
+<P class="docText">The <span class="docEmphasis">req_mime_type</span> ACL refers
+to<A NAME="squid-CHP-6-ITERM-1346"></A><A NAME="squid-CHP-6-ITERM-1347"></A>
+the <TT>Content-Type</TT> header of the
+client's HTTP request.
+<TT>Content-Type</TT> headers usually appear only in
+requests with message bodies. <TT>POST</TT> and
+<TT>PUT</TT> requests might include the header, but
+<TT>GET</TT> requests don't. You might be
+able to use the <span class="docEmphasis">req_mime_type</span> ACL to detect
+certain file uploads and some types of HTTP tunneling requests.</P>
+
+<P class="docText">The <span class="docEmphasis">req_mime_type</span> ACL values are regular
+expressions. To catch audio file types, you can use an ACL like this:</P>
+
+<PRE>acl AuidoFileUploads req_mime_type -i ^audio/</PRE>
+
+
+
+<A NAME="squid-CHP-6-SECT-1.2.24"></A>
+<H5 class="docSection3Title">6.1.2.24 rep_mime_type</H5>
+
+<P class="docText">The <span class="docEmphasis">rep_mime_type</span> ACL refers to
+<A NAME="squid-CHP-6-ITERM-1348"></A><A NAME="squid-CHP-6-ITERM-1349"></A>the <TT>Content-Type</TT>
+header of the origin server's HTTP response. It is
+really only meaningful when used in an
+<span class="docEmphasis">http_reply_access</span> rule. All other access control
+forms are based on aspects of the client's request.
+This one is based on the response.</P>
+
+<P class="docText">If you want to try blocking Java code with Squid, you might use some
+access rules like this:</P>
+
+<PRE>acl JavaDownload rep_mime_type application/x-java
+http_reply_access deny JavaDownload</PRE>
+
+
+
+<A NAME="squid-CHP-6-SECT-1.2.25"></A>
+<H5 class="docSection3Title">6.1.2.25 ident_regex</H5>
+
+<P class="docText">You saw the <span class="docEmphasis">ident</span> ACL earlier in this
+<A NAME="squid-CHP-6-ITERM-1350"></A><A NAME="squid-CHP-6-ITERM-1351"></A>section. The
+<span class="docEmphasis">ident_regex</span> simply allows you to use regular
+expressions, instead of exact string matching on usernames returned
+by the ident protocol. For example, this ACL matches usernames that
+contain a digit:</P>
+
+<PRE>acl NumberInName ident_regex [0-9]</PRE>
+
+
+
+<A NAME="squid-CHP-6-SECT-1.2.26"></A>
+<H5 class="docSection3Title">6.1.2.26 proxy_auth_regex</H5>
+
+<P class="docText">As with <span class="docEmphasis">ident</span>, the
+<span class="docEmphasis">proxy_auth_regex</span> ACL
+<A NAME="squid-CHP-6-ITERM-1352"></A><A NAME="squid-CHP-6-ITERM-1353"></A>allows you to use regular expressions on
+proxy authentication usernames. For example, this ACL matches
+<TT>admin</TT>, <TT>administrator</TT>, and
+<TT>administrators</TT>:</P>
+
+<PRE>acl Admins proxy_auth_regex -i ^admin</PRE>
+
+
+
+<A NAME="squid-CHP-6-SECT-1.3"></A>
+<H4 class="docSection2Title">6.1.3 External ACLs</H4>
+
+<P class="docText">Squid Version 2.5 introduces <A NAME="squid-CHP-6-ITERM-1354"></A><A NAME="squid-CHP-6-ITERM-1355"></A>a new
+feature: <I>external ACLs</I>. You instruct Squid to
+send certain pieces of information to an external process. This
+helper process then tells Squid whether the given data is a match or
+not.</P>
+
+<P class="docText">Squid comes with a number of external ACL helper programs; most
+determine whether or not the named user is a member of a particular
+group. See <A class="docLink" HREF="squid-CHP-12-SECT-5.html#squid-CHP-12-SECT-5">Section 12.5</A> for descriptions of those
+programs and for information on how to write your own. For now,
+I'll explain how to define and utilize an external
+ACL type.</P>
+
+<P class="docText">The <span class="docEmphasis">external_acl_type</span> directive defines a new
+external ACL type. Here's the general syntax:</P>
+
+<PRE>external_acl_type <TT><I>type-name</I></TT> [<TT><I>options</I></TT>] <TT><I>format</I></TT> <TT><I>helper-command</I></TT></PRE>
+
+<P class="docText"><TT><I>type-name</I></TT> is a user-defined string.
+You'll also use it in an <span class="docEmphasis">acl</span>
+line to reference this particular helper.</P>
+
+<P class="docText">Squid currently supports the following options:</P>
+
+<DL class="docList"><br><p><DT><span class="docPubcolor"><I>ttl=</I><TT><I>n</I></TT></span></DT></p>
+<DD>
+<P class="docList">The amount of time, in seconds, to cache the result for values that
+are a match. The default is 3600 seconds, or 1 hour.</P>
+</DD>
+<br><p><DT><span class="docPubcolor"><I>negative_ttl=</I><TT><I>n</I></TT></span></DT></p>
+<DD>
+<P class="docList">The amount of time, in seconds, to cache the result for values that
+aren't a match. The default is 3600 seconds, or 1
+hour.</P>
+</DD>
+<br><p><DT><span class="docPubcolor"><I>concurrency=</I><TT><I>n</I></TT></span></DT></p>
+<DD>
+<P class="docList">The number of helper processes to spawn. The default is 5.</P>
+</DD>
+<br><p><DT><span class="docPubcolor"><I>cache=</I><TT><I>n</I></TT></span></DT></p>
+<DD>
+<P class="docList">The maximum number of results to cache. The default is 0, which
+doesn't limit the cache size.</P>
+</DD>
+</DL>
+
+<P class="docText"><I>format</I> is one or more keywords that begin with the
+% character. Squid currently supports the following format tokens:</P>
+
+<DL class="docList"><br><p><DT><span class="docPubcolor"><I>%LOGIN</I></span></DT></p>
+<DD>
+<P class="docList">The username, taken from proxy authentication credentials.</P>
+</DD>
+<br><p><DT><span class="docPubcolor"><I>%IDENT</I></span></DT></p>
+<DD>
+<P class="docList">The username, taken from an RFC 1413 ident query.</P>
+</DD>
+<br><p><DT><span class="docPubcolor"><I>%SRC</I></span></DT></p>
+<DD>
+<P class="docList">The IP address of the client.</P>
+</DD>
+<br><p><DT><span class="docPubcolor"><I>%DST</I></span></DT></p>
+<DD>
+<P class="docList">The IP address of the origin server.</P>
+</DD>
+<br><p><DT><span class="docPubcolor"><I>%PROTO</I></span></DT></p>
+<DD>
+<P class="docList">The transfer protocol (e.g., HTTP, FTP, etc.).</P>
+</DD>
+<br><p><DT><span class="docPubcolor"><I>%PORT</I></span></DT></p>
+<DD>
+<P class="docList">The origin server TCP port number.</P>
+</DD>
+<br><p><DT><span class="docPubcolor"><I>%METHOD</I></span></DT></p>
+<DD>
+<P class="docList">The HTTP request method.</P>
+</DD>
+<br><p><DT><span class="docPubcolor"><I>%</I>{<TT><I>Header</I></TT>}</span></DT></p>
+<DD>
+<P class="docList">The value of an HTTP request header; for example,
+<I>%{User-Agent}</I> causes Squid to send strings like
+this to the authenticator:</P>
+
+<PRE>"Mozilla/4.0 (compatible; MSIE 6.0; Win32)"</PRE>
+
+</DD>
+<br><p><DT><span class="docPubcolor"><I>%{Hdr</I>:<TT><I>member</I></TT>}</span></DT></p>
+<DD>
+<P class="docList">Selects certain members of list-based HTTP headers, such as
+<TT>Cache-Control</TT>; for example, given this HTTP
+header:</P>
+
+<PRE>X-Some-Header: foo=xyzzy, bar=plugh, foo=zoinks</PRE>
+
+<P class="docList">and the token <TT>%{X-Some-Header:foo}</TT>, Squid sends
+this string to the external ACL process:</P>
+
+<PRE>foo=xyzzy, foo=zoinks</PRE>
+
+</DD>
+<br><p><DT><span class="docPubcolor"><I>%{Hdr:;</I><TT><I>member</I></TT>}</span></DT></p>
+<DD>
+<P class="docList">The same as
+<TT>%{Hdr</TT>:<TT><I>member</I></TT><TT>}</TT>,
+except that the <TT>;</TT> character is the list separator.
+You can use any nonalphanumeric character as the separator.</P>
+</DD>
+</DL>
+
+<P class="docText"><I>helper-command</I> is the command that Squid spawns
+for the helper. You may include command arguments here as well. For
+example, the entire command may be something like:</P>
+
+<PRE>/usr/local/squid/libexec/my-acl-prog.pl -X -5 /usr/local/squid/etc/datafile</PRE>
+
+<P class="docText">Putting all these together results in a long line.
+Squid's configuration file doesn't
+support the backslash line-continuation technique shown here, so
+remember that all these must go on a single line:</P>
+
+<PRE>external_acl_type MyAclType cache=100 %LOGIN %{User-Agent} \
+    /usr/local/squid/libexec/my-acl-prog.pl -X -5 \
+    /usr/local/squid/share/usernames \
+    /usr/local/squid/share/useragents</PRE>
+
+<P class="docText">Now that you know how to define an external ACL, the next step is to
+write an <span class="docEmphasis">acl</span> line that references it. This is
+relatively straightforward. The syntax is as follows:</P>
+
+<PRE>acl <TT><I>acl-name</I></TT> external <TT><I>type-name</I></TT> [<TT><I>args</I></TT> ...]</PRE>
+
+<P class="docText">Here is a simple example:</P>
+
+<PRE>acl MyAcl external MyAclType</PRE>
+
+<P class="docText">Squid accepts any number of optional arguments following the
+<TT><I>type-name</I></TT>. These are sent to the helper
+program for each request, after the expanded tokens. See my
+description of the <span class="docEmphasis">unix_group</span> helper in <A class="docLink" HREF="squid-CHP-12-SECT-5.html#squid-CHP-12-SECT-5.3">Section 12.5.3</A> for an example of this feature.</P>
+
+
+<A NAME="squid-CHP-6-SECT-1.4"></A>
+<H4 class="docSection2Title">6.1.4 Dealing with Long ACL Lists</H4>
+
+<P class="docText">ACL lists can sometimes <A NAME="squid-CHP-6-ITERM-1356"></A>be
+very long. Such lists are awkward to maintain inside the
+<I>squid.conf</I> file. Also, you may need to generate
+Squid ACL lists automatically from other sources. In these cases,
+you'll be happy to know that you can include ACL
+lists from external files. The syntax is as follows:</P>
+
+<PRE>acl <TT><I>name</I></TT> "<TT><I>filename</I></TT>"</PRE>
+
+<P class="docText">The double quotes here instruct Squid to open
+<TT><I>filename</I></TT> and assign its contents to the
+ACL. For example, instead of this:</P>
+
+<PRE>acl Foo BadClients 1.2.3.4 1.2.3.5 1.2.3.6 1.2.3.7 1.2.3.9 ...</PRE>
+
+<P class="docText">you can do this:</P>
+
+<PRE>acl Foo BadClients "/usr/local/squid/etc/BadClients"</PRE>
+
+<P class="docText">and put the IP addresses into the <I>BadClients</I>
+file:</P>
+
+<PRE>1.2.3.4
+1.2.3.5
+1.2.3.6
+1.2.3.7
+1.2.3.9
+...</PRE>
+
+<P class="docText">Your file may include comments that begin with a <TT>#</TT>
+character. Note that each entry in the file must be on a separate
+line. Whereas a space character delimits values on an
+<span class="docEmphasis">acl</span> line, newlines are the delimiter for files
+containing ACL values.</P>
+
+
+<A NAME="squid-CHP-6-SECT-1.5"></A>
+<H4 class="docSection2Title">6.1.5 How Squid Matches Access Control Elements</H4>
+
+<P class="docText">It is important to understand <A NAME="squid-CHP-6-ITERM-1357"></A>how
+Squid searches ACL elements for a match. When an ACL element has more
+than one value, any single value can cause a match. In other words,
+Squid uses OR logic when checking ACL element values. Squid stops
+searching when it finds the first value that causes a match. This
+means that you can reduce delays by placing likely matches at the
+beginning of a list.</P>
+
+<P class="docText">Let's look at a specific example. Consider this ACL
+definition:</P>
+
+<PRE>acl Simpsons ident Maggie Lisa Bart Marge Homer</PRE>
+
+<P class="docText">When Squid encounters the <span class="docEmphasis">Simpsons</span> ACL in an
+access list, it performs the ident lookup. Let's see
+what happens when the user's ident server returns
+<TT>Marge</TT>. Squid's ACL code compares
+this value to <TT>Maggie</TT>, <TT>Lisa</TT>, and
+<TT>Bart</TT> before finding a match with
+<TT>Marge</TT>. At this point, the search terminates, and
+we say that the <span class="docEmphasis">Simpsons</span> ACL matches the
+request.</P>
+
+<P class="docText">Actually, that's a bit of a lie. The
+<span class="docEmphasis">ident</span> ACL values aren't stored
+as an unordered list. Rather, they are stored as an splay tree. This
+means that Squid doesn't end up searching all the
+names in the event of a nonmatch. Searching an splay tree with
+<TT><I>N</I></TT> items requires
+<span class="docEmphasis">log(N)</span> comparisons. Many other ACL types use
+splay trees as well. The regular expression-based types, however,
+don't.</P>
+
+<P class="docText">Since regular expressions can't be sorted, they are
+stored as linked lists. This makes them inefficient for large lists,
+especially for requests that don't match any of the
+regular expressions in the list. In an attempt to improve this
+situation, Squid moves a regular expression to the top of the list
+when a match occurs. In fact, due to the nature of the ACL matching
+code, Squid moves matched entries to the second position in the list.
+Thus, commonly matched values naturally migrate to the top of the ACL
+list, which should reduce the number of comparisons.</P>
+
+<P class="docText">Let's look at another simple example:</P>
+
+<PRE>acl Schmever port 80-90 101 103 107 1 2 3 9999</PRE>
+
+<P class="docText">This ACL is a match for a request to an origin server port between 80
+and 90, and all the other individual listed port numbers. For a
+request to port 80, Squid matches the ACL by looking at the first
+value. For port 9999, all the other values are checked first. For a
+port number not listed, Squid checks every value before declaring the
+ACL isn't a match. As I've said
+before, you can optimize the ACL matching by placing the more common
+values first.</P>
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="squid-CHP-6.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="squid-CHP-6-SECT-2.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

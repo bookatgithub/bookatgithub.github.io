@@ -1,0 +1,326 @@
+<html><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<link href="styles/globalstyle.css" type="text/css" rel="stylesheet"/>
+<link title="medium" href="styles/two.css" type="text/css" rel="stylesheet"/>
+<script src="scripts/main.js" type="text/javascript" language="javascript"></script>
+<title>Section 31.2. Speech-Enabling Emacs</title>
+</head><body>
+<DIV class=h3 style="MARGIN-TOP: 0px; PADDING-BOTTOM: 1em; WIDTH: 100%; PADDING-TOP: 0px"><SPAN>Emacspeak: The Complete Audio Desktop</SPAN><SPAN> &gt; Speech-Enabling Emacs</SPAN></DIV>
+<DIV></DIV>
+<DIV>
+<DIV><A name=speech-enabling_emacs></A>
+<H3 class=docSection1Title id=-100000>31.2. Speech-Enabling Emacs</H3>
+<P class=docText><A name="The simplicity"></A>The simplicity of the speech server abstraction described above meant that version 0 of the speech server was running within an hour after I started <A name=idx-CHP-31-2642></A><A name="meant that"></A>implementing the system. This meant that I could then move on to the more interesting part of the project: producing good quality spoken output. Version 0 of the speech server was by no means perfect; it was improved as I built the Emacspeak speech client.<A name=idx-CHP-31-2643></A></P><A name=a_simple_first-cut_implementation></A>
+<H4 class=docSection2Title id=title-ID0ECMEK>31.2.1. A Simple First-Cut Implementation</H4>
+<P class=docText><A name="mine had"></A>A friend of mine had pointed me at the marvels of Emacs Lisp <SPAN class=docEmphasis>advice</SPAN><A name="weeks earlier"></A> a few weeks earlier. Som when I sat down to speech-enable Emacs, <SPAN class=docEmphasis>advice</SPAN><A name="The first"></A> was the natural choice. The first task was to have Emacs automatically speak the line under the cursor whenever the user pressed the up/down arrow keys.<A name=idx-CHP-31-2644></A><A name=idx-CHP-31-2645></A><A name=idx-CHP-31-2646></A></P>
+<P class=docText><A name="editing modes"></A>In Emacs, all user actions invoke appropriate Emacs Lisp functions. In standard editing modes, pressing the down arrow invokes function <TT>next-line</TT><A name="the up"></A>, while pressing the up arrow invokes <TT>previous-line</TT><A name="Emacspeak implemented"></A>. To speech-enable these commands, version 0 of Emacspeak implemented the following rather simple advice fragment:</P><PRE>	(defadvice next-line (after emacspeak)
+	  "Speak line after moving."
+	  (when (interactive-p) (<A name=idx-CHP-31-2647></A>emacspeak-speak-line)))
+</PRE><BR>
+<P class=docText>The <TT>emacspeak-speak-line</TT><A name="to grab"></A> function implemented the necessary logic to grab the text of the line under the cursor and send it to the speech server. With the previous definition in place, Emacspeak 0.0 was up and running; it provided the scaffolding for building the actual system.</P><A name=iterating_on_the_first-cut_implementation></A>
+<H4 class=docSection2Title id=title-ID0EYNEK>31.2.2. Iterating on the First-Cut Implementation</H4>
+<P class=docText><A name="The next"></A>The next iteration returned to the speech server to enhance it with a well-defined <A name=idx-CHP-31-2648></A><A name="simply executing"></A>eventing loop. Rather than simply executing each speech command as it was received, the speech server queued client requests and provided a <TT>launch</TT><A name="the server"></A> command that caused the server to execute queued requests.<A name=idx-CHP-31-2649></A></P>
+<P class=docText><A name="used the"></A>The server used the <TT>select</TT><A name="check for"></A> system call to check for newly arrived commands after sending each clause to the speech engine. This enabled immediate silencing of speech; with the somewhat naïve implementation described in version 0 of the speech server, the command to stop speech would not take immediate effect since the speech server would first process previously issued <TT>speak</TT><A name="could now"></A> commands to completion. With the speech queue in place, the client application could now queue up arbitrary amounts of <A name=idx-CHP-31-2650></A><A name="still get"></A>text and still get a high degree of responsiveness when issuing higher-priority commands such as requests to stop speech.</P>
+<P class=docText><A name="inside the"></A>Implementing an event queue inside the speech server also gave the client application finer control over how text was split into chunks before synthesis. This turns out to be crucial for producing good <A name=idx-CHP-31-2651></A><A name="text should"></A>intonation structure. The rules by which text should be split up into clauses varies depending on the nature of the text being spoken. As an example, newline characters in programming languages such as Python are statement delimiters and determine clause boundaries, but newlines do not constitute clause delimiters in English text.</P>
+<P class=docText><A name="As an"></A>As an example, a clause boundary is inserted after each line when speaking the following Python code:</P><PRE>	i=1
+	j=2
+</PRE><BR>
+<P class=docText>See the section "Augmenting <A name=idx-CHP-31-2652></A><A name="aural display"></A>Emacs to create aural display lists," later in this chapter, for details on how Python code is distinguished and its semantics are transferred to the speech layer.</P>
+<P class=docText><A name="server now"></A>With the speech server now capable of smart text handling, the <A name=idx-CHP-31-2653></A><A name="could become"></A>Emacspeak client could become more sophisticated with respect to its handling of text. The <TT>emacspeak-speak-line</TT><A name="a library"></A> function turned into a library of speech-generation functions that implemented the following steps:</P>
+<UL>
+<LI>
+<P class=docList>Parse text to split it into a sequence of clauses.</P></LI>
+<LI>
+<P class=docList>Preprocess text—e.g., handle repeated strings of punctuation marks.</P></LI>
+<LI>
+<P class=docList><A name="over time"></A>Carry out a number of other functions that got added over time.</P></LI>
+<LI>
+<P class=docList><A name="clause to"></A>Queue each clause to the speech server, and issue the <TT>launch</TT> command.</P></LI></UL>
+<P class=docText><A name="of Emacspeak"></A>From here on, the rest of Emacspeak was implemented using Emacspeak as the development environment. This has been significant in how the code base has evolved. New features are tested immediately because badly implemented features can render the entire system unusable. Lisp's incremental code development fits naturally with the former; to cover the latter, the Emacspeak code base has evolved to be "bushy"—i.e., most parts of the higher-level system are mutually independent and depend on a small core that is carefully maintained.</P><A name=a_brief_advice_tutorial></A>
+<H4 class=docSection2Title id=title-ID0E4QEK>31.2.3. A Brief advice Tutorial</H4>
+<P class=docText>Lisp <SPAN class=docEmphasis>advice</SPAN> is key to the <A name=idx-CHP-31-2654></A><A name="not be"></A>Emacspeak implementation, and this chapter would not be complete without a brief overview. The <SPAN class=docEmphasis>advice</SPAN><A name="facility allows"></A> facility allows one to modify existing functions <SPAN class=docEmphasis><A name="original implementation"></A>without changing the original implementation</SPAN>. What's more, once a function <TT>f</TT><A name=by></A> has been modified by <SPAN class=docEmphasis>advice</SPAN> <TT>m</TT><A name="to function"></A>, all calls to function <TT>f</TT> are affected by <SPAN class=docEmphasis>advice</SPAN>.<A name=idx-CHP-31-2655></A><A name=idx-CHP-31-2656></A></P>
+<P class=docText><SPAN class=docEmphasis>advice</SPAN> comes in three flavors:</P><A name=idx-CHP-31-2657></A><A name=idx-CHP-31-2658></A><A name=idx-CHP-31-2659></A>
+<DL class=docList>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docPubcolor><SPAN class=docMonofont>before</SPAN></SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList><A name="is run"></A>The advice body is run <SPAN class=docEmphasis>before</SPAN> the original function is invoked.<A name=idx-CHP-31-2657></A></P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docPubcolor><SPAN class=docMonofont>after</SPAN></SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList>The advice body is run <SPAN class=docEmphasis>after</SPAN> the original function has completed.<A name=idx-CHP-31-2658></A></P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docPubcolor><SPAN class=docMonofont>around</SPAN></SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList>The advice body is run <SPAN class=docEmphasis>instead of</SPAN> the original function. The <TT>around</TT> advice can call the original function if desired.<A name=idx-CHP-31-2659></A></P></DD></DL>
+<P class=docText>All <SPAN class=docEmphasis>advice</SPAN> forms get access to the arguments of the <SPAN class=docEmphasis>adviced</SPAN> function; in addition, <TT>around</TT><A name="the original"></A> and after get access to the return value computed by the original function. The Lisp implementation achieves this magic by:<A name=idx-CHP-31-2660></A></P>
+<DIV style="FONT-WEIGHT: bold">
+<OL class=docList type=1>
+<LI>
+<DIV style="FONT-WEIGHT: normal">
+<P class=docList><A name="original implementation"></A>Caching the original implementation of the function</P></DIV></LI>
+<LI>
+<DIV style="FONT-WEIGHT: normal">
+<P class=docList><A name="to generate"></A>Evaluating the advice form to generate a new function definition</P></DIV></LI>
+<LI>
+<DIV style="FONT-WEIGHT: normal">
+<P class=docList>Storing this definition as the <SPAN class=docEmphasis>adviced</SPAN> function</P></DIV></LI></OL></DIV>
+<P class=docText>Thus, when the <SPAN class=docEmphasis>advice</SPAN><A name="section "></A> fragment shown in the earlier section "A Simple First-Cut Implementation" is evaluated, <A name=idx-CHP-31-2661></A><A name=original></A>Emacs' original <TT>next-line</TT><A name="by a"></A> function is replaced by a modified version that speaks the current line <SPAN class=docEmphasis>after</SPAN> the original <TT>next-line</TT><A name="its work"></A> function has completed its work.</P><A name=generating_rich_auditory_output></A>
+<H4 class=docSection2Title id=title-ID0EFWEK>31.2.4. Generating Rich Auditory Output</H4>
+<P class=docText><A name="point in"></A>At this point in its evolution, here is what the overall design looked like:<A name=idx-CHP-31-2662></A></P>
+<DIV style="FONT-WEIGHT: bold">
+<OL class=docList type=1>
+<LI>
+<DIV style="FONT-WEIGHT: normal">
+<P class=docList><A name=or></A>Emacs' interactive commands are speech-enabled or <SPAN class=docEmphasis>adviced</SPAN> to produce auditory output.</P></DIV></LI>
+<LI>
+<DIV style="FONT-WEIGHT: normal">
+<P class=docList><SPAN class=docEmphasis>advice</SPAN><A name="being speech"></A> definitions are collected into modules, one each for every Emacs application being speech-enabled.</P></DIV></LI>
+<LI>
+<DIV style="FONT-WEIGHT: normal">
+<P class=docList>The <SPAN class=docEmphasis>advice</SPAN><A name="text to"></A> forms forward text to core speech functions.</P></DIV></LI>
+<LI>
+<DIV style="FONT-WEIGHT: normal">
+<P class=docList><A name="text to"></A>These functions extract the text to be spoken and forward it to the <TT>tts-speak</TT> function.<A name=idx-CHP-31-2663></A></P></DIV></LI>
+<LI>
+<DIV style="FONT-WEIGHT: normal">
+<P class=docList>The <TT>tts-speak</TT><A name="preprocessing its"></A> function produces auditory output by preprocessing its <TT>text</TT><A name="argument and"></A> argument and sending it to the speech server.</P></DIV></LI>
+<LI>
+<DIV style="FONT-WEIGHT: normal">
+<P class=docList><A name="handles queued"></A>The speech server handles queued requests to produce perceptible output.</P></DIV></LI></OL></DIV>
+<P class=docText><A name="by placing"></A>Text is preprocessed by placing the text in a special scratch buffer. Buffers acquire specialized behavior via buffer-specific <SPAN class=docEmphasis>syntax tables</SPAN><A name=the></A> that define the <SPAN class=docEmphasis>grammar</SPAN><A name="and buffer"></A> of buffer contents and buffer-local variables that affect behavior. When text is handed off to the <A name=idx-CHP-31-2664></A><A name="scratch buffer"></A>Emacspeak core, all of these buffer-specific settings are propagated to the special scratch buffer where the text is preprocessed. This automatically ensures that text is meaningfully parsed into clauses based on its underlying grammar.</P><A name=audio_formatting_using_voice-lock></A>
+<H5 class=docSection3Title id=title-ID0EXYEK>31.2.4.1. Audio formatting using voice-lock</H5>
+<P class=docText><A name=idx-CHP-31-2665></A>Emacs uses <TT>font-lock</TT><A name="color text"></A> to syntactically color text. For creating the visual presentation, Emacs adds a text property called <TT>face</TT><A name="of this"></A> to text strings; the value of this <TT>face</TT><A name="to be"></A> property specifies the font, color, and style to be used to display that text. Text strings with <TT>face</TT><A name="properties can"></A> properties can be thought of as a conceptual <SPAN class=docEmphasis>visual display list</SPAN>.<A name=idx-CHP-31-2666></A></P>
+<P class=docText><A name="visual display"></A>Emacspeak augments these visual display lists with <TT>personality</TT><A name="values specify"></A> text properties whose values specify the auditory properties to use when rendering a given piece of text; this is called <TT>voice-lock</TT><A name="value of"></A> in Emacspeak. The value of the <TT>personality</TT><A name="Aural CSS"></A> property is an Aural CSS (ACSS) setting that encodes various voice properties—e.g., the pitch of the speaking voice. Notice that such ACSS settings are not specific to any given TTS engine. Emacspeak implements ACSS-to-TTS <A name=idx-CHP-31-2667></A>mappings in engine-specific modules that take care of mapping high-level aural properties—e.g., mapping <TT>pitch</TT> or <TT>pitch-range</TT> to engine-specific control codes.<A name=idx-CHP-31-2668></A></P>
+<P class=docText><A name="create aural"></A>The next few sections describe how Emacspeak augments Emacs to create aural display lists and to process these aural display lists to produce engine-specific output.</P><A name=augmenting_emacs_to_create_aural_display_lists></A>
+<H5 class=docSection3Title id=title-ID0EQ1EK>31.2.4.2. Augmenting Emacs to create aural display lists</H5>
+<P class=docText><A name="that implement"></A>Emacs modules that implement <TT>font-lock</TT> call the Emacs built-in function <TT>put-text-property</TT> to attach the relevant <TT>face</TT><A name="fragment that"></A> property. Emacspeak defines an advice fragment that <SPAN class=docEmphasis>advices</SPAN> the <TT>put-text-property</TT><A name=corresponding></A> function to add in the corresponding <TT>personality</TT><A name="property when"></A> property when it is asked to add a face property. Note that the value of both display properties (<TT>face</TT> and <TT>personality</TT><A name="of these"></A>) can be lists; values of these properties are thus designed to <SPAN class=docEmphasis>cascade</SPAN><A name="final "></A> to create the final (visual or auditory) presentation. This also means that different parts of an application can progressively add display property values.<A name=idx-CHP-31-2669></A><A name=idx-CHP-31-2670></A></P>
+<P class=docText>The <TT>put-text-property</TT><A name="the following"></A> function has the following signature:</P><PRE>	(put-text-property START END PROPERTY VALUE &amp;optional OBJECT)
+</PRE><BR>
+<P class=docText>The <SPAN class=docEmphasis>advice</SPAN> implementation is:</P>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedHeight>	(defadvice put-text-property (after emacspeak-personality pre act)
+	  "Used by emacspeak to augment font lock."
+	  (let ((start (ad-get-arg 0)) ;; Bind arguments
+	        (end (ad-get-arg 1 ))
+	        (prop (ad-get-arg 2)) ;; name of property being added
+	        (value (ad-get-arg 3 ))
+	        (object (ad-get-arg 4))
+	        (voice nil))                   ;; voice it maps to
+	    (when (and (eq prop 'face)      ;; avoid infinite recursion
+	               (not (= start end))  ;; non-nil text range
+	               <A name=idx-CHP-31-2671></A>emacspeak-personality-voiceify-faces)
+	      (condition-case nil ;; safely look up face mapping
+	          (progn
+	            (cond
+	             ((symbolp value)
+	              (setq voice (voice-setup-get-voice-for-face value)))
+	             ((ems-plain-cons-p value)) ;;pass on plain cons
+	             ( (listp value)
+	               (setq voice
+	                     (delq nil
+	                           (mapcar   #'voice-setup-get-voice-for-face value))))
+	             (t (message "Got %s" value)))
+	            (when voice ;; voice holds list of personalities
+	              (funcall <A name=idx-CHP-31-2672></A>emacspeak-personality-voiceify-faces start end voice object)))
+	        (error nil)))))
+
+
+					    </PRE><BR>
+<P class=docText><A name="brief explanation"></A>Here is a brief explanation of this <SPAN class=docEmphasis>advice</SPAN> definition:</P><A name=idx-CHP-31-2673></A><A name=idx-CHP-31-2674></A><A name=idx-CHP-31-2675></A>
+<DL class=docList>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docEmphasis>Bind arguments</SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList>First, the function uses the <SPAN class=docEmphasis>advice</SPAN> built-in <TT>ad-get-arg</TT><A name="arguments being"></A> to locally bind a set of lexical variables to the arguments being passed to the <SPAN class=docEmphasis>adviced</SPAN> function.</P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docEmphasis>Personality setter</SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList><A name="of faces"></A>The mapping of faces to personalities is controlled by user customizable variable <TT>emacspeak-personality-voiceify-faces</TT><A name="a function"></A>. If non-nil, this variable specifies a function with the following signature:<A name=idx-CHP-31-2673></A></P><PRE>	(<A name=idx-CHP-31-2674></A>emacspeak-personality-put START END PERSONALITY OBJECT)
+</PRE><BR>
+<P class=docList><A name="this function"></A>Emacspeak provides different implementations of this function that either append or prepend the new personality value to any existing personality properties.</P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docEmphasis>Guard</SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList><A name="Along with"></A>Along with checking for a non-nil <TT>emacspeak-personality-voiceify-faces</TT><A name="additional checks"></A>, the function performs additional checks to determine whether this advice definition should do anything. The function continues to act if:</P>
+<UL>
+<LI>
+<P class=docList><A name="is non"></A>The text range is non-nil.</P></LI>
+<LI>
+<P class=docList><A name="being added"></A>The property being added is a <TT>face</TT>.</P></LI></UL>
+<P class=docList><A name="these checks"></A>The first of these checks is required to avoid edge cases where <TT>put-text-property</TT><A name="attempt to"></A> is called with a zero-length text range. The second ensures that we attempt to add the <TT>personality</TT><A name="when the"></A> property only when the property being added is <TT>face</TT><A name="include this"></A>. Notice that failure to include this second test would cause infinite recursion because the eventual <TT>put-text-property</TT> call that adds the <TT>personality</TT> property also triggers the advice definition.</P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docEmphasis>Get mapping</SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList>Next, the function <SPAN class=docEmphasis>safely</SPAN><A name="of the"></A> looks up the voice mapping of the face (or faces) being applied. If applying a single <TT>face</TT><A name="the function"></A>, the function looks up the corresponding personality mapping; if applying a list of faces, it creates a corresponding list of personalities.</P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docEmphasis>Apply personality</SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList><A name="that it"></A>Finally, the function checks that it found a valid voice mapping and, if so, calls <TT>emacspeak-personality-voiceify-faces</TT><A name="of personalities"></A> with the set of personalities saved in the <TT>voice</TT> variable.<A name=idx-CHP-31-2675></A></P></DD></DL><A name=audio-formatted_output_from_aural_display_lists></A>
+<H5 class=docSection3Title id=title-ID0ELBFK>31.2.4.3. Audio-formatted output from aural display lists</H5>
+<P class=docText>With the <SPAN class=docEmphasis>advice</SPAN><A name="the previous"></A> definitions from the previous section in place, text fragments that are visually styled acquire a corresponding <TT>personality</TT><A name="an ACSS"></A> property that holds an ACSS setting for audio formatting the content. The result is to turn text in <A name=idx-CHP-31-2676></A>Emacs into <A name=idx-CHP-31-2677></A><A name=of></A>rich aural display lists. This section describes how the output layer of <A name=idx-CHP-31-2678></A><A name="enhanced to"></A>Emacspeak is enhanced to convert these aural display lists into perceptible spoken output.<A name=idx-CHP-31-2679></A></P>
+<P class=docText>The Emacspeak <TT>tts-speak</TT> module handles <A name=idx-CHP-31-2680></A><A name="sending it"></A>text preprocessing before finally sending it to the speech server. As described earlier, this preprocessing comprises a number of steps, including:<A name=idx-CHP-31-2681></A></P>
+<DIV style="FONT-WEIGHT: bold">
+<OL class=docList type=1>
+<LI>
+<DIV style="FONT-WEIGHT: normal">
+<P class=docList>Applying <A name=idx-CHP-31-2682></A>pronunciation rules</P></DIV></LI>
+<LI>
+<DIV style="FONT-WEIGHT: normal">
+<P class=docList>Processing repeated strings of <A name=idx-CHP-31-2683></A>punctuation characters</P></DIV></LI>
+<LI>
+<DIV style="FONT-WEIGHT: normal">
+<P class=docList><A name=idx-CHP-31-2684></A><A name="based on"></A>Splitting text into appropriate clauses based on context</P></DIV></LI>
+<LI>
+<DIV style="FONT-WEIGHT: normal">
+<P class=docList><A name=idx-CHP-31-2685></A><A name="Converting the"></A>Converting the <TT>personality</TT> property into <A name=idx-CHP-31-2686></A>audio formatting codes</P></DIV></LI></OL></DIV>
+<P class=docText><A name=the></A>This section describes the <TT>tts-format-text-and-speak</TT><A name="conversion of"></A> function, which handles the conversion of aural display lists into audio-formatted output. First, here is the code for the function <TT>tts-format-text-and-speak</TT>:<A name=idx-CHP-31-2687></A><A name=I_indexterm31_tt694></A></P>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedHeight>	(defsubst tts-format-text-and-speak (start end )
+	  "Format and speak text between start and end."
+	  (when (and emacspeak-use-auditory-icons
+	             (get-text-property start 'auditory-icon)) ;;queue icon
+	    (emacspeak-queue-auditory-icon (get-text-property start 'auditory-icon)))
+	  (tts-interp-queue (format "%s\n" tts-voice-reset-code))
+	  (cond
+	   (voice-lock-mode ;; audio format only if voice-lock-mode is on
+	    (let ((last nil) ;; initialize
+	          (personality (get-text-property start 'personality )))
+	      (while (and (
+	&lt; start end ) ;; chunk at personality changes
+	                      (setq last
+	                            (next-single-property-change start 'personality
+	                                                         (current-buffer) end)))
+	           (if personality ;; audio format chunk
+	               (tts-speak-using-voice personality (buffer-substring start last ))
+	             (tts-interp-queue (buffer-substring start last)))
+	           (setq start last ;; prepare for next chunk
+	                 personality (get-text-property last 'personality)))))
+	      ;; no voice-lock just send the text
+	      (t (tts-interp-queue (buffer-substring start end )))))
+
+
+					    </PRE><BR>
+<P class=docText>The <TT>tts-format-text-and-speak</TT><A name="called one"></A> function is called one clause at a time, with arguments <TT>start</TT> and <TT>end</TT><A name="start and"></A> set to the start and end of the clause. If <TT>voice-lock-mode</TT><A name="at each"></A> is turned on, this function further splits the clause into chunks at each point in the text where there is a change in value of the <TT>personality</TT><A name="a transition"></A> property. Once such a transition point has been determined, <TT>tts-format-text-and-speak</TT> calls the function <TT>tts-speak-using-voice</TT><A name="use and"></A>, passing the personality to use and the text to be spoken. This function, described next, looks up the appropriate device-specific codes before dispatching the audio-formatted output to the speech server:<A name=idx-CHP-31-2688></A></P><PRE>	(defsubst tts-speak-using-voice (voice text)
+	  "Use voice VOICE to speak text TEXT."
+	  (unless (or (eq '<A name=idx-CHP-31-2689></A>inaudible voice ) ;; not spoken if voice inaudible
+	              (and (listp voice) (member 'inaudible voice)))
+	    (tts-interp-queue
+	     (format
+	      "%s%s %s \n"
+	      (cond
+	       ((symbolp voice)
+	        (tts-get-voice-command
+	         (if (boundp voice ) (symbol-value voice ) voice)))
+	       ((listp voice)
+	        (mapconcat #'(lambda (v)
+	                       (tts-get-voice-command
+	                        (if (boundp v ) (symbol-value v ) v)))
+	                   voice
+	                   " "))
+	       (t      ""))
+	      text tts-voice-reset-code))))
+</PRE><BR>
+<P class=docText>The <TT>tts-speak-using-voice</TT><A name="specified voice"></A> function returns immediately if the specified voice is <TT>inaudible</TT>. Here, <TT>inaudible</TT><A name="is a"></A> is a special personality that <A name=idx-CHP-31-2690></A><A name="prevent pieces"></A>Emacspeak uses to prevent pieces of text from being spoken. The <TT>inaudible</TT><A name="used to"></A> personality can be used to advantage when selectively hiding portions of text to produce more succinct output.</P>
+<P class=docText><A name="specified voice"></A>If the specified voice (or list of voices) is not <TT>inaudible</TT><A name="up the"></A>, the function looks up the speech codes for the voice and queues the result of wrapping the text to be spoken between <TT>voice-code</TT> and <TT>tts-reset-code</TT> to the speech server.</P><A name=using_aural_css_acss_for_styling_speech_output></A>
+<H4 class=docSection2Title id=title-ID0EQHFK>31.2.5. Using Aural CSS (ACSS) for Styling Speech Output</H4>
+<P class=docText><A name="written in"></A>I first formalized audio formatting within AsTeR, where rendering rules were written in a specialized language called <A name=idx-CHP-31-2691></A><A name="Language "></A>Audio Formatting Language (<A name=idx-CHP-31-2692></A><A name="parameters in"></A>AFL). AFL structured the available parameters in auditory space—e.g., the pitch of the speaking voice—into a multidimensional space, and encapsulated the state of the rendering engine as a point in this multidimensional space.<A name=idx-CHP-31-2693></A><A name=idx-CHP-31-2694></A><A name=idx-CHP-31-2695></A></P>
+<P class=docText><A name="encapsulated the"></A>AFL provided a block-structured language that encapsulated the current rendering state by a lexically scoped variable, and provided operators to move within this structured space. When these notions were later mapped to the declarative world of HTML and CSS, dimensions making up the AFL rendering state became Aural CSS parameters, provided as accessibility measures in <A name=idx-CHP-31-2696></A>CSS2 (<A class=docLink href="http://www.w3.org/Press/1998/CSS2-REC" target=_blank>http://www.w3.org/Press/1998/CSS2-REC</A>).<A name=I_indexterm31_tt697></A></P>
+<P class=docText><A name="Though designed"></A>Though designed for styling HTML (and, in general, XML) markup trees, <A name=idx-CHP-31-2697></A><A name="out to"></A>Aural CSS turned out to be a good abstraction for building <A name=idx-CHP-31-2698></A><A name="while keeping"></A>Emacspeak's audio formatting layer while keeping the implementation independent of any given TTS engine.</P>
+<P class=docText><A name="the definition"></A>Here is the definition of the <A name=idx-CHP-31-2699></A><A name=encapsulates></A>data structure that encapsulates <A name=idx-CHP-31-2700></A>ACSS settings:</P><PRE>	(defstruct acss
+	  family gain left-volume right-volume
+	  average-<A name=idx-CHP-31-2701></A>pitch <A name=idx-CHP-31-2702></A>pitch-range stress richness <A name=idx-CHP-31-2703></A>punctuations)
+</PRE><BR>
+<P class=docText><A name=idx-CHP-31-2704></A>Emacspeak provides a collection of predefined <SPAN class=docEmphasis>voice overlays</SPAN> for use within <A name=idx-CHP-31-2705></A>speech extensions. Voice overlays are designed to <SPAN class=docEmphasis>cascade</SPAN><A name="ACSS setting"></A> in the spirit of Aural CSS. As an example, here is the ACSS setting that corresponds to <TT>voice-monotone</TT>:<A name=idx-CHP-31-2706></A><A name=idx-CHP-31-2707></A></P><PRE>	[cl-struct-acss nil nil nil nil nil 0 0 nil all]
+</PRE><BR>
+<P class=docText><A name="most fields"></A>Notice that most fields of this <TT>acss</TT> structure are <TT>nil</TT><A name="voice overlay"></A>—that is, unset. The setting creates a voice overlay that:</P>
+<DIV style="FONT-WEIGHT: bold">
+<OL class=docList type=1>
+<LI>
+<DIV style="FONT-WEIGHT: normal">
+<P class=docList>Sets <TT>pitch</TT> to 0 to create a flat voice.</P></DIV></LI>
+<LI>
+<DIV style="FONT-WEIGHT: normal">
+<P class=docList>Sets <TT>pitch-range</TT> to 0 to create a <A name=idx-CHP-31-2708></A>monotone voice with no inflection.</P>
+<P class=docList><A name="the value"></A>This setting is used as the value of the <TT>personality</TT><A name="property for"></A> property for audio formatting comments in all programming language modes. Because its value is an overlay, it can interact effectively with other aural display properties. As an example, if portions of a comment are displayed in a bold font, those portions can have the <TT>voice-bolden</TT><A name="results in"></A> personality (another predefined overlay) added; this results in setting the <TT>personality</TT><A name="list of"></A> property to a list of two values: (<TT>voice-bolden voice-monotone</TT><A name="effect is"></A>). The final effect is for the text to get spoken with a distinctive voice that conveys both aspects of the text: namely, a sequence of words that are emphasized within a comment.</P></DIV></LI>
+<LI>
+<DIV style="FONT-WEIGHT: normal">
+<P class=docList>Sets <TT>punctuations</TT> to <TT>all</TT><A name="punctuation marks"></A> so that all punctuation marks are spoken.</P></DIV></LI></OL></DIV><A name=adding_auditory_icons></A>
+<H4 class=docSection2Title id=title-ID0EXNFK>31.2.6. Adding Auditory Icons</H4>
+<P class=docText><A name="had the"></A>Rich visual user interfaces contain both text and icons. Similarly, once Emacspeak had the ability to speak intelligently, the next step was to increase the bandwidth of aural communication by augmenting the output with auditory icons.<A name=idx-CHP-31-2709></A><A name=idx-CHP-31-2710></A></P>
+<P class=docText><A name="in Emacspeak"></A>Auditory icons in Emacspeak are short sound snippets (no more than two seconds in duration) and are used to indicate frequently occurring events in the user interface. As an example, every time the user saves a file, the system plays a confirmatory sound. Similarly, opening or closing an object (anything from a file to a web site) produces a corresponding auditory icon. The set of auditory icons were arrived at iteratively and cover common events such as objects being opened, closed, or deleted. This section describes how these auditory icons are injected into Emacspeak's output stream.</P>
+<P class=docText><A name="by the"></A>Auditory icons are produced by the following <A name=idx-CHP-31-2711></A>user interactions:</P>
+<UL>
+<LI>
+<P class=docList>To cue explicit user actions</P></LI>
+<LI>
+<P class=docList><A name=spoken></A>To add additional cues to spoken <A name=idx-CHP-31-2712></A>output</P></LI></UL>
+<P class=docText><A name=idx-CHP-31-2713></A><A name="Auditory icons"></A>Auditory icons that confirm user actions—e.g., a file being saved successfully—are produced by adding an <TT>after</TT> <SPAN class=docEmphasis>advice</SPAN> to the various <A name=idx-CHP-31-2714></A><A name="a consistent"></A>Emacs built-ins. To provide a consistent sound and feel across the <A name=idx-CHP-31-2715></A><A name="are attached"></A>Emacspeak desktop, such extensions are attached to code that is called from many places in Emacs.</P>
+<P class=docText><A name="an example"></A>Here is an example of such an extension, implemented via an <SPAN class=docEmphasis>advice</SPAN> fragment:</P><PRE>	(defadvice save-buffer (after emacspeak pre act)
+	  "Produce an auditory icon if possible."
+	  (when (interactive-p) (emacspeak-auditory-icon 'save-object)
+	    (or emacspeak-last-message (message "Wrote %s" (buffer-file-name)))))
+</PRE><BR>
+<P class=docText><A name="be implemented"></A>Extensions can also be implemented via an Emacs-provided hook. As explained in the brief <SPAN class=docEmphasis>advice</SPAN> tutorial given earlier, <SPAN class=docEmphasis>advice</SPAN><A name="modified without"></A> allows the behavior of existing software to be extended or modified without having to modify the underlying source code. Emacs is itself an extensible system, and well-written Lisp code has a tradition of providing appropriate extension hooks for common use cases. As an example, Emacspeak attaches auditory feedback to Emacs' default prompting mechanism (the Emacs minibuffer) by adding the function <TT>emacspeak-minibuffer-setup-hook</TT> to Emacs' <TT>minibuffer-setup-hook</TT>:<A name=idx-CHP-31-2716></A></P><PRE>	(defun emacspeak-minibuffer-setup-hook ()
+	  "Actions to take when entering the minibuffer."
+	  (let ((inhibit-field-text-motion t))
+	    (when emacspeak-minibuffer-enter-auditory-icon
+	      (emacspeak-auditory-icon 'open-object))
+	    (tts-with-punctuations 'all (emacspeak-speak-buffer))))
+	(add-hook 'minibuffer-setup-hook 'emacspeak-minibuffer-setup-hook)
+</PRE><BR>
+<P class=docText><A name="a good"></A>This is a good example of using built-in extensibility where available. However, Emac-speak uses <SPAN class=docEmphasis>advice</SPAN><A name="cases because"></A> in a lot of cases because the Emacspeak requirement of adding auditory feedback to <SPAN class=docEmphasis>all</SPAN><A name="envisioned when"></A> of Emacs was not originally envisioned when Emacs was implemented. Thus, the Emacspeak implementation demonstrates a powerful technique for <SPAN class=docEmphasis>discovering</SPAN> <A name=idx-CHP-31-2717></A><A name="extension points"></A>extension points.</P>
+<P class=docText>Lack of an <SPAN class=docEmphasis>advice</SPAN><A name="programming language"></A>-like feature in a programming language often makes experimentation difficult, especially when it comes to discovering useful <A name=idx-CHP-31-2718></A><A name="because software"></A>extension points. This is because software engineers are faced with the following trade-off:</P>
+<UL>
+<LI>
+<P class=docList><A name="system arbitrarily"></A>Make the system arbitrarily extensible (and arbitrarily complex)</P></LI>
+<LI>
+<P class=docList><A name="reasonable extension"></A>Guess at some reasonable extension points and hardcode these</P></LI></UL>
+<P class=docText><A name="existing code"></A>Once extension points are implemented, experimenting with new ones requires rewriting existing code, and the resulting inertia often means that over time, such extension points remain mostly undiscovered. Lisp <SPAN class=docEmphasis>advice</SPAN><A name="Java counterpart"></A>, and its Java counterpart Aspects, offer software engineers the opportunity to experiment without worrying about adversely affecting an existing body of source code.</P><A name=producing_auditory_icons_while_speaking_content></A>
+<H4 class=docSection2Title id=title-ID0EQSFK>31.2.7. Producing Auditory Icons While Speaking Content</H4>
+<P class=docText><A name="auditory icons"></A>In addition to using auditory icons to cue the results of user interaction, <A name=idx-CHP-31-2719></A><A name="augment what"></A>Emacspeak uses auditory icons to augment what is being spoken. Examples of such auditory icons include:<A name=idx-CHP-31-2720></A></P>
+<UL>
+<LI>
+<P class=docList><A name="A short"></A>A short icon at the beginning of paragraphs</P></LI>
+<LI>
+<P class=docList>The auditory icon <TT>mark-object</TT><A name="source lines"></A> when moving across source lines that have a breakpoint set on them<A name=idx-CHP-31-2721></A></P></LI></UL>
+<P class=docText><A name="implemented by"></A>Auditory icons are implemented by attaching the text property <TT>emacspeak-auditory-icon</TT><A name="value equal"></A> with a value equal to the name of the auditory icon to be played on the relevant text.<A name=idx-CHP-31-2722></A></P>
+<P class=docText><A name="to set"></A>As an example, commands to set breakpoints in the Grand Unified Debugger <A name=idx-CHP-31-2723></A>Emacs package (GUD) are <SPAN class=docEmphasis>adviced</SPAN> to add the property <TT>emacspeak-auditory-icon</TT><A name="such a"></A> to the line containing the breakpoint. When the user moves across such a line, the function <TT>tts-format-text-and-speak</TT><A name="auditory icon"></A> queues the auditory icon at the right point in the output stream.</P><A name=the_calendar_enhancing_spoken_output_with_context-sensitive_></A>
+<H4 class=docSection2Title id=title-ID0EUUFK>31.2.8. The Calendar: Enhancing Spoken Output with Context-Sensitive Semantics</H4>
+<P class=docText><A name="so far"></A>To summarize the story so far, Emacspeak has the ability to:<A name=idx-CHP-31-2724></A><A name=idx-CHP-31-2725></A></P>
+<UL>
+<LI>
+<P class=docList><A name="the context"></A>Produce auditory output from within the context of an application</P></LI>
+<LI>
+<P class=docList><A name="output to"></A>Audio-format output to increase the bandwidth of spoken communication</P></LI>
+<LI>
+<P class=docList><A name="with auditory"></A>Augment spoken output with auditory icons</P></LI></UL>
+<P class=docText><A name="some of"></A>This section explains some of the enhancements that the design makes possible.</P>
+<P class=docText><A name="implementing Emacspeak"></A>I started implementing Emacspeak in October 1994 as a quick means of developing a <A name=idx-CHP-31-2726></A><A name="It was"></A>speech solution for Linux. It was when I speech-enabled the Emacs Calendar in the first week of November 1994 that I realized that in fact I had created something far better than any other speech-access solution I had used before.</P>
+<P class=docText><A name="type of"></A>A calendar is a good example of using a specific type of visual layout that is optimized both for the visual medium as well as for the information that is being conveyed. We intuitively think in terms of weeks and months when reasoning about dates; using a tabular layout that organizes dates in a grid with each week appearing on a row by itself matches this perfectly. With this form of layout, the human eye can rapidly move by days, weeks, or months through the calendar and easily answer such questions as "What day is it tomorrow?" and "Am I free on the third Wednesday of next month?"</P>
+<P class=docText><A name="speaking this"></A>Notice, however, that simply speaking this two-dimensional layout does not transfer the efficiencies achieved in the visual context to auditory interaction. This is a good example of where the right auditory feedback has to be generated directly from the underlying information being conveyed, rather than from its visual representation. When <A name=idx-CHP-31-2727></A><A name="visually formatted"></A>producing auditory output from visually formatted information, one has to <SPAN class=docEmphasis>rediscover</SPAN><A name="information before"></A> the underlying semantics of the information before speaking it.</P>
+<P class=docText><A name="In contrast"></A>In contrast, when producing <A name=idx-CHP-31-2728></A>spoken feedback via <SPAN class=docEmphasis>advice</SPAN><A name="the under"></A> definitions that extend the under-lying application, one has full access to the application's runtime context. Thus, rather than <SPAN class=docEmphasis>guessing</SPAN><A name="one can"></A> based on visual layout, one can essentially instruct the underlying application to <SPAN class=docEmphasis><A name="right thing"></A>speak the right thing</SPAN>!</P>
+<P class=docText>The <TT>emacspeak-calendar</TT> module <A name=idx-CHP-31-2729></A>speech-enables the <A name=idx-CHP-31-2730></A><A name="defining utility"></A>Emacs Calendar by defining utility functions that speak calendar information and advising all calendar navigation commands to call these functions. Thus, Emacs Calendar produces specialized behavior by binding the arrow keys to calendar navigation commands rather than the default cursor navigation found in regular editing modes. Emacspeak specializes this behavior by advising the calendar-specific commands to speak the relevant information in the context of the calendar.<A name=idx-CHP-31-2731></A><A name=idx-CHP-31-2732></A></P>
+<P class=docText>The net effect is that from an end user's perspective, <SPAN class=docEmphasis>things just work</SPAN><A name="in the"></A>. In regular editing modes, pressing up/down arrows speaks the current line; pressing up/down arrows in the calendar navigates by weeks and speaks the current date.</P>
+<P class=docText>The <TT>emacspeak-calendar-speak-date</TT><A name=the></A> function, defined in the <TT>emacspeak-calendar</TT><A name="it uses"></A> module, is shown here. Notice that it uses all of the facilities described so far to access and audio-format the relevant contextual information from the calendar:<A name=idx-CHP-31-2733></A></P>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedWidth>	(defsubst <A name=idx-CHP-31-2734></A>emacspeak-calendar-entry-marked-p( )
+	  (member 'diary (mapcar #'overlay-face (overlays-at (point)))))
+	(defun <A name=idx-CHP-31-2735></A>emacspeak-calendar-speak-date( )
+	  "Speak the date under point when called in Calendar Mode. "
+	  (let ((date (calendar-date-string (calendar-cursor-to-date t))))
+	    (cond
+	     ((emacspeak-calendar-entry-marked-p) (tts-speak-using-voice mark-personality
+	date))
+	     (t (tts-speak date)))))
+
+
+					    </PRE><BR>
+<P class=docText><A name="a diary"></A>Emacs marks dates that have a diary entry with a special overlay. In the previous definition, the helper function <TT>emacspeak-calendar-entry-marked-p</TT><A name="checks this"></A> checks this overlay to implement a predicate that can be used to test if a date has a diary entry. The <TT>emacspeak-calendar-speak-date</TT><A name="predicate to"></A> function uses this predicate to decide whether the date needs to be rendered in a different voice; dates that have calendar entries are spoken using the <TT>mark-personality</TT> voice. Notice that the <TT>emacspeak-calendar-speak-date</TT><A name="runtime context"></A> function accesses the calendar's runtime context in the call:</P><PRE>	(calendar-date-string (calendar-cursor-to-date t))
+</PRE><BR>
+<P class=docText>The <TT>emacspeak-calendar-speak-date</TT><A name="called from"></A> function is called from <SPAN class=docEmphasis>advice</SPAN> <A name=idx-CHP-31-2736></A><A name="all calendar"></A>definitions attached to all calendar navigation functions. Here is the <SPAN class=docEmphasis>advice</SPAN> definition for function <TT>calendar-forward-week</TT>:<A name=idx-CHP-31-2737></A></P><PRE>	(defadvice calendar-forward-week (after emacspeak pre act)
+	  "Speak the date. "
+	  (when (interactive-p) (emacspeak-speak-calendar-date )
+	    (emacspeak-auditory-icon 'large-movement)))
+</PRE><BR>
+<P class=docText>This is an <TT>after</TT> <SPAN class=docEmphasis>advice</SPAN>, because we want the spoken feedback to be produced <SPAN class=docEmphasis>after</SPAN> the original navigation command has done its work.</P>
+<P class=docText>The body of the <SPAN class=docEmphasis>advice</SPAN> definition first calls the function <TT>emacspeak-calendar-speak-date</TT> to speak the date under the cursor; next, it calls <TT>emacspeak-auditory-icon</TT> to produce a short sound indicating that we have successfully moved.<A name=idx-CHP-31-2738></A></P></DIV></DIV>
+<p>&nbsp;</p><p>&nbsp;</p><!-- 仁·义 -->
+</body></html>

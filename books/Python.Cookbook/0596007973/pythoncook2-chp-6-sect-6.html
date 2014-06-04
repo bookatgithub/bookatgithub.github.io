@@ -1,0 +1,214 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;6.6.&nbsp;Delegating Special Methods in Proxies</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-6-sect-5.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-6-sect-7.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-6-SECT-6"></a>
+<h3 class="docSection1Title">Recipe 6.6. Delegating Special Methods in Proxies</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Gon&ccedil;alo Rodrigues</span></p>
+
+<a name="pythoncook2-CHP-6-SECT-6.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-6-ITERM-2105"></a> <a name="pythoncook2-CHP-6-ITERM-2106"></a> <a name="pythoncook2-CHP-6-ITERM-2107"></a>In the new-style object model, Python
+operations perform implicit lookups for special methods on the class
+(rather than on the instance, as they do in the classic object
+model). Nevertheless, you need to wrap new-style instances in proxies
+that can also delegate a selected set of special methods to the
+object they're wrapping.</P>
+
+
+<a name="pythoncook2-CHP-6-SECT-6.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">You need to generate each proxy's class on the fly.
+For example:</p>
+
+<pre>class Proxy(object):
+    """ base class for all proxies """
+    def _ _init_ _(self, obj):
+        super(Proxy, self)._ _init_ _(obj)
+        self._obj = obj
+    def _ _getattr_ _(self, attrib):
+        return getattr(self._obj, attrib)
+def make_binder(unbound_method):
+    def f(self, *a, **k): return unbound_method(self._obj, *a, **k)
+    # in 2.4, only: f._ _name_ _ = unbound_method._ _name_ _
+    return f
+known_proxy_classes = {  }
+def proxy(obj, *specials):
+    ''' factory-function for a proxy able to delegate special methods '''
+    # do we already have a suitable customized class around?
+    obj_cls = obj._ _class_ _
+    key = obj_cls, specials
+    cls = known_proxy_classes.get(key)
+    if cls is None:
+        # we don't have a suitable class around, so let's make it
+        cls = type("%sProxy" % obj_cls._ _name_ _, (Proxy,), {  })
+        for name in specials:
+            name = '_ _%s_ _' % name
+            unbound_method = getattr(obj_cls, name)
+            setattr(cls, name, make_binder(unbound_method))
+        # also cache it for the future
+        known_proxy_classes[key] = cls
+    # instantiate and return the needed proxy
+    return cls(obj)</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-6-SECT-6.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText"><a name="pythoncook2-CHP-6-ITERM-2108"></a>
+<a name="pythoncook2-CHP-6-ITERM-2109"></a>
+<a name="pythoncook2-CHP-6-ITERM-2110"></a>Proxying and automatic delegation are a
+joy in Python, thanks to the <tt>_ _getattr_ _</tt> hook.
+Python calls it automatically when a lookup for any attribute
+(including a methodPython draws no distinction there) has not
+otherwise succeeded.</P>
+
+<p class="docText">In the old-style (classic) object model, <tt>_ _getattr_
+_</tt> also applied to special methods that were looked up as
+part of a Python operation. This required some care to avoid
+mistakenly supplying a special method one didn't
+really want to supply but was otherwise handy. Nowadays, the
+new-style object model is recommended for all new code: it is faster,
+more regular, and richer in features. You get new-style classes when
+you subclass <tt>object</tt> or any other built-in type.
+One day, some years from now, Python 3.0 will eliminate the classic
+object model, as well as other features that are still around only
+for backwards-compatibility. (See <a class="docLink" target="_blank" href="http://www.python.org/peps/pep-3000.html">http://www.python.org/peps/pep-3000.html</a> for
+details about plans for Python 3.0almost all changes will be
+language simplifications, rather than new features.)</p>
+
+<p class="docText">In the new-style object model, Python operations
+don't look up special methods at runtime: they rely
+on "slots" held in class objects.
+Such slots are updated when a class object is built or modified.
+Therefore, a proxy object that wants to delegate some special methods
+to an object it's wrapping needs to belong to a
+specially made and tailored class. Fortunately, as this recipe shows,
+making and instantiating classes on the fly is quite an easy job in
+Python.</P>
+
+<p class="docText"><a name="pythoncook2-CHP-6-ITERM-2111"></a>In this
+recipe, we don't use any advanced Python concepts
+such as custom metaclasses and custom descriptors. Rather, each proxy
+is built by a factory function <tt>proxy</tt>, which takes
+as arguments the object to wrap and the names of special methods to
+delegate (shorn of leading and trailing double underscores). If
+you've saved the
+"Solution"'s code
+in a file named <I>proxy.py</i> somewhere along your
+Python <tt>sys.path</tt>, here is how you could use it from
+an interactive Python interpreter session:<a name="pythoncook2-CHP-6-ITERM-2112"></a></p>
+
+<pre>&gt;&gt;&gt; import proxy
+&gt;&gt;&gt; a = proxy.proxy([  ], 'len', 'iter')   # only delegate _ _len_ _ &amp; _ _iter_ _
+&gt;&gt;&gt; a                                    # _ _repr_ _ is not delegated
+<b>&lt;proxy.listProxy object at 0x0113C370&gt;</b>
+&gt;&gt;&gt; a._ _class_ _
+<b>&lt;class 'proxy.listProxy'&gt;</b>
+&gt;&gt;&gt; a._obj
+<B>[  ]</b>
+&gt;&gt;&gt; a.append                             # all non-specials are delegated
+<b>&lt;built-in method append of list object at 0x010F1A10&gt;</b></pre><br>
+
+
+<p class="docText">Since <tt>_ _len_ _</tt> is delegated,
+<tt>len(a</tt>) works as expected:</P>
+
+<pre>&gt;&gt;&gt; len(a)
+<b>0</b>
+&gt;&gt;&gt; a.append(23)
+&gt;&gt;&gt; len(a)
+<B>1</b></pre><br>
+
+
+<p class="docText">Since <tt>_ _iter_ _</tt> is delegated,
+<tt>for</tt> loops work as expected, as does intrinsic
+looping performed by built-ins such as <tt>list</tt>,
+<tt>sum</tt>, <tt>max</tt>, . . . :</P>
+
+<pre>&gt;&gt;&gt; for x in a: print x
+...
+<B>23</b>
+&gt;&gt;&gt; list(a)
+<b>[23]</b>
+&gt;&gt;&gt; sum(a)
+<b>23</b>
+&gt;&gt;&gt; max(a)
+<b>23</b></pre><br>
+
+
+<p class="docText">However, since <tt>_ _getitem_ _</tt> is
+<span class="docEmphasis">not</span> delegated, <tt><i>a</i></tt>
+cannot be indexed nor sliced:</p>
+
+<pre>&gt;&gt;&gt; a._ _getitem_ _
+<b>&lt;method-wrapper object at 0x010F1AF0&gt;</b>
+&gt;&gt;&gt; a[1]
+Traceback (most recent call last):
+  File "&lt;interactive input&gt;", line 1, in ?
+TypeError: unindexable object</pre><br>
+
+
+<p class="docText">Function <i>proxy</i> uses a
+"cache" of classes it has
+previously generated, the global dictionary
+<i>known_proxy_classes</i>, keyed by the class of the
+object being wrapped and the tuple of special
+methods' names being delegated. To make a new class,
+<tt>proxy</tt> calls the built-in <tt>type</tt>,
+passing as arguments the name of the new class (made by appending
+'<tt>Proxy</tt>' to the name of the class being wrapped),
+class <I>Proxy</I> as the only base, and an
+"empty" class dictionary (since
+it's adding no class attributes yet). Base class
+<i>Proxy</i> deals with initialization and delegation of
+ordinary attribute lookups. Then, factory function
+<I>proxy</i> loops over the names of specials to be
+delegated: for each of them, it gets the unbound method from the
+class of the object being wrapped, and sets it as an attribute of the
+new class within a <i>make_binder</i> closure.
+<i>make_binder</i> deals with calling the unbound method
+with the appropriate first argument (i.e., the object being wrapped,
+<tt>self._obj</tt>).</p>
+
+<p class="docText">Once it's done preparing a new class,
+<I>proxy</i> saves it in
+<I>known_proxy_classes</i> under the appropriate key.
+Finally, whether the class was just built or recovered from
+<I>known_proxy_classes</i>, <I>proxy</I>
+instantiates it, with the object being wrapped as the only argument,
+and returns the resulting proxy instance.</p>
+
+
+<a name="pythoncook2-CHP-6-SECT-6.4"></a>
+<H4 class="docSection2Title">See Also</H4>
+
+<p class="docText"><a class="docLink" href="pythoncook2-CHP-6-SECT-5.html#pythoncook2-CHP-6-SECT-5">Recipe 6.5</a> for more
+information about automatic delegation; <a class="docLink" href="pythoncook2-CHP-6-SECT-9.html#pythoncook2-CHP-6-SECT-9">Recipe 6.9</a> for another example of
+generating classes on the fly (using a <tt>class</tt>
+statement rather than a call to <tt>type</tt>).<a name="pythoncook2-CHP-6-ITERM-2113"></a> <a name="pythoncook2-CHP-6-ITERM-2114"></a> <a name="pythoncook2-CHP-6-ITERM-2115"></a></p>
+
+
+
+<a href="5991535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><ul></ul></td></TR></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-6-sect-5.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-6-sect-7.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

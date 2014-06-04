@@ -1,0 +1,396 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Section 6.7.&nbsp; Unrolling the Loop</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=regex3-CHP-6-SECT-6.html><img src="images/prev.gif" width="60" height="17" border="0" align="absmiddle" alt="Previous Page"></a>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=regex3-CHP-6-SECT-8.html><img src="images/next.gif" width="60" height="17" border="0" align="absmiddle" alt="Next Page"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><a name="regex3-CHP-6-SECT-7"></a>
+<H3 id="686695-884" class="docSection1Title">6.7. Unrolling the Loop</H3>
+<p class="docText">Regardless of what native optimizations a system may support, perhaps the most important gains are to be had by understanding the basics of how the engine works, and writing expressions that help lead the engine to a match. So, now that we've reviewed the basics in excruciating detail, let's step up to the big leagues with a technique I call "<a class="docLink" href="#regex3-CHP-6-SECT-7">unrolling the loop</a>."<a name="IDX-CHP-6-2020"></a> 
+ It's effective for speeding up certain common expressions. Using it, for example, to transform the neverending match from near the start of this chapter (&#9758;226) results in an expression that actually finishes a non-match in our lifetime, and as a bonus is faster with a match as well.</P>
+<p class="docText">The "loop" in the name is the implicit loop imparted by the star in an expression that fits a <img src=images/U2308.jpg border=0><tt>(<span class="docEmphasis">this|that|</span>&#8943;)*</tt><img src=images/U230B.jpg border=0> pattern. Indeed, our earlier <img src=images/U2308.jpg border=0><tt>"(\\.|[^\\"]<span class="docEmphStrong">+</span>)<span class="docEmphStrong">*</span>"</tt><img src=images/U230B.jpg border=0> never ending match fits this pattern. Considering that it takes approximately forever to report a non-match, it's a good example to try to speed up!</P>
+<p class="docText">There are two competing roads one can take to arrive at this technique:</p>
+<UL><li><p class="docList"><span class="docEmphasis">1</span>. We can examine which parts of <img src=images/U2308.jpg border=0><tt>(\\.|[^\\"]<span class="docEmphStrong">+)*</span></tt><img src=images/U230B.jpg border=0> actually succeed during a variety of sample matches, leaving a trail of used subexpressions in its wake. We can then reconstruct an efficient expression based upon the patterns we see emerge. The (perhaps far-fetched) mental image I have is that of a big ball, representing a <img src=images/U2308.jpg border=0><tt>(&#8943;)*</tt><img src=images/U230B.jpg border=0> regex, being rolled over some text. The parts inside (&#8943;) that are actually used then stick to the text they match, leaving a trail of subexpressions behind like a dirty ball rolling<a name="IDX-CHP-6-2021"></a> 
+ across the carpet.</p></LI><LI><p class="docList"><span class="docEmphasis">2</span>. Another approach takes a higher-level look at the construct we want to match. We'll make an informed assumption about the likely target strings, allowing us to take advantage of what we believe will be the common situation. Using this point of view, we can construct an efficient expression.</p></li></UL>
+<p class="docText">Either way, the resulting expressions are identical. I'll begin from the "unrolling" point of view, and then converge on the same result from the higher-level view.</P>
+<p class="docText">To keep the examples as uncluttered and as widely usable as possible, I'll use <img src=images/U2308.jpg border=0><tt>(&#8943;)</tt><img src=images/U230B.jpg border=0> for all parentheses. If <img src=images/U2308.jpg border=0><tt>(?:&#8943;)</tt><img src=images/U230B.jpg border=0> non-capturing parentheses are supported, their use imparts a further efficiency benefit. Later, we'll also look at using atomic grouping (&#9758;139) and possessive quantifiers (&#9758;142).</P>
+<a name="regex3-CHP-6-SECT-7.1"></a>
+<h4 id="title-IDA5M2WG" class="docSection2Title">6.7.1. Method 1: Building a Regex From Past Experiences</H4>
+<a name="IDX-CHP-6-2022"></a> 
+<a name="IDX-CHP-6-2023"></a> 
+
+<p class="docText">In analyzing <img src=images/U2308.jpg border=0><tt>"(<span class="docEmphStrong">\\.|[^\\"]+</span>)*"</tt><img src=images/U230B.jpg border=0>, it's instructive to look at some matching strings to see exactly which subexpressions are used during the overall match. For example, with '<tt>"hi"</tt>', the expression effectively used is just <img src=images/U2308.jpg border=0><tt>"[^\\"]+"</tt><img src=images/U230B.jpg border=0>. This illustrates that the overall match used the initial <img src=images/U2308.jpg border=0><tt>"</tt><img src=images/U230B.jpg border=0>, one application of the alternative <img src=images/U2308.jpg border=0><tt>[^\\"]+</tt><img src=images/U230B.jpg border=0>, and the closing <img src=images/U2308.jpg border=0><tt>"</tt><img src=images/U230B.jpg border=0>. With</P>
+<pre>
+    "he said \"hi there\" and left"
+</pre><br>
+
+<p class="docText">it is <img src=images/U2308.jpg border=0><tt>"[^\\"]+<img border="0" alt="" id="195131084202" width="166" height="15" SRC="images/regex3_u0611.jpg">"</tt><img src=images/U230B.jpg border=0>. In this example, as well as in <a class="docLink" href="#regex3-CHP-6-TABLE-2">Table 6-2</a>, I've marked the expressions to make the patterns apparent. It would be nice if we could construct a specific regex for each particular input string. That's not possible, but we can still identify common patterns to construct a more efficient, yet still general, regular expression.</p>
+<p class="docText">For the moment, let's concentrate on the first four examples in <a class="docLink" href="#regex3-CHP-6-TABLE-2">Table 6-2</a>. I've underlined the portions that refer to "an escaped item, followed by further normal characters." This is the key point: in each case, the expression between the quotes begins with <img src=images/U2308.jpg border=0><tt>[^\\"]+</tt><img src=images/U230B.jpg border=0> and is followed by some number of <img src=images/U2308.jpg border=0><tt><img border="0" alt="" id="195131084202" width="81" height="15" SRC="images/regex3_u0612.jpg"></tt><img src=images/U230B.jpg border=0> sequences. Rephrasing this as a regular expression, we get <img src=images/U2308.jpg border=0><tt>[^\\"]+(<img border="0" alt="" id="195131084202" width="81" height="15" SRC="images/regex3_u0612.jpg">)*</tt><img src=images/U230B.jpg border=0>. This is a specific example of a general pattern that can be used for constructing many useful expressions.</p>
+<a name="regex3-CHP-6-TABLE-2"></a><p><table cellspacing="0" FRAME="hsides" RULES="all" cellpadding="4" width="100%"><caption><H5 class="docTableTitle">Table 6-2. Unrolling-the-Loop Example Cases</h5></caption><colgroup span="2"><col><col></colgroup><thead><tr><th class="thead" scope="col" align="left"><p class="docText">Target String</P></th><th class="thead" scope="col" align="left"><p class="docText">Effective Expression</p></th></tr></thead><tr><td class="docTableCell" align="left"><p class="docText"><tt>"hi there"</tt></p></td><td class="docTableCell" align="left"><p class="docText"><tt>"[^\\"]+"</tt></p></td></tr><tr><td class="docTableCell" align="left"><p class="docText"><tt>"just one \" here"</tt></p></td><td class="docTableCell" align="left"><p class="docText"><tt>"[^\\"]+</tt><img border="0" alt="" id="195131084202" width="71" height="13" SRC="images/regex3_u0613.jpg">"</p></td></TR><tr><TD class="docTableCell" align="left"><p class="docText"><tt>"some \"quoted\" things"</tt></p></td><TD class="docTableCell" align="left"><p class="docText"><tt>"[^\\"]+</tt><img border="0" alt="" id="195131084202" width="148" height="14" SRC="images/regex3_u0614.jpg"><tt>"</tt></P></TD></TR><tr><TD class="docTableCell" align="left"><p class="docText"><tt>"with \"a\" and \"b\"."</tt></p></td><TD class="docTableCell" align="left"><p class="docText"><tt>"[^\\"]+</tt><img border="0" alt="" id="195131084202" width="296" height="14" SRC="images/regex3_u0615.jpg">"</P></td></tr><TR><TD class="docTableCell" align="left"><p class="docText"><tt>"\"ok\"\n"</tt></P></td><TD class="docTableCell" align="left"><p class="docText">"<img border="0" alt="" id="195131084202" width="119" height="13" SRC="images/regex3_u0616.jpg">"</P></td></tr><tr><td class="docTableCell" align="left"><p class="docText"><tt>"empty \"\" quote"</tt></P></td><td class="docTableCell" align="left"><p class="docText"><img border="0" alt="" id="195131084202" width="160" height="14" SRC="images/regex3_u0617.jpg"></P></td></tr></table></p><br>
+<a name="regex3-CHP-6-SECT-7.1.1"></a>
+<h5 id="title-IDA3T2WG" class="docSection3Title">6.7.1.1. Constructing a general "unrolling-the-loop" pattern</h5>
+<a name="IDX-CHP-6-2024"></a> 
+
+<p class="docText">In matching the double-quoted string, the quote itself and the escape are "special"<a name="IDX-CHP-6-2025"></a> 
+  the quote because it can end the string, and the escape because it means that whatever follows won't end the string. Everything else, <img src=images/U2308.jpg border=0><tt>[^\\"]</tt><img src=images/U230B.jpg border=0>, is "normal." Looking at how these were combined to create <img src=images/U2308.jpg border=0><tt>[^\\"]+(<img border="0" alt="" id="195131084202" width="82" height="15" SRC="images/regex3_u0618.jpg">)*</tt><img src=images/U230B.jpg border=0>, we can see that it fits the general pattern <img src=images/U2308.jpg border=0><tt><span class="docEmphasis">normal</span>+(<img border="0" alt="" id="195131084202" width="100" height="16" SRC="images/regex3_u0654.jpg">)*</tt><img src=images/U230B.jpg border=0>.</p>
+<p class="docText">Adding in the opening and closing quote, we get <img src=images/U2308.jpg border=0><tt>"[^\\"]+(<img border="0" alt="" id="195131084202" width="81" height="15" SRC="images/regex3_u0619.jpg">)*"</tt><img src=images/U230B.jpg border=0>. Unfortunately, this won't match the last two examples in <a class="docLink" href="#regex3-CHP-6-TABLE-2">Table 6-2</a>. The problem, essentially, is that our current expression's two <img src=images/U2308.jpg border=0><tt>[^\\"]+</tt><img src=images/U230B.jpg border=0> <span class="docEmphasis">require</span> a normal character at the start of the string and after any special character. As the examples show, that's not always appropriatethe string might start or end with an escaped item, or there might be two escaped items in a row.</p>
+<p class="docText">We could try changing the two pluses to stars: <img src=images/U2308.jpg border=0><tt>"[^\\"]<span class="docEmphStrong">*</span>(<img border="0" alt="" id="195131084202" width="80" height="15" SRC="images/regex3_u0620.jpg">)*"</tt><img src=images/U230B.jpg border=0>. Does this have the desired effect? More importantly, does it have any undesirable effects?</p>
+<p class="docText">As far as desirable effects, it is easy to see that all the examples now match. In fact, even a string such as <tt>"\"\"\""</tt> now matches. This is good. However, we can't make such a major change without being quite sure there are no undesirable effects. Could anything other than a legal double-quoted string match? Can a legal double-quoted string not match? What about efficiency?</p>
+<p class="docText">Let's look at <img src=images/U2308.jpg border=0>"<tt><img border="0" alt="" id="195131084202" width="163" height="15" SRC="images/regex3_u0621.jpg">"</tt><img src=images/U230B.jpg border=0> carefully. The leading <img src=images/U2308.jpg border=0><tt>"[^\\"]*</tt><img src=images/U230B.jpg border=0> is applied only once and doesn't seem dangerous: it matches the required opening quote and any normal characters that might follow. No danger there. The subsequent <img src=images/U2308.jpg border=0><tt>(<img border="0" alt="" id="195131084202" width="24" height="14" SRC="images/regex3_u0655.jpg">[^\\"]*)*</tt><img src=images/U230B.jpg border=0> is wrapped by <span class="docEmphStrong">(</span>&#8943;<span class="docEmphStrong">)*</span>, so is allowed to match zero times. That means that removing it should still leave a valid expression. Doing so, we get <img src=images/U2308.jpg border=0><tt>"[^\\"]*"</tt><img src=images/U230B.jpg border=0>, which is certainly fine  it represents the common situation where there are no escaped items.</p>
+<p class="docText">On the other hand, if <img src=images/U2308.jpg border=0><tt>(<img border="0" alt="" id="195131084202" width="80" height="15" SRC="images/regex3_u0622.jpg">)*</tt><img src=images/U230B.jpg border=0> matches once, we have an effective <img src=images/U2308.jpg border=0><tt>"[^\\"]*<img border="0" alt="" id="195131084202" width="80" height="15" SRC="images/regex3_u0622.jpg">"</tt><img src=images/U230B.jpg border=0>. Even if the trailing <img src=images/U2308.jpg border=0><tt>[^\\"]*</tt><img src=images/U230B.jpg border=0> matches nothing (making it an effective <img src=images/U2308.jpg border=0><tt>"[^\\"]*<img border="0" alt="" id="195131084202" width="27" height="15" SRC="images/regex3_u0656.jpg">"</tt><img src=images/U230B.jpg border=0>), there are no problems. Continuing the analysis in a similar way (if I can remember my high school algebra, it's "by induction"), we find that there are, indeed, no problems with the proposed changes.</p>
+<p class="docText">So, that leaves us with the final expression to match a double-quoted string with escaped double quotes inside:</p>
+<pre>
+    <img src=images/U2308.jpg border=0>"[^\\"]<span class="docEmphStrong">*</span>(<div><img border="0" alt="" id="195131084202" width="80" height="15" SRC="images/regex3_u0647.jpg"></div>)*"<img src=images/U230B.jpg border=0>
+</pre><br>
+
+
+
+<a name="regex3-CHP-6-SECT-7.2"></a>
+<h4 id="title-IDAXY2WG" class="docSection2Title">6.7.2. The Real "Unrolling-the-Loop" Pattern</h4>
+<a name="IDX-CHP-6-2026"></a> 
+<a name="IDX-CHP-6-2027"></a> 
+<a name="IDX-CHP-6-2028"></a> 
+<a name="IDX-CHP-6-2029"></a> 
+<a name="IDX-CHP-6-2030"></a> 
+<a name="IDX-CHP-6-2031"></a> 
+<a name="IDX-CHP-6-2032"></a> 
+<a name="IDX-CHP-6-2033"></a> 
+<a name="IDX-CHP-6-2034"></a> 
+
+<p class="docText">Putting it all together, then, our expression to match a double-quoted string with escaped-items is <img src=images/U2308.jpg border=0><tt>"[^\\"]*(<img border="0" alt="" id="195131084202" width="80" height="13" SRC="images/regex3_u0648.jpg">)*"</tt><img src=images/U230B.jpg border=0>. This matches and fails on exactly the same strings as the alternation version, but this unrolled version has the benefit of finishing in our lifetime. It is much more efficient, and avoids the neverending-match problem altogether.</p>
+<p class="docText">The general pattern<a name="IDX-CHP-6-2035"></a> 
+ for unrolling the loop is:</P>
+<pre>
+    <img src=images/U2308.jpg border=0><span class="docEmphasis">opening normal</span>* (<div><img border="0" alt="" id="195131084202" width="52" height="18" SRC="images/regex3_u0649.jpg"></div> <span class="docEmphasis">normal</span>*)* <span class="docEmphasis">closing</span><img src=images/U230B.jpg border=0>
+</pre><br>
+
+<a name="regex3-CHP-6-SECT-7.2.1"></a>
+<H5 id="title-IDAN12WG" class="docSection3Title">6.7.2.1. Avoiding the neverending match</h5>
+<a name="IDX-CHP-6-2036"></a> 
+<a name="IDX-CHP-6-2037"></a> 
+
+<p class="docText">Three extremely important points prevent <img src=images/U2308.jpg border=0><tt>"[^\\"]*(<img border="0" alt="" id="195131084202" width="80" height="15" SRC="images/regex3_u0647.jpg">)*"</tt><img src=images/U230B.jpg border=0> from becoming a neverending match:</p>
+<UL><LI><p class="docList"><span class="docEmphasis"><span class="docEmphStrong">1) The start of special and normal must never intersect</span></span>.</P><p class="docList">The <span class="docEmphasis">special</span> and <span class="docEmphasis">normal</span> subexpressions must be written such that they can never match at the same point. With our ongoing example, where <span class="docEmphasis">normal</span> is <img src=images/U2308.jpg border=0><tt>[^\\"]</tt><img src=images/U230B.jpg border=0> and <span class="docEmphasis">special</span> is <img src=images/U2308.jpg border=0><tt>\\.</tt><img src=images/U230B.jpg border=0>, it's clear that they can never begin a match at the same character since the latter one requires a leading backslash, while the former one explicitly disallows a leading backslash.</P><p class="docList">On the other hand, <img src=images/U2308.jpg border=0><tt>\\.</tt><img src=images/U230B.jpg border=0> and <img src=images/U2308.jpg border=0><tt>[^"]</tt><img src=images/U230B.jpg border=0> can both match starting at '<tt>"Hello</tt><sub><img src=images/U22CF.jpg border=0></sub><tt>\n"</tt>', so they are inappropriate as <span class="docEmphasis">special</span> or <span class="docEmphasis">normal</span>. If there is a way they can match starting at the same location, it's not clear which should be used at such a point, and the non-determinism<a name="IDX-CHP-6-2038"></a> 
+<a name="IDX-CHP-6-2039"></a> 
+<a name="IDX-CHP-6-2040"></a> 
+ creates a neverending match. The '<img border="0" alt="" id="195131084202" width="97" height="13" SRC="images/regex3_u0650.jpg">' example illustrates this graphically (&#9758;227). A failing match (or any kind of match attempt with POSIX NFA engines) has to test all these possibilities and permutations. That's too bad, since the whole reason to re-engineer in the first place was to avoid this.</p><p class="docList">If we ensure that <span class="docEmphasis">special</span> and <span class="docEmphasis">normal</span> can never match at the same point, <span class="docEmphasis">special</span> acts to checkpoint<a name="IDX-CHP-6-2041"></a> 
+ the nondeterminism that would arise when multiple applications of <span class="docEmphasis">normal</span> could, by different iterations of the <img src=images/U2308.jpg border=0><tt>(&#8943;)*</tt><img src=images/U230B.jpg border=0> loop, match the same text. If we ensure that <span class="docEmphasis">special</span> and <span class="docEmphasis">normal</span> can never match at the same point, there is exactly one "sequence" of <span class="docEmphasis">specials</span> and <span class="docEmphasis">normals</span> in which a particular target string matches. Testing this one sequence is much faster than testing a hundred million of them, and thus a neverending match is avoided.</P></li><li><p class="docList"><span class="docEmphasis"><span class="docEmphStrong">2) Special must not match nothingness</span></span>.</P><p class="docList">The second point is that <span class="docEmphasis">special</span> must always match at least one character if it matches anything at all. If it were able to match without consuming characters, adjacent normal characters would be able to be matched by different iterations of <img src=images/U2308.jpg border=0><tt><span class="docEmphStrong">(</span><img border="0" alt="" id="195131084202" width="80" height="13" SRC="images/regex3_u0648.jpg"> <span class="docEmphasis">normal</span>* <span class="docEmphStrong">)*</span></tt><img src=images/U230B.jpg border=0>, bringing us right back to the basic <tt>(&#8943;*)*</tt> problem.</P><p class="docList">For example, choosing a <span class="docEmphasis">special</span> of <img src=images/U2308.jpg border=0><tt>(\\.)*</tt><img src=images/U230B.jpg border=0> violates this point. In trying to match the ill-fated <img src=images/U2308.jpg border=0><tt>"[^\\"]*(<img border="0" alt="" id="195131084202" width="106" height="15" SRC="images/regex3_u0651.jpg">)*"</tt><img src=images/U230B.jpg border=0> against '<tt>"Tubby</tt>'<a name="IDX-CHP-6-2042"></a> 
+<a name="IDX-CHP-6-2043"></a> 
+ (which fails), the engine must try every permutation of how multiple <img src=images/U2308.jpg border=0><tt>[^\\"]*</tt><img src=images/U230B.jpg border=0> might match '<tt>Tubby</tt>' before concluding that the match is a failure. Since <span class="docEmphasis">special</span> can match nothingness, it doesn't act as the checkpoint it purports to be.</p></li><LI><p class="docList"><span class="docEmphasis"><span class="docEmphStrong">3) Special must be atomic</span></span>.</P><p class="docList">Text matched by one application of special must not be able to be matched by multiple applications of special. Consider matching a string of optional Pascal <tt>{</tt>&#8943;<tt>}</tt> comments and spaces. A regex to match the comment part is <img src=images/U2308.jpg border=0><tt><span class="docEmphStrong">\{</span>[^}]*<span class="docEmphStrong">\}</span></tt><img src=images/U230B.jpg border=0>, so the whole (neverending) expression becomes <img src=images/U2308.jpg border=0><tt><span class="docEmphStrong">(</span>\{[^}]*\}<span class="docEmphStrong">|</span>&#8226;+<span class="docEmphStrong">)*</span></tt><img src=images/U230B.jpg border=0>. With this regex, you might consider <span class="docEmphasis">special</span> and <span class="docEmphasis">normal</span> to be:</P><p><table cellspacing="0" border="1" RULES="all" cellpadding="4" width="90%"><colgroup span="2"><col><col></colgroup><thead><TR><th class="thead" scope="col" align="center"><p class="docText"><span class="docEmphasis">special</span></P></th><th class="thead" scope="col" align="center"><p class="docText"><span class="docEmphasis">normal</span></p></th></tr></thead><tr><td class="docTableCell" align="center"><p class="docText"><img src=images/U2308.jpg border=0><tt>&#8226;+</tt><img src=images/U230B.jpg border=0></P></td><td class="docTableCell" align="center"><p class="docText"><img src=images/U2308.jpg border=0><tt>\{[^}]*\}</tt><img src=images/U230B.jpg border=0></P></td></tr></table></p><br></li></ul>
+<p class="docText">Plugging this into the <img src=images/U2308.jpg border=0><tt><span class="docEmphasis">normal</span>*(<img border="0" alt="" id="195131084202" width="100" height="16" SRC="images/regex3_u0657.jpg">)*</tt><img src=images/U230B.jpg border=0> pattern we've developed, we get: <img src=images/U2308.jpg border=0><tt><span class="docEmphStrong">(</span>\{[^}]*\}<span class="docEmphStrong">)</span>*<span class="docEmphStrong">(</span><img border="0" alt="" id="195131084202" width="115" height="15" SRC="images/regex3_u0658.jpg"><span class="docEmphStrong">)</span>*</tt><img src=images/U230B.jpg border=0>. Now, let's look at a string:</p>
+<pre>
+    {comment}&#8226;&#8226;&#8226;{another}&#8226;&#8226;
+</pre><br>
+
+<p class="docText">A sequence of multiple spaces could be matched by a single <img src=images/U2308.jpg border=0><tt>&#8226;+</tt><img src=images/U230B.jpg border=0>, by many <img src=images/U2308.jpg border=0><tt>&#8226;+</tt><img src=images/U230B.jpg border=0> (each matching a single space), or by various combinations of <img src=images/U2308.jpg border=0><tt>&#8226;+</tt><img src=images/U230B.jpg border=0> matching differing numbers of spaces. This is directly analogous to our '<img border="0" alt="" id="195131084202" width="97" height="13" SRC="images/regex3_u0650.jpg">' problem.</p>
+<p class="docText">The root of the problem is that <span class="docEmphasis">special</span> is able to match a smaller amount of text <span class="docEmphasis">within</span> a larger amount that it could also match, and is able to do so multiple times thanks to <tt>(&#8943;)*</tt>. The nondeterminism<a name="IDX-CHP-6-2044"></a> 
+ opens up the "many ways to match the same text" can of worms.</p>
+<p class="docText">If there is an overall match, it is likely that only the all-at-once <img src=images/U2308.jpg border=0><tt>&#8226;+</tt><img src=images/U230B.jpg border=0> will happen just once, but if no match is possible (such as might happen if this is used as a subexpression of a larger regex that could possibly fail), the engine must work through each permutation of the effective <img src=images/U2308.jpg border=0><tt>(&#8226;+)*</tt><img src=images/U230B.jpg border=0> to each series of multiple spaces. That takes time, but without any hope for a match. Since <span class="docEmphasis">special</span> is supposed to act as the checkpoint, there is nothing to check <span class="docEmphasis">its</span> nondeterminism in this situation.</p>
+<p class="docText">The solution is to ensure that <span class="docEmphasis">special</span> can match only a fixed number of spaces. Since it must match at least one, but could match more, we simply choose <img src=images/U2308.jpg border=0><tt>&#8226;</tt><img src=images/U230B.jpg border=0> and let multiple applications of <span class="docEmphasis">special</span> match multiple spaces via the enclosing <img src=images/U2308.jpg border=0><tt>(&#8943;)*</tt><img src=images/U230B.jpg border=0>.</p>
+<p class="docText">This example is useful for discussion, but in real-life use, it's probably more efficient to swap the <span class="docEmphasis">normal</span> and <span class="docEmphasis">special</span> expressions to come up with</p>
+<pre>
+    <div><img border="0" alt="" id="195131084202" width="140" height="15" SRC="images/regex3_u0652.jpg"></div>
+</pre><br>
+
+<p class="docText">because I would suspect that a Pascal program has more spaces than comments, and it's more efficient to have <span class="docEmphasis">normal</span> be the most common case.</p>
+
+<a name="regex3-CHP-6-SECT-7.2.2"></a>
+<h5 id="title-IDAJ53WG" class="docSection3Title">6.7.2.2. General things to look out for</h5>
+<p class="docText">Once you internalize these rules (which might take several readings and some practical experience), you can generalize them into guidelines to help identify regular expressions susceptible to a neverending match. Having multiple levels<a name="IDX-CHP-6-2045"></a> 
+ of quantifiers, such as <img src=images/U2308.jpg border=0><tt>(&#8943;*)*</tt><img src=images/U230B.jpg border=0>, is an important warning sign, but many such expressions are perfectly valid. Examples include:</P>
+<ul><LI><p class="docList"><img src=images/U2308.jpg border=0><tt>(Re:&#8226;*)*</tt><img src=images/U230B.jpg border=0>, to match any number of '<tt>Re:</tt>' sequences (such as might be used to clean up a '<tt>Subject:</tt>&#8226;<tt>Re:</tt>&#8226;<tt>Re:</tt>&#8226;<tt>Re:</tt>&#8226;<tt>hey</tt>' subject line).</p></li><LI><p class="docList"><img src=images/U2308.jpg border=0><tt>(&#8226;*\$[0-9]+)*</tt><img src=images/U230B.jpg border=0>, to match dollar amounts, possibly space-separated.</P></LI><LI><p class="docList"><img src=images/U2308.jpg border=0><tt>(.*\n)+</tt><img src=images/U230B.jpg border=0>, to match one or more lines. (Actually, if dot can match a newline, and if there is anything following this subexpression that could cause it to fail, this would become a quintessential neverending match.)</p></LI></ul>
+<p class="docText">These are OK because each has something to checkpoint the match, keeping a lid on the "many ways to match the same text" can of worms. In the first, it's <img src=images/U2308.jpg border=0><tt>Re:</tt><img src=images/U230B.jpg border=0>, in the second it's <img src=images/U2308.jpg border=0><tt>\$</tt><img src=images/U230B.jpg border=0>, and in the third (when dot doesn't match newline), it's <img src=images/U2308.jpg border=0><tt>\n</tt><img src=images/U230B.jpg border=0>.</p>
+
+
+<a name="regex3-CHP-6-SECT-7.3"></a>
+<H4 id="title-IDAJB4WG" class="docSection2Title">6.7.3. Method 2: A Top-Down View</H4>
+<p class="docText">Recall that I said that there were two paths to the same "<a class="docLink" href="#regex3-CHP-6-SECT-7">unrolling the loop</a>" expression. In this second path, we start by matching only what's most common in the target, then adding what's needed to handle the rare cases. Let's consider what the neverending <img src=images/U2308.jpg border=0><tt><span class="docEmphStrong">(</span><img border="0" alt="" id="195131084202" width="24" height="14" SRC="images/regex3_u0623.jpg">|[^\\"]+<span class="docEmphStrong">)*</span></tt><img src=images/U230B.jpg border=0> attempts to accomplish and where it will likely be used. Normally, I would think, a quoted string would have more regular characters than escaped items, so <img src=images/U2308.jpg border=0><tt>[^\\"]+</tt><img src=images/U230B.jpg border=0> does the bulk of the work. The <img src=images/U2308.jpg border=0><tt>\\.</tt><img src=images/U230B.jpg border=0> is needed only to handle the occasional escaped item. Using alternation to allow either works, but it's too bad that we need to compromise the efficiency of the whole match for the sake of a few (or more commonly, no) escaped characters.</p>
+<p class="docText">If we think that <img src=images/U2308.jpg border=0><tt>[^\\"]+</tt><img src=images/U230B.jpg border=0> will normally match most of the body of the string, we know that once it finishes we can expect either the closing quote or an escaped item. If we have an escape, we want to allow one more character (whatever it might be), and then match more of the bulk with another <img src=images/U2308.jpg border=0><tt>[^\\"]+</tt><img src=images/U230B.jpg border=0>. Every time <img src=images/U2308.jpg border=0><tt>[^\\"]+</tt><img src=images/U230B.jpg border=0> ends, we are in the same position we were before: expecting either the closing quote or another escape.</p>
+<p class="docText">Expressing this naturally as a single expression, we arrive at the same expression we had early in Method 1:</P>
+<pre>
+    <div><img border="0" alt="" id="195131084202" width="191" height="16" SRC="images/regex3_u0624.jpg"></div>
+</pre><BR>
+
+<p class="docText">Each time the matching reaches the point marked by <sub><img src=images/U22CF.jpg border=0></sub>, we know that we're expecting either a backslash or a closing quote. If the backslash can match, we take it, the character that follows, and more text until the next "expecting a quote or backslash" point.</P>
+<p class="docText">As in the previous method, we need to allow for when the initial non-quote segment, or inter-quote segments, are empty. We can do this by changing the two pluses to stars, which results in the same expression as we ended up with on page 264.</p>
+
+<a name="regex3-CHP-6-SECT-7.4"></a>
+<H4 id="title-IDADD4WG" class="docSection2Title">6.7.4. Method 3: An Internet Hostname</H4>
+<a name="IDX-CHP-6-2046"></a> 
+<a name="IDX-CHP-6-2047"></a> 
+<a name="IDX-CHP-6-2048"></a> 
+
+<p class="docText">I promised two methods to arrive at the <span class="docEmphasis">unrolling-the-loop</span> technique, but I'd like to present something that can be considered a third. It struck me while working with a regex to match a hostname<a name="IDX-CHP-6-2049"></a> 
+ such as <a class="docLink" target="_blank" href="http://www.yahoo.com">www.yahoo.com</a>. A hostname is essentially dot-separated lists of subdomain names, and exactly what's allowed for one subdomain name is fairly complex to match (&#9758;203), so to keep this example less cluttered, we'll just use <img src=images/U2308.jpg border=0><tt>[a-z]+</tt><img src=images/U230B.jpg border=0> to match a subdomain.</p>
+<p class="docText">If a subdomain is <img src=images/U2308.jpg border=0><tt>[a-z]+</tt><img src=images/U230B.jpg border=0> and we want a dot-separated list of them, we need to match one subdomain first. After that, further subdomains require a leading period. Expressing this literally, we get: <img src=images/U2308.jpg border=0><tt>[a-z]+(\.[a-z]+)*</tt><img src=images/U230B.jpg border=0>. Now, if I add an underline and some gray, <img src=images/U2308.jpg border=0><tt>[a-z]+(<img border="0" alt="" id="195131084202" width="66" height="15" SRC="images/regex3_u0625.jpg">)*</tt><img src=images/U230B.jpg border=0>, it sure looks like it almost fits a very familiar pattern, doesn't it!</p>
+<p class="docText">To illustrate the similarity, let's try to map this to our double-quoted string example. If we consider a string to be sequences of our <span class="docEmphasis">normal</span> <img src=images/U2308.jpg border=0><tt>[^\\"]</tt><img src=images/U230B.jpg border=0>, separated by <span class="docEmphasis">special</span> <img src=images/U2308.jpg border=0><tt>\\.</tt><img src=images/U230B.jpg border=0>, all within '<tt>"&#8943;"</tt>', we can plug them into our unrolling-the-loop pattern to form <img src=images/U2308.jpg border=0><tt>"[^\\"]+(<img border="0" alt="" id="195131084202" width="84" height="15" SRC="images/regex3_u0626.jpg">)*"</tt><img src=images/U230B.jpg border=0>, which is exactly what we had at one point while discussing Method 1. This means that conceptually, we can take the view we used with a hostnamestuff separated by separatorsand apply it to doublequoted strings, to give us "sequences of non-escaped stuff separated by escaped items." This might not seem intuitive, but it yields an interesting path to what we've already seen.</p>
+<p class="docText">The similarity is interesting, but so are the differences. With Method 1, we went on to change the regex to allow empty spans of <span class="docEmphasis">normal</span> before and after each <span class="docEmphasis">special</span>, but we don't want to do that here because a subdomain part cannot be empty. So, even though this example isn't exactly the same as the previous ones, it's in the same class, showing that the unrolling technique is powerful <span class="docEmphasis">and</span> flexible.</p>
+<p class="docText">There are two differences between this and the subdomain example:</P>
+<ul><li><p class="docList">Domain names don't have delimiters at their start and end.</P></li><li><p class="docList">The <span class="docEmphasis">normal</span> part of a subdomain can never be empty (meaning two periods are not allowed in a row, and can neither start nor end the match). With a double-quoted string, there is no requirement that there be any <span class="docEmphasis">normal</span> parts at all, even though they are likely, given our assumptions about the data. That's why we were able to change the <img border="0" alt="" id="195131084202" width="145" height="14" SRC="images/regex3_u0627.jpg">. We can't do that with the subdomain example because <span class="docEmphasis">special</span> represents a <span class="docEmphasis">separator</span>, which is required.</p></li></ul>
+
+<a name="regex3-CHP-6-SECT-7.5"></a>
+<h4 id="title-IDAOG4WG" class="docSection2Title">6.7.5. Observations</h4>
+<a name="IDX-CHP-6-2050"></a> 
+<a name="IDX-CHP-6-2051"></a> 
+<a name="IDX-CHP-6-2052"></a> 
+<a name="IDX-CHP-6-2053"></a> 
+<a name="IDX-CHP-6-2054"></a> 
+<a name="IDX-CHP-6-2055"></a> 
+
+<p class="docText">Recapping the double-quoted string example, I see many benefits to our expression, <img src=images/U2308.jpg border=0><tt>"[^\\"]*(\\.[^\\"]*)*"</tt><img src=images/U230B.jpg border=0>, and few pitfalls.</p>
+<a name="IDX-CHP-6-2056"></a><a name="IDX-CHP-6-2057"></a><a name="IDX-CHP-6-2058"></a><a name="IDX-CHP-6-2059"></a><a name="IDX-CHP-6-2060"></a><dl class="docList">
+<dt><br><p><span class="docPubcolor"><span class="docEmphStrong">Pitfalls:</span></span></p></dt>
+<dd>
+<ul><li><p class="docList"><span class="docEmphStrong">Readability</span> The biggest pitfall is that the original <img src=images/U2308.jpg border=0><tt>"([^\\"]|\\.)*"</tt><img src=images/U230B.jpg border=0> is probably easier to understand at first glance. We've traded a bit of readability for efficiency.<a name="IDX-CHP-6-2056"></a> 
+<a name="IDX-CHP-6-2057"></a> 
+<a name="IDX-CHP-6-2058"></a> 
+</p></li><li><p class="docList"><span class="docEmphStrong">Maintainability</span> Maintaining <img border="0" alt="" id="195131084202" width="189" height="14" SRC="images/regex3_u0628.jpg"> might be more difficult, since the two copies of <img src=images/U2308.jpg border=0><tt>[^\\"]</tt><img src=images/U230B.jpg border=0> must be kept identical across any changes. We've traded a bit of maintainability for efficiency.</p></LI></ul></dd>
+
+<dt><BR><p><span class="docPubcolor"><span class="docEmphStrong">Benefits:</span></span></p></dt>
+<dd>
+<UL><LI><p class="docList"><span class="docEmphStrong">Speed</span> The new regex doesn't buckle under when no match is possible, or when used with a POSIX NFA. By carefully crafting the expression to allow only one way for any particular span of text to be matched, the engine quickly comes to the conclusion that non-matching text indeed does not match.</P></LI><li><p class="docList"><span class="docEmphStrong">More speed</span> The regex "flows" well, a subject taken up in "<a class="docLink" href="regex3-CHP-6-SECT-8.html#regex3-CHP-6-SECT-8">The Freeflowing Regex</a>" (&#9758;277). In my benchmarks with a Traditional NFA, the unrolled<a name="IDX-CHP-6-2059"></a> 
+<a name="IDX-CHP-6-2060"></a> 
+ version is consistently faster than the old alternation version. This is true even for successful matches, where the old version did not suffer the lockup problem.</P></li></ul></dd>
+</dl>
+
+<a name="regex3-CHP-6-SECT-7.6"></a>
+<H4 id="title-IDACL4WG" class="docSection2Title">6.7.6. Using Atomic Grouping and Possessive Quantifiers</H4>
+<p class="docText">The problem with our original neverending match regex, <img src=images/U2308.jpg border=0><tt>"(\\.|[^\\"]+)*"</tt><img src=images/U230B.jpg border=0>, is that it bogs down when there is no match. When there <span class="docEmphasis">is</span> a match, though, it's quite fast. It's quick to find the match because the <img src=images/U2308.jpg border=0><tt>[^\\"]+</tt><img src=images/U230B.jpg border=0> component is what matches most of the target string (the <span class="docEmphasis">normal</span> in the previous discussion). Because <img src=images/U2308.jpg border=0><tt>[&#8943;]+</tt><img src=images/U230B.jpg border=0> is usually optimized for speed (&#9758;247), and because this one component handles most of the characters, the overhead of the alternation and the outer <img src=images/U2308.jpg border=0><tt>(&#8943;)*</tt><img src=images/U230B.jpg border=0> quantifier is greatly reduced.</p>
+<p class="docText">So, the problem with <img src=images/U2308.jpg border=0><tt>"(\\.|[^\\"]+)*"</tt><img src=images/U230B.jpg border=0>, is that it bogs down on a non-match, backtracking over and over to what we know will always be unfruitful states. We know they're unfruitful because they're just testing different permutations of the same thing. (If <img src=images/U2308.jpg border=0><tt><span class="docEmphStrong">a</span>bc</tt><img src=images/U230B.jpg border=0> doesn't match '<tt>foo</tt>', neither will <img src=images/U2308.jpg border=0><tt>a<span class="docEmphStrong">b</span>c</tt><img src=images/U230B.jpg border=0> or <img src=images/U2308.jpg border=0><tt>ab<span class="docEmphStrong">c</span></tt><img src=images/U230B.jpg border=0> (or <img src=images/U2308.jpg border=0><tt><span class="docEmphStrong">ab</span>c</tt><img src=images/U230B.jpg border=0>, <img src=images/U2308.jpg border=0><tt>a<span class="docEmphStrong">bc</span></tt><img src=images/U230B.jpg border=0>, or <img src=images/U2308.jpg border=0><tt><span class="docEmphStrong">abc</span></tt><img src=images/U230B.jpg border=0>, for that matter). So, if we could throw those states away, this regex would report the non-match quickly.</p>
+<p class="docText">There are two ways to actually throw away (or otherwise ignore) states: atomic grouping (&#9758;139) and possessive quantifiers (&#9758;142).</P>
+<p class="docText">Before I get into the elimination of the backtracking, I'd like to swap the order of the alternatives from <img src=images/U2308.jpg border=0><tt>"<span class="docEmphStrong">(</span>\\.|[^\\"]+<span class="docEmphStrong">)*</span>"</tt><img src=images/U230B.jpg border=0> to <img src=images/U2308.jpg border=0><tt>"<span class="docEmphStrong">(</span>[^\\"]+|\\<span class="docEmphStrong">.)*</span>"</tt><img src=images/U230B.jpg border=0>, as this places the component matching "normal" text first. As has been noted a few times in the last several chapters, when two or more alternatives can potentially match at the same location, care must be taken when selecting their order, as that order can influence what exactly is matched. But if, as in this case, all alternatives are mutually exclusive (none can match at a point where another can match), the order doesn't matter from a correctness point of view, so the order can be chosen for clarity or efficiency.</P>
+<a name="regex3-CHP-6-SECT-7.6.1"></a>
+<H5 id="title-IDA3N4WG" class="docSection3Title">6.7.6.1. Making a neverending match safe with possessive quantifiers</h5>
+<p class="docText">Our neverending regex <img src=images/U2308.jpg border=0><tt>"<span class="docEmphStrong">(</span>[^\\"]+<span class="docEmphStrong">|</span>\\<span class="docEmphStrong">.)*</span>"</tt><img src=images/U230B.jpg border=0> has two quantifiers. We can make one possessive, the other possessive, or both possessive. Does it matter? Well, most of the backtracking troubles were due to the states left by the <img src=images/U2308.jpg border=0><tt>[&#8943;]+</tt><img src=images/U230B.jpg border=0>, so making that possessive is my first thought. Doing so yields a regex that's pretty fast, even when there's no match. However, making the outer <img src=images/U2308.jpg border=0><tt>(&#8943;)*</tt><img src=images/U230B.jpg border=0> possessive throws away all the states from inside the parentheses, which includes both those of <img src=images/U2308.jpg border=0><tt>[&#8943;]+</tt><img src=images/U230B.jpg border=0> and of the alternation, so if I had to pick one, I'd pick that one.</P>
+<p class="docText">But I don't have to pick one because I can make both possessive. Which of the three situations is fastest probably depends a lot on how optimized possessive quantifiers are. Currently, they are supported only by Sun's Java regex package, so my testing has been limited, but I've run all three combinations through tests with it, and found examples where one combination or the other is faster. I would expect the situation where both are possessive could be the fastest, so these results tend to make me believe that Sun hasn't yet optimized them to their fullest.</P>
+
+<a name="regex3-CHP-6-SECT-7.6.2"></a>
+<h5 id="title-IDA4O4WG" class="docSection3Title">6.7.6.2. Making a neverending match safe with atomic grouping</h5>
+<p class="docText">Looking to add atomic grouping to <img src=images/U2308.jpg border=0><tt>"<span class="docEmphStrong">(</span>[^\\"]+<span class="docEmphStrong">|</span>\\<span class="docEmphStrong">.)*</span>"</tt><img src=images/U230B.jpg border=0>, it's tempting to replace the normal parentheses with atomic ones: <img src=images/U2308.jpg border=0><tt>"<span class="docEmphStrong">(?&gt;</span>[^\\"]+<span class="docEmphStrong">|</span>\\<span class="docEmphStrong">.)*</span>"</tt><img src=images/U230B.jpg border=0>. It's important to realize that <img src=images/U2308.jpg border=0><tt>(?&gt;&#8943;|&#8943;)*</tt><img src=images/U230B.jpg border=0> is very different from the possessive <img src=images/U2308.jpg border=0><tt>(&#8943;|&#8943;)*+</tt><img src=images/U230B.jpg border=0> in the previous section when it comes to the states that are thrown away.</p>
+<p class="docText">The possessive <img src=images/U2308.jpg border=0><tt>(&#8943;|&#8943;)*<span class="docEmphStrong">+</span></tt><img src=images/U230B.jpg border=0> leaves no states when it's done. On the other hand, the atomic grouping in <img src=images/U2308.jpg border=0><tt><span class="docEmphStrong">(?&gt;</span>&#8943;|&#8943;<span class="docEmphStrong">)*</span></tt><img src=images/U230B.jpg border=0> merely eliminates any states left by each alternative, and by the alternation itself. The star is <span class="docEmphasis">outside</span> the atomic grouping, so is unaffected by it and still leaves all its "can try skipping this match" states. That means that the individual matches can still be undone via backtracking. We want to eliminate the outer quantifier's states as well, so we need an outer set of atomic grouping. That's why <img src=images/U2308.jpg border=0><tt><span class="docEmphStrong">(?&gt;</span>(&#8943;|&#8943;)*)</tt><img src=images/U230B.jpg border=0> is needed to mimic the possessive <img src=images/U2308.jpg border=0><tt>(&#8943;|&#8943;)*+</tt><img src=images/U230B.jpg border=0>.</p>
+<p class="docText"><img src=images/U2308.jpg border=0><tt>(&#8943;|&#8943;)*<span class="docEmphStrong">+</span></tt><img src=images/U230B.jpg border=0> and <img src=images/U2308.jpg border=0><tt><span class="docEmphStrong">(?&gt;</span>&#8943;|&#8943;<span class="docEmphStrong">)*</span></tt><img src=images/U230B.jpg border=0> are both certainly helpful in solving the neverending match, but which states are thrown away, and when, are different. (For more on the difference between the two, see page 173.)</P>
+
+
+<a name="regex3-CHP-6-SECT-7.7"></a>
+<h4 id="title-IDA2R4WG" class="docSection2Title">6.7.7. Short Unrolling Examples</h4>
+<a name="IDX-CHP-6-2061"></a> 
+
+<p class="docText">Now that we've got the basic idea of unrolling<a name="IDX-CHP-6-2062"></a> 
+<a name="IDX-CHP-6-2063"></a> 
+<a name="IDX-CHP-6-2064"></a> 
+ under our belt, let's look at some examples from earlier in the book, and see how unrolling applies to them.</P>
+<a name="regex3-CHP-6-SECT-7.7.1"></a>
+<h5 id="title-IDA5S4WG" class="docSection3Title">6.7.7.1. Unrolling "multi-character" quotes</h5>
+<p class="docText">In <a class="docLink" href="regex3-CHP-4.html#regex3-CHP-4">Chapter 4</a> on page 167, we saw this example:<a name="IDX-CHP-6-2065"></a> 
+</p>
+<pre>
+    &lt;B&gt;                # <span class="docEmphasis">Match the opening &lt;B&gt;</span>
+    (                  # <span class="docEmphasis">Now, as many of the following as possible</span> ...
+        (?! &lt;<span class="docEmphStrong">/?</span>B&gt; )    #     <span class="docEmphasis">If not &lt;B&gt;, and not &lt;/B&gt;</span> ...
+        .              #             <span class="docEmphasis">... any character is okay</span>
+    )*                 #<span class="docEmphasis">(now greedy)</span>
+    <span class="docEmphasis">&lt;/B&gt;</span>               #<span class="docEmphasis">&lt;ANNO&gt; ... until the closing delimiter can match</span>.
+</pre><br>
+
+<p class="docText">With a <span class="docEmphasis">normal</span> of <img src=images/U2308.jpg border=0><tt>[^&lt;]</tt><img src=images/U230B.jpg border=0> and a <span class="docEmphasis">special</span> of <img src=images/U2308.jpg border=0><tt>(?!&lt;/?B&gt;)&lt;</tt><img src=images/U230B.jpg border=0>, here's the unrolled version:</p>
+<pre>
+    &lt;B&gt;                   # <span class="docEmphasis">Match the opening &lt;B&gt;</span>
+        (?&gt; [^&lt;]*)        # <span class="docEmphasis">Now match any "normal"</span> ...
+        (?&gt;               # <span class="docEmphasis">Any amount of</span> ...
+            (?! &lt; /? B&gt; ) #   <span class="docEmphasis">if not at &lt;B&gt; or &lt;/B&gt;</span>,
+            &lt;             #   <span class="docEmphasis">match one "special"</span>
+            [^&lt;]*         #   <span class="docEmphasis">and then any amount of "normal"</span>
+        )*                #
+    &lt;/B&gt;                  # <span class="docEmphasis">And finally the closing &lt;/B&gt;</span>
+</pre><br>
+
+<p class="docText">The use of atomic grouping is not required, but does make the expression faster when there's only a partial match.</p>
+
+<a name="regex3-CHP-6-SECT-7.7.2"></a>
+<h5 id="title-IDAHV4WG" class="docSection3Title">6.7.7.2. Unrolling the continuation-line example</h5>
+<p class="docText">The continuation-line example from the start of the previous chapter (&#9758;186) left off with <img src=images/U2308.jpg border=0><tt>^\w+=([^\n\\]|\\<span class="docEmphStrong">.)*</span></tt><img src=images/U230B.jpg border=0>. Well, that certainly looks ripe for unrolling:</p>
+<pre>
+    ^ \w+ =                   # <span class="docEmphasis">leading field name and '='</span>
+    # <span class="docEmphasis">Now read (and capture) the value</span> ...
+    (
+        (?&gt; [^\n\\]* )        # <span class="docEmphasis">"normal"*</span>
+        (?&gt; \\. [^\n\\]+ )*   # <span class="docEmphasis">( "special" "normal"*)*</span>
+    )
+</pre><br>
+
+<p class="docText">As with earlier examples of unrolling,<a name="IDX-CHP-6-2066"></a> 
+<a name="IDX-CHP-6-2067"></a> 
+ the atomic grouping<a name="IDX-CHP-6-2068"></a> 
+ is not required for this to work, but helps to allow the engine to announce a failure more quickly.</p>
+
+<a name="regex3-CHP-6-SECT-7.7.3"></a>
+<h5 id="title-IDAVW4WG" class="docSection3Title">6.7.7.3. Unrolling the CSV regex</h5>
+<a name="IDX-CHP-6-2069"></a> 
+
+<p class="docText"><a class="docLink" href="regex3-CHP-5.html#regex3-CHP-5">Chapter 5</a> has a long discussion of CSV processing, which finally worked its way to this snippet, from page 216:</p>
+<pre>
+    (?:^|,)
+    (?: # <span class="docEmphasis">Now, match either a double-quoted field (inside, paired double
+quotes are allowed)</span> ...
+            " # <span class="docEmphasis">(double-quoted field's opening quote)</span>
+             (   (?: [^"] | "" )*   )
+            " # <span class="docEmphasis">(double-quoted field's closing quote)</span>
+      |
+        # ... <span class="docEmphasis">or, some non-quote/non-comma text</span> ...
+             ( [^",]* )
+    )
+</pre><br>
+
+<p class="docText">The text then went on to suggest adding <img src=images/U2308.jpg border=0><tt>\G</tt><img src=images/U230B.jpg border=0> to the front, just to be sure that the bump-along didn't get us in trouble as it had throughout the example, and some other efficiency suggestions. Now that we know about unrolling, let's see where in this example we can apply it.</p>
+<p class="docText">Well, the part to match a Microsoft CSV string, <img src=images/U2308.jpg border=0><tt>(?:[^"]|"")*</tt><img src=images/U230B.jpg border=0>, certainly looks inviting. In fact, the way it's presented already has our <span class="docEmphasis">normal</span> and <span class="docEmphasis">special</span> picked out for us: <img src=images/U2308.jpg border=0><tt>[^"]</tt><img src=images/U230B.jpg border=0> and <img src=images/U2308.jpg border=0><tt>""</tt><img src=images/U230B.jpg border=0>. Here's how it looks with that part unrolled, plugged back into the original Perl snippet to process each field:</P>
+<pre>
+    while ($line =~ m{
+              \G(?:^|,)
+              (?:
+                 # Either a double-quoted field (with "" for each ")&#8943;
+                 " # field's opening quote
+                  ( <span class="docEmphStrong">(?&gt; [^"]* ) (?&gt; "" [^"]* )*</span>  )
+                 " # field's closing quote
+              # ..or&#8943;
+              |
+                 # &#8943; some non-quote/non-comma text....
+                 ( [^",]* )
+              )
+          }gx)
+    {
+        if (defined $2) {
+            $field = $2;
+        } else {
+            $field = $1;
+            $field =~ s/""/"/g;
+        }
+    print "[$field]"; # print the field, for debugging
+    <span class="docEmphasis">Can work with $field now</span> ...
+    }
+</pre><br>
+
+<p class="docText">As with the other examples, the atomic grouping is not required, but may help with efficiency.</P>
+
+
+<a name="regex3-CHP-6-SECT-7.8"></a>
+<h4 id="title-IDAUY4WG" class="docSection2Title">6.7.8. Unrolling C Comments</h4>
+<a name="IDX-CHP-6-2070"></a> 
+<a name="IDX-CHP-6-2071"></a> 
+<a name="IDX-CHP-6-2072"></a> 
+
+<p class="docText">I'd like to give an example of unrolling the loop with a somewhat more complex target. In the C language, comments begin with <tt><span class="docEmphStrong">/*</span></tt>, end with <tt><span class="docEmphStrong">*/</span></tt>, and can span across lines, but can't be nested. (C++, Java, and C# also allow this type of comment.) An expression to match such a comment might be useful in a variety of situations, such as in constructing a filter to remove them. It was when working on this problem that I first came up with my unrolling technique, and the technique has since become a staple in my regex arsenal.</P>
+<a name="regex3-CHP-6-SECT-7.8.1"></a>
+<H5 id="title-IDAVZ4WG" class="docSection3Title">6.7.8.1. To unroll or to not unroll ...</H5>
+<p class="docText">I originally developed the regex that is the subject of this section back in the early 1990s. Prior to that, matching<a name="IDX-CHP-6-2073"></a> 
+ C comments with a regular expression was considered difficult at best, if not impossible, so when I developed something that worked, it became the standard way to match C comments. But, when Perl introduced lazy quantifiers, a much simpler approach became evident: a dot-matches-all application of <img src=images/U2308.jpg border=0><tt>/\*.*?\*/</tt><img src=images/U230B.jpg border=0>.</P>
+<p class="docText">Had lazy quantifiers been around when I first developed the unrolling technique, I might not have bothered to do so, for the need wouldn't have been so apparent. Yet, such a solution was still valuable because with that first version of Perl supporting lazy quantifiers, the unrolled version is faster than the lazy-quantifier version by a significant amount (in the variety of tests I've done, anywhere from about 50 percent faster, to 3.6x faster).</p>
+<p class="docText">Yet, with today's Perl and its different mix of optimizations, those numbers go the other way, with the lazy-quantifier version running anywhere from about 50 percent faster to 5.5x faster. So, with modern versions of Perl, I'd just use <img src=images/U2308.jpg border=0><tt>/\*.*?\*/</tt><img src=images/U230B.jpg border=0> to match C comments and be done with it.</P>
+<p class="docText">Does this mean that the unrolling-the-loop technique is no longer useful for matching C comments? Well, if an engine doesn't support lazy quantifiers, the ability to use the unrolling technique certainly becomes appealing. And not all regex engines have the same mix of optimizations: the unrolling technique is faster with every other language I've testedin my tests, up to 60 times faster! The unrolling technique is definitely useful, so the remainder of this example explores how to apply it to matching C comments.</p>
+<p class="docText">Since there are no escapes to be recognized within a C comment the way <tt>\*</tt> must be recognized within a double-quoted string, one might think that this should make things simpler, but actually, it's much more complex. This is because <tt>*/</tt>, the "ending quote," is more than one character long. The simple <img src=images/U2308.jpg border=0><tt>/\*[^*]*\*/</tt><img src=images/U230B.jpg border=0> might look good, but that doesn't match <tt><span class="docEmphStrong">/*</span>* some comment here *<span class="docEmphStrong">*/</span></tt> because it has a '<tt>*</tt>' within. It should be matched, so we need a new approach.</p>
+
+<a name="regex3-CHP-6-SECT-7.8.2"></a>
+<H5 id="title-IDAD14WG" class="docSection3Title">6.7.8.2. Avoiding regex headaches</H5>
+<p class="docText">You might find that <img src=images/U2308.jpg border=0><tt>/\*[^*]*\*/</tt><img src=images/U230B.jpg border=0> is a bit difficult to read, even with the subtle easy-on-the-eyes spacing I've used in typesetting this book. It is unfortunate for our eyes that one of the comment's delimiting characters, '<tt>*</tt>', is also a regex metacharacter. The resulting backslashes are enough to give me a headache. To make things more readable during this example, we'll consider <tt>/x</tt> &#8943; <tt>x/</tt>, rather than <tt>/*</tt> &#8943; <tt>*/</tt>, to be our target comment. This superficial cosmetic change allows <img src=images/U2308.jpg border=0><tt>/\*[^*]*\*/</tt><img src=images/U230B.jpg border=0> to be written as the more readable <img src=images/U2308.jpg border=0><tt>/x [^x]* x/</tt><img src=images/U230B.jpg border=0>. As we work through the example and the expression becomes more complex, our eyes will thank us for the reprieve.</p>
+
+<a name="regex3-CHP-6-SECT-7.8.3"></a>
+<h5 id="title-IDA314WG" class="docSection3Title">6.7.8.3. A direct approach</H5>
+<p class="docText">In <a class="docLink" href="regex3-CHP-5.html#regex3-CHP-5">Chapter 5</a> (&#9758;196), I gave a standard formula<a name="IDX-CHP-6-2074"></a> 
+ for matching delimited text:</P>
+<UL><li><p class="docList"><span class="docEmphasis">1</span>. Match the opening delimiter.</P></LI><li><p class="docList"><span class="docEmphasis">2</span>. Match the main text: really "match anything that is not the ending delimiter."</p></li><li><p class="docList"><span class="docEmphasis">3</span>. Match the ending delimiter.</P></li></ul>
+<p class="docText">Our pseudo comments, with <tt>/x</tt> and <tt>x/</tt> as our opening and closing delimiters, appear to fit into this pattern. Our difficulties begin when we try to match "anything that is not the ending delimiter." When the ending delimiter is a single character, we can use a negated character class to match all characters except that delimiter. A character class can't be used for multi-character subexpressions, but if you have negative lookahead, you can use something like <img src=images/U2308.jpg border=0><tt>(?: (?! <span class="docEmphStrong">x/</span>).)*</tt><img src=images/U230B.jpg border=0>. This is essentially <img src=images/U2308.jpg border=0><tt>(<span class="docEmphasis">anything not</span> x/)*</tt><img src=images/U230B.jpg border=0>.</P>
+<p class="docText">Using that, we get <img src=images/U2308.jpg border=0><tt>/x(?: (?!<span class="docEmphStrong">x/</span>).)*x/</tt><img src=images/U230B.jpg border=0> to match comments. It works perfectly well, but it can be quite slow (in some of my tests, hundreds of times slower than what we'll develop later in this section). This approach can be useful, but it's of little use in this particular case because any flavor that supports lookahead almost certainly supports lazy quantifiers, so if efficiency is not an issue, you can just use <img src=images/U2308.jpg border=0><tt>/x.*?x/</tt><img src=images/U230B.jpg border=0> and be done with it.</p>
+<p class="docText">So, continuing with the direct, three-step approach, is there another way to match until the first <tt>x/?</tt> Two ideas might come to mind. One method is to consider <tt>x</tt> to be the start of the ending delimiter. That means we'd match anything not <tt>x</tt>, and allow an <tt>x</tt> if it is followed by something other than a slash. This makes the "anything that is not the ending delimiter" one of:</p>
+<ul><li><p class="docList">Anything that is not <tt>x</tt>: <img src=images/U2308.jpg border=0><tt>[^x]</tt><img src=images/U230B.jpg border=0></p></li><li><p class="docList"><tt>x</tt>, so long as not followed by a slash: <img src=images/U2308.jpg border=0><tt>x[^/]</tt><img src=images/U230B.jpg border=0></p></li></ul>
+<p class="docText">This yields <img src=images/U2308.jpg border=0><tt>([^x]|x[^/])*</tt><img src=images/U230B.jpg border=0> to match the main text, and <img src=images/U2308.jpg border=0><tt>/x([^x]|x[^/])*x/</tt><img src=images/U230B.jpg border=0> to match the entire pseudo comment. As we'll see, this doesn't work.</p>
+<p class="docText">Another approach is to consider a slash as the ending delimiter, but only if preceded by <tt>x</tt>. This makes the "anything not the ending delimiter" one of:</p>
+<ul><li><p class="docList">Anything that is not a slash: <img src=images/U2308.jpg border=0><tt>[^/]</tt><img src=images/U230B.jpg border=0></p></li><li><p class="docList">A slash, so long as not preceded by <tt>x</tt>: <img src=images/U2308.jpg border=0><tt>[^x]/</tt><img src=images/U230B.jpg border=0></P></li></UL>
+<p class="docText">This yields <img src=images/U2308.jpg border=0><tt><span class="docEmphStrong">(</span>[^/]|[^x]/<span class="docEmphStrong">)*</span></tt><img src=images/U230B.jpg border=0> to match the main text, and <img src=images/U2308.jpg border=0><tt>/x<span class="docEmphStrong">(</span>[^/]|[^x]/)*x/</tt><img src=images/U230B.jpg border=0> to match the whole comment.</p>
+<p class="docText">Unfortunately, it also doesn't work.</p>
+<p class="docText">For <img src=images/U2308.jpg border=0><tt>/x([^x]|x[^/])*x/</tt><img src=images/U230B.jpg border=0>, consider the text '/<tt>xx</tt>&#8226;<tt>foo</tt>&#8226;<tt>xx</tt>/'  after matching '<tt>foo</tt>&#8226;', the first closing <tt>x</tt> is matched by <img border="0" alt="" id="195131084202" width="43" height="14" SRC="images/regex3_u0629.jpg">, which is fine. But then, <img border="0" alt="" id="195131084202" width="45" height="14" SRC="images/regex3_u0630.jpg"> matches <img border="0" alt="" id="195131084202" width="24" height="13" SRC="images/regex3_u0631.jpg">, which is the <tt>x</tt> that should be ending the comment. This opens the door for the next iteration's <img src=images/U2308.jpg border=0><tt>[^x]</tt><img src=images/U230B.jpg border=0> to match the slash, thereby errantly matching past the closing <tt>x/</tt>.</P>
+<p class="docText">As for <img src=images/U2308.jpg border=0><tt>/x<span class="docEmphStrong">(</span>[^/]|[^x]/)*x/</tt><img src=images/U230B.jpg border=0>, it can't match '<tt><span class="docEmphStrong">/x</span></tt>/&#8226;<tt>foo</tt>&#8226;/<tt><span class="docEmphStrong">x</span>/</tt>' (the whole of which is a comment and should be matched). In other cases, it can march past the end of a comment that has a slash immediately after its end (in a way similar to the other method). In such a case, the backtracking involved is perhaps a bit confusing, so it should be instructive to understand why <img src=images/U2308.jpg border=0><tt>/x([^/]|[^x]/)*x/</tt><img src=images/U230B.jpg border=0> matches</P>
+<pre>
+<div><img border="0" alt="" id="195131084202" width="410" height="12" SRC="images/regex3_u0632.jpg"></div>
+</pre><BR>
+
+<p class="docText">as it does (an investigation I'll leave for your free time).</P>
+
+<a name="regex3-CHP-6-SECT-7.8.4"></a>
+<h5 id="title-IDA4C5WG" class="docSection3Title">6.7.8.4. Making it work</H5>
+<a name="IDX-CHP-6-2075"></a> 
+
+<p class="docText">Let's try to fix these regexes. With the first one, where <img src=images/U2308.jpg border=0><tt>x[^/]</tt><img src=images/U230B.jpg border=0> inadvertently matches the comment-ending &#8943;<tt>x</tt><img border="0" alt="" id="195131084202" width="8" height="10" SRC="images/regex3_u0633.jpg">/, consider <img src=images/U2308.jpg border=0><tt>/x([^x]|x<img border="0" alt="" id="195131084202" width="7" height="11" SRC="images/regex3_u0634.jpg">[^/])*x/</tt><img src=images/U230B.jpg border=0>. The added plus will, we think, have <img src=images/U2308.jpg border=0><tt>x+[^/]</tt><img src=images/U230B.jpg border=0> match a row of <tt>x</tt>'s ending with something other than a slash. Indeed it will, but due to backtracking, that "something other than a slash" can still be <tt>x</tt>. At first, the greedy <img src=images/U2308.jpg border=0><tt>x+</tt><img src=images/U230B.jpg border=0> matches that extra <tt>x</tt> as we want, but backtracking will reclaim an <tt>x</tt> if needed to secure an overall match. So, it still matches too much of:</p>
+<pre>
+<div><img border="0" alt="" id="195131084202" width="206" height="13" SRC="images/regex3_u0635.jpg"></div>
+</pre><br>
+
+<p class="docText">The solution comes back to something I've said before: <span class="docEmphasis">say what you mean</span>.<a name="IDX-CHP-6-2076"></a> 
+ If we want "some <tt>x</tt>, if not followed by a slash" to imply that the non-slash also doesn't include an <tt>x</tt>, we should write exactly that: <img src=images/U2308.jpg border=0><tt>x+[^/<img border="0" alt="" id="195131084202" width="8" height="10" SRC="images/regex3_u0633.jpg">]</tt><img src=images/U230B.jpg border=0>. As we want, this stops it from eating '&#8943;xx<img border="0" alt="" id="195131084202" width="8" height="10" SRC="images/regex3_u0633.jpg">/', the final <tt>x</tt> of a row of <tt>x</tt> that ends the comment. In fact, it has the added effect of not matching <span class="docEmphasis">any</span> comment-ending <tt>x</tt>, so it leaves us at '&#8943;<img src=images/U22CF.jpg border=0><tt>xxx</tt>/' to match the ending delimiter. Since the ending delimiter part had been expecting just the one <tt>x</tt>, it won't match until we insert <img src=images/U2308.jpg border=0><tt>x<img border="0" alt="" id="195131084202" width="6" height="10" SRC="images/regex3_u0602.jpg">/</tt><img src=images/U230B.jpg border=0> to allow this final case.</P>
+<p class="docText">This leaves us with: <img src=images/U2308.jpg border=0><tt>/x<span class="docEmphStrong">(</span>[^x]|x+[^/x])*x+/</tt><img src=images/U230B.jpg border=0> to match our pseudo comments. <span class="docEmphasis">Phew!</span> Somewhat confusing, isn't it? Real comments (with * instead of <tt>x</tt>) require <img src=images/U2308.jpg border=0><tt>/\*([^*]|\*+[^/*])*\*+/</tt><img src=images/U230B.jpg border=0>, which is even more confusing. It's not easy to read; just remember to keep your wits about you as you carefully parse complex expressions in your mind.</P>
+<a name="regex3-CHP-6-SIDEBAR-5"></a><p><table cellspacing="0" width="90%" border="1" cellpadding="5"><tr><TD>
+<H2 class="docSidebarTitle">Translating Between English and Regex</H2>
+<p class="docText">On page 273, when discussing two ways one might consider the C comment "anything that is not the ending delimiter," I presented one idea as</p>
+<pre>
+    " x, so long as not followed by a slash: <img src=images/U2308.jpg border=0>x[^/]<img src=images/U230B.jpg border=0> "
+</pre><BR>
+
+<p class="docText">and another as:</P>
+<pre>
+    " a slash, so long as not preceded by x: <img src=images/U2308.jpg border=0>[^x]/<img src=images/U230B.jpg border=0> "
+</pre><br>
+
+<p class="docText">In doing so, I was being informalthe English descriptions are actually quite different from the regexes. Do you see how?</p>
+<p class="docText">To see the difference, consider the first case with the string '<tt>regex</tt>' it certainly has an <tt>x</tt> not followed by a slash, but it would <span class="docEmphasis">not</span> be matched by match <img src=images/U2308.jpg border=0><tt>x[^/]</tt><img src=images/U230B.jpg border=0>. The character class requires a character to match, and although that character can't be a slash, it still must be <span class="docEmphasis">something</span>, and there's nothing after the <tt>x</tt> in '<tt>regex</tt>'. The second situation is analogous. As it turns out, what I need at that point in the discussion are those specific expressions, so it's the English that is in error.</p>
+<p class="docText">If you have lookahead, "<tt>x</tt>, so long as not followed by a slash" is simply <img src=images/U2308.jpg border=0><tt>x(?!/)</tt><img src=images/U230B.jpg border=0>. If you don't, you might try to get by with <img src=images/U2308.jpg border=0><tt>x([^/]|$)</tt><img src=images/U230B.jpg border=0>. It still matches a character after the <tt>x</tt>, but can also match at the end of the line. If you have lookbehind, "slash, so long as not preceded by <tt>x</tt>" becomes <img src=images/U2308.jpg border=0><tt>(?&lt;!x)/</tt><img src=images/U230B.jpg border=0>. If you don't have it, you have to make due with <img src=images/U2308.jpg border=0><tt>(^|[^x])/</tt><img src=images/U230B.jpg border=0>.</p>
+<p class="docText">We won't use any of these while working with C comments, but it's good to understand the issue.</P>
+</td></tr></table></P><br>
+
+<a name="regex3-CHP-6-SECT-7.8.5"></a>
+<h5 id="title-IDAGI5WG" class="docSection3Title">6.7.8.5. Unrolling the C loop</h5>
+<a name="IDX-CHP-6-2077"></a> 
+<a name="IDX-CHP-6-2078"></a> 
+
+<p class="docText">For efficiency's sake, let's look at unrolling<a name="IDX-CHP-6-2079"></a> 
+ this regex. <a class="docLink" href="#regex3-CHP-6-TABLE-3">Table 6-3</a> on the next page shows the expressions we can plug in to our unrolling-the-loop pattern.</p>
+<p class="docText">Like the subdomain example, the <img src=images/U2308.jpg border=0><tt><span class="docEmphasis">normal</span>*</tt><img src=images/U230B.jpg border=0> is not actually free to match nothingness. With subdomains, it was because the normal part was not allowed to be empty. In this case, it's due to how we handle the two-character ending delimiter. We ensure that any <span class="docEmphasis">normal</span> sequence ends with the first character of the ending delimiter, allowing <span class="docEmphasis">special</span> to pick up the ball only if the following character does not complete the ending.</p>
+<a name="regex3-CHP-6-TABLE-3"></a><p><table cellspacing="0" FRAME="hsides" RULES="all" cellpadding="4" width="100%"><caption><h5 class="docTableTitle">Table 6-3. Unrolling-the-Loop Components for C Comments</h5></caption><colgroup span="3"><col><col><col></colgroup><thead><tr><th class="thead" scope="col" align="center" colspan="3"><p class="docText"><img src=images/U2308.jpg border=0><tt>opening normal* (<img border="0" alt="" id="195131084202" width="108" height="14" SRC="images/regex3_u0636.jpg">)* closing</tt><img src=images/U230B.jpg border=0></p></th></tr><tr><th class="thead" scope="col" align="center"><p class="docText">Item</p></th><th class="thead" scope="col" align="left"><p class="docText">What We Want</p></th><th class="thead" scope="col" align="center"><p class="docText">Regex</p></th></tr></thead><tr><TD class="docTableCell" align="left"><p class="docText">opening</p></TD><td class="docTableCell" align="left"><p class="docText">start of comment</p></TD><TD class="docTableCell" align="center"><p class="docText"><tt>/x</tt></P></TD></tr><TR><td class="docTableCell" align="left"><p class="docText">normal*</p></TD><TD class="docTableCell" align="left"><p class="docText">comment text up to, and including, one or more '<tt>x</tt>'</p></td><TD class="docTableCell" align="center"><p class="docText">[^<tt>x</tt>]*<tt>x</tt>+</P></TD></tr><TR><TD class="docTableCell" align="left"><p class="docText">special</p></td><td class="docTableCell" align="left"><p class="docText">something other than the ending slash (and also not '<tt>x</tt>')</p></TD><td class="docTableCell" align="center"><p class="docText">[^/<tt>x</tt>]</p></TD></tr><tr><td class="docTableCell" align="left"><p class="docText">closing</p></td><td class="docTableCell" align="left"><p class="docText">trailing slash</p></td><td class="docTableCell" align="center"><p class="docText">/</p></td></tr></table></p><br>
+<p class="docText">So, plugging these in to the general unrolling pattern, we get:</p>
+<pre>
+    <img src=images/U2308.jpg border=0>/x[^x]*x+(<img src=images/U22CF.jpg border=0><div><img border="0" alt="" id="195131084202" width="211" height="16" SRC="images/regex3_u0637.jpg"></div>)*/<img src=images/U230B.jpg border=0>.
+</pre><br>
+
+<p class="docText">Notice the spot marked with <img src=images/U22CF.jpg border=0> ? The regex engine might work to that spot in two ways (just like the expression on page 267). The first is by progressing to it after the leading <img src=images/U2308.jpg border=0><tt>/x[^x]*x+</tt><img src=images/U230B.jpg border=0>. The second is by looping due to the (&#8943;)<tt>*</tt>. Via either path, once we're at that spot we know we've matched <tt>x</tt> and are at a pivotal point, possibly on the brink of the comment's end. If the next character is a slash, we're done. If it's anything else (but an <tt>x</tt>, of course), we know the <tt>x</tt> was a false alarm and we're back to matching normal stuff, again waiting for the next <tt>x</tt>. Once we find it, we're right back on the brink of excitement at the marked spot.</p>
+
+<a name="regex3-CHP-6-SECT-7.8.6"></a>
+<H5 id="title-IDATO5WG" class="docSection3Title">6.7.8.6. Return to reality</h5>
+<p class="docText"><img src=images/U2308.jpg border=0><tt>/x[^x]*x+([^/x][^x]*x+)*/</tt><img src=images/U230B.jpg border=0> is not quite ready to be used. First, of course, comments are <tt>/* &#8943; */</tt> and not <tt>/x</tt> &#8943; <tt>x/</tt>. This is easily fixed by substituting each <tt>x</tt> with <tt>\*</tt> (or, within character classes, each <tt>x</tt> with *) :</P>
+<pre>
+    <img src=images/U2308.jpg border=0>/\*[^*]*\*+<span class="docEmphStrong">(</span>[^/*][^*]*\*+<span class="docEmphStrong">)</span>*/<img src=images/U230B.jpg border=0>
+</pre><br>
+
+<p class="docText">A use-related issue is that comments often span across lines. If the text being matched contains the entire multiline comment, this expression should work. With a strictly line-oriented tool such as <span class="docEmphasis">egrep</span>, though, there is no way to apply a regex to the full comment. With most utilities mentioned in this book, you can, and this expression might be useful for, say, removing comments.</p>
+<p class="docText">In practical use, a larger problem arises. This regex understands C comments, but does not understand other important aspects of C syntax. For example, it can falsely match where there is no comment:</P>
+<pre>
+<div><img border="0" alt="" id="195131084202" width="285" height="12" SRC="images/regex3_u0639.jpg"></div>
+</pre><BR>
+
+<p class="docText">We'll develop this example further, right in the next section.</P>
+
+
+
+</TD></TR></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=regex3-CHP-6-SECT-6.html><img src="images/prev.gif" width="60" height="17" border="0" align="absmiddle" alt="Previous Page"></a>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=regex3-CHP-6-SECT-8.html><img src="images/next.gif" width="60" height="17" border="0" align="absmiddle" alt="Next Page"></a>
+</div></td></tr></table>
+</body></html>

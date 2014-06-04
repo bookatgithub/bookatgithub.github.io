@@ -1,0 +1,540 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>10.6 Internet Cache Protocol</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="squid-CHP-10-SECT-5.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="squid-CHP-10-SECT-7.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="squid-CHP-10-SECT-6"></A>
+<H3 class="docSection1Title">10.6 Internet Cache Protocol</H3>
+
+<P class="docText">ICP is a lightweight object <A NAME="squid-CHP-10-ITERM-1639"></A>location protocol invented as a part
+of the Harvest project.<sup class="docFootnote"><A class="docLink" HREF="#squid-CHP-10-FNOTE-1">[1]</A></sup> An
+ICP client sends a query message to one or more ICP servers, asking
+if they have a particular URI cached. Each server replies with an
+<TT>ICP_HIT</TT>, <TT>ICP_MISS</TT>, or other
+type of ICP message. The ICP client uses the information in the ICP
+replies to make a forwarding decision.</P><blockquote><p class="docFootnote"><sup><A NAME="squid-CHP-10-FNOTE-1">[1]</A></sup> For more information, see the
+following papers: "A Hierarchical Internet Object
+Cache," by Danzig, Chankhunthod, et al,
+<span class="docEmphasis">USENIX Annual Technical Conference, 1995</span>, and
+"The Harvest information discovery and access
+system," by C. Mic Bowman, Peter B. Danzig, Darren
+R. Hardy, Udi Manber, and Michael F. Schwartz, Proceedings of the
+Second International World Wide Web Conference.</p></blockquote>
+
+<P class="docText">In addition to predicting cache hits, ICP is also useful for
+providing hints about network conditions between Squid and the
+neighbor. ICP messages are similar to ICMP pings in this regard. By
+measuring the query/response round-trip time, Squid can estimate
+network congestion. In the extreme case, ICP messages may be lost,
+indicating that the path between the two is down or congested. From
+this, Squid decides to avoid the neighbor for that particular
+request.</P>
+
+<P class="docText">Increased latency is perhaps the most significant drawback to using
+ICP. The query/response exchange takes some time. Caching proxies are
+supposed to decrease response time, not add more latency. If ICP
+helps us discover cache hits in neighbors, then it may lead to an
+overall reduction in response time. See <A class="docLink" HREF="squid-CHP-10-SECT-10.html#squid-CHP-10-SECT-10">Section 10.10</A> for a description of the
+query algorithm implemented in Squid.</P>
+
+<P class="docText">ICP also suffers from a number of design deficiencies: security,
+scalability, false hits, and the lack of a request method. The
+protocol doesn't include any security features. In
+general, Squid can't verify that an ICP message is
+authentic; it relies on address-based access controls to filter out
+unwanted ICP messages.</P>
+
+<P class="docText">ICP has poor scaling <A NAME="squid-CHP-10-ITERM-1640"></A>properties. The number of ICP messages (and
+bandwidth) grows in proportion to the number of neighbors. Unless you
+use some kind of partitioning scheme, this places a practical limit
+on the number of neighbors you can have. I don't
+recommend having more than five or six neighbors.</P>
+
+<P class="docText">ICP queries contain only URIs, with no additional request headers.
+This makes it difficult to predict cache hits with perfect accuracy.
+An HTTP request may include additional headers (such as
+<TT>Cache-Control</TT>: <TT>max-stale=N</TT>)
+that turn a cache hit into a cache miss. These false hits are
+particularly awkward for sibling relationships.</P>
+
+<P class="docText">Also missing from the ICP query <A NAME="squid-CHP-10-ITERM-1641"></A>message
+is the request method. ICP assumes that all queries are for
+<TT>GET</TT> requests. A caching proxy
+can't use ICP to locate cached objects for
+non-<TT>GET</TT> request methods.</P>
+
+<P class="docText">You can find additional information about ICP by reading:</P>
+
+<UL><LI><P class="docList">My book <span class="docEmphasis">Web Caching</span> (O'Reilly)</P></LI><LI><P class="docList">RFCs 2186 and 2187</P></LI><LI><P class="docList">My article with kc claffy: "ICP and the Squid Web
+Cache" in the <span class="docEmphasis">IEEE Journal on Selected
+Areas in Communication</span>, April 1998</P></LI><LI><P class="docList"><A class="docLink" target="_blank" HREF="http://icp.ircache.net/">http://icp.ircache.net/</A></P></LI></UL>
+<A NAME="squid-CHP-10-SECT-6.1"></A>
+<H4 class="docSection2Title">10.6.1 Being an ICP Server</H4>
+
+<P class="docText">When you use the <span class="docEmphasis">icp_port</span> directive, Squid
+<A NAME="squid-CHP-10-ITERM-1642"></A><A NAME="squid-CHP-10-ITERM-1643"></A>automatically becomes an ICP server.
+That is, it listens for ICP messages on the port
+you've specified, or port 3130 by default. Be sure
+to tell your sibling and/or child caches if you decide to use a
+nonstandard port.</P>
+
+<P class="docText">By default, Squid denies all ICP queries. You must use the
+<I>icp_access</I> rule list to allow queries from your
+neighbors. It's usually easiest to do this with
+<span class="docEmphasis">src</span> ACLs. For example:</P>
+
+<PRE>acl N1 src 192.168.0.1
+acl N2 src 172.16.0.2
+acl All src 0/0
+icp_access allow N1
+icp_access allow N2
+icp_access deny All</PRE>
+
+<P class="docText">Note that only <TT>ICP_QUERY</TT> messages are subject to
+the <I>icp_access</I> rules. ICP client functions, such
+as sending queries and receiving replies, don't
+require any special access controls. I also recommend that you take
+advantage of your operating system's packet
+filtering features (e.g., <TT>ipfw</TT>,
+<TT>iptables</TT>, and <TT>pf</TT>) if possible.
+Allow UDP messages on the ICP port from your trusted neighbors and
+deny them from all other hosts.</P>
+
+<P class="docText">When Squid denies an ICP query due to the
+<I>icp_access</I> rules, it sends back an
+<TT>ICP_DENIED</TT> message. However, if Squid detects that
+more than 95% of the recent queries have been denied, it stops
+responding for an hour. When this happens, Squid writes a message in
+<I>cache.log</I>:</P>
+
+<PRE>WARNING: Probable misconfigured neighbor at foo.web-cache.com
+WARNING: 150 of the last 150 ICP replies are DENIED
+WARNING: No replies will be sent for the next 3600 seconds</PRE>
+
+<P class="docText">If you see this message, you should contact the administrator
+responsible for the misconfigured cache.</P>
+
+<P class="docText">Squid was designed to answer ICP queries immediately. That is, Squid
+can tell whether or not it has a fresh, cached response by checking
+the in-memory index. This is also why Squid is a bit of a memory hog.
+When an ICP query comes in, Squid calculates the MD5 hash of the URI
+and looks for it in the index. If not found, Squid sends back an
+<TT>ICP_MISS</TT> message. If found, Squid checks the
+expiration time. If the object isn't fresh, Squid
+returns <TT>ICP_MISS</TT>. For fresh objects, Squid returns
+<TT>ICP_HIT</TT>.</P>
+
+<P class="docText">By default, Squid logs all ICP queries (but not responses) to
+<I>access.log</I>. If you have a lot of busy neighbors,
+your log file may become too large to manage. Use the
+<span class="docEmphasis">log_icp_queries</span> directive to prevent logging of
+these queries. Although you'll lose the detailed
+logging for ICP, you can still get some aggregate stats via the cache
+manager (see <A class="docLink" HREF="squid-CHP-14-SECT-2.html#squid-CHP-14-SECT-2.1.24">Section 14.2.1.24</A>).</P>
+
+<P class="docText">If you have sibling neighbors, you'll probably
+<A NAME="squid-CHP-10-ITERM-1644"></A><A NAME="squid-CHP-10-ITERM-1645"></A>want to use
+the <span class="docEmphasis">miss_access</span> directive to enforce the
+relationship. It specifies an access rule for cache misses. It is
+similar to <span class="docEmphasis">http_access</span> but is checked only for
+requests that must be forwarded. The default rule is to allow all
+cache misses. Unless you add some <span class="docEmphasis">miss_access</span>
+rules, any sibling cache can become a child cache and forward cache
+misses through your network connection, thus stealing your bandwidth.</P>
+
+<P class="docText">Your <span class="docEmphasis">miss_access</span> rules can be relatively simple.
+Don't forget to include your local clients (i.e.,
+web browsers) as well. Here's a simple example:</P>
+
+<PRE>acl Browsers src 10.9.0.0/16
+acl Child1 src 172.16.3.4
+acl Child2 src 192.168.2.0/24
+acl All src 0/0
+miss_access allow Browsers
+miss_access allow Child1
+miss_access allow Child2
+miss_access deny All</PRE>
+
+<P class="docText">Note that I haven't listed any siblings here. The
+child caches are allowed to request misses through us, but the
+siblings are not. Their cache miss requests are denied by the
+<TT>deny All</TT> rule.</P>
+
+<A NAME="squid-CHP-10-SECT-6.1.1"></A>
+<H5 class="docSection3Title">10.6.1.1 The icp_hit_stale directive</H5>
+
+<P class="docText">One of the problems with ICP is that
+<A NAME="squid-CHP-10-ITERM-1646"></A><A NAME="squid-CHP-10-ITERM-1647"></A>it returns
+<TT>ICP_MISS</TT> for cached but stale responses. This is
+true even if the response is stale, but valid (such that a validation
+request returns "not modified").
+Consider a simple hierarchy with a child and two parent caches. An
+object is cached by one parent but not the other. The cached response
+is stale, but unchanged, and needs validation. The
+child's ICP query results in two
+<TT>ICP_MISS</TT> replies. Not knowing that the stale
+response exists in the first parent, the child forwards its request
+to the second parent. Now the object is stored in both parents,
+wasting resources.</P>
+
+<P class="docText">You might find the <span class="docEmphasis">icp_hit_stale</span> directive
+useful in this situation. It tells Squid to return an
+<TT>ICP_HIT</TT> for any cached object, even if it is
+stale. This is perfectly safe for parent relationships but can create
+problems for siblings.</P>
+
+<P class="docText">Recall that in a sibling relationship, the client cache is only
+allowed to make requests that are cache hits. Enabling the
+<span class="docEmphasis">icp_hit_stale</span> directive increases the number of
+false hits because Squid must validate the stale responses. Squid
+normally handles false hits by adding the <TT>Cache-Control:
+only-if-cached</TT> directive to HTTP requests sent to siblings.
+If the sibling can't satisfy the HTTP request as a
+cache hit, it returns an HTTP 504 (Gateway Timeout) message instead.
+When Squid receives the 504 response, it forwards the request again,
+but only to a parent or the origin server.</P>
+
+<P class="docText">It makes little sense to enable <span class="docEmphasis">icp_hit_stale</span>
+for sibling relationships if all the false hits must be reforwarded.
+This is where the ICP client's
+<TT>allow-miss</TT> option to
+<span class="docEmphasis">cache_peer</span> becomes useful. When the
+<TT>allow-miss</TT> option is set, Squid omits the
+<TT>only-if-cached</TT> directive in HTTP requests it sends
+to siblings.</P>
+
+<P class="docText">If you enable <span class="docEmphasis">icp_hit_stale</span>, you also need to
+make sure that <span class="docEmphasis">miss_access</span>
+doesn't deny cache-miss requests from siblings.
+Unfortunately, there is no way to make Squid allow only cache-misses
+for cached, stale objects. Allowing cache misses for siblings also
+leaves your cache open to potential abuse. The administrator of the
+sibling cache may change it to a parent relationship without your
+knowledge or permission.</P>
+
+
+
+<A NAME="squid-CHP-10-SECT-6.1.2"></A>
+<H5 class="docSection3Title">10.6.1.2 The ICP_MISS_NOFETCH feature</H5>
+
+<P class="docText">The command-line <I>-Y</I> option to
+<A NAME="squid-CHP-10-ITERM-1648"></A>Squid
+causes it to return <TT>ICP_MISS_NOFETCH</TT>, instead of
+<TT>ICP_MISS</TT>, while rebuilding the in-memory indexes.
+ICP clients that receive <TT>ICP_MISS_NOFETCH</TT>
+responses should not send HTTP requests for those objects. This
+reduces the load placed on Squid and allows the rebuild process to
+complete sooner.</P>
+
+
+
+<A NAME="squid-CHP-10-SECT-6.1.3"></A>
+<H5 class="docSection3Title">10.6.1.3 The test_reachability directive</H5>
+
+<P class="docText">If you enable the <span class="docEmphasis">netdb</span> feature (see 
+<A class="docLink" HREF="squid-CHP-10-SECT-5.html#squid-CHP-10-SECT-5">Section 10.5</A>), you might also
+<A NAME="squid-CHP-10-ITERM-1649"></A><A NAME="squid-CHP-10-ITERM-1650"></A>be
+interested in enabling the <span class="docEmphasis">test_reachability</span>
+directive. The goal behind it is to accept only requests for origin
+servers Squid can reach. Enabling
+<span class="docEmphasis">test_reachability</span> causes Squid to return
+<TT>ICP_MISS_NOFETCH</TT>, instead of
+<TT>ICP_MISS</TT>, for origin server sites that
+don't respond to ICMP pings. This can help reduce
+the number of failed HTTP requests and increase the chance that the
+end user receives the data promptly. However, a significant
+percentage of origin server sites intentionally filter out ICMP
+traffic. For these, Squid returns <TT>ICP_MISS_NOFETCH</TT>
+even though an HTTP connection would succeed.</P>
+
+<P class="docText">Enabling <span class="docEmphasis">test_reachability</span> also causes Squid to
+make <span class="docEmphasis">netdb</span> measurements in response to ICP
+queries. If Squid doesn't have any RTT measurements
+for the origin server in question, it sends out an ICMP ping (subject
+to the rate limiting mentioned previously).</P>
+
+
+
+<A NAME="squid-CHP-10-SECT-6.2"></A>
+<H4 class="docSection2Title">10.6.2 Being an ICP Client</H4>
+
+<P class="docText">First, you must use the <span class="docEmphasis">cache_peer</span> directive to
+<A NAME="squid-CHP-10-ITERM-1651"></A><A NAME="squid-CHP-10-ITERM-1652"></A>define your neighbor caches. See the
+section <A class="docLink" HREF="squid-CHP-10-SECT-3.html#squid-CHP-10-SECT-3">Section 10.3</A>.</P>
+
+<P class="docText">Second, you must also use the <span class="docEmphasis">icp_port</span>
+directive, even if your Squid is only an ICP client. This is because
+Squid uses the same socket for sending and receiving ICP messages. It
+is perhaps a bad design decision in retrospect. If you are a client
+only, use <span class="docEmphasis">icp_access</span> to block queries. For
+example:</P>
+
+<PRE>acl All src 0/0
+icp_access deny All</PRE>
+
+<P class="docText">Squid sends ICP queries to its neighbors for most requests by
+default. See <A class="docLink" HREF="squid-CHP-10-SECT-10.html#squid-CHP-10-SECT-10">Section 10.10</A> for a complete description
+of the way that Squid decides when, and when not, to query its
+neighbors.</P>
+
+<P class="docText">After sending one or more queries, Squid waits some amount of time
+for ICP replies to arrive. If Squid receives an
+<TT>ICP_HIT</TT> from one of its neighbors, it forwards the
+request there immediately. Otherwise, Squid waits until all replies
+arrive or until a timeout occurs. The timeout is calculated
+dynamically, based on the following algorithm.</P>
+
+<P class="docText">Squid knows the average round-trip time between itself and each
+neighbor, taken from recent ICP transactions. When querying a group
+of neighbors, Squid calculates the mean of all the neighbor ICP RTTs,
+and then doubles it. In other words, the query timeout is twice the
+mean of RTTs for each neighbor queried. Squid ignores neighbors that
+appear to be down when calculating the timeout.</P>
+
+<P class="docText">In some cases, the algorithm doesn't work well,
+especially if you have neighbors with widely varying RTTs. You can
+change the upper limit on the timeout using the
+<span class="docEmphasis">maximum_icp_query_timeout</span> directive.
+Alternatively, you can make Squid always use a constant timeout value
+with the <span class="docEmphasis">icp_query_timeout</span> directive.</P>
+
+<A NAME="squid-CHP-10-SECT-6.2.1"></A>
+<H5 class="docSection3Title">10.6.2.1 cache_peer options for ICP clients</H5>
+
+<P class="docText"><TT>weight=</TT><TT><I>n</I></TT> allows you to
+weight <A NAME="squid-CHP-10-ITERM-1653"></A>parent caches artificially when using
+ICP/HTCP. It comes into play only when all parents report a cache
+miss. Normally, Squid selects the parent whose reply arrives first.
+In fact, it remembers which parent has the best RTT for the query.
+Squid actually divides the RTT by the weight, so that a parent with
+<TT>weight=2</TT> is treated as if it's
+closer to Squid than it really is.</P>
+
+<P class="docText"><TT>no-query</TT> disables ICP/HTCP for the neighbor. That
+is, your cache won't send any queries to the
+neighbor for cache misses. It is often used with the
+<TT>default</TT> option.</P>
+
+<P class="docText"><TT>closest-only</TT> refers to one of
+Squid's <span class="docEmphasis">netdb</span> features. It
+instructs Squid to select the parent based only on
+<span class="docEmphasis">netdb</span> RTT measurements and not the order in
+which replies arrive. This option requires <span class="docEmphasis">netdb</span>
+at both ends.</P>
+
+
+
+<A NAME="squid-CHP-10-SECT-6.2.2"></A>
+<H5 class="docSection3Title">10.6.2.2 ICP and netdb</H5>
+
+<P class="docText">As mentioned in the <A NAME="squid-CHP-10-ITERM-1654"></A><A NAME="squid-CHP-10-ITERM-1655"></A>section <A class="docLink" HREF="squid-CHP-10-SECT-5.html#squid-CHP-10-SECT-5">Section 10.5</A>, <span class="docEmphasis">netdb</span>
+is mostly used with ICP queries. In this section,
+we'll follow all the steps involved in this process.</P>
+
+<span style="font-weight:bold"><OL class="docList" TYPE="1"><LI><span style="font-weight:normal"><P class="docList">A Squid cache, acting as an ICP client, prepares to send a query to
+one or more neighbors. If <span class="docEmphasis">query_icmp</span> is set,
+Squid sets the <TT>SRC_RTT</TT> flag in the ICP query. This
+informs the ICP server that Squid would like to receive an RTT
+measurement in the ICP reply.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">The neighbor receives the query with the <TT>SRC_RTT</TT>
+flag set. If the neighbor is configured to make
+<span class="docEmphasis">netdb</span> measurements, it searches the database for
+the origin server hostname. Note that the neighbor
+doesn't query the DNS for the origin
+server's IP address. Thus, it finds a
+<span class="docEmphasis">netdb</span> entry only if that particular host has
+already been measured.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">If the host exists in the <span class="docEmphasis">netdb</span> database, the
+neighbor includes the RTT and hop count in the ICP reply. The
+<TT>SRC_RTT</TT> flag is set in the reply to indicate the
+measurement is present.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">When Squid receives the ICP reply with the <TT>SRC_RTT</TT>
+flag set, it extracts the RTT and hop count. These are added to the
+local <span class="docEmphasis">netdb</span> so that, in the future, Squid knows
+the approximate RTT from the neighbor to the origin server.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">An <TT>ICP_HIT</TT> reply causes Squid to forward the HTTP
+request immediately. If, on the other hand, Squid receives only
+<TT>ICP_MISS</TT> replies, it selects the parent with the
+smallest (nonzero) measured RTT to the origin server. The request is
+logged to <I>access.log</I> with
+<TT>CLOSEST_PARENT_MISS</TT>.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">If none of the parent <TT>ICP_MISS</TT> replies contain RTT
+values, Squid selects the parent whose ICP reply arrived first. In
+this case, the request is logged with
+<TT>FIRST_PARENT_MISS</TT>. However, if the
+<TT>closest-only</TT> option is set for a parent cache,
+Squid never selects it as a "first
+parent." In other words, the parent is selected only
+if it is the closest parent to the origin server.</P></span></LI></OL></span>
+
+
+<A NAME="squid-CHP-10-SECT-6.3"></A>
+<H4 class="docSection2Title">10.6.3 Multicast ICP</H4>
+
+<P class="docText">As you already know, ICP has <A NAME="squid-CHP-10-ITERM-1656"></A><A NAME="squid-CHP-10-ITERM-1657"></A>poor scaling properties. The number of
+messages is proportional to the number of neighbors. Because Squid
+sends identical <TT>ICP_QUERY</TT> messages to each
+neighbor, you can use multicast to reduce the number of messages
+transmitted on the network. Rather than send <span class="docEmphasis">N</span>
+messages to <span class="docEmphasis">N</span> neighbors, Squid sends one message
+to a multicast address. The multicast routing infrastructure makes
+sure each neighbor receives a copy of the message. See the book
+<span class="docEmphasis">Interdomain Multicast Routing: Practical Juniper Networks
+and Cisco Systems Solutions</span> by Brian M. Edwards, Leonard
+A. Giuliano, and Brian R. Wright (Addison Wesley) for more
+information on the inner workings of multicast.</P>
+
+<P class="docText">Note that ICP replies are always sent via unicast. This is because
+ICP replies may be different (e.g., hit versus miss) and because the
+unicast and multicast routing topologies may differ. Because ICP is
+also used to indicate network conditions, an ICP reply should follow
+the same path an HTTP reply takes. The bottom line is that multicast
+only reduces message counts for queries.</P>
+
+<P class="docText">Historically, I've found multicast infrastructure
+unstable and unreliable. It seems to be a low priority for many ISPs.
+Even though it works one day, something may break a few days or weeks
+later. You're probably safe using multicast entirely
+within your own network, but I don't recommend using
+it for ICP on the public Internet.</P>
+
+<A NAME="squid-CHP-10-SECT-6.3.1"></A>
+<H5 class="docSection3Title">10.6.3.1 Multicast ICP server</H5>
+
+<P class="docText">A multicast ICP server joins <A NAME="squid-CHP-10-ITERM-1658"></A><A NAME="squid-CHP-10-ITERM-1659"></A><A NAME="squid-CHP-10-ITERM-1660"></A>one
+or more multicast group addresses to receive messages. The
+<span class="docEmphasis">mcast_groups</span> directive
+<A NAME="squid-CHP-10-ITERM-1661"></A>specifies these group addresses. The
+values must be multicast IP addresses or hostnames that resolve to
+multicast addresses. The IPv4 multicast address range is
+224.0.0.0-239.255.255.255. For example:</P>
+
+<PRE>mcast_groups 224.11.22.45</PRE>
+
+<P class="docText">An interesting thing about multicast is that hosts, rather than
+applications, join a group. When a host joins a multicast group, it
+receives all packets that are transmitted to that group. This means
+that you need to be a little bit careful when selecting a multicast
+group to use for ICP. You don't want to select an
+address that's already being used by another
+application. When this kind of group overlap occurs, the two groups
+become joined and receive each other's traffic.</P>
+
+
+
+<A NAME="squid-CHP-10-SECT-6.3.2"></A>
+<H5 class="docSection3Title">10.6.3.2 Multicast ICP client</H5>
+
+<P class="docText">Multicast ICP clients transmit <A NAME="squid-CHP-10-ITERM-1662"></A><A NAME="squid-CHP-10-ITERM-1663"></A><A NAME="squid-CHP-10-ITERM-1664"></A>queries to one
+or more multicast group addresses. Thus, the hostname argument of the
+<span class="docEmphasis">cache_peer</span> line must be, or resolve to, a
+multicast address. For example:</P>
+
+<PRE>cache_peer 224.0.14.1 multicast 3128 3130 ttl=32</PRE>
+
+<P class="docText">The HTTP port number (e.g., 3128) is irrelevant in this case because
+Squid never makes HTTP connections to a multicast neighbor.</P>
+
+<P class="docText">Realize that multicast groups don't have any access
+controls. Any host can join any multicast group address. This means
+that, unless you're careful, others may be able to
+receive the multicast ICP queries sent by your Squid. IP multicast
+has two ways to prevent packets from traveling too far: TTLs and
+administrative scoping. Because ICP queries may carry sensitive
+information (i.e., URIs that your users access), I recommend using an
+administratively scoped address and properly configured routers. See
+RFC 2365 for more information.</P>
+
+<P class="docText">The <TT>ttl=n</TT> option is for multicast neighbors only.
+It is the multicast TTL value to use for ICP queries. It controls how
+far away the ICP queries can travel. The valid range is 0-128. A
+larger value allows the multicast queries to travel farther, and
+possibly be intercepted by outsiders. Use a lower number to keep the
+queries close to the source and within your network.</P>
+
+<P class="docText">Multicast ICP clients must also tell Squid about the neighbors that
+will be responding to queries. Squid doesn't blindly
+trust any cache that happens to send an ICP reply. You must tell
+Squid about legitimate, trusted neighbors. The
+<TT>multicast-responder</TT> option to
+<span class="docEmphasis">cache_peer</span> identifies such neighbors. For
+example, if you know that 172.16.2.3 is a trusted neighbor on the
+multicast group, you should add this line to
+<I>squid.conf</I>:</P>
+
+<PRE>cache_peer 172.16.3.2 parent 3128 3130 multicast-responder</PRE>
+
+<P class="docText">You can, of course, use a hostname instead of an IP address. ICP
+replies from foreign (unlisted) neighbors are ignored, but logged in
+<I>cache.log</I>.</P>
+
+<P class="docText">Squid normally expects to receive an ICP reply for each query that it
+sends. This changes, however, with multicast because one query may
+result in multiple replies. To account for this, Squid periodically
+sends out "probes" on the multicast
+group address. These probes tell Squid how many servers are out there
+listening. Squid counts the number of replies that arrive within a
+certain amount of time. That amount of time is given by the
+<span class="docEmphasis">mcast_icp_query_timeout</span> directive. Then, when
+Squid sends a real ICP query to the group, it adds this count to the
+number of ICP replies to expect.</P>
+
+
+
+<A NAME="squid-CHP-10-SECT-6.3.3"></A>
+<H5 class="docSection3Title">10.6.3.3 Multicast ICP example</H5>
+
+<P class="docText">Since multicast ICP is tricky, here's
+<A NAME="squid-CHP-10-ITERM-1665"></A><A NAME="squid-CHP-10-ITERM-1666"></A>another
+example. Let's say your ISP has three parent caches
+that listen on a multicast address for ICP queries. The ISP needs
+only one line in its configuration file:</P>
+
+<PRE>mcast_groups 224.0.14.255</PRE>
+
+<P class="docText">The configuration for you (the child cache) is a little more
+complicated. First, you must list the multicast neighbor to which
+Squid should send queries. You must also list the three parent caches
+with their unicast addresses so that Squid accepts their replies:</P>
+
+<PRE>cache_peer 224.0.14.225 multicast 3128 3130 ttl=16
+cache_peer parent1.yourisp.net parent 3128 3130 multicast-responder
+cache_peer parent2.yourisp.net parent 3128 3130 multicast-responder
+cache_peer parent3.yourisp.net parent 3128 3130 multicast-responder
+mcast_icp_query_timeout 2 sec</PRE>
+
+<P class="docText">Keep in mind that Squid never makes HTTP requests to
+<TT>multicast</TT> neighbors, and it never sends ICP
+queries to <TT>multicast-responder</TT> neighbors.</P>
+
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="squid-CHP-10-SECT-5.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="squid-CHP-10-SECT-7.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

@@ -1,0 +1,207 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;19.8.&nbsp;Looping Through Multiple Iterables in Parallel</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-19-sect-7.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-19-sect-9.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-19-SECT-8"></a>
+<h3 class="docSection1Title">Recipe 19.8. Looping Through Multiple Iterables in Parallel</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Andy McKay, Hamish Lawson, Corey Coughlin</span></p>
+
+<a name="pythoncook2-CHP-19-SECT-8.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText">You need to loop through every item of multiple iterables in
+parallel, meaning that you first want to get a tuple with all of the
+first items of each iterable, next, a tuple with all of the
+"second items", and so forth.</P>
+
+
+<a name="pythoncook2-CHP-19-SECT-8.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">Say you have two iterables (lists, in this case) such as:</p>
+
+<pre>a = ['a1', 'a2', 'a3']
+b = ['b1', 'b2']</pre><BR>
+
+
+<p class="docText">If you want to loop "in parallel"
+over them, the most general and effective approach is:</p>
+
+<pre>import itertools
+for x, y in itertools.izip(a, b): 
+    print x, y</pre><BR>
+
+
+<p class="docText">This snippet outputs two lines:</P>
+
+<pre>a1 b1
+a2 b2</pre><br>
+
+
+
+<a name="pythoncook2-CHP-19-SECT-8.3"></a>
+<H4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">The most general and effective way to loop "in
+parallel" over multiple iterables is to use function
+<tt>izip</tt> of standard library module
+<tt>itertools</tt>, as shown in the
+"Solution". The built-in function
+<tt>zip is</tt> an alternative that is almost as good:</p>
+
+<pre>for x, y in zip(a, b):
+    print x, y</pre><br>
+
+
+<p class="docText">However, <tt>zip</tt> has one downside that can hurt your
+performance if you're dealing with long sequences:
+it builds the list of tuples in memory all at once (preparing and
+returning a list), while you need only one tuple at a time for pure
+looping purposes.</p>
+
+<p class="docText">Both <tt>zip</tt> and <tt>itertools.izip</tt>,
+when you iterate in parallel over iterables of different lengths,
+stop as soon as the "shortest" such
+iterable is exhausted. This approach to termination is normally what
+you want. For example, it lets you have one or more non-terminating
+iterable in the zipping, as long as at least one of the iterables
+does terminateor (in the case of <tt>izip</tt>,
+only) as long as you use some control structure, such as a
+conditional <tt>break</tt> within a <tt>for</tt>
+statement, to ensure you always require a finite number of items and
+do not loop endlessly.</p>
+
+<p class="docText">In some cases, when iterating in parallel over iterables of different
+lengths, you may want shorter iterables to be conceptually
+"padded" with
+<tt>None</tt> up to the length of the longest iterable in
+the zipping. For this special need, you can use the built-in function
+<tt>map</tt> with a first argument of
+<tt>None</tt>:</P>
+
+<pre>for x, y in map(None, a, b):
+    print x, y</pre><br>
+
+
+<p class="docText"><tt>map</tt>, like <tt>zip</tt>, builds and
+returns a whole list. If that is a problem, you can reproduce
+<tt>map</tt>'s pad with
+<tt>None</tt>'s behavior by coding your
+own generator. Coding your own generator is also a good approach when
+you need to pad shorter iterables with some value that is different
+from <tt>None</tt>.</p>
+
+<p class="docText">If you need to deal only with specifically two sequences, your
+iterator's code can be quite straightforward and
+linear:</P>
+
+<pre>import itertools
+def par_two(a, b, padding_item=None):
+    a, b = iter(a), iter(b)
+    # first, deal with both iterables via izip until one is exhausted:
+    for x in itertools.izip(a, b):
+        yield x
+    # only one of the following two loops, at most, will execute, since
+    # either a or b (or both!) are exhausted at this point:
+    for x in a:
+        yield x, padding_item
+    for x in b:
+        yield padding_item, x</pre><br>
+
+
+<p class="docText">Alternatively, you can code a more general function, one that is able
+to deal with any number of sequences:</P>
+
+<pre>import itertools
+def par_loop(padding_item, *sequences):
+    iterators = map(iter, sequences)
+    num_remaining = len(iterators)
+    result = [padding_item] * num_remaining
+    while num_remaining:
+        for i, it in enumerate(iterators):
+            try: 
+                 result[i] = it.next( )
+            except StopIteration:
+                 iterators[i] = itertools.repeat(padding_item)
+                 num_remaining -= 1
+                 result[i] = padding_item
+        if num_remaining:
+            yield tuple(result)</pre><br>
+
+
+<p class="docText">Here's an example of use for generator
+<I>par_loop</I>:</p>
+
+<pre>print map(''.join, par_loop('x', 'foo', 'zapper', 'ui'))
+# emits: <b>['fzu', 'oai', 'opx', 'xpx', 'xex', 'zrx']</b></pre><br>
+
+
+<p class="docText">Both <i>par_two</i> and <i>par_loop</i> start by
+calling the built-in function <tt>iter</tt> on all of their
+arguments and thereafter use the resulting iterators. This is
+important, because the functions rely on the
+<span class="docEmphasis">state</span> that these iterators maintain. The key
+idea in <i>par_loop</i> is to keep count of the number of
+iterators as yet unexhausted, and replace each exhausted iterator
+with a nonterminating iterator that yields the
+<i>padding_item</i> ceaselessly;
+<i>num_remaining</i> counts unexhausted iterators, and both
+the <tt>yield</tt> statement and the continuation of the
+<tt>while</tt> loop are conditional on
+<span class="docEmphasis">some</span> iterators being as yet unexhausted.</P>
+
+<p class="docText">Alternatively, if you know in advance which iterable is the longest
+one, you can wrap every other iterable <tt><I>x</i></tt>
+as
+<tt>itertools.chain(iter(</tt><tt><i>x</I></tt><tt>),
+itertools.repeat(padding))</tt> and then call
+<tt>itertools.izip</tt>. You can't do this
+wrapping on <span class="docEmphasis">all</span> iterables because the resulting
+iterators are nonterminatingif you <tt>izip</tt>
+iterators that are all nonterminating, <tt>izip</tt> itself
+cannot terminate! Here, for example, is a version that works as
+intended only when the longest (but terminating!) iterable is the
+very first one:</p>
+
+<pre>import itertools
+def par_longest_first(padding_item, *sequences):
+    iterators = map(iter, sequences)
+    for i, it in enumerate(iterators):
+        if not i: continue
+        iterators[i] = itertools.chain(it, itertools.repeat(padding_item))
+    return itertools.izip(iterators)</pre><br>
+
+
+
+<a name="pythoncook2-CHP-19-SECT-8.4"></a>
+<h4 class="docSection2Title">See Also</h4>
+
+<p class="docText">The <tt>itertools</tt> module is part of the Python
+Standard Library and is documented in the <span class="docEmphasis">Library
+Reference</span> portion of Python's online
+documentation; the <span class="docEmphasis">Library Reference</span> and
+<span class="docEmphasis">Python in a Nutshell</span> docs about built-ins
+<tt>zip</tt>, <tt>iter</tt>, and
+<tt>map</tt>.</p>
+
+
+
+<a href="5991535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><ul></UL></td></TR></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-19-sect-7.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-19-sect-9.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

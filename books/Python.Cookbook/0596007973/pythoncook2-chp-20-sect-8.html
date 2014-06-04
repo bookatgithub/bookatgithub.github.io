@@ -1,0 +1,170 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;20.8.&nbsp;Adding a Method to a Class Instance at Runtime</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-20-sect-7.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-20-sect-9.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-20-SECT-8"></a>
+<h3 class="docSection1Title">Recipe 20.8. Adding a Method to a Class Instance at Runtime</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Moshe Zadka</span></p>
+
+<a name="pythoncook2-CHP-20-SECT-8.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText">During debugging, you want to identify certain specific instance
+objects so that <tt>print</tt> statements display more
+information when applied to those specific objects.</P>
+
+
+<a name="pythoncook2-CHP-20-SECT-8.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">The <tt>print</tt> statement implicitly calls the special
+method <tt>_ _str_ _</tt> of the class of each object
+you're printing. Therefore, to ensure that
+<tt>print</tt>ing certain objects displays more
+information, we need to give those objects new classes whose
+<tt>_ _str_ _</tt> special methods are suitably modified.
+For example:</p>
+
+<pre>def add_method_to_objects_class(object, method, name=None):
+    if name is None:
+        name = method.func_name
+    class newclass(object._ _class_ _):
+        pass
+    setattr(newclass, name, method)
+    object._ _class_ _ = newclass
+import inspect
+def _rich_str(self):
+    pieces = [  ]
+    for name, value in inspect.getmembers(self):
+        # don't display specials
+        if name.startswith('_ _') and name.endswith('_ _'):
+            continue
+        # don't display the object's own methods
+        if inspect.ismethod(value) and value.im_self is self:
+            continue
+        pieces.extend((name.ljust(15), '\t', str(value), '\n'))        
+    return ''.join(pieces)
+def set_rich_str(obj, on=True):
+    def isrich( ):
+        return getattr(obj._ _class_ _._ _str_ _, 'im_func', None) is _rich_str
+    if on:
+        if not isrich( ):
+            add_method_to_objects_class(obj, _rich_str, '_ _str_ _')
+        assert isrich( )
+    else:
+        if not isrich( ):
+            return
+        bases = obj._ _class_ _._ _bases_ _
+        assert len(bases) == 1
+        obj._ _class_ _ = bases[0]
+        assert not isrich( )</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-20-SECT-8.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">Here is a sample use of this recipe's
+<I>set_rich_str</i> function, guarded in the usual way:</P>
+
+<pre>if _ _name_ _ == '_ _main_ _':               # usual guard for example usage
+    class Foo(object):
+        def _ _init_ _(self, x=23, y=42):
+            self.x, self.y = x, y
+    f = Foo( )
+    print f
+    # emits: <B>&lt;_ _main_ _.Foo object at 0x38f770&gt;</b>
+    set_rich_str(f)
+    print f
+    # emits:
+    # <b>x               23</b>
+    #<b> y               42</b>
+    set_rich_str(f, on=False)
+    print f
+    # emits:<b> &lt;_ _main_ _.Foo object at 0x38f770&gt;</b></pre><br>
+
+
+<p class="docText">In old versions of Python (and in Python 2.3 and 2.4, for backwards
+compatibility on instances of classic classes), intrinsic lookup of
+special methods (such as the intrinsic lookup for <tt>_ _str_
+_</tt> in a <tt>print</tt> statement) started on the
+instance. In today's Python, in the new object model
+that is recommended for all new code, the intrinsic lookup starts on
+the instance's class, bypassing names set in the
+instance's own <tt>_ _dict_ _</tt>. This
+innovation has many advantages, but, at a first superficial look, it
+may also seem to have one substantial disadvantage: namely, to make
+it impossible to solve this recipe's Problem in the
+general case (i.e., for instances that might belong to either classic
+or new-style classes).</P>
+
+<p class="docText">Fortunately, that superficial impression is not correct, thanks to
+Python's power of introspection and dynamism. This
+recipe's function
+<i>add_method_to_objects_class</i> shows how to change
+special methods on a given object
+<tt><I>obj</i></tt>'s class, without
+affecting other "sibling" objects
+(i.e., other instances of the same class as
+<tt><I>obj</i></tt>'s): very simply,
+start by changing the
+<tt><I>obj</I></tt>'s classthat
+is, by setting <tt>obj._ _class_ _</tt> to a newly made
+class object (which inherits from the original class of
+<tt><i>obj</i></tt>, so that anything we
+don't explicitly modify remains unchanged). Once
+you've done that, you can then alter the newly made
+class object to your heart's contents.</p>
+
+<p class="docText">Function <i>_rich_str</i> shows how you can use
+introspection to display a lot of information about a specific
+instance. Specifically, we display every attribute of the instance
+that doesn't have a special name (starting and
+ending with two underscores), except the instances'
+own bound methods. Function <i>set_rich_str</i> shows how
+to set the <tt>_ _str_ _</tt> special method of an
+instance's class to either
+"rich" (the
+<i>_rich_str</i> function we just mentioned) or
+"normal" (the <tt>_ _str_
+_</tt> method the object's original class is
+coded to supply). To make the object's <tt>_
+_str_ _</tt> rich, <i>set_rich_str</i> uses
+<i>add_method_to_objects_class</i> to set <tt>_ _str_
+_</tt> to <I>_rich_str</I>. When the object goes back
+to "normal",
+<i>set_rich_str</i> sets the object's
+<tt>_ _class_ _</tt> back to its original value (which is
+preserved as the only base class when the object is set to use
+<I>_rich_str</i>).</p>
+
+
+<a name="pythoncook2-CHP-20-SECT-8.4"></a>
+<h4 class="docSection2Title">See Also</h4>
+
+<p class="docText"><a class="docLink" href="pythoncook2-CHP-20-SECT-6.html#pythoncook2-CHP-20-SECT-6">Recipe 20.6</a> and <a class="docLink" href="pythoncook2-CHP-20-SECT-7.html#pythoncook2-CHP-20-SECT-7">Recipe 20.7</a> for other cases in
+which a class' methods are modified; documentation
+on the <tt>inspect</tt> standard library module in the
+<span class="docEmphasis">Library Reference</span>.</p>
+
+
+
+<ul></UL></td></TR></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-20-sect-7.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-20-sect-9.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

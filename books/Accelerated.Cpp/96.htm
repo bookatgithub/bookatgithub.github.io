@@ -1,0 +1,511 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
+<title>15.2 Implementation</title>
+<link rel="stylesheet" type="text/css" href="./acc.css" />
+</head>
+
+<body>
+<div class="prevnext">
+<a href="95.htm"><img src="images/Prev1.gif" /></a>&nbsp;&nbsp;<a href="97.htm"><img src="images/Next1.gif" /></a>
+</div>
+<h3>15.2 Implementation</h3>
+<p>At this point we have a pretty good design of both our interface and the implementation. 
+The <code>Picture</code> class and the associated operations on <code>Picture</code>s will manage the user 
+interface. The <code>Picture</code> constructor and the operations will create objects of one of the 
+types derived from <code>Pic_base</code>. We'll use <code>Ptr&lt;Pic_base&gt;</code> to manage the underlying 
+space, thus avoiding extraneous copies of the data. It is now time to implement the interface 
+operations and each of the derived classes.</p>
+<h4>15.2.1 Implementing the user interface</h4>
+<p>We'll start by implementing the interface class and operations. What we know so far is</p>
+<div class="prebox"><pre>
+class Picture {
+public:
+    Picture(const std::vector&lt;std::string&gt;&amp; =
+        std::vector&lt;std::string&gt;());
+private:
+    Ptr&lt;Pic_base&gt; p;
+};
+
+    Picture frame(const Picture&amp;);
+    Picture hcat(const Picture&amp;, const Picture&amp;);
+    Picture vcat(const Picture&amp;, const Picture&amp;);
+    std::ostream&amp; operator&lt;&lt;(std::ostream&amp;, const Picture&amp;);
+</pre></div>
+<p>Let's think first about the operations that create new <code>Picture</code>s. Each of these operations 
+creates an object of an appropriate class derived from <code>Pic_base</code>. That object will copy 
+the <code>Ptr</code> from the <code>Picture</code>(s) on which the operation executes. We will bind a <code>Picture</code> 
+to this newly created <code>Pic_base</code> object, and return that <code>Picture</code>. For example, if p is a 
+<code>Picture</code>, then <code>frame(p)</code> should create a new <code>Frame_Pic</code> that is attached to the 
+<code>Pic_base</code> from p. It will then generate a new <code>Picture</code> that is attached to the new 
+<code>Frame_Pic</code>. Let's start here:</p>
+<div class="prebox"><pre>
+Picture frame(const Picture&amp; pic) {
+    Pic_base* ret = new Frame_Pic(pic.p);
+    // <i>what do we return?</i>
+}
+</pre></div>
+<p>We start by defining a local pointer to <code>Pic_base</code>, which we initialize by creating a new 
+<code>Frame_Pic</code> that copies the underlying <code>Ptr</code> inside <code>pic</code>. There are now two problems. 
+The easy one is that the <code>Frame_Pic</code> constructor is <code>private</code>. As we saw in &sect;15.1.3/276, 
+each of the <code>Pic_base</code> classes is a hidden class. We don't want users to know about these 
+classes, and so we defined only private operations to let the compiler enforce this design decision. We can solve this 
+problem by making the <code>frame</code> operation a <code>friend</code> of class <code>Frame_Pic</code>.</p>
+<p>The other problem is more subtle: We have created a new object of type <code>Frame_Pic</code>, 
+but what we need is an object of type <code>Picture</code>. More generally, we can imagine that 
+<code>hcat</code>, <code>vcat</code>, and other functions that we might subsequently write will generate objects 
+of other types derived from <code>Pic_base</code>, and that they will do so in contexts in which we 
+really want objects of type <code>Picture</code>. The point is that <code>frame</code> and related operations 
+return <code>Picture</code>s, not <code>Pic_base</code>s. Fortunately, we know from &sect;12.2/213 that we can 
+convert one type to another if we provide an appropriate constructor. In this case, the 
+appropriate constructor is one that constructs a <code>Picture</code> from a <code>Pic_base*</code>:</p>
+<div class="prebox"><pre>
+class Picture {
+    Ptr&lt;Pic_base&gt; p;
+    Picture(Pic_base* ptr): p(ptr) { }
+    // <i>as before </i>
+};
+</pre></div>
+<p>Our constructor initializes p with the pointer to <code>Pic_base</code> that we were given. Remember 
+that class <code>Ptr</code> has a constructor that takes a <code>T*</code>, which in this case is a <code>Pic_base*</code>. 
+The initializer <code>p(ptr)</code> invokes this <code>Ptr::Ptr(T*)</code> constructor, passing it <code>ptr</code>. Once we 
+have this <code>Picture</code> constructor, we can complete the <code>frame</code> operation:</p>
+<div class="prebox"><pre>
+Picture frame(const Picture&amp; pic)
+{
+    return new Frame_Pic(pic.p);
+}
+</pre></div>
+<p>We've eliminated the local <code>Pic_base</code> object because we don't need it. Instead, we create 
+a new <code>Frame_Pic</code> object, the address of which is automatically converted to a <code>Picture</code>, 
+which we return from the function. Completely understanding this little function 
+requires a good grasp of the subtleties involved when using automatic conversions 
+and copy constructors. The single statement in this function has the same effect as</p>
+<div class="prebox"><pre>
+// <i>create the new </i>Frame_Pic
+Pic_base* temp1 = new Frame_Pic(pic.p);
+
+// <i>construct a </i>Picture <i>from a </i>Pic_base*
+Picture temp2(temp1);
+
+// <i>return the </i>Picture, <i>which will invoke the </i>Picture <i>copy constructor </i>
+return temp2;
+</pre></div>
+<p>Like <code>frame</code>, the concatenation functions rely on our new <code>Picture</code> constructor:</p>
+<div class="prebox"><pre>
+Picture hcat(const Picture&amp; l, const Picture&amp; r)
+{
+    return new HCat_Pic(l.p, r.p);
+}
+
+Picture vcat(const Picture&amp; t, const Picture&amp; b)
+{
+    return new VCat_Pic(t.p, b.p);
+}
+</pre></div>
+<p>In each case, we construct an object of the appropriate type, bind a <code>Ptr&lt;Pic_base&gt;</code> to it, 
+construct a <code>Picture</code> from the <code>Ptr&lt;Pic_base&gt;</code>, and return a copy of that <code>Picture</code>. Of 
+course, for these functions to compile, we'll need to add the appropriate <code>friend</code> declarations 
+to the <code>HCat_Pic</code> and <code>VCat_Pic</code> classes.</p>
+<p>To construct a <code>Picture</code> from a <code>vector&lt;string&gt;</code>, we adopt the same strategy that 
+we used for the other kinds of pictures:</p>
+<div class="prebox"><pre>
+Picture::Picture(const vector&lt;string&gt;&amp; v):
+     p(new String_Pic(v)) { }
+</pre></div>
+<p>Again, we create a new <code>String_Pic</code> object, but this time we use it directly to initialize p, 
+instead of returning it. Of course, we will have to remember to make <code>Picture</code> a <code>friend</code> 
+of <code>String_Pic</code>, so that it can access the <code>String_Pic</code> constructor.</p>
+<p>It is important to realize how this constructor differs from the <code>frame</code>, <code>hcat</code>, and <code>vcat</code> 
+functions. Each of these other functions is defined to return a <code>Picture</code>, and in each one 
+we use a pointer to a class derived from <code>Pic_base</code> in the <code>return</code> statement. Therefore, 
+we implicitly used the <code>Picture</code> (<code>Pic_base*</code>) constructor to create a <code>Picture</code> to return. 
+In the <code>Picture</code> constructor that we've just written, we are still creating a pointer to a 
+class derived from <code>Pic_base</code>—in this case, class <code>String_Pic</code>—but now we're using 
+this pointer to initialize member p, which has type <code>Ptr&lt;Pic_base&gt;</code>. Doing so uses the 
+<code>Ptr(T*)</code> constructor in class <code>Pic_base</code>, not the <code>Picture</code> (<code>Pic_base*</code>) constructor, 
+because we're constructing a <code>Ptr&lt;Pic_base&gt;</code>, not a <code>Picture</code>.</p>
+<p>To complete the implementation of our interface functions, we must define the output 
+operator. This operation is also straightforward: We need to iterate through the underlying 
+<code>Pic_base</code>, and call <code>display</code> to write each line of the output:</p>
+<div class="prebox"><pre>
+ostream&amp; operator&lt;&lt;(ostream&amp; os, const Picture&amp; picture)
+{
+    const Pic_base::ht_sz ht = picture.p-&gt;height();
+    for (Pic_base::ht_sz i = 0; i != ht; ++i) {
+        picture.p-&gt;display(os, i, false);
+        os &lt;&lt; endl;
+    }
+    return os;
+};
+</pre></div>
+<p>We initialize <code>ht</code> by calling the (<code>virtual</code>) <code>height</code> function for the underlying <code>Pic_base</code>, 
+so that we do not have to recompute the height each time through the loop. Remember 
+that p is actually a <code>Ptr&lt;Pic_base&gt;</code>, and that <code>Ptr</code> has overloaded <code>-&gt;</code> to implement references 
+through the <code>Ptr</code> as references through the pointer that the <code>Ptr</code> contains. We iterate 
+<code>ht</code> times through the underlying <code>Pic_base</code>, each time calling the (<code>virtual</code>) <code>display</code> 
+function, asking it to write the current <code>row</code>. The third argument (<code>false</code>) indicates that 
+<code>display</code> need not pad the output. If we need padding to write one of the interior 
+<code>Picture</code>s, the inner <code>display</code> functions will indicate that padding is needed. At this 
+stage, we can't yet tell if padding is necessary. We write endl to end each line of output, 
+and when we're done, we return <code>os</code>.</p>
+<p>As with the other operations that we have implemented, we will have to remember to 
+add a <code>friend</code> declaration to class <code>Pic_base</code> to allow <code>operator&lt;&lt;</code> to access its <code>display</code> 
+and <code>height</code> members.</p>
+<h4>15.2.2 The String_Pic class</h4>
+<p>Having completed the interface class and operations, we can turn our attention to the 
+derived classes. We'll start with <code>String_Pic</code>:</p>
+<div class="prebox"><pre>
+class String_Pic: public Pic_base {
+    friend class Picture;
+    std::vector&lt;std::string&gt; data;
+    String_Pic(const std::vector&lt;std::string&gt;&amp; v): data(v) { }
+
+    ht_sz height() const { return data.size(); }
+    wd_sz width() const;
+    void display(std::ostream&amp;, ht_sz, bool) const;
+};
+</pre></div>
+<p>We have implemented the <code>height</code> function, but otherwise the <code>String_Pic</code> class is 
+unchanged from the one that we described in &sect;15.1.3/277. The <code>height</code> function is trivial: 
+It forwards the request to the <code>size</code> member of <code>vector</code>.</p>
+<p>To determine the <code>width</code> of a <code>String_Pic</code>, we need to look at each element in data 
+to see which is the longest:</p>
+<div class="prebox"><pre>
+Pic_base::wd_sz String_Pic::width() const {
+    Pic_base::wd_sz n = 0;
+    for (Pic_base::ht_sz i = 0; i != data.size(); ++i)
+        n = max(n, data[i].size());
+    return n;
+}
+</pre></div>
+<p>Except for the type names, this function looks like the original <code>width</code> function from 
+&sect;5.8/91. Because a <code>String_Pic</code> holds a <code>vector&lt;string&gt;</code>, we should not be surprised 
+at this similarity.</p>
+<p>The <code>display</code> function is more complicated. It has to iterate through the underlying 
+<code>vector</code>, writing the <code>string</code> associated with the requested <code>row</code> number.</p>
+<p>What about padding? Note that this function might be called directly from the output 
+operator, as would happen if the <code>Picture</code> we were writing pointed to a <code>String_Pic</code>— 
+or it might be called indirectly, as part of writing a larger <code>Picture</code> of which this 
+<code>String_Pic</code> is a part. In the latter case, the <code>display</code> function may be asked to pad the 
+output to make each row fill the same size in the overall output. The amount of padding 
+will vary for each <code>string</code>, and will be whatever is needed to consume as many spaces in 
+the output as the number needed for the longest <code>string</code>. In other words, we'll need to 
+pad from the length of this <code>string</code> to the <code>width()</code> of this <code>String_Pic</code>. A bit of forethought 
+should convince us that we're likely to need to pad other pictures too. For now, 
+we'll assume that we have a <code>pad</code> function that takes an output stream and the start and 
+(one past) the end positions to <code>pad</code> with blanks. We'll implement this function shortly.</p>
+<p>Another complexity arises from the fact that the row number passed to <code>display</code> may 
+exceed the <code>height</code> of this <code>String_Pic</code>. One way in which this situation could happen is 
+if the <code>String_Pic</code> is part of a horizontally concatenated <code>Picture</code> in which one side is 
+shorter than the other. Our <code>Picture</code>s line up at the top border, but they may be of different 
+heights. Thus, we will need to check whether the <code>row</code> we're asked to write is in range. 
+With this analysis complete, we can now write the code:</p>
+<div class="prebox"><pre>
+void String_Pic::display(ostream&amp; os, ht_sz row, bool do_pad) const
+{
+    wd_sz start = 0;
+
+    // <i>write the <code>row</code> if we're still in range </i>
+    if (row &lt; height()) {
+        os &lt;&lt; data[row];
+        start = data[row].size();
+    }
+
+    // <i>pad the output if necessary </i>
+    if (do_pad)
+        pad(os, start, width());
+}
+</pre></div>
+<p>We first check whether the <code>row</code> we were asked to write is in range—that is, whether <code>row</code> 
+is less than the <code>height()</code> of this <code>String_Pic</code>. If so, then we write it and set <code>start</code> to 
+indicate how many characters we wrote in the process. Regardless of whether we wrote a 
+row, we check whether we are supposed to <code>pad</code> the output. If so, we <code>pad</code> from <code>start</code> to 
+the overall <code>width()</code> of this <code>String_Pic</code>. If the row is out of range, then <code>start</code> is 0, so 
+we write an entire <code>row</code> of blanks.</p>
+<h4>15.2.3 Padding the output</h4>
+<p>We can now think about our padding function. Because we want to access this function 
+from each of the derived classes, we'll define the <code>pad</code> operation as a function member of 
+<code>Pic_base</code> that is both <code>static</code> and <code>protected</code>:</p>
+<div class="prebox"><pre>
+class Pic_base {
+    //<i> as before </i>
+protected:
+    static void pad(std::ostream&amp; os, wd_sz beg, wd_sz end) {
+        while (beg != end) {
+           os &lt;&lt; &quot; &quot;;
+           ++beg;
+        }
+    }
+};
+</pre></div>
+
+<p>This function takes an <code>ostream</code> on which to write blanks, and two values that control 
+how many blanks to write. When a <code>display</code> function needs to call <code>pad</code>, it will pass the 
+current column number and one past the last column number that needs to be filled in by 
+the current <code>display</code> operation. The <code>pad</code> function will fill this range with blanks.</p>
+<p>Note the use of the <code>static</code> keyword on the declaration of <code>pad</code>. As we saw in 
+&sect;13.4/244, this use of <code>static</code> indicates that <code>pad</code> is a static member function. Such functions 
+differ from an ordinary member function in that they are not associated with an 
+object of the class type.</p>
+<p>It may also be surprising that we can define a member function for an abstract base 
+class. After all, if there can be no objects of the base class, why should there be member 
+functions? However, remember that each derived object contains a base-class part. Each 
+derived class also inherits any member functions defined in the base. Thus, a base-class 
+function will execute on the base-class portion of a derived object. In this particular case, 
+the function that we are defining is a <code>static</code> member, so the question of access to members 
+of the base is moot. But it is important to realize that abstract classes may define data 
+members, and (ordinary) member functions, as well as <code>static</code> ones. These functions will 
+access the base-class objects that are part of derived objects.</p>
+<p>Static members (both functions and static data members, which we can also define) are 
+useful in that they let us minimize the names that are defined globally. Our <code>pad</code> function 
+is a good example. We can imagine many abstractions that have the notion of padding. 
+In this book we talked about padding in the context of writing a formatted report of student 
+grades, as well as in the context of writing <code>Picture</code>s. If the <code>Picture</code> class were to 
+define <code>pad</code> as a global function, then we would not also be able to define a <code>pad</code> function 
+for <code>Student_info</code>, or vice versa. By making <code>pad</code> a <code>static</code> member, we allow for the 
+fact that other abstractions in our program might have the notion of padding. As long as 
+each class defines what <code>pad</code> means only in the context of the class, these mutually independent 
+notions of padding can coexist within our program.</p>
+<h4>15.2.4 The VCat_Pic class</h4>
+<p>Implementing the concatenation classes is not hard. We'll start with <code>VCat_Pic</code>:</p>
+<div class="prebox"><pre>
+class VCat_Pic: public Pic_base {
+    friend Picture vcat(const Picture&amp;, const Picture&amp;);
+    Ptr&lt;Pic_base&gt; top, bottom;
+    VCat_Pic(const Ptr&lt;Pic_base&gt;&amp; t, const Ptr&lt;Pic_base&gt;&amp; b):
+        top(t), bottom(b) { }
+
+    wd_sz width() const
+        { return std::max(top-&gt;width(), bottom-&gt;width()); }
+    ht_sz height() const
+	    { return top-&gt;height() + bottom-&gt;height(); }
+    void display(std::ostream&amp;, ht_sz, bool) const;
+};
+</pre></div>
+<p>We added the appropriate <code>friend</code> declaration for the <code>vcat</code> operation, and implemented 
+the <code>height</code> and <code>width</code> functions inline. If a picture is concatenated vertically, its <code>height</code> 
+is the sum of its two components' heights, and the <code>width</code> is the greater of the two components' 
+widths.</p>
+<p>The <code>display</code> function is not much harder:</p>
+<div class="prebox"><pre>
+void VCat_Pic::display(ostream&amp; os, ht_sz row, bool do_pad) const
+{
+    wd_sz w = 0;
+    if (row &lt; top-&gt;height()) {
+        // <i>we are in the top subpicture</i>
+        top-&gt;display(os, row, do_pad);
+        w = top-&gt;width();
+    } else if (row &lt; height()) {
+        // <i>we are in the bottom subpicture</i>
+        bottom-&gt;display(os, row - top-&gt;height(), do_pad);
+        w = bottom-&gt;width();
+    }
+    if (do_pad)
+        pad(os, w, width());
+}
+</pre></div>
+<p>First, we define a variable <code>w</code>, which will contain the width of the current row, in case we 
+need it for padding. Next, we check whether we're in the top component, by testing <code>row</code> 
+against the <code>height()</code> of the top picture. If we're in that range, then we invoke <code>display</code> 
+to write the top component, passing the <code>bool</code> that we were given to indicate whether to 
+<code>pad</code> the output. Remember, <code>display</code> is <code>virtual</code>, so this call will invoke whatever the 
+appropriate <code>display</code> function is for the kind of <code>Pic_base</code> to which top actually refers. 
+Once we've written the given <code>row</code>, we remember its <code>width</code> in w.</p>
+<p>If we're not in <code>top</code>, we might be in <code>bottom</code>. If we get to this <code>else</code> test, then we know 
+that <code>row</code> is greater than <code>top-&gt;height()</code>, so we now check whether <code>row</code> is within the 
+overall range of this picture. If so, it must be in the <code>bottom</code> picture. As we did for <code>top</code>, 
+we call <code>display</code> on <code>bottom</code> to write the picture, offsetting the <code>row</code> number to adjust for 
+having already written as many rows as are in <code>top</code>. Having written the row from the 
+<code>bottom</code> picture, we remember its width. If we're out of range, <code>w</code> remains 0.</p>
+<p>When we're done writing the row, we check whether padding is needed. If so, we <code>pad</code> 
+from the width that we remembered in <code>w</code> to the full width of our own picture.</p>
+<h4>15.2.5 The HCat_Pic class</h4>
+<p>Not surprisingly, the <code>HCat_Pic</code> class looks a lot like <code>VCat_Pic</code>:</p>
+<div class="prebox"><pre>
+class HCat_Pic: public Pic_base {
+    friend Picture hcat(const Picture&amp;, const Picture&amp;);
+    Ptr&lt;Pic_base&gt; left, right;
+    HCat_Pic(const Ptr&lt;Pic_base&gt;&amp; l, const Ptr&lt;Pic_base&gt;&amp; r):
+        left(l), right(r) { }
+
+    wd_sz width() const { return left-&gt;width() + right-&gt;width(); }
+    ht_sz height() const
+        { return std::max(left-&gt;height(), right-&gt;height()); }
+    void display(std::ostream&amp;, ht_sz, bool) const;
+};
+</pre></div>
+
+<p>Because we're concatenating two pictures side by side, this time the <code>width</code> is the sum of 
+the components' <code>width</code>s, and the <code>height</code> is the greater of the two <code>height</code>s. Here, the 
+<code>display</code> function is simpler than the corresponding one from <code>VCat_Pic</code>, because we 
+delegate managing whether the row is in range to the component pictures:</p>
+<div class="prebox"><pre>
+void HCat_Pic::display(ostream&amp; os, ht_sz row, bool do_pad) const
+{
+    left-&gt;display(os, row, do_pad || row &lt; right-&gt;height());
+    right-&gt;display(os, row, do_pad);
+}
+</pre></div>
+<p>First we write the requested <code>row</code> from <code>left</code> by calling <code>display</code>, asking it to write the 
+given <code>row</code>. We pad this row if we were asked to pad our own output, or if we're on a row 
+that is within the range of the right-hand picture (in which case we must pad each row of 
+the left-hand picture to ensure that the corresponding row of the right-hand picture 
+begins at the right place in the output line). If the row is out of range for <code>left</code>, then the 
+<code>display</code> function executed on <code>left</code> will deal with that problem. Similarly, we delegate 
+writing the requested row from <code>right</code> to the <code>display</code> function on <code>right</code>. This time we 
+pass along the <code>do_pad</code> value that we were given, because there is no reason to force padding 
+on the right-hand side.</p>
+<h4>15.2.6 The Frame_Pic class</h4>
+<p>The only derived class we have <code>left</code> to implement is <code>Frame_Pic</code>:</p>
+<div class="prebox"><pre>
+class Frame_Pic: public Pic_base {
+    friend Picture frame(const Picture&amp;);
+    Ptr&lt;Pic_base&gt; p;
+    Frame_Pic(const Ptr&lt;Pic_base&gt;&amp; pic): p(pic) { }
+
+    wd_sz width() const { return p-&gt;width() + 4; }
+    ht_sz height() const { return p-&gt;height() + 4; }
+    void display(std::ostream&amp;, ht_sz, bool) const;
+};
+</pre></div>
+<p>The <code>height</code> and <code>width</code> operations forward their calculations to the picture that was 
+framed. We add 4 to these values, to account for the borders and the space that separates 
+the border from the interior, framed picture. The <code>display</code> function is tedious but not hard:</p>
+<div class="prebox"><pre>
+void Frame_Pic::display(ostream&amp; os, ht_sz row, bool do_pad) const
+{
+    if (row &gt;= height()) {
+       // <i>out of range </i>
+       if (do_pad)
+           pad(os, 0, width());
+    } else {
+        if (row == 0 || row == height() - 1) {
+            // <i>top or bottom row</i>
+            os &lt;&lt; string(width(), '*');
+        } else if (row == 1 || row == height() - 2) {
+            // <i>second from top or bottom row</i>
+            os &lt;&lt; &quot;*&quot;;
+            pad(os, 1, width() - 1);
+            os &lt;&lt; &quot;*&quot;;
+        } else {
+            // <i>interior row</i>
+            os &lt;&lt; &quot;* &quot;;
+            p-&gt;display(os, row - 2, true);
+            os &lt;&lt; &quot; *&quot;;
+        }
+    }
+}
+</pre></div>
+<p>First we check whether the requested row is in range; if not and we're being asked to <code>pad</code>, 
+we do so, filling the entire row with blanks. If we're in range, there are three cases: We're 
+writing the top or bottom border, we're writing the mostly blank line that separates the 
+border from the interior picture, or we're writing a row from the interior picture.</p>
+<p>We know that we're dealing with the top or bottom border if the <code>row</code> number is 0 or 
+<code>height() - 1</code>. In this case, we write a row that consists entirely of asterisks to form the 
+border. If we're one row in from the border, then we want to write an asterisk, followed 
+by the appropriate number of blanks, followed by another asterisk. Finally, we might be 
+in an interior row of the picture. In this case, we want to write that row of the border, 
+which is an asterisk followed by a blank, and then the interior picture, followed by 
+another blank and asterisk for the right-hand border. We write the interior picture by 
+calling <code>display</code>, offsetting the row value to account for the border that we have already 
+written. In the call to <code>display</code>, we indicate that the interior picture should <code>pad</code> the output 
+so that when we write the right-hand border, it will be straight.</p>
+<h4>15.2.7 Don't forget friends</h4>
+<p>The only work that remains is to add the appropriate <code>friend</code> declarations to <code>Picture</code> 
+and <code>Pic_base</code>. We've already noted that we need to add a <code>friend</code> declaration to class 
+<code>Picture</code> for each of the <code>Picture</code> operations. After all, these operations all use the <code>Ptr</code> 
+inside <code>Picture</code>, and need permission to access that member. What may be less obvious 
+is the collection of <code>friend</code>s that we need to add to class <code>Pic_base</code>:</p>
+<div class="prebox"><pre>
+// <i>forward declaration, described in &sect;15.3/288</i>
+class Picture;
+
+class Pic_base {
+    friend std::ostream&amp; operator&lt;&lt;(std::ostream&amp;, const Picture&amp;);
+    friend class Frame_Pic;
+    friend class HCat_Pic;
+    friend class VCat_Pic;
+    friend class String_Pic;
+
+    //<i> no public interface</i>
+    typedef std::vector&lt;std::string&gt;::size_type ht_sz;
+    typedef std::string::size_type wd_sz;
+
+    // <i>this class is an abstract base class</i>
+    virtual wd_sz width() const = 0;
+    virtual ht_sz height() const = 0;
+    virtual void display(std::ostream&amp;, ht_sz, bool) const = 0;
+
+protected:
+    static void pad(std::ostream&amp; os, wd_sz, wd_sz);
+};
+
+class Picture {
+    friend std::ostream&amp; operator&lt;&lt;(std::ostream&amp;, const Picture&amp;);
+    friend Picture frame(const Picture&amp;);
+    friend Picture hcat(const Picture&amp;, const Picture&amp;);
+    friend Picture vcat(const Picture&amp;, const Picture&amp;);
+
+public:
+    Picture(const std::vector&lt;std::string&gt;&amp; =
+        std::vector&lt;std::string&gt;());
+
+private:
+    Picture(Pic_base* ptr): p(ptr) { }
+    Ptr&lt;Pic_base&gt; p;
+};
+
+    // <i>operations on Pictures</i>
+    Picture frame(const Picture&amp;);
+    Picture hcat(const Picture&amp;, const Picture&amp;);
+    Picture vcat(const Picture&amp;, const Picture&amp;);
+    std::ostream&amp; operator&lt;&lt;(std::ostream&amp;, const Picture&amp;);
+</pre></div>
+<p>The first <code>friend</code> declaration in <code>Pic_base</code> should be easy to understand. The output 
+operator invokes both the <code>height()</code> and <code>display()</code> functions, so it must be granted 
+access to these members. What may be more surprising is the <code>friend</code> declarations for 
+the classes that inherit from <code>Pic_base</code>. Don't they have access to the members of 
+<code>Pic_base</code> through inheritance? Yes they do, in principle, but except for <code>pad</code>, all of the 
+members of <code>Pic_base</code> are <code>private</code>. Why didn't we just make these other members 
+<code>protected</code>, as we did with the <code>pad</code> function? The answer is that it wouldn't have solved 
+the problem.</p>
+<p>A member of a derived class (such as <code>Frame_Pic</code>) can access the <code>protected</code> members 
+of the base-class parts of objects of its own class (such as <code>Frame_Pic</code>), or of other 
+classes derived from it, but it cannot access the <code>protected</code> members of base-class objects 
+that stand alone—that is, that are not part of a derived-class object. Therefore, member 
+functions of class <code>Frame_Pic</code>, which is derived from class <code>Pic_base</code>, can access <code>protected</code> 
+members of the <code>Pic_base</code> parts of <code>Frame_Pic</code> objects, or objects of classes 
+derived from <code>Frame_Pic</code>, but they cannot access <code>protected</code> members of stand-alone 
+<code>Pic_base</code> objects directly.</p>
+<p>One might think that this restriction would be irrelevant to our program. After all, 
+class <code>Pic_base</code> is an abstract base class, so there can be no stand-alone objects of that 
+class. However, the access rules apply to any attempt to access a member of what appears 
+to be a stand-alone <code>Pic_base</code> object, even if at run time the object is of a derived class. 
+For example, consider the <code>height</code> function in class <code>Frame_Pic</code>:</p>
+<div class="prebox"><pre>
+ht_sz Frame_Pic::height() const { return p-&gt;height() + 4; }
+</pre></div>
+
+<p>This function uses the expression <code>p-&gt;height()</code>, which implicitly calls the <code>operator-&gt;</code> 
+member of class <code>Ptr</code> (&sect;14.3/263) to obtain a pointer. This pointer has type <code>Pic_base*</code>; 
+we dereference it to access the <code>height</code> member of the corresponding object. Because the 
+pointer's type is <code>Pic_base*</code>, the compiler will check protection as if we were trying to 
+access a member of a <code>Pic_base</code> object, even though the actual object will be of a type 
+derived from <code>Pic_base</code>. Therefore, even if we made <code>height</code> a <code>protected</code> member, we 
+would still have to include <code>friend</code> declarations to allow this access. Each of the derived 
+classes in our hierarchy turns out to require <code>friend</code> declaration for similar reasons.</p>
+<p>This rule may be surprising, but its logic is straightforward: If the language granted 
+derived objects access to the <code>protected</code> members of a base-class object, then it would be 
+trivial to subvert the protection mechanisms. If we needed access to a <code>protected</code> member 
+of a class, we could define a new class that inherited from the class that we wanted to 
+access. Then we could define the operation that needed access to the <code>protected</code> member 
+as a member of that newly derived class. By doing so, we could override the original class 
+designer's protection strategy. For this reason, <code>protected</code> access is restricted to members 
+of the base-class part of a derived-class object, and does not allow direct access to the members of base-class objects.</p>
+<div class="prevnext">
+<a href="95.htm"><img src="images/Prev1.gif" /></a>&nbsp;&nbsp;<a href="97.htm"><img src="images/Next1.gif" /></a>
+</div>
+</body>
+</html>

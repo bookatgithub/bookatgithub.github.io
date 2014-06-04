@@ -1,0 +1,225 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;13.15.&nbsp;Implementing the Dynamic IP Protocol</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-13-sect-14.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-13-sect-16.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-13-SECT-15"></a>
+<h3 class="docSection1Title">Recipe 13.15. Implementing the Dynamic IP Protocol</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Nicola Paolucci, Mark Rowe, Andrew
+Notspecified</span><a name="pythoncook2-CHP-13-ITERM-2884"></a></p>
+
+<a name="pythoncook2-CHP-13-SECT-15.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-13-ITERM-2885"></a>You use a Dynamic DNS Service which
+accepts the GnuDIP protocol (like <a class="docLink" target="_blank" href="yi.org">yi.org</a>), and need a command-line script to
+update your IP which is recorded with that service.</P>
+
+
+<a name="pythoncook2-CHP-13-SECT-15.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">The Twisted framework has plenty of power for all kinds of network
+tasks, so we can use it to write a script to implement GnuDIP:</p>
+
+<pre>import md5, sys
+from twisted.internet import protocol, reactor
+from twisted.protocols import basic
+from twisted.python import usage
+def hashPassword(password, salt):
+    ''' compute and return MD5 hash for given password and `salt'. '''
+    p1 = md5.md5(password).hexdigest( ) + '.' + salt.strip( )
+    return md5.md5(p1).hexdigest( )
+class DIPProtocol(basic.LineReceiver):
+    """ Implementation of GnuDIP protocol(TCP) as described at:
+    http://gnudip2.sourceforge.net/gnudip-www/latest/gnudip/html/protocol.html
+    """
+    delimiter = '\n'
+    def connectionMade(self):
+        ''' at connection, we start in state "expecting salt". '''
+        basic.LineReceiver.connectionMade(self)
+        self.expectingSalt = True
+    def lineReceived(self, line):
+        ''' we received a full line, either "salt" or normal response '''
+        if self.expectingSalt:
+            self.saltReceived(line)
+            self.expectingSalt = False
+        else:
+            self.responseReceived(line)
+    def saltReceived(self, salt):
+        """ Override this 'abstract method' """
+        raise NotImplementedError
+    def responseReceived(self, response):
+        """ Override this 'abstract method' """
+        raise NotImplementedError
+class DIPUpdater(DIPProtocol):
+    """ A simple class to update an IP, then disconnect. """
+    def saltReceived(self, salt):
+        ''' having received `salt', login to the DIP server '''
+        password = self.factory.getPassword( )
+        username = self.factory.getUsername( )
+        domain = self.factory.getDomain( )
+        msg = '%s:%s:%s:2' % (username, hashPassword(password, salt), domain)
+        self.sendLine(msg)
+    def responseReceived(self, response):
+        ''' response received: show errors if any, then disconnect. '''
+        code = response.split(':', 1)[0]
+        if code == '0':
+            pass  # OK
+        elif code == '1':
+            print 'Authentication failed'
+        else:
+            print 'Unexpected response from server:', repr(response)
+        self.transport.loseConnection( )
+class DIPClientFactory(protocol.ClientFactory):
+     """ Factory used to instantiate DIP protocol instances with
+         correct username, password and domain.
+     """
+     protocol = DIPUpdater
+     # simply collect data for login and provide accessors to them
+     def _ _init_ _(self, username, password, domain):
+         self.u = username
+         self.p = password
+         self.d = domain
+     def getUsername(self):
+         return self.u
+     def getPassword(self):
+         return self.p
+     def getDomain(self):
+         return self.d
+     def clientConnectionLost(self, connector, reason):
+         ''' terminate script when we have disconnected '''
+         reactor.stop( )
+     def clientConnectionFailed(self, connector, reason):
+         ''' show error message in case of network problems '''
+         print 'Connection failed. Reason:', reason
+class Options(usage.Options):
+     ''' parse options from commandline or config script '''
+     optParameters = [['server', 's', 'gnudip2.yi.org', 'DIP Server'],
+                      ['port', 'p', 3495, 'DIP Server  port'],
+                      ['username', 'u', 'durdn', 'Username'],
+                      ['password', 'w', None, 'Password'],
+                      ['domain', 'd', 'durdn.yi.org', 'Domain']]
+if _ _name_ _ == '_ _main_ _':
+     # running as main script: first, get all the needed options
+     config = Options( )
+     try:
+         config.parseOptions( )
+     except usage.UsageError, errortext:
+         print '%s: %s' % (sys.argv[0], errortext)
+         print '%s: Try --help for usage details.' % (sys.argv[0])
+         sys.exit(1)
+     server = config['server']
+     port = int(config['port'])
+     password = config['password']
+     if not password:
+         print 'Password not entered. Try --help for usage details.'
+         sys.exit(1)
+     # and now, start operations (via Twisted's ``reactor'')
+     reactor.connectTCP(server, port,
+            DIPClientFactory(config['username'], password, config['domain']))
+     reactor.run( )</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-13-SECT-15.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">I wanted to use a Dynamic DNS Service called <a class="docLink" target="_blank" href="yi.org">yi.org</a>, but I did not like the option of
+installing the suggested small client application to update my IP
+address on my OpenBSD box. So I resorted to writing the script shown
+in this recipe. I put it into my <I>crontab</i> to keep
+my domain always up-to-date with my dynamic IP address at home.</P>
+
+<p class="docText">This little script is now at version 0.4, and its development history
+is quite instructive. I thought that even the first version. 0.1,
+which I got working in a few minutes, effectively demonstrated the
+power of the Twisted framework in developing network applications, so
+I posted that version on the ActiveState cookbook site. Lo and
+beholdMark first, then Andrew, showered me with helpful
+suggestions, and I repeatedly updated the script in response to their
+advice. So it now demonstrates even better, not just the power of
+Twisted, but more generally the power of collaborative development in
+an open-source or free-software community.</P>
+
+<p class="docText">To give just one example: originally, I had overridden
+<tt>buildProtocol</tt> and passed the factory object to the
+protocol object explicitly. The factory object, in the Twisted
+framework architecture, is where shared state is kept (in this case,
+the username, password, and domain), so I had to ensure the protocol
+knew about the factoryI thought. It turns out that, exactly
+because just about every protocol needs to know about its factory
+object, Twisted takes care of it in its own default implementation of
+<tt>buildProtocol</tt>, making the factory object available
+as the <tt>factory</tt> attribute of every protocol object.
+So, my code, which duplicated Twisted's built-in
+functionality in this regard, was simply ripped out, and the
+recipe's code is simpler and better as a result.</p>
+
+<p class="docText">Too often, software is presented as a finished and polished artifact,
+as if it sprang pristine and perfect like Athena from
+Zeus' forehead. This gives entirely the wrong
+impression to budding software developers, making them feel
+inadequate because <span class="docEmphasis">their</span> code
+isn't born perfect and fully developed. So, as a
+counterweight, I thought it important to present one little story
+about how software actually grows and develops!</p>
+
+<p class="docText">One last detail: it's tempting to place methods
+<i>updateIP</i> and <I>removeIP</i> in the
+<i>DIPProtocol</I> class, to ease the writing of subclasses
+such as <i>DIPUpdater</I>. However, in my view, that would
+be an over-generalization, overkill for such a simple, lightweight
+recipe as Python and Twisted make this one. In practice we
+won't need all that many dynamic IP protocol
+subclasses, and if it turns out that we're wrong and
+we do, in fact, need them, hey, refactoring is clearly
+<span class="docEmphasis">not</span> a hard task with such a fluid, dynamic
+language and powerful frameworks to draw on. So, respect the prime
+directive: "do the simplest thing that can possibly
+work."</p>
+
+<p class="docText">In a sense, the code in this recipe could be said to violate the
+prime directive, because it uses an elegant object-oriented
+architecture with an abstract base class, a concrete subclass to
+specialize it, and, in the factory class, accessor methods rather
+than simple attribute access for the login data (i.e., user,
+password, domain). All of these niceties are lifesavers in big
+programs, but they admittedly <span class="docEmphasis">could</span> be foregone
+for a program of only 120 lines (which would shrink a little further
+if it didn't use all these niceties). However,
+adopting a uniform style of program architecture, even for small
+programs, eases the refactoring task in those not-so-rare cases where
+a small program grows into a big one. So, I have deliberately
+developed the habit of always coding in such an
+"elegant OO way", and once the
+habit is acquired, I find that it enhances, rather than reduces, my
+productivity.</P>
+
+
+<a name="pythoncook2-CHP-13-SECT-15.4"></a>
+<H4 class="docSection2Title">See Also</h4>
+
+<p class="docText">The GnuDIP protocol is specified at <a class="docLink" target="_blank" href="http://gnudip2.sourceforge.net/gnudip-www/latest/gnudip/html/protocol.html">http://gnudip2.sourceforge.net/gnudip-www/latest/gnudip/html/protocol.html</a>;
+Twisted is at <a class="docLink" target="_blank" href="http://www.twistedmatrix.com/">http://www.twistedmatrix.com/</a>.<a name="pythoncook2-CHP-13-ITERM-2886"></a> <a name="pythoncook2-CHP-13-ITERM-2887"></a></p>
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-13-sect-14.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-13-sect-16.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

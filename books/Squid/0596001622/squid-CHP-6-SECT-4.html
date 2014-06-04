@@ -1,0 +1,144 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>6.4 Testing Access Controls</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="squid-CHP-6-SECT-3.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="squid-CHP-6-SECT-5.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="squid-CHP-6-SECT-4"></A>
+<H3 class="docSection1Title" id="225793-928">6.4 Testing Access Controls</H3>
+
+<P class="docText">As your access control configuration <A NAME="squid-CHP-6-ITERM-1430"></A><A NAME="squid-CHP-6-ITERM-1431"></A>becomes longer, it also becomes more
+complicated. I strongly encourage you to test your access controls
+before turning them loose on a production server. Of course, the
+first thing you should do is make sure that Squid can correctly parse
+your configuration file. Use the <I>-k parse</I> feature
+for this:</P>
+
+<PRE>% squid -k parse</PRE>
+
+<P class="docText">To further test your access controls, you may need to set up a fake
+Squid installation. One easy way to do that is compile another copy
+of the Squid source code with a different
+<I>$prefix</I> location. For example:</P>
+
+<PRE>% tar xzvf squid-2.5.STABLE4.tar.gz
+% cd squid-2.5.STABLE4
+% ./configure --prefix=/tmp/squid ...
+% make &amp;&amp; make install</PRE>
+
+<P class="docText">After installing, you need to edit the new
+<I>squid.conf</I> file and change a few directives.
+Change <span class="docEmphasis">http_port</span> if Squid is already running on
+the default port. For simple testing, create a single, small cache
+directory like this:</P>
+
+<PRE>cache_dir ufs /tmp/squid/cache 100 4 4</PRE>
+
+<P class="docText">If you don't want to recompile Squid again, you can
+also just create a new configuration file. The drawback to this
+approach is that you'll need to set all the log-file
+pathnames to the temporary location so that you
+don't overwrite the real files.</P>
+
+<P class="docText">You can easily test some access controls with the
+<I>squidclient</I> program. For example, if you have a
+rule that depends on the origin server hostname
+(<span class="docEmphasis">dstdomain</span> ACL), or some part of the URL
+(<span class="docEmphasis">url_regex</span> or
+<span class="docEmphasis">urlpath_regex</span>), simply enter a URI that you
+would expect to be allowed or denied:</P>
+
+<PRE>% squidclient -p 4128 http://blocked.host.name/blah/blah</PRE>
+
+<P class="docText">or:</P>
+
+<PRE>% squidclient -p 4128 http://some.host.name/blocked.ext</PRE>
+
+<P class="docText">Certain aspects of the request are harder to control. If you have
+<span class="docEmphasis">src</span> ACLs that block requests from outside your
+network, you may need to actually test them from an external host.
+Testing <span class="docEmphasis">time</span> ACLs may be difficult unless you
+can change the clock on your system or stay awake long enough.</P>
+
+<P class="docText">You can use <I>squidclient</I>'s
+<I>-H</I> option to set arbitrary request headers. For
+example, use the following if you need to test a
+<span class="docEmphasis">browser</span> ACL.</P>
+
+<PRE>% squidclient -p 4128 http://www.host.name/blah \
+      -H 'User-Agent: Mozilla/5.0 (compatible; Konqueror/3)\r\n'</PRE>
+
+<P class="docText">For more complicated request, with many headers, you may want to use
+the technique described in <A class="docLink" HREF="squid-CHP-16-SECT-4.html#squid-CHP-16-SECT-4">Section 16.4</A>.</P>
+
+<P class="docText">You might also consider developing a routine
+<span class="docEmphasis">cron</span> job that checks your ACLs for expected
+behavior and reports any anomalies. Here is a sample shell script to
+get you started:</P>
+
+<PRE>#!/bin/sh
+set -e
+
+TESTHOST="www.squid-cache.org"
+
+# make sure Squid is not proxying dangerous ports
+#
+ST=`squidclient 'http://$TESTHOST:25/' | head -1 | awk '{print $2}'`
+if test "$ST" != 403 ; then
+        echo "Squid did not block HTTP request to port 25"
+fi
+
+
+# make sure Squid requires user authentication
+#
+ST=`squidclient 'http://$TESTHOST/' | head -1 | awk '{print $2}'`
+if test "$ST" != 407 ; then
+        echo "Squid allowed request without proxy authentication"
+fi
+
+
+# make sure Squid denies requests from foreign IP addresses
+# elsewhere we already created an alias 192.168.1.1 on one of
+# the system interfaces
+#
+EXT_ADDR=192.168.1.1
+ST=`squidclient -l $EXT_ADDR 'http://$TESTHOST/' | head -1 | awk '{print $2}'`
+if test "$ST" != 403 ; then
+        echo "Squid allowed request from external address $EXT_ADDR"
+fi
+
+exit 0</PRE>
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="squid-CHP-6-SECT-3.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="squid-CHP-6-SECT-5.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

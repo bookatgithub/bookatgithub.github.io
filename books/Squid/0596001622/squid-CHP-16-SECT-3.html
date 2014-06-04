@@ -1,0 +1,229 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>16.3 Core Dumps, Assertions, and Stack Traces</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="squid-CHP-16-SECT-2.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="squid-CHP-16-SECT-4.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="squid-CHP-16-SECT-3"></A>
+<H3 class="docSection1Title">16.3 Core Dumps, Assertions, and Stack Traces</H3>
+
+<P class="docText">If you are unlucky, Squid may experience <A NAME="squid-CHP-16-ITERM-2147"></A><A NAME="squid-CHP-16-ITERM-2148"></A><A NAME="squid-CHP-16-ITERM-2149"></A><A NAME="squid-CHP-16-ITERM-2150"></A><A NAME="squid-CHP-16-ITERM-2151"></A>a <A NAME="squid-CHP-16-ITERM-2152"></A><A NAME="squid-CHP-16-ITERM-2153"></A><A NAME="squid-CHP-16-ITERM-2154"></A><A NAME="squid-CHP-16-ITERM-2155"></A><A NAME="squid-CHP-16-ITERM-2156"></A>fatal error while running. These sorts of
+errors come in three flavors: assertions, bus errors, and
+segmentation violations.</P>
+
+<P class="docText">An <I>assertion</I> is a sanity check in the source
+code. It is a tool, used by developers, to make sure that some
+condition is always true before proceeding. If the condition is
+false, the program exits and creates a core file so that the
+developer can analyze the situation. Here is a typical example:</P>
+
+<PRE>int some_array[100];
+
+void
+some_func(int idx)
+{
+        ...
+        assert(idx &lt; 100);
+        some_array[idx]++;
+        ...
+}</PRE>
+
+<P class="docText">Here, the assertion makes sure that the value of the array index is
+within the bounds of the array. It would be an error to access array
+elements greater than (or equal to) 100. If, somehow, the value of
+<span class="docEmphasis">idx</span> isn't less than 100, the
+program prints a message like this when it runs:</P>
+
+<PRE>assertion failed: filename.c:123: "idx &lt; 100"</PRE>
+
+<P class="docText">If this happens with Squid, you'll see an
+"assertion failed" message in
+<I>cache.log</I>. In addition, your operating system
+should create a <I>core</I> file, which is helpful in
+the post-mortem analysis. I'll explain what to do
+with a <I>core</I> file at the end of this section.</P>
+
+<P class="docText">A <I>bus error</I> is "a fatal
+failure in the execution of a machine language instruction resulting
+from the processor detecting an anomalous condition on its
+bus."<sup class="docFootnote"><A class="docLink" HREF="#squid-CHP-16-FNOTE-1">[1]</A></sup> They typically occur when the processor attempts an
+operation on a nonaligned memory address. You are, perhaps, more
+likely to see a bus error on a 64-bit processor system, such as the
+Alpha and some SPARC CPUs. Fortunately, they are easy to fix.</P><blockquote><p class="docFootnote"><sup><A NAME="squid-CHP-16-FNOTE-1">[1]</A></sup> From the Free On-line
+Dictionary of Computing (FOLDOC), <A class="docLink" target="_blank" HREF="http://wombat.doc.ic.ac.uk/foldoc/">http://wombat.doc.ic.ac.uk/foldoc/</A>.</p></blockquote>
+
+<P class="docText"><I>Segmentation violation</I> errors are,
+unfortunately, more common and sometimes harder to fix. A
+"SEGV" usually occurs when the
+process tries to access an invalid memory area. It might be a NULL
+pointer or a memory address outside the scope of the process. They
+are particularly difficult to track down when the cause (the bug) and
+effect (the SEGV) are separated in time.</P>
+
+<P class="docText">By default, Squid traps bus errors and segmentation violations, and
+attempts a clean shutdown when they occur. You'll
+see something like this in <I>cache.log</I>:</P>
+
+<PRE>FATAL: Received Bus Error...dying.
+2003/09/29 23:18:01| storeDirWriteCleanLogs: Starting...</PRE>
+
+<P class="docText">In most cases, Squid is able to write clean versions of the
+<I>swap.state</I> files. Just before exiting, Squid
+calls <I>abort( )</I> to create a
+<I>core</I> file. The <I>core</I> file
+may help you, or other developers, track down and fix the bug.</P>
+
+<P class="docText">A <I>core</I> file is generally more useful when it is
+created immediately following the error, rather than calling the
+clean shutdown procedure first. You can tell Squid not to trap bus
+errors and segmentation violations with the <I>-C</I>
+command line option:</P>
+
+<PRE>% squid -C ...</PRE>
+
+<P class="docText">Note that some operating systems use the filename
+<I>core</I>, while others prepend the process name
+(i.e., <I>squid.core</I>). Once you have the
+<I>core</I> file, use a debugger to get a stack trace.
+<I>gdb</I> is the GNU debugger—a companion to the
+GNU C compiler. If you don't have
+<I>gdb</I>, try running <I>dbx</I> or
+<I>adb</I> instead. Here's how you can
+use <I>gdb</I> to get a stack trace:</P>
+
+<PRE>% gdb /usr/local/squid/sbin/squid /path/to/squid.core
+...
+Core was generated by 'squid'.
+Program terminated with signal 6, Abort trap.
+...</PRE>
+
+<P class="docText">Then, type <TT><B>where</B></TT> to print the stack trace:</P>
+
+<PRE>(gdb) where
+#0  0x28168b54 in kill ( ) from /usr/lib/libc.so.4
+#1  0x281aa0ce in abort ( ) from /usr/lib/libc.so.4
+#2  0x80a2316 in death (sig=10) at tools.c:301
+#3  0xbfbfffac in ?? ( )
+#4  0x80abe0a in storeDiskdSend (mtype=4, sd=0x82101e0, id=1214000,
+    sio=0x9e90a10, size=4096, offset=-1, shm_offset=0)
+    at diskd/store_io_diskd.c:485
+#5  0x80ab726 in storeDiskdWrite (SD=0x82101e0, sio=0x9e90a10,
+    buf=0x13e94000 "...", size=4096, offset=-1, free_func=0)
+    at diskd/store_io_diskd.c:251
+#6  0x809d2fb in storeWrite (sio=0x9e90a10, buf=0x13e94000 "...",
+    size=4096, offset=-1, free_func=0) at store_io.c:89
+#7  0x80a1c2d in storeSwapOut (e=0xc5a7800) at store_swapout.c:259
+#8  0x809b667 in storeAppend (e=0xc5a7800, buf=0x810f9a0 "...", len=57344)
+    at store.c:533
+#9  0x807873b in httpReadReply (fd=134, data=0xc343590) at http.c:642
+#10 0x806492f in comm_poll (msec=10) at comm_select.c:445
+#11 0x8084404 in main (argc=2, argv=0xbfbffa8c) at main.c:742
+#12 0x804a465 in _start ( )</PRE>
+
+<P class="docText">As you can see, the stack trace prints the name of each function, its
+arguments, and the source code filenames and line numbers. This
+information is extremely useful when tracking down bugs. In some
+cases, however, it isn't sufficient. You might be
+asked to execute additional commands in the debugger, such as
+printing the value of a variable from within a certain function:</P>
+
+<PRE>(gdb) frame 4
+#4  0x80abe0a in storeDiskdSend (mtype=4, sd=0x82101e0, id=1214000,
+    sio=0x9e90a10, size=4096, offset=-1, shm_offset=0)
+    at diskd/store_io_diskd.c:485
+485         x = msgsnd(diskdinfo-&gt;smsgid, &amp;M,
+ msg_snd_rcv_sz, IPC_NOWAIT);
+(gdb) set print pretty
+(gdb) print M
+$2 = {
+  mtype = 4,
+  id = 1214000,
+  seq_no = 7203103,
+  callback_data = 0x9e90a10,
+  size = 4096,
+  offset = -1,
+  status = -1,
+  shm_offset = 0
+}</PRE>
+
+<P class="docText">After you've reported a bug, try to keep the
+<I>core</I> file around for a few days, in case you
+need additional information from it.</P>
+
+<A NAME="squid-CHP-16-SECT-3.1"></A>
+<H4 class="docSection2Title">16.3.1 Can't Find the Core File?</H4>
+
+<P class="docText"><I>core</I> files are written in the
+process' current directory. By default, Squid
+doesn't change its current directory at startup.
+Thus, your <I>core</I> file, if any, should be written
+in the directory in which Squid was started. You
+won't find a <I>core</I> file if the
+filesystem doesn't have enough free space or if the
+process owner doesn't have write permission in the
+directory. You can use the <span class="docEmphasis">coredump_dir</span>
+directive to make Squid use a specific location—somewhere with
+plenty of space and sufficient permissions.</P>
+
+<P class="docText">Process resource limits may also prevent the creation of a
+<I>core</I> file. One of the process limit parameters
+is the size of the core dump file. Usually, most systems set this to
+"unlimited" by default. You can
+check the current limit from your shell with the
+<I>limits</I> or <I>ulimit</I> commands.
+Note, however, that your shell's limit might be
+different than the Squid process limit, especially when Squid is
+started automatically at boot time. If you suspect process limits
+prevent generation of a <I>core</I> file, try this:</P>
+
+<PRE>csh% limit coredumpsize unlimited
+csh% squid -NCd1</PRE>
+
+<P class="docText">On FreeBSD, a <I>sysctl</I> parameter controls whether or
+not the operating system generates a <I>core</I> file
+for processes that call <I>setuid( )</I> and/or
+<I>setgid( )</I>. Squid uses those functions if you
+start it as <span class="docEmphasis">root</span>. To get a core dump, then, you
+must tell the kernel to create the <I>core</I> file
+with this command:</P>
+
+<PRE># sysctl kern.sugid_coredump=1</PRE>
+
+<P class="docText">See the <span class="docEmphasis">sysctl.conf</span> manpage for information
+<A NAME="squid-CHP-16-ITERM-2157"></A><A NAME="squid-CHP-16-ITERM-2158"></A><A NAME="squid-CHP-16-ITERM-2159"></A><A NAME="squid-CHP-16-ITERM-2160"></A><A NAME="squid-CHP-16-ITERM-2161"></A><A NAME="squid-CHP-16-ITERM-2162"></A><A NAME="squid-CHP-16-ITERM-2163"></A><A NAME="squid-CHP-16-ITERM-2164"></A><A NAME="squid-CHP-16-ITERM-2165"></A><A NAME="squid-CHP-16-ITERM-2166"></A>on how to set the variable
+automatically when your system boots.</P>
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="squid-CHP-16-SECT-2.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="squid-CHP-16-SECT-4.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

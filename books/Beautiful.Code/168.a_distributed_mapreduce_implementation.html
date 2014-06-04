@@ -1,0 +1,75 @@
+<html><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<link href="styles/globalstyle.css" type="text/css" rel="stylesheet"/>
+<link title="medium" href="styles/two.css" type="text/css" rel="stylesheet"/>
+<script src="scripts/main.js" type="text/javascript" language="javascript"></script>
+<title>Section 23.4. A Distributed MapReduce Implementation</title>
+</head><body>
+<DIV class=h3 style="MARGIN-TOP: 0px; PADDING-BOTTOM: 1em; WIDTH: 100%; PADDING-TOP: 0px"><SPAN>Distributed Programming with MapReduce</SPAN><SPAN> &gt; A Distributed MapReduce Implementation</SPAN></DIV>
+<DIV></DIV>
+<DIV>
+<DIV><A name=a_distributed_mapreduce_implementation></A>
+<H3 class=docSection1Title id=-100000>23.4. A Distributed MapReduce Implementation</H3>
+<P class=docText><A name="Much of"></A>Much of the benefit of the MapReduce programming model is that it nicely separates the expression of the desired computation from the underlying details of parallelization, failure handling, etc. Indeed, different implementations of the MapReduce programming model are possible for different kinds of computing platforms. The right choice depends on the environment. For example, one implementation may be suitable for a small shared-memory machine, another for a large NUMA multiprocessor, and yet another for an even larger collection of networked machines.<A name=idx-CHP-23-1921></A><A name=idx-CHP-23-1922></A><A name=idx-CHP-23-1923></A></P>
+<P class=docText><A name="implementation that"></A>A very simple single-machine implementation that supports the programming model was shown in the code fragment in <A class=docLink href="166.the_mapreduce_programming_model.html#driver_for_map_and_reduce">Example 23-6</A><A name="a more"></A>. This section describes a more complex implementation that is targeted to running large-scale MapReduce jobs on the computing environment in wide use at Google: large clusters of commodity PCs connected together with switched Ethernet (see "Further Reading," at the end of this chapter). In this environment:</P>
+<UL>
+<LI>
+<P class=docList><A name="typically dual"></A>Machines are typically dual-processor x86 processors running Linux, with 2–4 GB of memory per machine.</P></LI>
+<LI>
+<P class=docList><A name="using commodity"></A>Machines are connected using commodity-networking hardware (typically 1 gigabit/ second switched Ethernet). Machines are organized into racks of 40 or 80 machines. These racks are connected to a central switch for the whole cluster. The bandwidth available when talking to other machines in the same rack is 1 gigabit/second per machine, while the per-machine bandwidth available at the central switch is much smaller (usually 50 to 100 megabits/second per machine).</P></LI>
+<LI>
+<P class=docList><A name="individual machines"></A>Storage is provided by inexpensive IDE disks attached directly to individual machines. A distributed filesystem called <A name=idx-CHP-23-1924></A><A name="reference to"></A>GFS (see the reference to "The Google File System" under "Further Reading," at the end of this chapter) is used to manage the data stored on these disks. GFS uses replication to provide availability and reliability on top of unreliable hardware by breaking files into chunks of 64 megabytes and storing (typically) 3 copies of each chunk on different machines.</P></LI>
+<LI>
+<P class=docList><A name="a scheduling"></A>Users submit jobs to a scheduling system. Each job consists of a set of tasks and is mapped by the scheduler to a set of available machines within a cluster.</P></LI></UL><A name=execution_overview></A>
+<H4 class=docSection2Title id=title-ID0E35DK>23.4.1. Execution Overview</H4>
+<P class=docText><A name="distributed across"></A>The Map function invocations are distributed across multiple machines by automatically partitioning the input data into a set of <SPAN class=docEmphasis>M</SPAN><A name="The input"></A> splits. The input splits can be processed in parallel by different machines. Reduce invocations are distributed by partitioning the intermediate key space into <SPAN class=docEmphasis>R</SPAN><A name="partitioning function"></A> pieces using a partitioning function (e.g., <TT>hash(key) %</TT> <SPAN class=docEmphasis>R</SPAN>).<A name=idx-CHP-23-1925></A></P>
+<P class=docText><A class=docLink href="javascript:moveTo('relationships_between_processes_in_mapreduce');">Figure 23-1</A><A name="that occur"></A> shows the actions that occur when the user program calls the MapReduce function (the numbered labels in <A class=docLink href="javascript:moveTo('relationships_between_processes_in_mapreduce');">Figure 23-1</A><A name="the numbers"></A> correspond to the numbers in the following list).</P><A name=relationships_between_processes_in_mapreduce></A>
+<P>
+<CENTER>
+<H5 class=docFigureTitle><A name="processes in"></A>Figure 23-1. Relationships between processes in MapReduce</H5><IMG id="" height=350 alt="" src="images/a_distributed_mapreduce_implementation.0.png" width=500 border=0> </CENTER>
+<P></P><BR>
+<DIV style="FONT-WEIGHT: bold">
+<OL class=docList type=1>
+<LI>
+<DIV style="FONT-WEIGHT: normal">
+<P class=docList>The MapReduce library first splits the input files into <SPAN class=docEmphasis>M</SPAN><A name="copies of"></A> pieces (typically 16 megabytes to 64 megabytes per piece). It then starts up many copies of the program on a cluster of machines, by making a request to the cluster scheduling system.<A name=idx-CHP-23-1926></A></P></DIV></LI>
+<LI>
+<DIV style="FONT-WEIGHT: normal">
+<P class=docList><A name="the copies"></A>One of the copies is special and is called the MapReduce <SPAN class=docEmphasis>master</SPAN><A name="assigned chunks"></A>. The remaining tasks are assigned chunks of Map and Reduce work by the master. There are <SPAN class=docEmphasis>M</SPAN> map tasks and <SPAN class=docEmphasis>R</SPAN><A name="workers and"></A> reduce tasks. The master picks idle workers and assigns a map and/or a reduce task to each.</P></DIV></LI>
+<LI>
+<DIV style="FONT-WEIGHT: normal">
+<P class=docList><A name="A worker"></A>A worker that is assigned a map task reads the contents of the corresponding input split. It passes each input record to the user-defined Map function. The intermediate key/value pairs produced by the Map function are buffered in memory.</P></DIV></LI>
+<LI>
+<DIV style="FONT-WEIGHT: normal">
+<P class=docList><A name="are written"></A>Periodically, the buffered pairs are written to local disk, partitioned into <SPAN class=docEmphasis>R</SPAN><A name="the partitioning"></A> separate buckets by the partitioning function. When the map task is completed, the worker notifies the master. The master forwards information about the location of the intermediate data generated by this map task to any workers that have been assigned reduce tasks. If there are remaining map tasks, the master assigns one of the remaining tasks to the newly idle worker.</P></DIV></LI>
+<LI>
+<DIV style="FONT-WEIGHT: normal">
+<P class=docList><A name="reduce worker"></A>When a reduce worker is told the locations of intermediate data for its reduce task, it issues remote procedure calls to read the buffered intermediate data from the local disk of the map workers. When a reduce worker has finished reading all intermediate data for its reduce task, it sorts it by the intermediate keys so that all occurrences of the same intermediate key are grouped together. If the intermediate data is too large to fit in memory on the reduce worker, an external sort is used.</P></DIV></LI>
+<LI>
+<DIV style="FONT-WEIGHT: normal">
+<P class=docList><A name="iterates over"></A>The reduce worker iterates over the sorted intermediate key/value pairs. For each unique intermediate key encountered, it passes the key and the corresponding list <A name=idx-CHP-23-1927></A><A name="the user"></A>of intermediate values to the user's Reduce function. Any key/value pairs generated by the user's Reduce function are appended to a final output file for this reduce partition. When the reduce task is done, the worker notifies the master. If there are remaining reduce tasks, the master assigns one of the remaining reduce tasks to the newly idle worker.</P></DIV></LI></OL></DIV>
+<P class=docText><A name="map tasks"></A>When all map tasks and reduce tasks have been completed, the <A name=idx-CHP-23-1928></A><A name="the user"></A>MapReduce function call in the user program returns, giving control back to the user code. At this point, the output of the MapReduce job is available in the <SPAN class=docEmphasis>R</SPAN> output files (one file per reduce task).</P>
+<P class=docText><A name="allow it"></A>Several details of the implementation allow it to perform well in our environment.</P><A name=idx-CHP-23-1929></A><A name=idx-CHP-23-1930></A><A name=idx-CHP-23-1931></A><A name=idx-CHP-23-1932></A><A name=idx-CHP-23-1933></A><A name=idx-CHP-23-1934></A><A name=idx-CHP-23-1935></A>
+<DL class=docList>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docEmphasis><A name="Load balancing"></A>Load balancing</SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList><A name="typically has"></A>A MapReduce job typically has many more tasks than machines, which means that each worker will be assigned many different tasks by the master. The master assigns a new task to a machine when it finishes its previous task. This means that a faster machine will be assigned more tasks than a slower machine. Therefore, the assignment of tasks to machine is properly balanced even in a heterogeneous environment, and workers tend to be kept busy with useful work throughout the computation.<A name=idx-CHP-23-1929></A></P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docEmphasis>Fault tolerance</SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList><A name="of MapReduce"></A>Because this implementation of MapReduce is designed to run jobs <A name=idx-CHP-23-1930></A><A name="hundreds or"></A>distributed across hundreds or thousands of machines, the library must transparently handle machine failures.<A name=idx-CHP-23-1931></A></P>
+<P class=docList><A name="state about"></A>The master keeps state about which map and reduce tasks have been done by which workers. The master periodically sends a ping remote procedure call to each worker. If a worker does not respond to several consecutive pings, the master declares that worker as dead and assigns any work that was done by that worker to other machines for re-execution. Since a typical MapReduce execution might have 50 times as many map tasks as worker machines, recovery is very fast, because 50 separate machines can each pick up one map task for re-execution when a machine fails.</P>
+<P class=docList><A name="a persistent"></A>The master logs all updates of its scheduling state to a persistent logfile. If the master dies (a rare occurrence, since there is only one master), it is restarted by the cluster scheduling system. The new master instance reads the logfile to reconstruct its internal state.</P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docEmphasis>Locality</SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList><A name="implementation conserves"></A>Our MapReduce implementation conserves network bandwidth by taking advantage of the fact that the input data (managed by GFS) is stored on the same machines or racks on which the map computation is executed. For any given Map task, the MapReduce master finds the locations of the input data (there are typically multiple locations due to GFS's replication). The master then tries to schedule the map task on a machine that is close to one of the replicas of the tasks's input data. For large MapReduce jobs that use thousands of workers, most input data is read directly from local disk.<A name=idx-CHP-23-1932></A></P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docEmphasis>Backup tasks</SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList>The running time of <A name=idx-CHP-23-1933></A><A name="by a"></A>MapReduce is often dominated by a few stragglers. (A straggler is any machine that takes a long time to execute one of the last few map or reduce tasks.) A task may take a long time to execute either because it is intrinsically expensive, or because it is running on a slow machine.<A name=idx-CHP-23-1934></A></P>
+<P class=docList><A name="for a"></A>A machine might be slow for a wide variety of reasons. For example, the machine might be busy with other unrelated CPU-intensive processes, or the machine might have a faulty hard drive that causes frequent retries of read operations that slow disk reads by factors of 10 or 100.</P>
+<P class=docList><A name="We use"></A>We use backup tasks to solve the problem of stragglers. When there are only a few map tasks left, the master schedules (on idle workers) one backup execution for each of the remaining in-progress map tasks. Each remaining map task is marked as completed whenever one of the instances of the task finishes (the primary or the backup). A similar strategy is used for reduce tasks. We typically use just 1–2 percent additional computational resources for backup tasks, but have found that they significantly shorten the typical completion time of large <A name=idx-CHP-23-1935></A>MapReduce operations.</P></DD></DL></DIV></DIV>
+<p>&nbsp;</p><p>&nbsp;</p><!-- 仁·义 -->
+</body></html>

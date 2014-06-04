@@ -1,0 +1,261 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;17.1.&nbsp;Implementing a Simple Extension Type</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=ch17-77003.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-17-sect-2.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-17-SECT-1"></a>
+<h3 class="docSection1Title">Recipe 17.1. Implementing a Simple Extension Type</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Alex Martelli</span></p>
+
+<a name="pythoncook2-CHP-17-SECT-1.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-17-ITERM-3050"></a>
+<a name="pythoncook2-CHP-17-ITERM-3051"></a>You want to code and build a C
+extension type for Python with a minimal amount of hard work.</P>
+
+
+<a name="pythoncook2-CHP-17-SECT-1.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">First of all, we need to create a <i>setup.py</I> file
+to use the <tt>distutils</tt> package to build and install
+our module:</p>
+
+<pre>from distutils.core import setup, Extension
+setup(name = "elemlist",
+      version = "1.0",
+      maintainer = "Alex Martelli",
+      maintainer_email = "amcx@aleax.it",
+      description = "Sample, simple Python extension module",
+      ext_modules = [Extension('elemlist',sources=['elemlist.c'])]
+)</pre><BR>
+
+
+<p class="docText">Then, we need a file <I>elemlist.c</i> with our
+module's source code:</P>
+
+<pre>#include "Python.h"
+/* type-definition and utility-macros */
+typedef struct {
+    PyObject_HEAD
+    PyObject *car, *cdr;
+} cons_cell;
+staticforward PyTypeObject cons_type;
+/* a type-testing macro (we don't actually use it here) */
+#define is_cons(v) ((v)-&gt;ob_type == &amp;cons_type)
+/* utility macros to access car and cdr, as either lvalues or rvalues */
+#define carof(v) (((cons_cell*)(v))-&gt;car)
+#define cdrof(v) (((cons_cell*)(v))-&gt;cdr)
+/* ctor ("internal" factory-function) and dtor */
+static cons_cell*
+cons_new(PyObject *car, PyObject *cdr)
+{
+    cons_cell *cons = PyObject_New(cons_cell, &amp;cons_type);
+    if(cons) {
+        cons-&gt;car = car; Py_INCREF(car); /* INCREF when holding a PyObject */
+        cons-&gt;cdr = cdr; Py_INCREF(cdr); /* ditto */
+    }
+    return cons;
+}
+static void
+cons_dealloc(cons_cell* cons)
+{
+    /* DECREF when releasing previously-held PyObject*'s */
+    Py_DECREF(cons-&gt;car); Py_DECREF(cons-&gt;cdr);
+    PyObject_Del(cons);
+}
+/* A minimal Python type-object */
+statichere PyTypeObject cons_type = {
+    PyObject_HEAD_INIT(0)     /* initialize to 0 to ensure Win32 portability  */
+    0,                        /* ob_size */
+    "cons",                   /* tp_name */
+    sizeof(cons_cell),        /* tp_basicsize */
+    0,                        /* tp_itemsize */
+    /* methods */
+    (destructor)cons_dealloc, /* tp_dealloc */
+    /* implied by ISO C: all zeros thereafter, i.e., no other method */
+};
+/* module-functions */
+static PyObject*
+cons(PyObject *self, PyObject *args)    /* the exposed factory-function */
+{
+    PyObject *car, *cdr;
+    if(!PyArg_ParseTuple(args, "OO", &amp;car, &amp;cdr))
+        return 0;
+    return (PyObject*)cons_new(car, cdr);
+}
+static PyObject*
+car(PyObject *self, PyObject *args)     /* car-accessor */
+{
+    PyObject *cons;
+    if(!PyArg_ParseTuple(args, "O!", &amp;cons_type, &amp;cons)) /* type-checked */
+        return 0;
+    return Py_BuildValue("O", carof(cons));
+}
+static PyObject*
+cdr(PyObject *self, PyObject *args)     /* cdr-accessor */
+{
+    PyObject *cons;
+    if(!PyArg_ParseTuple(args, "O!", &amp;cons_type, &amp;cons)) /* type-checked */
+        return 0;
+    return Py_BuildValue("O", cdrof(cons));
+}
+static PyObject*
+setcar(PyObject *self, PyObject *args)  /* car-setter */
+{
+    PyObject *cons;
+    PyObject *value;
+    if(!PyArg_ParseTuple(args, "O!O", &amp;cons_type, &amp;cons, &amp;value))
+        return 0;
+    Py_INCREF(value);
+    Py_DECREF(carof(cons));
+    carof(cons) = value;
+    return Py_BuildValue("");
+}
+static PyObject*
+setcdr(PyObject *self, PyObject *args)  /* cdr-setter */
+{
+    PyObject *cons;
+    PyObject *value;
+    if(!PyArg_ParseTuple(args, "O!O", &amp;cons_type, &amp;cons, &amp;value))
+        return 0;
+    Py_INCREF(value);
+    Py_DECREF(cdrof(cons));
+    cdrof(cons) = value;
+    return Py_BuildValue("");
+}
+static PyMethodDef elemlist_module_functions[  ] = {
+    {"cons",   cons,   METH_VARARGS},
+    {"car",    car,    METH_VARARGS},
+    {"cdr",    cdr,    METH_VARARGS},
+    {"setcar", setcar, METH_VARARGS},
+    {"setcdr", setcdr, METH_VARARGS},
+    {0, 0}
+};
+/* module entry-point (module-initialization) function */
+void
+initelemlist(void)
+{
+    /* Create the module, with its functions */
+    PyObject *m = Py_InitModule("elemlist", elemlist_module_functions);
+    /* Finish initializing the type-objects */
+    cons_type.ob_type = &amp;PyType_Type;
+}</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-17-SECT-1.3"></a>
+<h4 class="docSection2Title">Discussion</h4>
+
+<p class="docText">C-coded Python extension types have an undeserved aura of mystery and
+difficulty. Sure, it's a lot of work to implement
+every possible feature, but a minimal yet useful type
+doesn't necessarily take all that much effort.</p>
+
+<p class="docText">This module is roughly equivalent to the Python-coded module:</p>
+
+<pre>def cons(car, cdr): return car, cdr
+def car(conscell): return conscell[0]
+def cdr(conscell): return conscell[1]
+def setcar(conscell, value): conscell[0] = value
+def setcdr(conscell, value): conscell[1] = value</pre><BR>
+
+
+<p class="docText">except that the C source is about 25 times larger, even excluding
+comments and empty lines (and it is not much faster than the
+Python-coded version, either).</p>
+
+<p class="docText">However, the point of this recipe is to demonstrate a minimal C-coded
+extension type. I'm not even supplying object
+methods (except the indispensable destructor) but, rather, I am
+providing module-level functions to build <tt>cons</tt>
+cells and to read and write their <i>car</I> and
+<i>cdr</I> fields. This recipe also shows the utter
+simplicity of building a C-coded extension module on any platform,
+thanks to the <tt>distutils</tt> package, which does all of
+the hard work.</p>
+
+<p class="docText">Lisp-savvy readers will have recognized from the names involved that
+this little extension offers the core functionality to implement a
+Lisp-like linked list typeusing some <tt>NIL</tt>
+marker (e.g. <tt>None</tt>), by convention, as the
+<tt>cdr</tt> of the last <tt>cons</tt>-cell of a
+list, and otherwise "<tt>cons</tt>ing up a
+list" by having every <tt>cdr</tt> be
+another <tt>con</tt>s-cell. You might easily
+<span class="docEmphasis">constrain</span> the <tt>cdr</tt> to be
+either <tt>None</tt> or another
+<tt>cons</tt>-cell, giving up on generality for a bit of
+extra error checking.</P>
+
+<p class="docText">Because this recipe is meant as an introduction to writing extension
+modules in C for Python, here are the instructions for building this
+extension module, assuming you have a Windows machine with Python 2.3
+and Microsoft Visual C++ 6 (or the free command-line equivalent that
+you can download from Microsoft's site as a part of
+their .NET Framework SDK). You can presumably translate mentally to
+other platforms such as Linux with <span class="docEmphasis">gcc</span>, Mac OS X
+with <span class="docEmphasis">gcc</span>, and so on. On the other hand, using
+different C compilers on Windows involves more work, and
+I'm not going to cover that here (see <a class="docLink" target="_blank" href="http://sebsauvage.net/python/mingw.html">http://sebsauvage.net/python/mingw.html</a>).</P>
+
+<p class="docText">Here are the steps you should follow to build this
+recipe's extension:</p>
+
+<div style="font-weight:bold"><ol class="docList" type="1"><li><div style="font-weight:normal"><p class="docList">Make a new directoryfor example,
+<i>C:\Temp\EL</i>.</p></div></li><li><div style="font-weight:normal"><p class="docList">Open a command-prompt window, and go to the new directory.</p></div></li><li><div style="font-weight:normal"><p class="docList">In the new directory, create the files <i>setup.py</i>
+and <i>elemlist.c</I> with the contents of the
+recipe's text.</P></div></li><li><div style="font-weight:normal"><p class="docList">Run the following at the command prompt (assuming
+you've performed a standard Python 2.3 installation,
+so that your <I>python.exe</i> lives in
+<i>C:\Python23</i>):</p><pre>&lt;m&gt;C:\Temp\EL&gt; C:\Python23\python setup.py install&lt;/m&gt;</pre><br>
+</div></li><LI><div style="font-weight:normal"><p class="docList">This command will result in lots of output, which you should examine
+to check for problems. Presumably, all has gone well, and the new
+<i>elemlist</I> extension module has been built and
+installed.</p></div></LI><li><div style="font-weight:normal"><p class="docList">Now try the extension by running the following at the DOS prompt:</P><pre>&lt;m&gt;C:\Temp\EL&gt; C:\Python23\python&lt;/m&gt;
+<I> (snipped: various greeting messages from Python)</i>
+&gt;&gt;&gt; from elemlist import cons, car, cdr
+&gt;&gt;&gt; a = cons(1, cons(2, cons(3, ( ))))
+&gt;&gt;&gt; car(cdr(a))
+<B>2 </b>
+&gt;&gt;&gt;</pre><BR>
+</div></li></ol></div>
+<p class="docText">Thereyour new extension module is installed and ready!</p>
+
+
+<a name="pythoncook2-CHP-17-SECT-1.4"></a>
+<h4 class="docSection2Title">See Also</h4>
+
+<p class="docText">The <span class="docEmphasis">Extending and Embedding</span> manual is
+available as part of the standard Python documentation set at
+<a class="docLink" target="_blank" href="http://www.python.org/doc/current/ext/ext.html">http://www.python.org/doc/current/ext/ext.html</a>;
+the section "Distributing Python
+Modules" of the standard Python documentation set is
+still incomplete, but it's a reliable source of
+information on the <tt>distutils</tt> package.
+<span class="docEmphasis">Python in a Nutshell</span> covers the essentials of
+extending and embedding and of the <tt>distutils</tt>
+package.<a name="pythoncook2-CHP-17-ITERM-3052"></a>
+<a name="pythoncook2-CHP-17-ITERM-3053"></a></P>
+
+
+
+<ul></ul></TD></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=ch17-77003.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-17-sect-2.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

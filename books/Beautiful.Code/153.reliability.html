@@ -1,0 +1,295 @@
+<html><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<link href="styles/globalstyle.css" type="text/css" rel="stylesheet"/>
+<link title="medium" href="styles/two.css" type="text/css" rel="stylesheet"/>
+<script src="scripts/main.js" type="text/javascript" language="javascript"></script>
+<title>Section 20.5. Reliability</title>
+</head><body>
+<DIV class=h3 style="MARGIN-TOP: 0px; PADDING-BOTTOM: 1em; WIDTH: 100%; PADDING-TOP: 0px"><SPAN>A Highly Reliable Enterprise System for NASA's Mars Rover Mission</SPAN><SPAN> &gt; Reliability</SPAN></DIV>
+<DIV></DIV>
+<DIV>
+<DIV><A name=reliability></A>
+<H3 class=docSection1Title id=-100000>20.5. Reliability</H3>
+<P class=docText><A name="Reliable code"></A>Reliable code continues to perform well without problems. It rarely crashes, if ever. As you can imagine, code that is on board the Mars rovers must be extremely reliable because making on-site maintenance calls is somewhat difficult. But the MER mission wanted earthbound software used by mission control to be reliable, too. Once the mission was underway, no one wanted software problems to disrupt operations.<A name=idx-CHP-20-1671></A><A name=idx-CHP-20-1672></A></P>
+<P class=docText><A name="CIP project"></A>As noted earlier, the CIP project took several measures to ensure the intrinsic reliability of the system:</P>
+<UL>
+<LI>
+<P class=docList><A name="standards and"></A>Adhering to industry standards and best practices, including J2EE<A name=I_indexterm20_tt419></A></P></LI>
+<LI>
+<P class=docList><A name="COTS software"></A>Using proven COTS software wherever practicable, including a commercial application server from an established middleware vendor</P></LI>
+<LI>
+<P class=docList><A name="with modular"></A>Using a service-oriented architecture with modular services</P></LI>
+<LI>
+<P class=docList>Implementing simple, straightforward middleware services</P></LI></UL>
+<P class=docText>We further enhanced <A name=idx-CHP-20-1673></A>reliability with extra nails: service <A name=idx-CHP-20-1674></A><A name="even small"></A>logging and monitoring. While these features can be useful for debugging even small programs, they become essential for keeping track of the runtime behavior of large applications.</P><A name=logging></A>
+<H4 class=docSection2Title id=title-ID0E61DK>20.5.1. Logging</H4>
+<P class=docText><A name="used the"></A>During development, we used the open source <A name=idx-CHP-20-1675></A><A name="log nearly"></A>Apache Log4J Java package to log nearly everything that occurred in the middleware services. It was certainly useful for debugging during development. Logging enabled us to write code that was more reliable. Whenever there was a bug, the logs told us what was going on just prior to the problem, and so we were better able to fix the bug.<A name=idx-CHP-20-1676></A></P>
+<P class=docText><A name="the logging"></A>We originally intended to reduce the logging only to serious messages before <A name=idx-CHP-20-1677></A><A name="CIP went"></A>CIP went into operation. But we ended up leaving most of the logging on since it had a negligible impact on overall performance. Then we discovered that the logs gave us much useful information not only about what was going on with each service, but also <SPAN class=docEmphasis>how</SPAN><A name="using the"></A> client applications were using the services. By analyzing the logs (which we called "log mining"), we were able to tune the services for better performance based on empirical data (see "Dynamic Reconfiguration," later in this chapter).</P>
+<P class=docText><A name="code snippets"></A>Here are some code snippets from the <A name=idx-CHP-20-1678></A><A name="provider bean"></A>streamer service provider bean that show how we did logging for file downloading. The <TT>getDataFile( )</TT><A name="Data File"></A> method processes each "Get Data File" request (via web services) from the client applications. The method immediately logs the request (lines 15–17), including the user ID of the requester and the filepath of the desired source file:</P>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedHeight>1 public class <B>StreamerServiceBean</B> implements SessionBean
+2 {
+3     <B>static {
+4         Globals.loadResources("Streamer");
+5      };</B>
+6
+7      private static Hashtable readerTable = new Hashtable( );
+8      private static Hashtable writerTable = new Hashtable( );
+9
+10     private static BeanCacheStats cacheStats = Globals.queryStats;
+11
+12     public FileToken <B>getDataFile</B>(AccessToken accessToken, String filePath)
+13         throws MiddlewareException
+14     {
+15         <B>Globals.streamerLogger.info(accessToken.userId( ) +
+16                                     ": Streamer.getDataFile("
+17                                     + filePath + ")");</B>
+18         long startTime = System.currentTimeMillis( );
+19
+20         UserSessionObject.validateToken(accessToken);
+21         <B>FileToken fileToken = doFileDownload(accessToken, filePath);
+22         cacheStats.incrementTotalServerResponseTime(startTime);</B>
+23         return fileToken;
+24     }
+25
+
+
+					    </PRE><BR>
+<P class=docText>The <TT>doFileDownload( )</TT><A name="and then"></A> method creates a new file token (line 30) and file reader bean (line 41), and then calls the reader bean's <TT>getDataFile( )</TT> method (line 42). The <TT>cacheStats</TT><A name="with runtime"></A> field deals with runtime monitoring, which is described later:</P>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedHeight>26     private static FileToken <B>doFileDownload</B>(AccessToken accessToken,
+27                                             String filePath)
+28         throws MiddlewareException
+29     {
+30         <B>FileToken fileToken = new FileToken(accessToken, filePath);</B>
+31         String    key       = fileToken.getKey( );
+32
+33         FileReaderLocal reader = null;
+34         synchronized (readerTable) {
+35             reader = (FileReaderLocal) readerTable.get(key);
+36         }
+37
+38         // Create a file reader bean to start the download.
+39         if (reader == null) {
+40             try {
+41                 <B>reader = registerNewReader(key);
+42                 reader.getDataFile(filePath);</B>
+43
+44                 return fileToken;
+45             }
+46             catch(Exception ex) {
+47                 Globals.<A name=idx-CHP-20-1679></A>streamerLogger.warn("Streamer.doFileDownload("
+48                                             + filePath + "): " +
+49                                             ex.getMessage( ));
+50                 <B>cacheStats.incrementFileErrorCount( );</B>
+51                 removeReader(key, reader);
+52                 throw new MiddlewareException(ex);
+53             }
+54         }
+55         else {
+56             throw new MiddlewareException("File already being downloaded: " +
+57                                           filePath);
+58         }
+59     }
+60
+
+
+					    </PRE><BR>
+<P class=docText>The <TT>readDataBlock( )</TT><A name="request from"></A> method processes each "Read Data Block" request from the client applications. It looks up the correct file reader bean (line 71) and calls the reader bean's <TT>readDataBlock( )</TT><A name="the source"></A> method (line 79). At the end of the source file, it removes the file reader bean (line 91):</P>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedHeight>61     public DataBlock <B>readDataBlock</B>(AccessToken accessToken, FileToken fileToken)
+62         throws MiddlewareException
+63     {
+64         long startTime = System.currentTimeMillis( );
+65         UserSessionObject.validateToken(accessToken);
+66
+67         String key = fileToken.getKey( );
+68
+69         FileReaderLocal reader = null;
+70         synchronized (readerTable) {
+71             <B>reader = (FileReaderLocal) readerTable.get(key);</B>
+72         }
+73
+74         // Use the reader bean to download the next data block.
+75         if (reader != null) {
+76             DataBlock block = null;
+77
+78             try {
+79                 <B>block = reader.readDataBlock( );</B>
+80             }
+81             catch(MiddlewareException ex) {
+82                 Globals.<A name=idx-CHP-20-1680></A>streamerLogger.error("Streamer.readDataBlock("
+83                                              + key + ")", ex);
+84                 <B>cacheStats.incrementFileErrorCount( );</B>
+85                 removeReader(key, reader);
+86                 throw ex;
+87             }
+88
+89             // End of file?
+90             if (block == null) {
+91                 <B>removeReader(key, reader);</B>
+92             }
+93
+94             <B>cacheStats.incrementTotalServerResponseTime(startTime);</B>
+95             return block;
+96         }
+97         else {
+98             throw new MiddlewareException(
+99                 "Download source file not opened: " +
+100                fileToken.getFilePath( ));
+101        }
+102    }
+103
+
+
+					    </PRE><BR>
+<P class=docText><A name=The></A>The <TT>registerNewReader( )</TT> and <TT>removeReader( )</TT><A name="destroy the"></A> methods create and destroy the stateful file reader beans, respectively:</P>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedHeight>104    private static FileReaderLocal <B>registerNewReader</B>(String key)
+105        throws Exception
+106    {
+107        Context context = MiddlewareUtility.getInitialContext( );
+108        Object queryRef = context.lookup("FileReaderLocal");
+109
+110        // Create the reader service bean and register it.
+111        FileReaderLocalHome home = (FileReaderLocalHome)
+112            PortableRemoteObject.narrow(queryRef, FileReaderLocalHome.class);
+113        FileReaderLocal reader = home.create( );
+114
+115        synchronized (readerTable) {
+116            readerTable.put(key, reader);
+117        }
+118
+119        return reader;
+120    }
+121
+122    private static void <B>removeReader</B>(String key, FileReaderLocal reader)
+123    {
+124        synchronized (readerTable) {
+125            readerTable.remove(key);
+126        }
+127
+128        if (reader != null) {
+129            try {
+130                reader.remove( );
+131            }
+132            catch(javax.ejb.NoSuchObjectLocalException ex) {
+133                // ignore
+134            }
+135            catch(Exception ex) {
+136                Globals.<A name=idx-CHP-20-1681></A>streamerLogger.error("Streamer.removeReader("
+137                                             + key + ")", ex);
+138                cacheStats.incrementFileErrorCount( );
+139            }
+140        }
+141    }
+142 }
+
+
+					    </PRE><BR>
+<P class=docText><A name="snippets from"></A>Now, here are code snippets from the file reader bean. The <TT>cacheStats</TT> and <TT>fileStats</TT><A name="for runtime"></A> fields are for runtime monitoring, as described later. The <TT>getDataFile( )</TT><A name="start of"></A> method logs the start of the file download (lines 160–161):</P>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedHeight>143 public class <B>FileReaderBean</B> implements SessionBean
+144 {
+145     private static final String FILE = "file";
+146
+147     private transient static BeanCacheStats cacheStats = Globals.queryStats;
+148     private transient static FileStats       fileStats = Globals.fileStats;
+149
+150     private transient int                  totalSize;
+151     private transient String               type;
+152     private transient String               name;
+153     private transient FileInputStream      fileInputStream;
+154     private transient BufferedInputStream  inputStream;
+155     private transient boolean              sawEnd;
+156
+157     public void <B>getDataFile</B>(String filePath)
+158         throws MiddlewareException
+159     {
+160         <B>Globals.streamerLogger.debug("Begin download of file '"
+161                                      + filePath + "'");</B>
+162         this.type = FILE;
+163         this.name = filePath;
+164         this.sawEnd = false;
+165
+166         try {
+167
+168             // Create an input stream from the data file.
+169             fileInputStream = new FileInputStream(new File(filePath));
+170             inputStream     = new BufferedInputStream(fileInputStream);
+171
+172             <B>fileStats.startDownload(this, FILE, name);</B>
+173         }
+174         catch(Exception ex) {
+175             close( );
+176             throw new MiddlewareException(ex);
+177         }
+178     }
+179
+
+
+					    </PRE><BR>
+<P class=docText>The <TT>readDataBlock( )</TT><A name="has read"></A> method reads each data block from the source file. When it has read the entire source file, it logs the completion (lines 191–193):</P>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedHeight>180     public DataBlock <B>readDataBlock( )</B>
+181         throws MiddlewareException
+182     {
+183         byte buffer[] = new byte[<B>Globals.<A name=idx-CHP-20-1682></A>streamerBlockSize</B>];
+184
+185         try {
+186             int size = inputStream.read(buffer);
+187
+188             if (size == -1) {
+189                 close( );
+190
+191                 <B>Globals.streamerLogger.debug("Completed download of " +
+192                                              type + " '" + name + "': " +
+193                                              totalSize + " bytes");
+194
+195                 cacheStats.incrementFileDownloadedCount( );
+196                 cacheStats.incrementFileByteCount(totalSize);
+197                 fileStats.endDownload(this, totalSize);</B>
+198
+199                 sawEnd = true;
+200                 return null;
+201             }
+202             else {
+203                 DataBlock block = new DataBlock(size, buffer);
+204                 totalSize += size;
+205                 return block;
+206             }
+207         }
+208         catch(Exception ex) {
+209             close( );
+210             throw new MiddlewareException(ex);
+211         }
+212     }
+213 }
+
+
+					    </PRE><BR>
+<P class=docText><A name="some sample"></A>Here are some sample <A name=idx-CHP-20-1683></A>streamer service log entries:</P>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedWidth>    2004-12-21 19:17:43,320 INFO : jqpublic:
+    Streamer.getDataFile(/surface/tactical/sol/120/jpeg/1P138831013ETH2809P2845L2M1.JPG)
+    2004-12-21 19:17:43,324 DEBUG: Begin download of file '/surface/tactical/sol/120/
+        jpeg/1P138831013ETH2809P2845L2M1JPG'
+    2004-12-21 19:17:44,584 DEBUG: Completed download of file '/surface/tactical/sol/120/
+        jpeg/1P138831013ETH2809P2845L2M1.JPG': 1876 bytes
+
+
+					    </PRE><BR>
+<P class=docText><A class=docLink href="javascript:moveTo('a_graph_generated_from_mining_the_cip_streamer_service_logs');">Figure 20-6</A> <A name=idx-CHP-20-1684></A><A name="of information"></A>shows a useful graph of information we can glean from log mining. The graph shows the trend in the amount of downloading (the number of files and the number of bytes downloaded) over a period of several months during the mission. Over shorter periods of time, the graph can show spikes whenever one of the rovers <A name=idx-CHP-20-1685></A>makes an interesting discovery.</P><A name=a_graph_generated_from_mining_the_cip_streamer_service_logs></A>
+<P>
+<CENTER>
+<H5 class=docFigureTitle><A name="the CIP"></A>Figure 20-6. A graph generated from "mining" the CIP streamer service logs</H5><IMG id="" height=220 alt="" src="images/reliability.0.png" width=500 border=0> </CENTER>
+<P></P><BR><A name=monitoring></A>
+<H4 class=docSection2Title id=title-ID0EDCEK>20.5.2. Monitoring</H4>
+<P class=docText><A name=idx-CHP-20-1686></A><A name="Logging enables"></A>Logging enables us to analyze the performance of the services by examining what they have been doing over a period of time. Unlike log entries, which are most helpful in pinpointing problems and their causes, runtime monitoring helps us see how well the services are currently performing. It gives us a chance to make dynamic adjustments to improve performance or to head off any potential problems. As mentioned earlier, the ability to monitor operational behavior is often critical to the success of any large application.<A name=idx-CHP-20-1687></A></P>
+<P class=docText><A name="previously shown"></A>The code listings previously shown included statements that update the performance data kept by global static objects referenced by the fields <TT>cacheStats</TT> and <TT>fileStats</TT><A name="probes this"></A>. A middle-ware monitoring service probes this performance data upon request. The global objects to which these fields refer aren't shown, but you should be able to imagine what they contain. The key point is that it's not complicated to gather useful runtime performance data.</P>
+<P class=docText><A name=the></A>We wrote the <A name=idx-CHP-20-1688></A>CIP <A name=idx-CHP-20-1689></A><A name="as a"></A>Middleware Monitor Utility as a client application that periodically sends requests to the middleware monitoring service to obtain the current performance data. <A class=docLink href="javascript:moveTo('screenshot_of_the_statistics_tab_of_the_middleware_monitor_u');">Figure 20-7</A><A name="runtime statistics"></A> shows a screenshot of the utility's Statistics tab that displays, among other runtime statistics, the number of files and bytes that have been downloaded and uploaded by the <A name=idx-CHP-20-1690></A><A name="the number"></A>streamer service, and the number of file errors (such as an invalid filename specified by a client application) that have occurred.</P><A name=screenshot_of_the_statistics_tab_of_the_middleware_monitor_u></A>
+<P>
+<CENTER>
+<H5 class=docFigureTitle><A name="Statistics tab"></A>Figure 20-7. Screenshot of the Statistics tab of the Middleware Monitor Utility</H5><IMG id="" height=518 alt="" src="images/reliability.1.png" width=500 border=0> </CENTER>
+<P></P><BR>
+<P class=docText>The <A name=idx-CHP-20-1691></A>streamer service provider bean's <TT>doFileDownload( )</TT> and <TT>readDataBlock( )</TT><A name="file error"></A> methods both update the global file error count (lines 50 and 84 in the code shown earlier in the section "Logging"). The <TT>getDataFile( )</TT><A name=and></A> and <TT>readDataBlock( )</TT><A name="global total"></A> methods increment the global total service response time (lines 22 and 94). As seen in <A class=docLink href="javascript:moveTo('screenshot_of_the_statistics_tab_of_the_middleware_monitor_u');">Figure 20-7</A><A name="utility displays"></A>, the middleware monitor utility displays average response times under the "Total Server Response" label.<A name=idx-CHP-20-1692></A></P>
+<P class=docText><A name="reader bean"></A>The file reader bean's <TT>getDataFile( )</TT><A name="start of"></A> method records the start of each file download (line 172). The <TT>readDataBlock( )</TT><A name="and records"></A> method increments the global total file and byte counts (lines 195 and 196) and records the completion of a download (line 197). <A class=docLink href="javascript:moveTo('screenshot_of_the_files_tab_of_the_middleware_monitor_utilit');">Figure 20-8</A><A name="screenshot of"></A> shows a screenshot of the Files tab of the monitor utility, which displays current and recent file downloading and uploading activity.</P><A name=screenshot_of_the_files_tab_of_the_middleware_monitor_utilit></A>
+<P>
+<CENTER>
+<H5 class=docFigureTitle><A name="Files tab"></A>Figure 20-8. Screenshot of the Files tab of the Middleware Monitor Utility</H5><IMG id="" height=518 alt="" src="images/reliability.2.png" width=500 border=0> </CENTER>
+<P></P><BR></DIV></DIV>
+<p>&nbsp;</p><p>&nbsp;</p><!-- 仁·义 -->
+</body></html>

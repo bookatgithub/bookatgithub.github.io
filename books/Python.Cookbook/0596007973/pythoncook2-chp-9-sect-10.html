@@ -1,0 +1,195 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;9.10.&nbsp;Processing Windows Messages Using MsgWaitForMultipleObjects</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-9-sect-9.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-9-sect-11.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-9-SECT-10"></a>
+<h3 class="docSection1Title">Recipe 9.10. Processing Windows Messages Using MsgWaitForMultipleObjects</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Michael Robin</span></p>
+
+<a name="pythoncook2-CHP-9-SECT-10.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-9-ITERM-2566"></a> <a name="pythoncook2-CHP-9-ITERM-2567"></a> <a name="pythoncook2-CHP-9-ITERM-2568"></a>In a Win32 application, you need to
+process messages, but you also want to wait for kernel-level waitable
+objects, and coordinate several activities.</P>
+
+
+<a name="pythoncook2-CHP-9-SECT-10.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">A Windows application's message loop, also known as
+its <i>message pump</I>, is at the heart of Windows.
+It's worth some effort to ensure that the heart
+beats properly and regularly:<a name="pythoncook2-CHP-9-ITERM-2569"></a> <a name="pythoncook2-CHP-9-ITERM-2570"></a>
+<a name="pythoncook2-CHP-9-ITERM-2571"></a>
+<a name="pythoncook2-CHP-9-ITERM-2572"></a></p>
+
+<pre>import win32event
+import pythoncom
+TIMEOUT = 200 # ms
+StopEvent = win32event.CreateEvent(None, 0, 0, None)
+OtherEvent = win32event.CreateEvent(None, 0, 0, None)
+class myCoolApp(object):
+    def OnQuit(self):
+          # assume 'areYouSure' is a global function that makes a final
+          # check via a message box, a fancy dialog, or whatever else!
+          if areYouSure( ):
+              win32event.SetEvent(StopEvent) # Exit msg pump
+def _MessagePump( ):
+     waitables = StopEvent, OtherEvent
+     while True:
+         <span class="docEmphBold">rc = win32event.MsgWaitForMultipleObjects(</span>
+             <span class="docEmphBold">waitables</span>,
+             ,       # Wait for all = false, so it waits for any one
+             <span class="docEmphBold">TIMEOUT</span>, # (or win32event.INFINITE)
+             <span class="docEmphBold">win32event.QS_ALLEVENTS</span>) # Accept all kinds of events
+         # You can call a function here, if it doesn't take too long. It will
+         # be executed at least every TIMEOUT ms -- possibly a lot more often,
+         # depending on the number of Windows messages received.
+         if rc == win32event.WAIT_OBJECT_0:
+             # Our first event listed, the StopEvent, was triggered, so
+             # we must exit, terminating the message pump
+             break
+         elif rc == win32event.WAIT_OBJECT_0+1:
+             # Our second event listed, "OtherEvent", was set. Do
+             # whatever needs to be done -- you can wait on as many
+             # kernel-waitable objects as needed (events, locks,
+             # processes, threads, notifications, and so on).
+             pass
+         elif rc == win32event.WAIT_OBJECT_0+len(waitables):
+             # A windows message is waiting - take care of it. (Don't
+             # ask me why a WAIT_OBJECT_MSG isn't defined &lt;
+             # WAIT_OBJECT_0...!).
+             # This message-serving MUST be done for COM, DDE, and other
+             # Windows-y things to work properly!
+             if pythoncom.PumpWaitingMessages( ):
+                  break # we received a wm_quit message
+         elif rc == win32event.WAIT_TIMEOUT:
+             # Our timeout has elapsed.
+             # Do some work here (e.g, poll something you can't thread)
+             # or just feel good to be alive.
+             pass
+         else:
+             raise RuntimeError("unexpected win32wait return value")</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-9-SECT-10.3"></a>
+<H4 class="docSection2Title">Discussion</h4>
+
+<p class="docText">Most Win32 applications must process messages, but you often want to
+wait on kernel waitables and coordinate a lot of things going on at
+the same time. A good message pump structure is the key to this, and
+this recipe exemplifies a reasonably simple but pretty effective one.</P>
+
+<p class="docText">With the message pump shown in this recipe, messages and other events
+get dispatched as soon as they are posted, and a timeout allows you
+to poll other components. You may need to poll if the proper calls or
+event objects are not exposed in your Win32 event loop, as many
+components insist on running only on the
+application's main thread and cannot run on spawned
+(secondary) threads.</P>
+
+<p class="docText">You can add many other refinements, just as you can to any other
+Win32 message-pump approach. Python lets you do this with as much
+precision as C does, thanks to Mark Hammond's
+<tt>PyWin32</tt> package (which used to be known as
+<tt>win32all</tt>). However, the relatively simple message
+pump presented in this recipe is already a big step up from the
+typical naive application that can either serve its message loop or
+wait on kernel waitables, but not both.</p>
+
+<p class="docText">The key to this recipe is the Windows API call
+<tt>MsgWaitForMultipleObjects</tt>, which takes several
+parameters. The first is a tuple of kernel objects you want to wait
+for. The second parameter is a flag that is normally 0. The value 1
+indicates that you should wait until <span class="docEmphasis">all</span> the
+kernel objects in the first parameter are signaled, but my experience
+suggests that you almost invariably want to stop waiting when any
+<span class="docEmphasis">one</span> of these objects is signaled, so this
+parameter will almost always be 0. The third is a flag that specifies
+which Windows messages you want to interrupt the wait; always pass
+<tt>win32event.QS_ALLEVENTS</tt> here, to make sure any
+Windows message interrupts the wait. The fourth parameter is a
+timeout period (in milliseconds), or
+<tt>win32event.INFINITE</tt> if you are sure you do not
+need to do any periodic polling.</p>
+
+<p class="docText">This function is a polling loop and, sure enough, it loops (with a
+<tt>while True</tt>, which is terminated only by a
+<tt>break</tt> within it). At each leg of the loop, it
+calls the API that waits for multiple objects. When that API stops
+waiting, it returns a code that explains why it stopped waiting. A
+value between <tt>win32event.WAIT_OBJECT_0</tt> and
+<tt>win32event.WAIT_OBJECT_0+N-1</tt> (where
+<tt><i>N</i></tt> is the number of waitable kernel objects
+in the tuple you passed as the first parameter), inclusive, means
+that the wait finished because an object was signaled (being signaled
+means different things for each kind of waitable kernel object). The
+return code's difference from
+<tt>win32event.WAIT_OBJECT_0</tt> is the index of the
+relevant object in the tuple.</P>
+
+<p class="docText">A return value of <tt>win32event.WAIT_OBJECT_0+N</tt> means
+that the wait finished because a message was pending, and in this
+case, our recipe processes all pending Windows messages via a call to
+<tt>pythoncom.PumpWaitingMessages</tt>. (That function, in
+turn, returns a true result if a <tt>WM_QUIT</tt> message
+was received, so in this case, we <tt>break</tt> out of the
+whole <tt>while</tt> loop.) A code of
+<tt>win32event.WAIT_TIMEOUT</tt> means the wait finished
+because of a timeout, so we can do our polling there. In this case,
+no message is waiting, and none of our kernel objects of interest
+were signaled.</p>
+
+<p class="docText">Basically, the way to tune this recipe for yourself is by using the
+right kernel objects as <span class="docEmphasis">waitables</span> (with an
+appropriate response to each) and by doing whatever you need to do
+periodically in the polling case. While this means you must have some
+detailed understanding of Win32, of course, it's
+still quite a bit easier than designing your own special-purpose,
+message-loop function from scratch.</p>
+
+<p class="docText">I suspect that a purist would find some way or other to wrap all of
+this message pumping into a neat module, letting each application
+customize its use of the module by passing in a list of waitables,
+some dictionary to map different waitables to chunks of code to
+execute, and a partridge in a pear tree. Go ahead, turn it all into a
+custom metaclass if you wish, see if I care. For once, though, I
+think the right approach to reusing this code is to copy it into your
+application's source directories, and use your
+trusty <span class="docEmphasis">text editor</span> (gasp!) to tailor the message
+pump to your application's exact needs.</P>
+
+
+<a name="pythoncook2-CHP-9-SECT-10.4"></a>
+<h4 class="docSection2Title">See Also</H4>
+
+<p class="docText">Documentation for the Win32 API in <tt>PyWin32</tt>
+(<a class="docLink" target="_blank" href="http://starship.python.net/crew/mhammond/win32/Downloads.html">http://starship.python.net/crew/mhammond/win32/Downloads.html</a>)
+or ActivePython (<a class="docLink" target="_blank" href="http://www.activestate.com/ActivePython/">http://www.activestate.com/ActivePython/</a>);
+Windows API documentation available from Microsoft (<a class="docLink" target="_blank" href="http://msdn.microsoft.com">http://msdn.microsoft.com</a>); Mark Hammond and
+Andy Robinson, <span class="docEmphasis">Python Programming on Win32</span>
+(O'Reilly).<a name="pythoncook2-CHP-9-ITERM-2573"></a> <a name="pythoncook2-CHP-9-ITERM-2574"></a> <a name="pythoncook2-CHP-9-ITERM-2575"></a></p>
+
+
+
+<a href="5991535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><UL></UL></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-9-sect-9.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-9-sect-11.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

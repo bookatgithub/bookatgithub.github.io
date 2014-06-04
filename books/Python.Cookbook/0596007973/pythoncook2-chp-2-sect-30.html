@@ -1,0 +1,150 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;2.30.&nbsp;Calculating CRC-64 Cyclic Redundancy Checks</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-2-sect-29.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-3.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-2-SECT-30"></a>
+<h3 class="docSection1Title" id="409771-989">Recipe 2.30. Calculating CRC-64 Cyclic Redundancy Checks</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Gian Paolo Ciceri</span></p>
+
+<a name="pythoncook2-CHP-2-SECT-30.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-2-ITERM-1728"></a> <a name="pythoncook2-CHP-2-ITERM-1729"></a> <a name="pythoncook2-CHP-2-ITERM-1730"></a>You need to ensure the integrity of some
+data by computing the data's cyclic redundancy check
+(CRC), and you need to do so according to the CRC-64 specifications
+of the ISO-3309 standard.</P>
+
+
+<a name="pythoncook2-CHP-2-SECT-30.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">The Python Standard Library does not include any implementation of
+CRC-64 (only one of CRC-32 in function
+<tt>zlib.crc32</tt>), so we need to program it ourselves.
+Fortunately, Python can perform bitwise operations (masking,
+shifting, bitwise-and, bitwise-or, xor, etc.) just as well as, say, C
+(and, in fact, with just about the same syntax), so
+it's easy to transliterate a typical reference
+implementation of CRC-64 into a Python function as follows:</p>
+
+<pre># prepare two auxiliary tables tables (using a function, for speed),
+# then remove the function, since it's not needed any more:
+CRCTableh = [0] * 256
+CRCTablel = [0] * 256
+def _inittables(CRCTableh, CRCTablel, POLY64REVh, BIT_TOGGLE):
+    for i in xrange(256):
+        partl = i
+        parth = 0L
+        for j in xrange(8):
+            rflag = partl &amp; 1L
+            partl &gt;&gt;= 1L
+            if parth &amp; 1:
+                partl ^= BIT_TOGGLE
+            parth &gt;&gt;= 1L
+            if rflag:
+                parth ^= POLY64REVh
+        CRCTableh[i] = parth
+        CRCTablel[i] = partl
+# first 32 bits of generator polynomial for CRC64 (the 32 lower bits are
+# assumed to be zero) and bit-toggle mask used in _inittables
+POLY64REVh = 0xd8000000L
+BIT_TOGGLE = 1L &lt;&lt; 31L
+# run the function to prepare the tables
+_inittables(CRCTableh, CRCTablel, POLY64REVh, BIT_TOGGLE)
+# remove all names we don't need any more, including the function
+del _inittables, POLY64REVh, BIT_TOGGLE
+# this module exposes the following two functions: crc64, crc64digest
+def crc64(bytes, (crch, crcl)=(0,0)):
+    for byte in bytes:
+        shr = (crch &amp; 0xFF) &lt;&lt; 24
+        temp1h = crch &gt;&gt; 8L
+        temp1l = (crcl &gt;&gt; 8L) | shr
+        tableindex = (crcl ^ ord(byte)) &amp; 0xFF
+        crch = temp1h ^ CRCTableh[tableindex]
+        crcl = temp1l ^ CRCTablel[tableindex]
+    return crch, crcl
+def crc64digest(aString):
+    return "%08X%08X" % (crc64(bytes))
+if _ _name_ _ == '_ _main_ _':
+    # a little test/demo, for when this module runs as main-script
+    assert crc64("IHATEMATH") == (3822890454, 2600578513)
+    assert crc64digest("IHATEMATH") == "E3DCADD69B01ADD1"
+    print 'crc64: dumb test successful'</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-2-SECT-30.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">Cyclic redundancy checks (CRCs) are a popular way to ensure that data
+(in particular, a file) has not been accidentally damaged. CRCs can
+readily detect accidental damage, but they are
+<span class="docEmphasis">not</span> intended to withstand inimical assault the
+way other cryptographically strong checksums are. CRCs can be
+computed much faster than other kinds of checksums, making them
+useful in those cases where the only damage we need to guard against
+is accidental damage, rather than deliberate adversarial tampering.</P>
+
+<p class="docText">Mathematically speaking, a CRC is computed as a polynomial over the
+bits of the data we're checksumming. In practice, as
+this recipe shows, most of the computation can be done once and for
+all and summarized in tables that, when properly indexed, give the
+contribution of each byte of input data to the result. So, after
+initialization (which we do with an auxiliary function because
+computation in Python is much faster when using a
+function's local variables than when using globals),
+actual CRC computation is quite fast. Both the computation of the
+tables and their use for CRC computation require a lot of bitwise
+operations, but, fortunately, Python's just as good
+at such operations as other languages such as C. (In fact,
+Python's syntax for the various bitwise operands is
+just about the same as C's.)</p>
+
+<p class="docText">The algorithm to compute the standard CRC-64 checksum is described in
+the ISO-3309 standard, and this recipe does nothing more than
+implement that algorithm. The generator polynomial is <tt>x64 +
+x4 + x3 + x + 1</tt>. (The "See
+Also" section within this recipe provides a
+reference for obtaining information about the computation.)</P>
+
+<p class="docText">We represent the 64-bit result as a pair of Python
+<tt>int</tt>s, holding the low and high 32-bit halves of
+the result. To allow the CRC to be computed incrementally, in those
+cases where the data comes in a little at a time, we let the caller
+of function <I>crc64</i> optionally feed in the
+"initial value" for the
+<tt>(crch, crcl)</tt> pair, presumably obtained by calling
+<i>crc64</i> on previous parts of the data. To compute the
+CRC in one gulp, the caller just needs to pass in the data (a string
+of bytes), since in this case, we initialize the result to
+<tt>(0, 0)</tt> by default.</p>
+
+
+<a name="pythoncook2-CHP-2-SECT-30.4"></a>
+<H4 class="docSection2Title">See Also</h4>
+
+<p class="docText">W.H. Press, S.A. Teukolsky, W.T. Vetterling, and B.P. Flannery,
+<span class="docEmphasis">Numerical Recipes in C</span>, 2d ed. (Cambridge
+University Press), pp. 896ff.<a name="pythoncook2-CHP-2-ITERM-1731"></a> <a name="pythoncook2-CHP-2-ITERM-1732"></a></p>
+
+
+
+<UL></ul></TD></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-2-sect-29.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-3.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

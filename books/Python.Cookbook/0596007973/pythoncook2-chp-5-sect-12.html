@@ -1,0 +1,230 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;5.12.&nbsp;Performing Frequent Membership Tests on a Sequence</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-5-sect-11.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-5-sect-13.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-5-SECT-12"></a>
+<h3 class="docSection1Title">Recipe 5.12. Performing Frequent Membership Tests on a Sequence</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Alex Martelli</span></p>
+
+<a name="pythoncook2-CHP-5-SECT-12.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-5-ITERM-1961"></a> <a name="pythoncook2-CHP-5-ITERM-1962"></a>You need to
+perform frequent tests for membership in a sequence. The
+<tt>O(n)</tt> behavior of repeated <tt>in</tt>
+operators hurts performance, but you can't switch to
+using just a dictionary or set <span class="docEmphasis">instead</span> of the
+sequence, because you also need to keep the
+sequence's order.</P>
+
+
+<a name="pythoncook2-CHP-5-SECT-12.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">Say you need to append items to a list only if
+they're not already in the list. One sound approach
+to this task is the following function:</p>
+
+<pre>def addUnique(baseList, otherList):
+    auxDict = dict.fromkeys(baseList)
+    for item in otherList:
+        if item not in auxDict:
+            baseList.append(item)
+            auxDict[item] = None</pre><BR>
+
+
+<p class="docText">If your code has to run only under Python 2.4, you can get exactly
+the same effect with an auxiliary set rather than an auxiliary
+dictionary.</p>
+
+
+<a name="pythoncook2-CHP-5-SECT-12.3"></a>
+<H4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">A simple (naive?) approach to this recipe's task
+<span class="docEmphasis">looks</span> good:</p>
+
+<pre>def addUnique_simple(baseList, otherList):
+    for item in otherList:
+        if item not in baseList:
+            baseList.append(item)</pre><BR>
+
+
+<p class="docText">and it may be sort of OK, <span class="docEmphasis">if</span> the lists are very
+small.</P>
+
+<p class="docText">However, the simple approach can be quite slow if the lists are not
+small. When you check <tt>if item not in baseList</tt>,
+Python can implement the <tt>in</tt> operator in only one
+way: an internal loop over the elements of <i>baseList</i>,
+ending with a result of <tt>true</tt> as soon as an element
+compares equal to <i>item</I>, with a result of
+<tt>False</tt> if the loop terminates without having found
+any equality. On average, executing the
+<tt>in</tt>-operator takes time proportional to
+<tt>len(baseList)</tt>. <i>addUnique_simple</i>
+executes the <tt>in</tt>-operator
+<tt>len(otherList)</tt> times, so, in all, it takes time
+proportional to the <span class="docEmphasis">product</span> of the lengths of
+the two lists.</P>
+
+<p class="docText">In the <i>addUnique</I> function shown in the
+"Solution", we first build the
+auxiliary dictionary <i>auxDict</I>, a step that takes time
+proportional to <tt>len(baseList)</tt>. Then, the
+<tt>in</tt>-operator inside the loop checks for membership
+in a <tt>dict</tt>a step that makes all the
+difference because checking for membership in a
+<tt>dict</tt> takes roughly constant time, independent of
+the number of items in the <tt>dict</tt>! So, the
+<tt>for</tt> loop takes time proportional to
+<tt>len(otherList)</tt>, and the entire function takes time
+proportional to the <span class="docEmphasis">sum</span> of the lengths of the
+two lists.</P>
+
+<p class="docText">The analysis of the running times should in fact go quite a bit
+deeper, because the length of <i>baseList</i> is not
+constant in <i>addUnique_simple; baseList</i> grows each
+time an <i>item</i> is processed that was not already
+there. But the gist of the (surprisingly complicated) analysis is not
+very different from what this simplified version indicates. We can
+check this by measuring. When each list holds 10 integers, with an
+overlap of 50%, the simple version is about 30% slower than the one
+shown in the "Solution", the kind
+of slowdown that can normally be ignored. But with lists of 100
+integers each, again with 50% overlap, the simple version is
+<span class="docEmphasis">twelve times slower</span> than the one shown in the
+"Solution"a level of
+slowdown that can never be ignored, and it only gets worse if the
+lists get really substantial.</p>
+
+<p class="docText">Sometimes, you could obtain even better overall performance for your
+program by permanently placing the auxiliary <tt>dict</tt>
+alongside the sequence, encapsulating both into one object. However,
+in this case, you must maintain the <tt>dict</tt> as the
+sequence gets modified, to ensure it stays in sync with the
+sequence's current membership. This maintenance task
+is not trivial, and it can be architected in many different ways.
+Here is one such way, which does the syncing "just
+in time," rebuilding the auxiliary
+<tt>dict</tt> when a membership test is required and the
+dictionary is possibly out of sync with the list's
+contents. Since it costs very little, the following class optimizes
+the <tt>index</tt> method, as well as membership tests:</p>
+
+<pre>class list_with_aux_dict(list):
+    def _ _init_ _(self, iterable=( )):
+        list._ _init_ _(self, iterable)
+        self._dict_ok = False
+    def _rebuild_dict(self):
+        self._dict = {  }
+        for i, item in enumerate(self):
+            if item not in self._dict:
+                self._dict[item] = i
+        self._dict_ok = True
+    def _ _contains_ _(self, item):
+        if not self._dict_ok:
+            self._rebuild_dict( )
+        return item in self._dict
+    def index(self, item):
+        if not self._dict_ok:
+            self._rebuild_dict( )
+        try: return self._dict[item]
+        except KeyError: raise ValueError
+def _wrapMutatorMethod(methname):
+    _method = getattr(list, methname)
+    def wrapper(self, *args):
+        # Reset 'dictionary OK' flag, then delegate to the real mutator method
+        self._dict_ok = False
+        return _method(self, *args)
+    # in Python 2.4, only: wrapper._ _name_ _ = _method._ _name_ _
+    setattr(list_with_aux_dict, methname, wrapper)
+for meth in 'setitem delitem setslice delslice iadd'.split( ):
+    _wrapMutatorMethod('_ _%s_ _' % meth)
+for meth in 'append insert pop remove extend'.split( ):
+    _wrapMutatorMethod(meth)
+del _wrapMethod               # remove auxiliary function, not needed any more</pre><br>
+
+
+<p class="docText">The <i>list_with_aux_dict</i> class extends
+<tt>list</tt> and delegates to it every method, except
+<tt>_ _contains_ _</tt> and <tt>index</tt>. Every
+method that can modify list membership is wrapped in a closure that
+resets a flag asserting that the auxiliary dictionary is OK.
+Python's <tt>in</tt>-operator calls the
+<tt>_ _contains_ _</tt> method.
+<i>list_with_aux_dict</i>'s <tt>_
+_contains_ _</tt> method rebuilds the auxiliary dictionary,
+unless the flag is set (when the flag is set, rebuilding is
+unnecessary); the <tt>index</tt> method works the same way.</P>
+
+<p class="docText">Instead of building and installing wrapping closures for all the
+mutating methods of the list into the
+<I>list_with_aux_dict</i> class with a helper function, as
+the recipe does, we could write all the <tt>def</tt>
+statements for the wrapper methods in the body of
+<i>list_with_aux_dict</I>. However, the code for the class
+as presented has the important advantage of minimizing boilerplate
+(repetitious plumbing code that is boring and voluminous, and thus a
+likely home for bugs). Python's strengths at
+introspection and dynamic modification give you a choice: you can
+build method wrappers, as this recipe does, in a smart and concise
+way; or, you can choose to code the boilerplate anyway, if you prefer
+to avoid what some would call the black magic of introspection and
+dynamic modification of class objects.</p>
+
+<p class="docText">The architecture of class <i>list_with_aux_dict</i> caters
+well to a rather common pattern of use, where sequence-modifying
+operations happen in bunches, followed by a period of time in which
+the sequence is not modified, but several membership tests may be
+performed. However, the <i>addUnique_simple</i> function
+shown earlier would not get any performance benefit if argument
+<tt><i>baseList</I></tt> was an instance of this
+recipe's <i>list_with_aux_dict</I> rather
+than a plain <tt>list</tt>: the function interleaves
+membership tests and sequence modifications. Therefore, too many
+rebuilds of the auxiliary dictionary for
+<i>list_with_aux_dict</I> would impede the
+function's performance. (Unless a typical case was
+for a vast majority of the items of
+<tt><i>otherList</I></tt> to be already contained in
+<tt><I>baseList</i></tt>, so that very few modifications
+occurred compared to the number of membership tests.)</P>
+
+<p class="docText">An important requisite for any of these membership-test optimizations
+is that the values in the sequence must be hashable (otherwise, of
+course, they cannot be keys in a <tt>dict</tt>, nor items
+in a <tt>set</tt>). For example, a list of tuples might be
+subjected to this recipe's treatment, but for a list
+of lists, the recipe as it stands is just not applicable.</P>
+
+
+<a name="pythoncook2-CHP-5-SECT-12.4"></a>
+<h4 class="docSection2Title">See Also</h4>
+
+<p class="docText">The <span class="docEmphasis">Library Reference</span> and <span class="docEmphasis">Python in
+a Nutshell</span> sections on sequence types and mapping
+types.<a name="pythoncook2-CHP-5-ITERM-1963"></a>
+<a name="pythoncook2-CHP-5-ITERM-1964"></a></p>
+
+
+
+<a href="5991535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><ul></UL></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-5-sect-11.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-5-sect-13.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

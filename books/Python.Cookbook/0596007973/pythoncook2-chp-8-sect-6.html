@@ -1,0 +1,218 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;8.6.&nbsp;Getting More Information from Tracebacks</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-8-sect-5.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-8-sect-7.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-8-SECT-6"></a>
+<h3 class="docSection1Title" id="409771-863">Recipe 8.6. Getting More Information from Tracebacks</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Bryn Keller</span><a name="pythoncook2-CHP-8-ITERM-2444"></a>
+<a name="pythoncook2-CHP-8-ITERM-2445"></a></p>
+
+<a name="pythoncook2-CHP-8-SECT-6.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText">You want to display all of the available information when an uncaught
+exception is raised.</P>
+
+
+<a name="pythoncook2-CHP-8-SECT-6.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">A traceback object is basically a linked list of nodes, in which each
+node refers to a frame object. Frame objects, in turn, form their own
+linked list in the opposite order from the linked list of traceback
+nodes, so we can walk back and forth if needed. This recipe exploits
+this structure and the rich amount of information held by frame
+objects, including, in particular, the dictionary of local variables
+for the function corresponding to each frame:</p>
+
+<pre>import sys, traceback
+def print_exc_plus( ):
+    """ Print the usual traceback information, followed by a listing of
+        all the local variables in each frame.
+    """
+    tb = sys.exc_info( )[2]
+    while tb.tb_next:
+        tb = tb.tb_next
+    stack = [  ]
+    f = tb.tb_frame
+    while f:
+        stack.append(f)
+        f = f.f_back
+    stack.reverse( )
+    traceback.print_exc( )
+    print "Locals by frame, innermost last"
+    for frame in stack:
+        print
+        print "Frame %s in %s at line %s" % (frame.f_code.co_name,
+                                             frame.f_code.co_filename,
+                                             frame.f_lineno)
+        for key, value in frame.f_locals.items( ):
+            print "\t%20s = " % key,
+            # we must _absolutely_ avoid propagating exceptions, and str(value)
+            # COULD cause any exception, so we MUST catch any...:
+            try:
+                print value
+            except:
+                print "&lt;ERROR WHILE PRINTING VALUE&gt;"</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-8-SECT-6.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">The standard Python <tt>TRaceback</tt> module provides
+useful functions to give information about where and why an error
+occurred. However, traceback objects contain a great deal more
+information (indirectly, via the frame objects they refer to) than
+the <tt>traceback</tt> module displays. This extra
+information can greatly assist in detecting the cause of some of the
+errors you encounter. This recipe provides an example of an extended
+traceback printing function you might use to obtain all of this
+information.</P>
+
+<p class="docText">Here's a simplistic demonstration of the kind of
+problem this approach can help with. Basically, we have a simple
+function that manipulates all the strings in a list. The function
+doesn't do any error checking, so, when we pass a
+list that contains something other than strings, we get an error.
+Figuring out which bad data caused the error is easier with our new
+<I>print_exc_plus</i> function to help us:</p>
+
+<pre>data = ["1", "2", 3, "4"]     # Typo: we 'forget' the quotes on data[2]
+def pad4(seq):
+    """
+    Pad each string in seq with zeros up to four places. Note that there
+    is no reason to actually write this function; Python already
+    does this sort of thing much better.  It's just an example!
+    """
+    return_value = [  ]
+    for thing in seq:
+        return_value.append("0" * (4 - len(thing)) + thing)
+    return return_value</pre><br>
+
+
+<p class="docText">Here's the (limited) information we get from a
+normal <tt>traceback.print_exc</tt>:</P>
+
+<pre>&gt;&gt;&gt; try:
+...     pad4(data)
+... except:
+...     traceback.print_exc( )
+...
+<b>Traceback (most recent call last):</b>
+<b>  File "&lt;stdin&gt;", line 2, in ?</b>
+<B>  File "&lt;stdin&gt;", line 9, in pad4</b>
+<b>TypeError: len( ) of unsized object</b></pre><BR>
+
+
+<p class="docText">Now here's how it looks when displaying the info
+with the function from this recipe instead of the standard
+<tt>traceback.print_exc</tt>:</P>
+
+<pre>&gt;&gt;&gt; try:
+...     pad4(data)
+... except:
+...     print_exc_plus( )
+...
+<B>Traceback (most recent call last):</b>
+<b>  File "&lt;stdin&gt;", line 2, in ?</b>
+<b>  File "&lt;stdin&gt;", line 9, in pad4</b>
+<b>TypeError: len( ) of unsized object</b>
+<b>Locals by frame, innermost last</b>
+<b>Frame ? in &lt;stdin&gt; at line 4</b>
+<b>                         sys =  &lt;module 'sys' (built-in)&gt;</b>
+<b>                        pad4 =  &lt;function pad4 at 0x007C6210&gt;</b>
+<b>                _ _builtins_ _ =  &lt;module '_ _builtin_ _' (built-in)&gt;</b>
+<b>                    _ _name_ _ =  _ _main_ _</b>
+<b>                        data =  ['1', '2', 3, '4']</b>
+<b>                     _ _doc_ _ =  None</b>
+<b>              print_exc_plus =  &lt;function print_exc_plus at 0x00802038&gt;</b>
+<b>Frame pad4 in &lt;stdin&gt; at line 9</b>
+<B>                       thing =  3</b>
+<B>                return_value =  ['0001', '0002']</b>
+<b>                         seq =  ['1', '2', 3, '4']</b></pre><br>
+
+
+<p class="docText">Note how easy it is to see the bad data that caused the problem. The
+<I>thing</i> variable has a value of <tt>3</tt>,
+so we know why we got the <tt>TypeError</tt>. A quick look
+at the value for <i>data</i> shows that we simply forgot
+the quotes on that item. So we can either fix the data or decide to
+make function <i>pad4</i> a bit more tolerant (e.g., by
+changing the loop to <tt>for thing in map(str, seq)</tt>).
+These kind of design choices are important, but the point of this
+recipe is to save you time in understanding what's
+going on, so you can make your design choices with all the available
+information.</p>
+
+<p class="docText">The recipe relies on the fact that each traceback object refers to
+the next traceback object in the stack through the
+<tt>tb_next</tt> field, forming a linked list. Each
+traceback object also refers to a corresponding frame object through
+the <tt>tb_frame</tt> field, and each frame refers to the
+previous frame through the <tt>f_back</tt> field (a linked
+list going the other way around from that of the traceback objects).</P>
+
+<p class="docText">For simplicity, the recipe first accumulates references to all the
+frame objects in a local list called <tt>stack</tt>, then
+loops over the list, emitting information about each frame. For each
+frame, it first emits some basic information (e.g., function name,
+filename, line number, etc.) then turns to the dictionary
+representing the local variables of the frame, to which the
+<tt>f_locals</tt> field refers. Just like for the
+dictionaries built and returned by the <tt>locals</tt> and
+<tt>globals</tt> built-in functions, each key is a variable
+name, and the corresponding value is the variable's
+value. Note that while printing the name is safe
+(it's just a string), printing the value might fail
+because it could invoke an arbitrary and buggy <tt>_ _str_
+_</tt> method of a user-defined object. So, the value is printed
+within a <tt>try</tt>/<tt>except</tt> statement,
+to prevent the propagation of an uncaught exception while another
+exception is being handled. An <tt>except</tt> clause that
+does not list the exceptions to catch, and thus catches every
+exception, is almost always a mistake, but this recipe exemplifies
+the <span class="docEmphasis">almost</span> part of this statement!</P>
+
+<p class="docText">I use a technique similar to this one in the applications I develop,
+with all the detailed information being logged to a log file for
+later detailed and leisurely analysis. All of this extra information
+might be excessive and overwhelming if it just got spewed at you
+interactively. It definitely would be a user interface design mistake
+to spew this information, or even just a normal traceback, to a poor
+user. Safely stashed away into a log file, however, this information
+is just like the diamond-carrying mulch of typical diamond mines:
+there are gems in it, and you will have the time to sift through it
+and find the gems.</p>
+
+
+<a name="pythoncook2-CHP-8-SECT-6.4"></a>
+<H4 class="docSection2Title">See Also</h4>
+
+<p class="docText"><a class="docLink" href="pythoncook2-CHP-8-SECT-5.html#pythoncook2-CHP-8-SECT-5">Recipe 8.5</a>; documentation
+on the <tt>TRaceback</tt> module, and the
+<tt>exc_info</tt> function in the <tt>sys</tt>
+module, in the <span class="docEmphasis">Library Reference</span> and
+<span class="docEmphasis">Python in a Nutshell</span>.<a name="pythoncook2-CHP-8-ITERM-2446"></a> <a name="pythoncook2-CHP-8-ITERM-2447"></a></P>
+
+
+
+<ul></UL></TD></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-8-sect-5.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-8-sect-7.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

@@ -1,0 +1,222 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;18.17.&nbsp;Computing the Convex Hulls and Diameters of 2D Point Sets</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-18-sect-16.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-19.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-18-SECT-17"></a>
+<h3 class="docSection1Title">Recipe 18.17. Computing the Convex Hulls and Diameters of 2D Point Sets</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: David Eppstein, Dinu Gherman</span></p>
+
+<a name="pythoncook2-CHP-18-SECT-17.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-18-ITERM-3118"></a>You have a list of 2D
+points, represented as pairs (<tt><I>x</i></tt>,
+<tt><I>y</i></tt>), and need to compute the
+convex hull (i.e., upper and lower chains of vertices) and the
+diameter (the two points farthest from each other).</P>
+
+
+<a name="pythoncook2-CHP-18-SECT-17.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText"><a name="pythoncook2-CHP-18-ITERM-3119"></a>We can easily compute the hulls by the
+classic <span class="docEmphasis">Graham's scan</span>
+algorithm, with sorting based on coordinates rather than radially.
+Here is a function to perform this task:</P>
+
+<pre>def orientation(p, q, r):
+    ''' &gt;0 if p-q-r are clockwise, &lt;0 if counterclockwise, 0 if colinear. '''
+    return (q[1]-p[1])*(r[0]-p[0]) - (q[0]-p[0])*(r[1]-p[1])
+def hulls(Points):
+    ' Graham scan to find upper and lower convex hulls of a set of 2D points '
+    U = [  ]
+    L = [  ]
+    # the natural sort in Python is lexicographical, by coordinate
+    Points.sort( )
+    for p in Points:
+        while len(U) &gt; 1 and orientation(U[-2], U[-1], p) &lt;= 0:
+            U.pop( )
+        while len(L) &gt; 1 and orientation(L[-2], L[-1], p) &gt;= 0:
+            L.pop( )
+        U.append(p)
+        L.append(p)
+    return U, L</pre><br>
+
+
+<p class="docText"><a name="pythoncook2-CHP-18-ITERM-3120"></a>Given the hulls, the
+<span class="docEmphasis">rotating calipers</span> algorithm provides all pairs
+of points that are candidates to be set's diameter.
+Here is a function to embody this algorithm:</P>
+
+<pre>def rotatingCalipers(Points):
+    ''' Given a list of 2d points, finds all ways of sandwiching the points
+        between two parallel lines that touch one point each, and yields the
+        sequence of pairs of points touched by each pair of lines.  '''
+    U, L = hulls(Points)
+    i = 0
+    j = len(L) - 1
+    while i &lt; len(U) - 1 or j &gt; 0:
+        yield U[i], L[j]
+        # if all the way through one side of hull, advance the other side
+        if i == len(U) - 1:
+            j -= 1
+        elif j == 0:
+            i += 1
+        # still points left on both lists, compare slopes of next hull edges
+        # being careful to avoid divide-by-zero in slope calculation
+        elif (U[i+1][1]-U[i][1]) * (L[j][0]-L[j-1][0]) &gt; \
+             (L[j][1]-L[j-1][1]) * (U[i+1][0]-U[i][0]):
+            i += 1
+        else: j -= 1</pre><BR>
+
+
+<p class="docText">Given all the candidates, we need only to scan for the
+<tt>max</tt> on pairwise point-point distances of candidate
+pairs of points to get the diameter. Here is a function that performs
+exactly this task:</p>
+
+<pre>def diameter(Points):
+    ''' Given a list of 2d points, returns the pair that's farthest apart. '''
+    diam, pair = max( [((p[0]-q[0])**2 + (p[1]-q[1])**2, (p,q))
+                      for p,q in rotatingCalipers(Points)] )
+    return pair</pre><br>
+
+
+
+<a name="pythoncook2-CHP-18-SECT-17.3"></a>
+<h4 class="docSection2Title">Discussion</h4>
+
+<p class="docText">As function <I>hulls</i> shows, we can apply
+Graham's scan algorithm without needing an expensive
+radial sort as a preliminary step: Python's own
+built-in sort (which is <i>lexicographical</I>,
+meaning, in this case, by <i>x</I> coordinate first, and by
+<i>y</I> coordinate when the <I>x</i> coordinates
+of two points coincide) is sufficient.</p>
+
+<p class="docText">From <i>hulls</i>, we get the upper and lower convex hulls
+as distinct lists, which, in turn, helps in the
+<i>rotatingCalipers</i> function: that function can
+maintain separate indices <tt><i>i</i></tt> and
+<tt><i>j</i></tt> on the lower and upper hulls and still
+be sure to yield all pairs of <span class="docEmphasis">sandwich boundary</span>
+points that are candidates to be the set's diameter.
+Given the sequence of candidate pairs, function
+<i>diameter</i>'s task is quite
+simpleit boils down to one call to built-in
+<tt>max</tt> on a list comprehension (a generator
+expression would suffice in Python 2.4) that associates the pairwise
+point distance to each pair of candidate points. We use the
+<span class="docEmphasis">squared</span> distance, in fact.
+There's no reason to compute a costly square root to
+get the actual non-squared distance: we're comparing
+only distances, and for any non-negative <tt><i>x</I></tt>
+and <tt><I>y</i></tt>,
+<tt><i>x</I></tt> <tt>&lt;</tt>
+<tt><i>y</i></tt> and
+<tt>sqrt(</tt><tt><i>x</i></tt><tt>) &lt;
+sqrt(</tt><tt><i>y</i></tt><tt>)</tt>
+always have identical truth values. (In practice, however, using
+<tt>math.hypot(</tt><tt><I>p</i></tt><tt>[</tt><tt><I>0</i></tt><tt>]-</tt><tt><I>q</i></tt><tt>[</tt><tt><I>0</I></tt><tt>]</tt>,
+<tt><i>p</I></tt><tt>[1]-</tt><tt><I>q</i></tt><tt>[1])</tt>
+in the list comprehension gives us just about the same performance.)</p>
+
+<p class="docText">The computations in this recipe take care to handle tricky cases,
+such as pairs of points with the same <tt><i>x</i></tt>
+coordinate, multiple copies of the same point, colinear triples of
+points, and slope computations that, if not carefully handled, would
+produce a division by zero (i.e., again, pairs of points with the
+same <tt><I>x</i></tt> coordinate). The set of unit tests
+that carefully probe each of these corner cases is far longer than
+the code in the recipe itself, which is why it's not
+posted on this cookbook.</p>
+
+<p class="docText">Some of the formulas become a little simpler and more readable when
+we represent points by complex numbers, rather than as pairs of
+reals:</P>
+
+<pre>def orientation(p, q, r):
+    return ((q - p) * (r - p).conjugate( )).imag
+<i>...</I>
+        # still points left on both lists, compare slopes of next hull edges
+        # being careful to avoid divide-by-zero in slope calculation
+        elif ((U[i+1] - U[i]) * (L[j] - L[j-1]).conjugate( )).imag &gt; 0:
+            i += 1
+        else: j -= 1
+<i>...</I>
+def diameter(Points):
+    diam, pair = max([(abs(p-q), (p,q)) for p,q in rotatingCalipers(Points)])
+    return pair</pre><BR>
+
+
+<p class="docText">If we represent points by complex numbers, of course, we cannot just
+use <tt>Points.sort( )</tt> any more because complex
+numbers cannot be compared. We need to "pay
+back" some of the simplification by coding our own
+sort, such as:</p>
+
+<pre>    aux = [ (p.real, p.imag) for p in Points ]
+    aux.sort( )
+    Points[:] = [ complex(*p) for p in aux ]
+    del aux</pre><br>
+
+
+<p class="docText">or equivalently, in Python 2.4:</p>
+
+<pre>    Points.sort(key=lambda p: p.real, p.imag)</pre><br>
+
+
+<p class="docText">Moreover, under the hood, a complex numbers-based version is doing
+more arithmetic: finding the real as well as imaginary components in
+the first and second formula, and doing an unnecessary square root in
+the third one. Nevertheless, performance as measured on my machine,
+despite this extra work, turns out to be slightly
+<span class="docEmphasis">better</span> with this latest snippet than with the
+"Solution"'s code.
+The reason I've not made the complex-numbers
+approach the "official" one, aside
+from the complication with sorting, is that you should not require
+familiarity with complex arithmetic just to understand geometrical
+computations.</p>
+
+<p class="docText">If you're comfortable with complex numbers,
+don't mind the sorting issues, and have to perform
+many 2D geometrical computations, you should consider representing
+points as complex numbers and check whether this provides a
+performance boost, as well as overall simplification to your source
+code. Among other advantages, representing points as complex numbers
+lets you use the <tt>Numeric</tt> package to hold your
+data, saving much memory and possibly gaining even more performance,
+when compared to the natural alternative of representing points as
+(<tt><i>x</i></tt>, <tt><i>y</i></tt>) tuples
+holding two <tt>float</tt>s.<a name="pythoncook2-CHP-18-ITERM-3121"></a></p>
+
+
+<a name="pythoncook2-CHP-18-SECT-17.4"></a>
+<h4 class="docSection2Title">See Also</h4>
+
+<p class="docText">M. de Berg, M. van Kreveld, M. Overmars, and O. Schwarzkopf,
+<span class="docEmphasis">Computational Geometry: Algorithms and
+Applications</span>, 2nd ed. (Springer-Verlag).<a name="pythoncook2-CHP-18-ITERM-3122"></a></p>
+
+
+
+<a href="5991535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><UL></UL></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-18-sect-16.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-19.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

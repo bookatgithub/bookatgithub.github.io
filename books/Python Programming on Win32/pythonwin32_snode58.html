@@ -1,0 +1,983 @@
+<HTML><HEAD><META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=iso-8859-1">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="7.2 A VB Client"-->
+<LINK REL="stylesheet" href="FILES/sbolM.css">
+</HEAD>
+<BODY link="#354278" vlink="#000066" alink="#000080" topmargin="0">
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right"><a href="pythonwin32_snode57.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a> <a href="pythonwin32_snode59.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a></td></table>
+<FONT>
+<h3>7.2
+A VB Client</h3>
+
+
+<p>
+<a NAME="idx666"></a>Next,
+we've created a VB application with a multiple document
+interface. You can do this by hand and add the forms and modules you
+need, or use VB's Application Wizard and strip out the stuff
+you don't need. We've defined a public variable called
+<tt cLASS="monofont">BookServer</tt> and three public methods in the form,
+<tt CLASs="monofont">InitCOMServer</tt>, <tt class="monofont">CloseCOMServer</tt>,
+and <tt class="monofont">TestCOMServer</tt>, and hooked them up so that
+<TT CLASs="monofont">InitCOM-Server</TT> is called when the form loads:</p>
+
+
+
+<PRe ClASS="monofont">Public BookServer As Object
+
+Private Sub MDIForm_Load()
+    InitCOMServer
+    frmJournal.Show
+End Sub
+
+Private Sub MDIForm_Unload(Cancel As Integer)
+    CloseCOMServer
+End Sub
+
+Sub InitCOMServer()
+    'called when the program starts
+    On Error GoTo InitCOMServer_error
+    Set BookServer = CreateObject("Doubletalk.BookServer")
+    Exit Sub
+    
+InitCOMServer_error:
+    Dim msg As String
+    msg = "There was an error trying to initialize the BookServer." + _
+            "Please check that it is properly registered and try the Python " + _
+            "test functions first.  The program will now abort."
+    MsgBox msg
+    End
+    
+End Sub
+
+Sub CloseCOMServer()
+    Set BookServer = Nothing
+End Sub
+
+Sub TestCOMServer()
+    'just to check it is alive
+    Dim hopefully_four As Integer
+    hopefully_four = BookServer.Double(2)
+    MsgBox "2 x 2 = " &amp; hopefully_four &amp; ", so your server is alive"
+End Sub
+
+
+Private Sub mnuToolsTestServer_Click()
+    'this helps establish if the COM server is alive
+    'using a minimal diagnostic function in the modMain module
+    TestCOMServer
+End Sub</Pre>
+
+
+<p>That the COM server isn't registered is a common error, so you
+need to handle this error and close the program immediately if it
+occurs.</p>
+
+
+
+<P>It's not necessary to explicitly unload the
+<TT Class="monofont">BookServer</TT>; it's freed automatically when
+the VB program closes down. However, it's good programming
+practice to free variables explicitly to show that you know when
+it's happening, and it provides the right hook in case you want
+to do some extra processing at this point (such as committing changes
+to a file or database).</P>
+
+
+
+<P>We've also added a menu item on the Tools menu to call our test
+function. Hit Run, and the application should start up. If you get as
+far as the main screen, it should have a live Python COM server
+inside it. To prove it, click on Tools <img bORDEr="0" align="absmiddle" width="20" height="16" src="FILES/U2192.gif" aLT="figs/U2192.gif"> Test Server, and you
+should see <A href="pythonwin32_snode58.html#2">Figure 7.1</A>.</P>
+
+
+
+<cENtEr>
+<H5>
+<A NAme="2"></a>Figure 7.1. Not much of a GUI yet!</h5>
+
+<IMG BordeR="0" WIDth="502" heIGHT="100" src="FILES/ppw.0701.gif" alt="figs/ppw.0701.gif"></center>
+
+
+<p>Now we've got this running, we can start to expand the
+capabilities of the COM server and add the code to call it on the VB
+side. We've added a number of public methods, declaring them in
+the <tt class="monofont">_public_methods_</tT> attribute as we implement
+them.</P>
+
+
+
+
+<H4>7.2.1
+Building the First View</H4>
+
+
+<P>
+<A nAMe="idx667"></A>Adding
+the following methods to your <Tt ClASS="monofont">COMBookSet</Tt><i>
+</i>allows you to load a data file, see how many transactions
+the <tT CLAss="monofont">BookSet</tt> contains, and then build a view that
+displays a Journal, a listing of all the transactions in date order:</P>
+
+
+
+<PRE clasS="monofont"># more methods for COMBookSet - must be named in _public_methods_
+    def load(self, filename):
+        self.__BookSet.load(str(filename))
+
+    def count(self):
+        # return number of transactions
+        return len(self.__BookSet)
+    
+
+    def getTransactionString(self, index):
+        return self.__BookSet[index].asString()</PRE>
+
+
+<p>In <tt class="monofont">load</tt>, you perform a
+<tt class="monofont">str(filename)</tt> operation to convert the Unicode
+filename from COM into an ordinary Python string. Then pass the
+request to the delegate Python <tt CLASS="monofont">BookSet</Tt> instance.
+Most methods follow this pattern, doing any necessary transformations
+of arguments on the way in and out and passing the real work onto the
+delegate.</P>
+
+
+
+<P>Now you need to open files. This is the VB code for the File <iMG bOrDER="0" Align="absmiddle" WIDTh="20" heiGHT="16" src="FILES/U2192.gif" alT="figs/U2192.gif">
+Open menu option (generated by one
+of VB's Wizards and so is somewhat verbose):</P>
+
+
+
+<PRe class="monofont">Private Sub mnuFileOpen_Click()
+    Dim sFile As String
+    With dlgCommonDialog
+        .DialogTitle = "Open"
+        .CancelError = False
+        'ToDo: set the flags and attributes of the common dialog control
+        .Filter = "Doubletalk Journal Files (*.dtj)|*.dtj"
+        .ShowOpen
+        If Len(.FileName) = 0 Then
+            Exit Sub
+        End If
+        sFile = .FileName
+    End With
+    BookServer.Load sFile
+    
+    'display something helpful in the Journal caption
+    frmJournal.Caption = sFile &amp; ", " &amp; BookServer.count &amp; " Transactions"
+End Sub</pre>
+
+
+<p>The only line of interest here is in
+<tt class="monofont">BookServer.Load</tt> <tt CLASS="monofont">sFile</Tt>, where
+Python is asked to do the work. Then, clicking on File <IMg BOrDeR="0" ALIgn="absmiddle" wiDTH="20" HeighT="16" src="FILES/U2192.gif" alt="figs/U2192.gif"> Open
+lets you open a <tT CLAss="monofont">BookSet</tt> stored on disk. The
+Doubletalk package includes one file created by the
+<i>demodata1.py</i> script with a thousand
+transactions; it takes about one second to load on a Pentium 120. The
+various other loading and saving methods in your
+<tt class="monofont">COMBookSet</tt> class can be hooked up to menu items in
+a similar manner.</p>
+
+
+
+<p>Next, build a <a namE="idx668"></A>Journal view, an
+<A NAMe="idx669"></A>MDI child
+window to display a list of transactions in date order. This has a
+list box filling its client area and some code to resize it smoothly.
+It also has a method called
+<Tt CLaSs="monofont">UpdateView</TT>
+<A Name="idx670"></a> as follows:</P>
+
+
+
+<PRE clasS="monofont">Public Sub UpdateView()
+    'make a list with a string describing each transaction
+    
+    Dim count, i As Integer
+    Dim trantext As String
+    Dim tran As Object
+    
+    Screen.MousePointer = vbHourglass
+    lstJournal.Clear
+    
+    For i = 0 To frmMain.BookServer.count - 1
+        trantext = frmMain.BookServer.getOneLineDescription(i)
+        lstJournal.AddItem trantext
+    Next i
+    
+    Screen.MousePointer = vbDefault
+    Caption = "Journal view - " &amp; lstJournal.ListCount &amp; " transactions"
+    
+End Sub</PRE>
+
+
+<p>The implementation of this <tt cLASS="monofont">UpdateView</tt> method is
+simple: first ask the <tt class="monofont">Book-Server</tt> for the number
+of transactions, then for the text representation of each one in
+turn. These are added to the list one at a time. When run, you see a
+view like <a href="pythonwin32_snode58.html#4">Figure 7.2</a>.</p>
+
+
+
+<cenTER>
+<H5>
+<A NaME="4"></a>Figure 7.2. The first view</H5>
+
+<ImG bORDEr="0" widTH="502" HEight="225" src="FILES/ppw.0702.gif" Alt="figs/ppw.0702.gif"></ceNTER>
+
+
+<p>We'll define a range of views in the next few pages, all with
+an <tt class="monofont">UpdateView</tt> public method. You can then ask them
+all to
+<a name="idx671"></a>redraw
+themselves whenever the data changes. Later on we will see some other
+techniques that remove the need to do the looping in VB; the Python
+COM framework can return a list of strings or allow VB to iterate
+over the <tt claSS="monofont">BookSet</TT> directly.</P>
+
+
+
+<P>At this point, it's worth it to pause and reflect. We have
+built the engine of an application in Python, but delivered it inside
+an industry-standard, 100% Windows user interface of the kind users
+expect.</p>
+
+
+
+
+
+
+
+<H4>7.2.2
+More About Transactions</H4>
+
+
+<p>
+<A NaMe="idx672"></A>
+<A NAme="idx673"></a>You'll want to add and edit
+individual transactions. This leads to more fundamental design
+considerations. You need to expose
+<tT CLAss="monofont">Transaction</tt>
+<A NAMe="idx674"></a> class as a COM server. You also need
+to think about how to create these transactions and manage their
+lifecycles and about the right choice of patterns. One option is to
+make a
+<tt CLASs="monofont">COMTransaction</tt>
+<a name="idx675"></a> class the same way we did for
+<tt class="monofont">COMBookset</tt>.</p>
+
+
+
+<p>The overall goal is to make sure that code that works with
+transactions in VB is as similar as possible to the corresponding
+code in Python. The VB code to create and add a new transaction looks
+like this:</p>
+
+
+
+<PRE CLAsS="monofont">    Dim newtran As Object
+    
+    Set newtran = CreateObject("Doubletalk.Transaction")
+    newtran.setDateString "31/12/99"
+    newtran.setComment "Python on Windows Royalty Cheque"
+    newtran.addLine "MyCo.Assets.NCA.CurAss.Cash", 5000
+    newtran.addLastLine "MyCo.Capital.PL.Income.Writing"
+    
+    BookServer.Add newtran</PrE>
+
+
+<P>There is another choice, however. Adding a factory method to
+<tT cLASS="monofont">BookServer</tt> gives a new transaction (outside of the
+<tt CLASs="monofont">BookSet</tt> but otherwise fully formed). In this case
+there is no need to register the class at all; it's never
+created directly from the registry. Microsoft Office uses this model
+a lot. Most of the Excel objects are obtained from the application
+object's <a NAME="idx676"></a>factory methods and are not directly
+creatable. If you go this way, your VB code to add a transaction
+looks like this:</p>
+
+
+
+<prE CLAss="monofont">    Dim newtran As Object
+    
+    Set newtran = BookServer.CreateTransaction
+    newtran.setDateString "31/3/2000"
+    newtran.setComment "Even more royalties"
+    newtran.addLine "MyCo.Assets.NCA.CurAss.Cash", 5000
+    newtran.addLastLine "MyCo.Capital.PL.Income.Writing"
+    
+    BookServer.Add newtran</pre>
+
+
+<p>The benefit is that the <tt class="monofont">COMTransaction</tt> class can
+be much smaller.</p>
+
+
+
+<p>We've added a class called <tt clASS="monofont">COMTransaction</TT> to
+<I>comservers.py</i> that delegates to a pure Python
+transaction. This provides all the
+<A NaME="idx677"></a>methods needed to edit and create
+transactions in your client code. Here's an example:</P>
+
+
+
+<pRE CLass="monofont">class COMTransaction:
+    # we don't need all the _reg_ stuff, as we provide our own
+    # API for creating these and don't use the registry.
+    _public_methods_ = [
+                'asString',
+                'getDateString',
+                'setDateString',
+                'setCOMDate',
+                'getCOMDate',
+                'getComment',
+                'setComment',
+                'getLineCount',
+                'getAccount',
+                'getAmount',
+                'addLine',
+                'addLastLine',
+                'getOneLineDescription'
+                ]
+    
+    def __init__(self, tran=None):
+        if tran is None:
+            self._tran = doubletalk.transac.Transaction()
+        else:
+            self._tran = tran       
+        
+    def asString(self):
+        return self._tran.asString()
+    
+    def getDateString(self):
+        return self._tran.getDateString()
+    
+    def setDateString(self, aDateString): 
+        self._tran.setDateString(str(aDateString))
+    
+    def setCOMDate(self, comdate):
+        self._tran.date = (comdate - 25569.0) * 86400.0
+        
+    def getCOMDate(self):
+        return (self._tran.date / 86400.0) + 25569.0
+
+    def getComment(self):
+        return self._tran.comment
+
+    def setComment(self, aComment):
+        self._tran.comment = str(aComment)
+       
+    def getOneLineDescription(self):
+        return '%-15s %s %10.2f' % (
+            self._tran.getDateString(), 
+            self._tran.comment,
+            self._tran.magnitude()
+            )
+    
+    def getLineCount(self):
+        return len(self._tran.lines)
+    
+    def getAccount(self, index):
+        return self._tran.lines[index][0]
+        
+    def getAmount(self, index):
+        return self._tran.lines[index][1]
+    
+    def addLine(self, account, amount):
+        self._tran.addLine(str(account), amount)
+       
+    def addLastLine(self, account):
+        self._tran.addLastLine(str(account))</pRE>
+
+
+<P>This example has a number of interesting features:</P>
+
+
+
+<ul>
+<li><P>Like <TT Class="monofont">COMBookSet</TT>, this has an instance variable
+called <TT class="monofont">self._tran</tt> pointing to a pure Python
+transaction instance. You can pass in an existing transaction on
+initialization to wrap it up, or it creates one if none is provided.</p>
+</li>
+<li><p>There's no need to register it at all, since you will create
+instances from a factory method provided in
+<tt class="monofont">COMBookSet</tT>. The only special attribute needed is
+the list of public methods.</P>
+</LI>
+<LI><p>Since Python dates use a different representation than Microsoft, we
+have provided <TT cLAsS="monofont">setCOMDate</tT><I> </I>and
+<Tt claSS="monofont">getCOMDate</TT><i> </i>methods to handle
+the conversion. Python's date system is that of Unix, counting
+seconds since 1/1/1970; COM uses the Excel format of days since
+31-Dec-1899. We also offer <tt CLASs="monofont">setDateString</tt> and
+<tT CLAss="monofont">getDateString</tt> methods to sidestep the need for a
+conversion routine.</p>
+</li>
+<li><p>Rather than expose <tt class="monofont">comment</tt> as a simple attribute,
+we have implemented <tt CLASS="monofont">setComment</Tt> and
+<TT cLAsS="monofont">getComment</tT> methods. These let you convert the
+Unicode string. As a general principle, we are not directly exposing
+any attributes (although the Python COM framework does allow it).</P>
+</LI>
+<li><p>We provided some extra methods to get the number of lines and to
+retrieve a specific account name or amount using an index. These let
+you write a VB loop to get all the lines. Alternative ways of
+exposing the detail rows would be to return arrays (which are covered
+later in this chapter) and enumerators (which appear in <a href="pythonwin32_cnode91.html">Chapter 12</a>).</p>
+</li>
+</UL>
+<P>Now we need to look at how to get hold of these and store them in our
+<Tt claSS="monofont">BookServer</TT>. At this point you need to do a little
+more conversion and understand a little more about COM. In the
+previous VB example to create and add a transaction, there were
+actually three different
+<tt class="monofont">Transaction</tt>
+<a name="idx678"></a> objects involved. The raw one used by
+VB is an <tt clasS="monofont">IDispatch</TT>
+<A NAmE="idx679"></A><i> </I>object.
+<Tt ClASS="monofont">IDispatch</Tt> is a standard COM interface that lets
+you attempt to call any method or property and finds out later
+whether they work; the Python COM framework creates these around
+Python objects. Hiding within this is an instance of our
+<tt cLASS="monofont">COMTransaction</tt> class, written in Python. And
+because you are using a delegation mechanism, you have your own pure
+Python <tt CLASs="monofont">Transaction</tt> class as an attribute of the
+<tT CLAss="monofont">COMTransaction</tt>. When you create new transactions
+to use with COM or try to add ones to the <tt class="monofont">BookSet</tt>,
+you have a little more conversion to do.</p>
+
+
+
+<p>This method in <tt clasS="monofont">COMBookSet</TT> creates a new
+transaction for Visual Basic to use:</P>
+
+
+
+<PRe CLaSS="monofont">def createTransaction(self):
+        comTran = COMTransaction()
+        idTran = win32com.server.util.wrap(comTran)
+        return idTran</pRe>
+
+
+<P>Before handing this out to a client language such as VB, call the
+<TT Class="monofont">wrap</TT>
+<A Name="idx680"></a> utility. This creates a
+<TT CLass="monofont">PyIDispatch</tT> wrapper around the Python object,
+which is what VB actually works with. More information on wrapping
+Python objects for COM can be found in <A href="pythonwin32_cnode91.html">Chapter 12</a>.</p>
+
+
+
+<p>When you want to add a new transaction to the
+<tt class="monofont">BookSet</tt>, you need to unwrap it to get at the
+Python object inside:</p>
+
+
+
+<pre claSS="monofont">def add(self, idTran):
+        comTran = win32com.server.util.unwrap(idTran)
+        pyTran = comTran._tran
+        self.__BookSet.add(pyTran)</PRE>
+
+
+<P>Throughout this code we have
+<a NAmE="idx681"></A>prefixed the
+<tT cLASS="monofont">PyIDispatch</tt> object with <i>id</i>,
+the Python COM classes in <I>comservers.py</I> with
+<I>com</I>, and the pure Python classes in
+<i>bookset.py</i> and <i>transac.py</i>
+with <I>py</I>.</P>
+
+
+
+<P>If you design your application purely to work with COM and not for
+general Python use, you can take another tack and store the
+<tt clASS="monofont">PyIDispatch</Tt> objects in the list.<a name="idx682"></a> <a name="idx683"></a></p>
+
+
+
+
+
+
+
+<h4>7.2.3
+Adding and Editing Transactions</h4>
+
+
+<p>
+<a namE="idx684"></A>Now
+we are ready to add and edit transactions. The natural thing to do is
+to allow a double-click on a transaction to lead to a special dialog
+for editing. This should perform the necessary validation to ensure
+that the transaction balances before the dialog is closed, and, if
+there is a change, it should update all of the current views.
+We've built a pair of dialogs in VB: one to edit transactions
+and the other (called from it) to edit individual line items. <A href="pythonwin32_snode58.html#10">Figure 7.3</A> shows the transaction dialog.</P>
+
+
+
+<cENtEr>
+<H5>
+<A NAme="10"></a>Figure 7.3. Transaction editing dialog</h5>
+
+<IMG BordeR="0" WIDth="502" heIGHT="250" src="FILES/ppw.0703.gif" alt="figs/ppw.0703.gif"></center>
+
+
+<p>The code to edit the transaction is exposed as a method of the form
+as follows:</p>
+
+
+
+<pre clasS="monofont">Public Function Edit(index As Integer) As Boolean
+    'returns true is the transaction was successfully edited
+    Dim i As Integer
+    Dim linecount As Integer
+    
+    Set tran = frmMain.BookServer.getTransaction(index)
+    
+    'display the transaction details
+    lblTranIndex.Caption = Str(index)
+    txtDate.text = FormatDateTime(tran.getCOMDate)
+    txtComment.text = tran.getComment
+    
+    linecount = tran.getLineCount
+    grdItems.rows = linecount + 1
+    For i = 0 To linecount - 1
+        grdItems.TextMatrix(i + 1, 0) = tran.GetAccount(i)
+        grdItems.TextMatrix(i + 1, 1) = tran.getAmount(i)
+    Next i
+    Set tran = Nothing
+    UpdateFormState
+    
+    'display and allow editing
+    Me.Show vbModal
+    
+     If FormExit = vbOK Then
+        Set tran = frmMain.BookServer.CreateTransaction
+        tran.setComment txtComment.text
+        
+        If IsDate(txtDate.text) Then tran.setCOMDate 
+                                                         CDbl(CDate(txtDate.text))
+
+        
+        For i = 1 To grdItems.rows - 1
+            tran.AddLine grdItems.TextMatrix(i, 0), _
+                                    CDbl(grdItems.TextMatrix(i, 1))
+        Next i
+        frmMain.BookServer.Edit index, tran
+        Set tran = Nothing
+        Edit = True
+    Else
+        Edit = False
+    End If
+    
+End Function</PRE>
+
+
+<P>This example is one of many ways to organize the code. Fetch a
+transaction from the <Tt CLaSS="monofont">BookSet</tT> and display its
+attributes in the user interface before discarding it. Then display
+the dialog modally : the user must finish using the dialog before the
+<tT CLAss="monofont">Edit</tt><I> </I>method continues. During
+this period, quite a bit of validation code is running; the OK button
+is enabled only if the transaction is valid and in balance. If OK is
+clicked, the transaction is valid. Now create a new
+<TT clasS="monofont">COMTransaction</TT><I> </i>to hold the
+data, copy the data from the user interface into it, and tell the
+<tt cLASS="monofont">BookSet</tt> to accept this as a replacement for the
+its existing data in that position. An alternative might be to work
+with the same transaction throughout.</p>
+
+
+
+<p>
+<a name="idx685"></a>The
+dialog also exposes a method to add a new transaction; this displays
+an empty dialog, but behaves identically after displaying the form.</p>
+
+
+
+<p>To summarize, you can now add and edit transactions from Visual
+Basic. The techniques used would be the same for any kind of nested
+or master-detail object. The VB code to do this looks extremely
+natural and straightforward, pretty much the same as the Python code
+for creating transactions. On the server side, you need to
+distinguish between the <tt class="monofont">PyIDispatch</tt> objects COM is
+using and Python's internal representations, but this needs to
+be done only once per class.<A NAME="idx686"></A></p>
+
+
+
+
+
+
+
+<H4>7.2.4
+Building Views with Arrays</H4>
+
+
+<p>
+<A NaMe="idx687"></A>
+<A NAme="idx688"></a>So far we've seen examples of
+passing numbers, strings, and Python objects back and forth between
+Python and VB. Now we'll develop some more kinds of views and
+look at passing around arrays of data at a time. This is a real time
+saver and can simplify the preceding code in several places.</p>
+
+
+
+<P>Many financial reports take the form of a 2D grid or spreadsheet.
+What's needed is a generic solution for getting a Python list
+of lists into such a grid. In the last chapter we showed a number of
+<TT Class="monofont">BookSet</TT> methods for getting a list of accounts,
+the details of an account and so on. For example,
+<TT clasS="monofont">getAccountDetails</TT> returns a list of tuples of
+<Tt class="monofont">(transaction</tt> <tt class="monofont">number</tt>,
+<tt clASS="monofont">date</TT>, <Tt CLaSS="monofont">comment</tT>,
+<tT CLAss="monofont">amount</tt>, <TT CLass="monofont">runningTotal)</tT>. This is
+effectively a matrix with five columns but an unknown number of rows.
+You need to expose this the usual way in
+<TT Class="monofont">COMBookSet</TT>, but then access the entire matrix from
+VB. The Python COM framework automatically converts lists (or lists
+of lists, or lists of tuples) into arrays that can be accessed in VB.</P>
+
+
+
+<P>We've created a new form, <tt class="monofont">frmAccountView</tt>,
+which can be given the name of an account as a string. This has a
+Microsoft FlexGrid control called <tt class="monofont">grdTable</tt>.
+Here's the <tt cLASS="monofont">UpdateView</TT> method that fetches
+and displays the data:</p>
+
+
+
+<PRe CLaSs="monofont">Public Sub UpdateView()
+    Dim table As Variant
+    Dim rows As Integer, cols As Integer
+    Dim row As Integer, col As Integer
+    
+    table = frmMain.BookServer.getAccountDetails(AccountName)
+    
+    rows = UBound(table, 1) - LBound(table, 1) + 1
+    cols = UBound(table, 2) - LBound(table, 2) + 1 'should be 5
+    
+    grdTable.rows = rows + 1  'leave room for titles
+    For row = 0 To rows - 1
+        For col = 0 To cols - 1
+            grdTable.TextMatrix(row + 1, col) = table(row, col)
+        Next col
+    Next row
+End Sub</PRE>
+
+
+<P><a href="pythonwin32_snode58.html#12">Figure 7.4</A> displays the new view in action.</P>
+
+
+
+<CenteR>
+<H5>
+<A Name="12"></a>Figure 7.4. A 2D grid view </H5>
+
+<IMG border="0" width="502" height="331" src="FILES/ppw.0704.gif" aLT="figs/ppw.0704.gif"></CENTeR>
+
+
+<P>Although we've hardcoded a view, it would be easy to write a
+completely generic form to display any data and push the management
+of views back into Python itself. We'll look at this in <a href="pythonwin32_cnode61.html">Chapter 8</a>.</P>
+
+
+
+
+
+
+
+<H4>7.2.5
+Graphics and Callbacks</H4>
+
+
+<P>
+<a namE="idx689"></A>It
+<A Name="idx690"></a>would
+be convenient to look at a graphical view of an account, so
+let's create one. This allows you to illustrate another level
+of integration between Python and VB: <I>callbacks</I>.
+Within the framework you've just created, the VB COM client has
+been accessing the properties and methods of the Python COM server.
+But it doesn't have to be that way; the Python code can access
+the properties and methods of any VB object, whether built-in or
+user-defined.</P>
+
+
+
+<P>You need to pass a VB form to Python, which then draws directly on
+it. You could also instead write another view that grabs the same
+array of data as the last one and uses VB graphics code to do the
+drawing. That is a better design, since it keeps a strict separation
+between the engine and interface; once you add drawing code on the
+Python side, you presume that a VB form with a certain API is
+provided. But this example is fun and highly instructive.</p>
+
+
+
+<p>Let's start by creating a new form in our application called
+<tt CLASs="monofont">frmAccountChart</tt>, similar to the other views so
+far. Add a public method to the <tt class="monofont">COMBookSet</tt> server
+called <tt class="monofont">drawAccountChart</tt>, which expects a VB form
+as an argument. We'll start with a simple test: our drawing
+routine sets the caption of the form with a timestamp. On the VB
+side, the <TT CLASs="monofont">UpdateView</TT> method for
+<tT ClAsS="monofont">frmAccountChart</TT> asks Python to do the work:</P>
+
+
+
+<pre cLASS="monofont">'Method of frmAccountChart
+Public Sub UpdateView()
+    'ask Python to scribble on me
+    frmMain.BookServer.drawAccountChart Me
+End Sub</pre>
+
+
+<p>The form passes itself (using the keyword <TT CLass="monofont">Me</tT>,
+which is VB's equivalent of <TT Class="monofont">self</tt>) to the
+<tt class="monofont">BookServer</tt>. On the Python side, here is a method
+that does something visible to the form:</p>
+
+
+
+<pre clASS="monofont">def drawAccountChart(self, vbForm):
+    # Make a Dispatch wrapper around the VB Form object so we can call
+    # any of its methods.
+    idForm = win32com.client.Dispatch(vbForm)
+    
+    # access a property of the VB form
+    idForm.Caption = "Python Drew this chart at " + time.ctime(time.time())</PRE>
+
+
+<p>The first line is critical. The actual object passed to Python in the
+variable <TT cLAsS="monofont">vbForm</tT> is a raw
+<TT Class="monofont">IDispatch</TT>
+<A Name="idx691"></a> object, which is difficult to use
+directly. However, by creating a dynamic <TT CLass="monofont">Dispatch</tT>
+wrapper around it, you can access any of its methods and properties
+as a normal COM object. <A href="pythonwin32_snode58.html#16">Figure 7.5</a> shows the proof.</p>
+
+
+
+<center>
+<h5>
+<a name="16"></a>Figure 7.5. Python accessing VB objects</h5>
+
+<img BORDER="0" wIDtH="502" HeIgHT="93" src="FILES/ppw.0705.gif" alt="figs/ppw.0705.gif"></CENTer>
+
+
+<p>The meaning of this wrapping is discussed in greater detail in <a href="pythonwin32_cnode91.html">Chapter 12</a>. For now, just remember to do it for any
+Visual Basic
+<a naME="idx692"></A> <A name="idx693"></a>objects you want to manipulate.</p>
+
+
+
+<p>Python can access the public methods and properties of any VB object,
+not just user-interface widgets such as forms and list boxes, but
+also classes you define yourself.</p>
+
+
+
+
+<h5>7.2.5.1
+Exposing a graphics API to Python, a more complex example</h5>
+
+
+<p>
+<a name="idx694"></a>
+<a namE="idx695"></A>Now let's extend what we just did
+and let Python do some real work. VB provides a
+<A NAMe="idx696"></A>picture control that allows
+<A nAMe="idx697"></A>drawing. However,
+some of the drawing methods use an esoteric syntax with hyphens, seen
+nowhere else in VB, and which no other language could reasonably be
+expected to call. You should therefore provide your own easy-to-use
+graphics API in VB at the form level. Add a single picture control
+called <tT CLAss="monofont">picChart</tt> to
+<TT CLass="monofont">frmAccountChart</tT>, along with code to fill the
+entire form when the form is resized. Then add a few methods to the
+Visual Basic form to make it easier to do the graphics. Python can
+then call these methods. Here is the minimal graphics API defined for
+<TT Class="monofont">frmAccountChart</TT>:</P>
+
+
+
+<Pre class="monofont">'Visual Basic code to provide a minimal graphics API
+Public Sub DrawLine(x1 As Integer, y1 As Integer, x2 As Integer, _
+                    y2 As Integer, color As Long)
+    picChart.FillStyle = vbTransparent
+    
+    picChart.Line (x1, y1)-(x2, y2), color
+    ' see what we mean about the funny syntax?
+    
+End Sub
+Public Sub DrawBox(x1 As Integer, y1 As Integer, x2 As Integer, _
+                   y2 As Integer, lineColor As Long, _
+                   isSolid As Boolean, fillColor As Long)
+    If isSolid Then
+        picChart.FillStyle = vbSolid
+    Else
+        picChart.FillStyle = vbTransparent
+    End If
+    picChart.fillColor = fillColor
+    picChart.Line (x1, y1)-(x2, y2), lineColor, B
+End Sub
+
+Public Sub DrawText(x As Integer, y As Integer, size As Integer, _
+                    text As String)
+    picChart.CurrentX = x
+    picChart.CurrentY = y
+    picChart.FontSize = size
+    picChart.Print text
+End Sub
+
+Public Function GetClientArea() As Variant
+    'return a two-element variant array
+    GetClientArea = Array(picChart.Width, picChart.Height)
+End Function</pre>
+
+
+<p>This code gives one method to clear the chart, and three methods to
+draw lines, boxes (filled or otherwise), and place text with a choice
+of font size. There's also a method that says which account the
+form is tracking and another method to return the dimensions of the
+form, so you can figure out how to scale the chart.</p>
+
+
+
+<p>The <tt class="monofont">drawAccountChart</tT><I> </I>method
+in our Python COM server now needs to do three things: first, it
+queries the form to find out which account to draw; then it queries
+it to determine its size; finally it uses the graphics methods to do
+some drawing.</P>
+
+
+
+<P>We won't repeat all the chart code but here are a few lines:</P>
+
+
+
+<pRE cLAsS="monofont">def drawAccountChart(self, vbForm):
+    # Make a Dispatch wrapper around the vb Form object so we can call
+    # any of its methods.
+    print 'Drawing chart...'</pRE>
+
+
+<P>Note the <Tt claSS="monofont">print</TT><i> </i>statement. In
+normal use this won't go anywhere. However, the Python COM
+framework provides a debugging mode for COM servers and a tool for
+collecting these traces. It took a few tries to get all of the
+scaling right, and we used numerous <tt CLASs="monofont">print</tt>
+statements to examine the <a NAME="idx698"></a>data.<a name="idx699"></a></p>
+
+
+
+
+
+
+
+
+<h4>7.2.6
+Debugging COM Servers</h4>
+
+
+<p>
+<a name="idx700"></a>
+<a namE="idx701"></A>At
+this point, we need to briefly explain how to debug a COM server. The
+theory behind this is covered in <A href="pythonwin32_cnode91.html">Chapter 12</A>.
+It's easy to use: just run the COM server script
+(<I>comservers.py</i> in our case) with the argument
+—<TT cLaSS="monofont">debug: </TT>note the double hyphen. The output
+of any <tt clASS="monofont">print</Tt> statements in the server code can
+then be seen in the <a naME="idx702"></A>Trace Collector window on the PythonWin
+Tools menu.</P>
+
+
+
+<p>Now it's time to work with the form passed in from Visual Basic:</p>
+
+
+
+<prE CLAss="monofont">idForm = win32com.client.Dispatch(vbForm)</pre>
+
+
+<p>As before, you wrap the VB object using <tt class="monofont">Dispatch</tt>:</p>
+
+
+
+<pre clASS="monofont"># call a method we defined on the VB form
+# arrays are converted automatically to Python tuples we can access
+(width, height) = idForm.GetClientArea()
+account = idForm.GetAccount()</PRE>
+
+
+<p>The previous line is interesting for two reasons. First, you called a
+public method of the VB form you defined. This works in exactly the
+same way as calling methods of built-in VB objects. Second, you
+received back an array. Earlier we saw that a Python list or tuple
+can be passed to VB, where it's interpreted as a
+<A NaME="idx703"></a>
+<A nAME="idx704"></A>variant array. The
+<tt clASS="monofont">GetClientArea()</Tt>
+<a naME="idx705"></A> method of our VB form returned a
+two-element variant array, which is received as a straightforward
+tuple. You can pass arrays easily in both directions. (Bear in mind
+that if VB returns an array containing strings, they are Unicode
+strings that must be tidied with the <Tt claSS="monofont">str</TT>
+function).</p>
+
+
+
+<pre class="monofont"># access a built-in property of the VB form
+idForm.Caption = "Account " + account
+
+#############################################################
+# now for the chart drawing - calling our own VB methods...
+#############################################################
+        
+idForm.ClearChart()    #clear the form
+
+# if the area is too small to do anything with, exit
+if width &lt; 1440:
+    return
+if height &lt; 1440:
+    return
+        
+#work out the inner drawing rectangle
+plotrect = (720,720, width-720, height - 720)
+        
+# draw a blue bounding rectangle
+idForm.DrawBox(plotrect[0], plotrect[1], plotrect[2], plotrect[3], 0xFF0000,
+     0xFFFFFF)</pre>
+
+
+<p>We've omitted the rest of the charting code, but as you can see
+in <a href="pythonwin32_snode58.html#19">Figure 7.6</a>, it works rather nicely.</p>
+
+
+
+<cENTER>
+<A nAMe="idx705"></A><H5>
+<a NaME="19"></A>Figure 7.6. Python drawing charts on VB forms</H5>
+
+<img bORDEr="0" widTH="502" HEight="361" src="FILES/ppw.0706.gif" Alt="figs/ppw.0706.gif"></center>
+
+
+</font>
+ 
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right"><a href="pythonwin32_snode57.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a> <a href="pythonwin32_snode59.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a></td></table>
+</BODY></HTML>

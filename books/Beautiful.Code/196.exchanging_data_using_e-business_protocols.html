@@ -1,0 +1,232 @@
+<html><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<link href="styles/globalstyle.css" type="text/css" rel="stylesheet"/>
+<link title="medium" href="styles/two.css" type="text/css" rel="stylesheet"/>
+<script src="scripts/main.js" type="text/javascript" language="javascript"></script>
+<title>Section 27.4. Exchanging Data Using E-Business Protocols</title>
+</head><body>
+<DIV class=h3 style="MARGIN-TOP: 0px; PADDING-BOTTOM: 1em; WIDTH: 100%; PADDING-TOP: 0px"><SPAN>Integrating Business Partners the RESTful Way</SPAN><SPAN> &gt; Exchanging Data Using E-Business Protocols</SPAN></DIV>
+<DIV></DIV>
+<DIV>
+<DIV><A name=exchanging_data_using_e-business_protocols></A>
+<H3 class=docSection1Title id=-100000>27.4. Exchanging Data Using E-Business Protocols</H3>
+<P class=docText><A name="Something that"></A>Something that was new to me on this project was the use of standard e-business protocols. When the distributor informed me of the requirement to exchange requests and responses using the Rosettanet standard, I had to do a little research. I started by going to the Rosettanet <A name=idx-CHP-27-2406></A>web site (<A class=docLink href="http://www.rosettanet.org/" target=_blank>http://www.rosettanet.org</A><A name="specific standards"></A>) and downloading the specific standards I was <A name=idx-CHP-27-2407></A><A name="a diagram"></A>interested in. I found a diagram detailing a typical exchange between <A name=idx-CHP-27-2408></A><A name="with a"></A>business partners, along with a specification for the XML request and response.<A name=idx-CHP-27-2409></A><A name=idx-CHP-27-2410></A><A name=idx-CHP-27-2411></A></P>
+<P class=docText><A name="a lot"></A>Since I had a lot of trial-and-error type work to do, the first thing I did was set up a test that I could run myself to simulate an interaction with the distributor without having to coordinate testing with their staff for each iteration of development. I used the <A name=idx-CHP-27-2412></A>Apache Commons <TT>HttpClient</TT> to manage the <A name=idx-CHP-27-2413></A>HTTP exchanges:</P>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedHeight>	<B>public class</B> TestHotKeyService {
+
+	    <B>public static void</B> main (String[] args) throws Exception {
+
+	        String strURL = "http://xxxxxxxxxxx/HotKey/HotKeyService";
+	        String strXMLFilename = "SampleXMLRequest.xml";
+	        File input = <B>new</B> File(strXMLFilename);
+
+	        PostMethod post = <B>new</B> PostMethod(strURL);
+	        post.setRequestBody(<B>new</B> FileInputStream(input));
+	        <B>if</B> (input.length( ) &lt; Integer.MAX_VALUE) {
+	            post.setRequestContentLength((<B>int</B>)input.length());
+	        } <B>else</B> {
+	              post.setRequestContentLength(
+	                  EntityEnclosingMethod.CONTENT_LENGTH_CHUNKED);
+	        }
+
+	        post.setRequestHeader("Content-type", "text/xml; charset=ISO-8859-1");
+
+	        HttpClient httpclient = <B>new</B> HttpClient();
+	        System.out.println("[Response status code]: " +
+	               httpclient.executeMethod(post));
+	        System.out.println("\n[Response body]: ");
+	        System.out.println("\n" + post.getResponseBodyAsString( ));
+
+	        post.releaseConnection();
+	    }
+	}
+
+
+					    </PRE><BR>
+<P class=docText><A name="tried out"></A>This allowed me to accelerate my learning curve as I tried out several different types of requests and examined the results. I'm a firm believer in diving right into coding as soon as possible. You can only learn so much from a book, an article on a web site, or a set of API documents. By getting your hands dirty early on in the process, you'll uncover a lot of things you may not have thought about by simply studying the problem.</P>
+<P class=docText><A name="like many"></A>The Rosettanet standard, like many others, is very detailed and complete. Chances are, you'll end up needing and using only a small fraction of it to accomplish any given task. For this project, I only needed to set a few standard identification fields, along with a product number and availability date for pricing inquiries, or an order number for order status inquiries.</P><A name=parsing_the_xml_using_xpath></A>
+<H4 class=docSection2Title id=title-ID0E3HEK>27.4.1. Parsing the XML Using XPath</H4>
+<P class=docText>The XML request <A name=idx-CHP-27-2414></A><A name="simple XML"></A>data was far from simple XML. As mentioned earlier, the Rosettanet standard is very detailed and thorough. Parsing such a document could have proved to be quite a nightmare if it were not for XPath. Using XPath mappings, I was able to define the exact path to each node that I was <A name=idx-CHP-27-2415></A><A name="out the"></A>interested in and easily pull out the necessary data. I chose to implement these mappings as a <TT>HashMap</TT><A name="which I"></A>, which I later iterated over, grabbing the specified nodes and creating a new <TT>HashMap</TT><A name="values were"></A> with the values. These values were then used later in both the <TT>executeQuery</TT> and <TT>getResponseXML</TT> methods that I'll describe next:<A name=idx-CHP-27-2416></A><A name=idx-CHP-27-2417></A></P>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedHeight>	<B>public class</B> HotkeyAdaptorRosProdAvailImpl <B>implements</B> HotkeyAdaptor {
+
+	    String inputFile;           // request <A name=idx-CHP-27-2418></A>XML
+	    HashMap requestValues;       // stores parsed XML values from request
+	    HashMap as400response;       // stores return parameter from RPG call
+
+	    /* Declare XPath mappings and populate with a static initialization block */
+	    <B>public static</B> HashMap xpathmappings = <B>new</B> HashMap();
+	    <B>static</B> {
+	        xpathmappings.put("from_ContactName",
+	"//Pip3A2PriceAndAvailabilityRequest/fromRole/PartnerRoleDescription/
+	ContactInformation/contactName/FreeFormText");
+	        xpathmappings.put("from_EmailAddress", "//Pip3A2PriceAndAvailabilityRequest/
+	fromRole/PartnerRoleDescription/ContactInformation/EmailAddress");
+	    }
+	       // Remaining xpath mappings omitted for brevity...
+
+	    <B>public</B> HotkeyAdaptorRosProdAvailImpl() {
+	        <B>this</B>.requestValues = <B>new</B> HashMap();
+	        <B>this</B>.as400response = <B>new</B> HashMap();
+	    }
+
+	    <B>public void</B> setXML(String _xml) {
+	        <B>this</B>.inputFile = _xml;
+
+	    }
+
+	    <B>public boolean</B> parseXML() {
+
+	        <B>try</B> {
+	            Document doc = <B>null;</B>
+	            DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+	            DocumentBuilder db = dbf.newDocumentBuilder();
+	            StringReader r = <B>new</B> StringReader(this.inputFile);
+	            org.xml.sax.InputSource is = <B>new</B> org.xml.sax.InputSource(r);
+	            doc = db.parse(is);
+
+	            Element root = doc.getDocumentElement();
+
+	            Node node = <B>null;</B>
+
+	            Iterator xpathvals = xpathmappings.values().iterator( );
+	            Iterator xpathvars = xpathmappings.keySet().iterator( );
+	            <B>while</B> (xpathvals.hasNext() &amp;&amp; xpathvars.hasNext( )) {
+	                node = XPathAPI.selectSingleNode(root, String)xpathvals.next( ));
+	                requestValues.put((String)xpathvars.next( ),
+	                        node.getChildNodes().item(0).getNodeValue( ));
+	            }
+
+	        }
+	        <B>catch</B> (Exception e) {
+	            System.out.println(e.toString( ));
+	        }
+
+	        <B>return true;</B>
+	    }
+	    <B>public boolean</B> executeQuery() {
+	         // Code omitted...
+	    }
+
+	    <B>public</B> String <A name=idx-CHP-27-2419></A>getResponseXML() {
+	        // Code omitted...
+	    }
+
+	}
+
+
+					    </PRE><BR>
+<P class=docText>The <TT>executeQuery</TT><A name="of the"></A> method contains all of the code necessary to access the <A name=idx-CHP-27-2420></A><A name="running on"></A>RPG code running on the AS/400 systems, in order to get the necessary response <A name=idx-CHP-27-2421></A><A name="to construct"></A>data we'll use later to construct the response XML document. Many years ago, I worked on a project that integrated a MAPICS system (RPG on the AS/400) with a new system that I wrote using Visual Basic. I had written code for both sides of the exchange, in RPG and CL on the AS/400, and Visual Basic on the PC. This led to several speaking engagements where I attempted to show legions of RPG programmers how to integrate their legacy systems with modern client/server software. At the time, it really was a complicated and almost mystical thing to do.</P>
+<P class=docText>Since then, <A name=idx-CHP-27-2422></A><A name=a></A>IBM has made it very easy and provided us with a <A name=idx-CHP-27-2423></A><A name="Java functions"></A>library of Java functions that do all the work for us. (So much for all the consulting gigs and book deals I could have had with that one!) Here's the code, using the much better Java library from IBM:</P>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedHeight>	<B>public boolean</B> executeQuery() {
+	    StringBuffer sb = <B>new</B> StringBuffer();
+
+	    sb.append(requestValues.get("from_ContactName")).append("|");
+	    sb.append(requestValues.get("from_EmailAddress")).append("|");
+	    sb.append(requestValues.get("from_TelephoneNumber")).append("|");
+	    sb.append(requestValues.get("from_<A name=idx-CHP-27-2424></A>BusinessIdentifier")).append("|");
+	    sb.append(requestValues.get("prod_BeginAvailDate")).append("|");
+	    sb.append(requestValues.get("prod_EndAvailDate")).append("|");
+	    sb.append(requestValues.get("prod_Quantity")).append("|");
+	    sb.append(requestValues.get("prod_ProductIdentifier")).append("|");
+
+	    <B>try</B> {
+	        AS400 sys = <B>new</B> AS400("SS100044", "ACME", "HOUSE123");
+
+	        CharConverter ch = <B>new</B> CharConverter();
+	        <B>byte[]</B> as = ch.stringToByteArray(sb.toString( ));
+
+	        ProgramParameter[] parmList = <B>new</B> ProgramParameter[2];
+	        parmList[0] = <B>new</B> ProgramParameter(as);
+	        parmList[1] = <B>new</B> ProgramParameter(255);
+
+	        ProgramCall pgm = <B>new</B> ProgramCall(sys,
+	               "/QSYS.LIB/DEVOBJ.LIB/J551231.PGM", parmList);
+	        <B>if</B> (pgm.run( ) != true) {
+	            AS400Message[] msgList = pgm.getMessageList();	
+	            <B>for</B> (<B>int</B> i=0; i &lt; msgList.length; i++) {
+	                System.out.println(msgList[i].getID( ) + " : " +
+	                         msgList[i].getText());
+	            }
+	                   }
+	        <B>else</B> {
+	            CharConverter chconv = <B>new</B> CharConverter();
+	            String response =
+	                    chconv.byteArrayToString(parmList[1].<A name=idx-CHP-27-2425></A>getOutputData( ));
+
+	            StringTokenizer st = <B>new</B> StringTokenizer(response, "|");
+
+	            String status = (String) st.nextToken().trim( );
+	            as400response.put("Status", status);
+	            String error = (String) st.nextToken().trim( );
+	            as400response.put("ErrorCode", error);
+	            String quantity = (String) st.nextToken().trim( );
+	            as400response.put("Quantity",
+	                    String.valueOf(Integer.parseInt(quantity)));
+
+	            <B>if</B> (status.toUpperCase( ).equals("ER")) {
+	                <B>if</B> (error.equals("1")) {
+	                    as400response.put("ErrorMsg",
+	                             "Account not authorized for item availability.");
+	                }
+	                <B>if</B> (error.equals("2")) {
+	                    as400response.put("ErrorMsg", "Item not found.");
+	                }
+	                <B>if</B> (error.equals("3")) {
+	                    as400response.put("ErrorMsg", "Item is obsolete.");
+	                    as400response.put("Replacement",
+	                             (String) st.nextToken().trim( ));
+	                }
+	                <B>if</B> (error.equals("4")) {
+	                    as400response.put("ErrorMsg",
+	                             "Invalid quantity amount.");
+	                }
+	                <B>if</B> (error.equals("5")) {
+	                as400response.put("ErrorMsg",
+	                         "Preference profile processing error.");
+	                }
+	                <B>if</B> (error.equals("6")) {
+	                    as400response.put("ErrorMsg",
+	                             "ATP processing error.");
+	                }
+	            }
+	        }
+	    }
+	    <B>catch</B> (Exception e) {
+	        System.out.println(e.toString( ));
+	    }
+
+	    <B>return true;</B>
+	}
+
+
+					    </PRE><BR>
+<P class=docText><A name="assembling a"></A>This method begins by assembling a parameter string (pipe-delimited) that gets passed into the AS/400 program, where it parses the string, retrieves the requested <A name=idx-CHP-27-2426></A><A name="a status"></A>data, and returns a pipe-delimited string with a status and error code as well as the result of the operation.</P>
+<P class=docText><A name="Assuming there"></A>Assuming there isn't an error, the results of this AS/400 interaction get stored in another <TT>HashMap</TT><A name="constructing the"></A>, which we'll use when constructing the XML response document. If there is an error, then that gets written to the response instead.</P><A name=assembling_the_xml_response></A>
+<H4 class=docSection2Title id=title-ID0EAPEK>27.4.2. Assembling the XML Response</H4>
+<P class=docText><A name="the many"></A>I've always enjoyed seeing the many ways people have tried to create XML documents programmatically. What I always tell people is that XML documents are just big text strings. Therefore, it's usually easier to just write one out using a <TT>StringBuffer</TT><A name="trying to"></A> rather than trying to build a DOM (Document Object Model) or using a special XML generator library.</P>
+<P class=docText><A name="simply created"></A>For this project, I simply created a <TT>StringBuffer</TT><A name="following the"></A> object and appended each individual line of the XML document following the Rosettanet standard. In the following code example, I omitted several lines of code, but this should give you an idea of how the response was constructed:</P>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedWidth>	   <B>public</B> String getResponseXML() {
+	       StringBuffer response = <B>new</B> StringBuffer();
+	       response.append("&lt;Pip3A2PriceAndAvailabilityResponse&gt;").append("\n");
+	       response.append("    &lt;ProductAvailability&gt;").append("\n");
+	       response.append("   &lt;ProductQuantity&gt;").append(as400response.get("Quantity")).
+	append("&lt;/ProductQuantity&gt;").append("\n");
+	        response.append("   &lt;/ProductAvailability&gt;").append("\n");
+	        response.append("   &lt;ProductIdentification&gt;").append("\n");
+	        response.append("     &lt;PartnerProductIdentification&gt;").append("\n");
+	        response.append("       &lt;GlobalPartnerClassificationCode&gt;Manufacturer&lt;/
+	GlobalPartnerClassificationCode&gt;").append("\n");
+	        response.append("       &lt;ProprietaryProductIdentifier&gt;").append(requestValues.
+	get("prod_ProductIdentifier")).append("&lt;/ProprietaryProductIdentifier&gt;").append("\n");
+	        response.append("      &lt;/PartnerProductIdentification&gt;").append("\n");
+	        response.append("    &lt;/ProductIdentification&gt;").append("\n");
+	        response.append("  &lt;/ProductPriceAndAvailabilityLineItem&gt;").append("\n");
+	        response.append("&lt;/Pip3A2PriceAndAvailabilityResponse&gt;").append("\n");
+
+	        <B>return</B> response.toString();
+	   }
+
+
+					    </PRE><BR></DIV></DIV>
+<p>&nbsp;</p><p>&nbsp;</p><!-- 仁·义 -->
+</body></html>

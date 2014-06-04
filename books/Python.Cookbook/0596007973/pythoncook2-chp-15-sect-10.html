@@ -1,0 +1,199 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;15.10.&nbsp;Performing Remote Logins with SSH</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-15-sect-9.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-15-sect-11.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-15-SECT-10"></a>
+<h3 class="docSection1Title">Recipe 15.10. Performing Remote Logins with SSH</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Peter Cogolo, Anna Martelli Ravenscroft</span></p>
+
+<a name="pythoncook2-CHP-15-SECT-10.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-15-ITERM-2995"></a> <a name="pythoncook2-CHP-15-ITERM-2996"></a>You need to
+send commands, using the SSH protocol, to one or more logins that can
+be on a local machine or a remote machine.</P>
+
+
+<a name="pythoncook2-CHP-15-SECT-10.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">SSH is a secure replacement for the old Telnet protocol. One way to
+use SSH from a Python program is with the third-party
+<tt>paramiko</tt> package:</p>
+
+<pre># auto_ssh.py - remote control via ssh
+import os, sys, paramiko
+from getpass import getpass
+paramiko.util.log_to_file('auto_ssh.log', 0)
+def parse_user(user, default_host, default_port):
+    ''' given name[@host[:port]], returns name, host, int(port),
+        applying defaults for hose and/or port if necessary
+    '''
+    if '@' not in user:
+        return user, default_host, default_port
+    user, host = user.split('@', 1)
+    if ':' in host:
+        host, port = host.split(':', 1)
+    else:
+        port = default_port
+    return user, host, int(port)
+def autoSsh(users, cmds, host='localhost', port=22, timeout=5.0,
+            maxsize=2000, passwords=None):
+    ''' run commands for given users, w/default host, port, and timeout,
+        emitting to standard output all given commands and their
+        responses (no more than 'maxsize' characters of each response).
+    '''
+    if passwords is None:
+        passwords = {  }
+    for user in users:
+        if user not in passwords:
+            passwords[user] = getpass("Enter user '%s' password: " % user)
+    for user in users:
+        user, host, port = parse_user(user, default_host, default_port)
+        try:
+            transport = paramiko.Transport((host, port))
+            transport.connect(username=user, password=passwords[user])
+            channel = transport.open_session( )
+            if timeout: channel.settimeout(timeout)
+            for cmd in cmd_list:
+                channel.exec_command(cmd)
+                response = channel.recv(max_size)
+                print 'CMD %r(%r) -&gt; %s' % (cmd, user, response)
+        except Exception, err:
+            print "ERR: unable to process %r: %s" % (user, err)
+if _ _name_ _ == '_ _main_ _':
+    logname = os.environ.get("LOGNAME", os.environ.get("USERNAME"))
+    host = 'localhost'
+    port = 22
+    usage = """
+usage: %s [-h host] [-p port] [-f cmdfile] [-c "command"] user1 user2 ...
+    -c  command
+    -f  command file
+    -h  default host  (default: localhost)
+    -p  default host  (default: 22)
+Example:  %s -c "echo $HOME" %s
+same as:  %s -c "echo $HOME" %s@localhost:22
+""" % (sys.argv[0], sys.argv[0], logname, sys.argv[0], logname)
+    import getopt
+    optlist, user_list = getopt.getopt(sys.argv[1:], 'c:f:h:p:')
+    if not user_list:
+        print usage
+        sys.exit(1)
+    cmd_list = [  ]
+    for opt, optarg in optlist:
+        if opt == '-f':
+            for r in open(optarg, 'rU'):
+                if r.rstrip( ):
+                    cmd_list.append(r)
+        elif opt == '-c':
+            command = optarg
+            if command[0] == '"' and command[-1] == '"':
+                command = command[1:-1]
+            cmd_list.append(command)
+        elif opt == '-h':
+            host = optarg
+        elif opt == '-p':
+            port = optarg
+        else:
+            print 'unknown option %r' % opt
+            print usage
+            sys.exit(1)
+    autoSsh(user_list, cmd_list, host=host, port=port)</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-15-SECT-10.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">The third-party extension <tt>paramiko</tt> package lets
+you easily automate access to all sorts of SSH services, even from
+non-Unix machines. <tt>paramiko</tt> even lets you write
+your own SSH servers in Python. In this recipe, however, we use
+<tt>paramiko</tt> on the client side, as a more secure
+alternative to the similar use of <tt>telnetlib</tt> shown
+previously in <a class="docLink" href="pythoncook2-CHP-15-SECT-9.html#pythoncook2-CHP-15-SECT-9">Recipe 15.9</a>.</P>
+
+<p class="docText">Production code generally has to be made more robust, but this recipe
+should be enough to get you started in the right direction. The
+recipe's <i>autoSsh</I> function first
+ensures it knows passwords for all the users (asking interactively
+for the passwords of users it doesn't know about).
+Then, it loops over all the users, parsing strings such as
+<tt>foo@bar:2222</tt> to mean user <tt>foo</tt>
+at host <tt>bar</tt>, port <tt>2222</tt>, and
+defaulting the host and port values, if necessary.</P>
+
+<p class="docText">The loop body relies on two types of objects supplied by
+<tt>paramiko</tt>, <tt>transport</tt> and
+<tt>Channel</tt>. The transport is constructed by giving it
+the <tt>(</tt><tt><i>host</i></tt>,
+<tt><i>port</I></tt><tt>)</tt> pair
+and then a connection is made with a username and password.
+(Alternatively, depending on the SSH server, one might connect using
+a private key, but this recipe uses just a password.) The channel is
+obtained from the transport, and the recipe then sets a timeout (by
+default, 6 seconds) to ensure that no long-term
+<span class="docEmphasis">hanging</span> occurs in case of problems with an SSH
+server or the network path to it. Finally, an inner loop over all
+commands sends each command, receives a response (up to a maximum
+length in bytes, 2000 by default), and prints the command and
+response.</p>
+
+<a name="pythoncook2-CHP-15-SIDEBAR-1"></a><p><table cellspacing="0" width="90%" border="1" cellpadding="5"><TR><td>
+<H2 class="docSidebarTitle">SSH, the Secure Shell</h2>
+
+<p class="docText"><a name="pythoncook2-CHP-15-ITERM-2997"></a>
+<a name="pythoncook2-CHP-15-ITERM-2998"></a>The SSH protocol is secure,
+powerful, and flexible. No password ever travels on the network in
+the clear, and the connection stream itself gets encrypted. Besides
+single commands (as used in this recipe) and entire interactive shell
+sessions, SSH allows secure copying of files in either direction and
+secure remote tunneling of X11 GUI sessions and other TCP/IP-based
+network protocols. Moreover, unlike other secure transport-level
+protocols such as SSL/TLS, SSH does not require certificates signed
+by some kind of "central
+authority". You can learn more about SSH from the
+OpenSSH's web page at <a class="docLink" target="_blank" href="http://www.openssh.com/">http://www.openssh.com/</a>, Steve
+Allen's pages at <a class="docLink" target="_blank" href="http://www.ucolick.org/~sla/ssh/">http://www.ucolick.org/~sla/ssh/</a>, and Kimmon
+Suominen's tutorial at <a class="docLink" target="_blank" href="http://kimmo.suominen.com/docs/ssh/">http://kimmo.suominen.com/docs/ssh/</a>as
+well as from Richard Silverman and Daniel J. Barrett, <span class="docEmphasis">SSH:
+The Secure Shell, The Definitive Guide</span>
+(O'Reilly).</P>
+</TD></tr></table></p><br>
+
+
+<a name="pythoncook2-CHP-15-SECT-10.4"></a>
+<h4 class="docSection2Title">See Also</h4>
+
+<p class="docText"><tt>paramiko</tt>'s home page at
+<a class="docLink" target="_blank" href="http://www.lag.net/~robey/paramiko/">http://www.lag.net/~robey/paramiko/</a>;
+<tt>paramiko</tt> requires another third-party extension to
+Python, the Python Cryptography Toolkit, whose home page is at
+<a class="docLink" target="_blank" href="http://www.amk.ca/python/code/crypto">http://www.amk.ca/python/code/crypto</a>; docs on
+SSH at <a class="docLink" target="_blank" href="http://www.openssh.com/">http://www.openssh.com/</a>,
+<a class="docLink" target="_blank" href="http://www.ucolick.org/~sla/ssh/">http://www.ucolick.org/~sla/ssh/</a>,
+<a class="docLink" target="_blank" href="http://kimmo.suominen.com/docs/ssh/">http://kimmo.suominen.com/docs/ssh/</a>; Richard
+Silverman and Daniel J. Barrett, <span class="docEmphasis">SSH: The Secure Shell,
+The Definitive Guide</span> (O'Reilly); <a class="docLink" href="pythoncook2-CHP-15-SECT-9.html#pythoncook2-CHP-15-SECT-9">Recipe 15.9</a>.<a name="pythoncook2-CHP-15-ITERM-2999"></a> <a name="pythoncook2-CHP-15-ITERM-3000"></a></p>
+
+
+
+<a href="5991535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-15-sect-9.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-15-sect-11.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

@@ -1,0 +1,378 @@
+<html><head>
+<META http-equiv="Content-Type" content="text/html">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="19.5 Wrapping C Environment Calls"-->
+<link rel="STYLESHEET" type="text/css" href="FILES/style.css">
+<link rel="STYLESHEET" type="text/css" href="FILES/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+	<a href="0596000855_python2-CHP-19-SECT-4.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+	<a href="0596000855_python2-CHP-19-SECT-6.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr>
+<td valign="top"><A NAME="python2-CHP-19-SECT-5"></A>
+<H3 class="docSection1Title">19.5 Wrapping C Environment Calls</H3>
+
+<P class="docText"><A NAME="python2-IDXTERM-2273"></A>Let's move on to a more useful
+application of C extension modules. The hand-coded C file in <A class="docLink" HREF="#python2-CHP-19-EX-8">Example 19-8</A> integrates the standard C library's
+<TT>getenv</TT> and <TT>putenv</TT> shell
+environment variable calls for use in Python scripts.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-19-EX-8"></A>Example 19-8. PP2E\Integrate\Extend\CEnviron\cenviron.c </H5>
+<PRE>/******************************************************************
+ * A C extension module for Python, called "cenviron".  Wraps the 
+ * C library's getenv/putenv routines for use in Python programs.  
+ ******************************************************************/
+
+#include &lt;Python.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+/***********************/
+/* 1) module functions */
+/***********************/
+ 
+static PyObject *                                   /* returns object */
+wrap_getenv(PyObject *self, PyObject *args)         /* self not used */
+{                                                   /* args from python */
+    char *varName, *varValue;
+    PyObject *returnObj = NULL;                         /* null=exception */
+
+    if (PyArg_Parse(args, "s", &amp;varName)) {             /* Python -&gt; C */
+        varValue = getenv(varName);                     /* call C getenv */
+        if (varValue != NULL)
+            returnObj = Py_BuildValue("s", varValue);   /* C -&gt; Python */
+        else
+            PyErr_SetString(PyExc_SystemError, "Error calling getenv");
+    }
+    return returnObj;
+}
+
+static PyObject *
+wrap_putenv(PyObject *self, PyObject *args)
+{
+    char *varName, *varValue, *varAssign;
+    PyObject *returnObj = NULL;
+
+    if (PyArg_Parse(args, "(ss)", &amp;varName, &amp;varValue))
+    {
+        varAssign = malloc(strlen(varName) + strlen(varValue) + 2);
+        sprintf(varAssign, "%s=%s", varName, varValue);
+        if (putenv(varAssign) == 0) {
+            Py_INCREF(Py_None);                   /* C call success */
+            returnObj = Py_None;                  /* reference None */
+        }
+        else
+            PyErr_SetString(PyExc_SystemError, "Error calling putenv");
+    }
+    return returnObj;
+}
+
+/**************************/
+/* 2) registration table  */
+/**************************/
+
+static struct PyMethodDef cenviron_methods[] = {
+    {"getenv", wrap_getenv},
+    {"putenv", wrap_putenv},        /* method name, address */
+    {NULL, NULL}
+};
+
+/*************************/
+/* 3) module initializer */
+/*************************/
+
+void initcenviron(  )                  /* called on first import */
+{
+    (void) Py_InitModule("cenviron", cenviron_methods);   /* mod name, table */
+}</PRE>
+
+
+<P class="docText">This example is less useful now than it was in the first edition of
+this book -- as we learned in <A class="docLink" HREF="0596000855_python2-PART-I.html#python2-PART-I">Part I</A>, not
+only can you fetch shell environment variables by indexing the
+<TT>os.environ</TT> table, but assigning to a key in this
+table automatically calls C's <TT>putenv</TT> to
+export the new setting to the C code layer in the process. That is,
+<TT>os.environ['key']</TT> fetches the value of shell
+variable <TT>'key'</TT>, and
+<TT>os.environ['key']=value</TT> assigns a variable both in
+Python and C.
+</P>
+
+<P class="docText">The second action -- pushing assignments out to C -- was added
+to Python releases after the first edition of this book was
+published. Besides demonstrating additional extension coding
+techniques, though, this example still serves a practical purpose:
+even today, changes made to shell variables by the C code linked in
+to a Python process are not picked up when you index
+<TT>os.environ</TT> in Python code. That is, once your
+program starts, <TT>os.environ</TT> reflects only
+subsequent changes made by Python code.
+</P>
+
+<P class="docText">If you want your Python code to be truly integrated with shell
+settings made by your C extension modules' code, you still must
+rely on calls to the C library's environment tools:
+<TT>putenv</TT> is available as
+<TT>os.putenv</TT>, but <TT>getenv</TT> is not
+present in the Python library. This will probably rarely, if ever, be
+an issue; but this C extension module is not completely without
+purpose (at least until Guido tightens this up again).<sup class="docFootnote"><A class="docLink" HREF="#">[4]</A></sup>
+</P>
+<blockquote><p class="docFootnote"><sup><A NAME="">[4]</A></sup> This code is also open to customization (e.g., it can limit the
+set of shell variables read and written by checking names), but you
+could do the same by wrapping <TT>os.environ</TT>. In fact,
+because <TT>os.environ</TT> is simply a Python
+<TT>UserDict</TT> subclass that preloads shell variables on
+startup, you could <span class="docEmphasis">almost</span> add the required
+<TT>getenv</TT> call to load C layer changes by simply
+wrapping <TT>os.environ</TT> accesses in a Python class
+whose <TT>__getitem__</TT> calls
+<TT>gentenv</TT> before passing the access off to
+<TT>os.environ</TT>. But you still need C's
+<TT>getenv</TT> call in the first place, and it's not
+available in <TT>os</TT> today.</p></blockquote>
+
+<P class="docText">This <I>cenviron.c</I> C file creates a Python module
+called <TT>cenviron</TT> that does a bit more than the last
+example -- it exports two functions, sets some exception
+descriptions explicitly, and makes a reference count call for the
+Python <TT>None</TT> object (it's not created anew,
+so we need to add a reference before passing it to Python). As
+before, to add this code to Python, compile and link into an object
+file; the Linux makefile in <A class="docLink" HREF="#python2-CHP-19-EX-9">Example 19-9</A> builds the C
+source code for dynamic
+binding.<A NAME="IXT-19-338203"></A>
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-19-EX-9"></A>Example 19-9. PP2E\Integrate\Extend\Cenviron\makefile.cenviron </H5>
+<PRE>##################################################################
+# Compile cenviron.c into cenviron.so--a shareable object file 
+# on Linux, which is loaded dynamically when first imported. 
+##################################################################
+
+PY = $(MYPY)
+
+cenviron.so: cenviron.c
+    gcc cenviron.c -g -I$(PY)/Include -I$(PY) -fpic -shared -o cenviron.so
+
+clean:
+    rm -f *.pyc cenviron.so</PRE>
+
+
+<P class="docText">To build, type <TT>make</TT> <TT>-f</TT>
+<TT>makefile.cenviron</TT> at your shell. To run, make sure
+the <I>.so</I> file is in a directory on Python's
+module path ("." works too):
+</P>
+
+<PRE>[mark@toy ~/.../PP2E/Integrate/Extend/Cenviron]$ <B>python</B>
+&gt;&gt;&gt; <B>import cenviron</B>
+&gt;&gt;&gt; <B>cenviron.getenv('USER')</B>                # like os.environ[key] but refetched
+'mark'
+&gt;&gt;&gt; <B>cenviron.putenv('USER', 'gilligan')    </B># like os.environ[key]=value
+&gt;&gt;&gt; <B>cenviron.getenv('USER')                </B># C sees the changes too
+'gilligan'</PRE>
+
+<P class="docText">As before, <TT>cenviron</TT> is a bona fide Python module
+object after it is imported, with all the usual attached information:
+</P>
+
+<PRE>&gt;&gt;&gt; <B>dir(cenviron)</B>
+['__doc__', '__file__', '__name__', 'getenv', 'putenv']
+&gt;&gt;&gt; <B>cenviron.__file__</B>
+'./cenviron.so'
+&gt;&gt;&gt; <B>cenviron.__name__</B>
+'cenviron'
+&gt;&gt;&gt; <B>cenviron.getenv</B>
+&lt;built-in function getenv&gt;
+&gt;&gt;&gt; <B>cenviron</B>
+&lt;module 'cenviron' from './cenviron.so'&gt;
+&gt;&gt;&gt; <B>print cenviron.getenv('HOST'), cenviron.getenv('DISPLAY')</B>
+toy :0.0</PRE>
+
+<P class="docText">Here is an example of the problem this module addresses (but you have
+to pretend that the <TT>getenv</TT> calls are made by
+linked-in C code, not Python):
+</P>
+
+<PRE>&gt;&gt;&gt; <B>import os</B>
+&gt;&gt;&gt; <B>os.environ['USER']</B>                      # initialized from the shell
+'skipper'
+&gt;&gt;&gt; <B>from cenviron import getenv, putenv</B>     # direct C library call access
+&gt;&gt;&gt; <B>getenv('USER')</B>
+'skipper'
+&gt;&gt;&gt; <B>putenv('USER', 'gilligan')</B>              # changes for C but not Python
+&gt;&gt;&gt; <B>getenv('USER')</B>
+'gilligan'
+&gt;&gt;&gt; <B>os.environ['USER']</B>                      # oops--does not fetch values again
+'skipper'</PRE>
+
+<P class="docText">As is, the C extension module exports a function-based interface, but
+you can wrap its functions in Python code that makes the interface
+look any way you like. For instance, <A class="docLink" HREF="#python2-CHP-19-EX-10">Example 19-10</A>
+makes the functions accessible by dictionary indexing, and integrates
+with the <TT>os.environ</TT> object.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-19-EX-10"></A>Example 19-10. PP2E\Integrate\Extend\Cenviron\envmap.py </H5>
+<PRE>import os
+from cenviron import getenv, putenv       # get C module's methods
+
+class EnvMapping:                         # wrap in a Python class
+    def __setitem__(self, key, value):
+        os.environ[key] = value           # on writes: Env[key]=value
+        putenv(key, value)                # put in os.environ too
+
+    def __getitem__(self, key):
+        value = getenv(key)               # on reads: Env[key]
+        os.environ[key] = value           # integrity check
+        return value
+
+Env = EnvMapping(  )                        # make one instance   </PRE>
+
+
+<P class="docText">And <A class="docLink" HREF="#python2-CHP-19-EX-11">Example 19-11</A> exports the functions as qualified
+attribute names instead of calls. The point here is that you can
+graft many different sorts of interface models on top of extension
+functions by providing Python wrappers (an idea we'll revisit
+when we meet type wrappers and SWIG shadow classes later in this
+chapter).<A NAME="IXTR3-526"></A>
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-19-EX-11"></A>Example 19-11. PP2E\Integrate\Extend\Cenviron\envattr.py </H5>
+<PRE>import os
+from cenviron import getenv, putenv       # get C module's methods
+
+class EnvWrapper:                         # wrap in a Python class
+    def __setattr__(self, name, value):
+        os.environ[name] = value          # on writes: Env.name=value
+        putenv(name, value)               # put in os.environ too
+
+    def __getattr__(self, name):
+        value = getenv(name)              # on reads: Env.name
+        os.environ[name] = value          # integrity check
+        return value
+
+Env = EnvWrapper(  )                        # make one instance   </PRE>
+
+
+<A NAME="python2-CHP-19-SECT-5.1"></A>
+<H4 class="docSection2Title">19.5.1 But Don't Do That Either -- SWIG</H4>
+
+<P class="docText"><A NAME="IXT-19-338204"></A>You can manually code extension modules
+like we just did, but you don't necessarily have to. Because
+this example really just wraps functions that already exist in
+standard C libraries, the entire <I>cenviron.c</I> C
+code file of <A class="docLink" HREF="#python2-CHP-19-EX-8">Example 19-8</A> can be replaced with a
+simple SWIG input file that looks like <A class="docLink" HREF="#python2-CHP-19-EX-12">Example 19-12</A>.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-19-EX-12"></A>Example 19-12. PP2E\Integrate\Extend\Swig\Environ\environ.i </H5>
+<PRE>/***************************************************************
+ * Swig module description file, to generate all Python wrapper
+ * code for C lib getenv/putenv calls: "swig -python environ.i".   
+ ***************************************************************/
+
+%module environ 
+
+%{
+#include &lt;stdlib.h&gt;
+%}
+
+extern char * getenv(const char *varname);
+extern int    putenv(const char *assignment);</PRE>
+
+
+<P class="docText">And you're done. Well, almost; you still need to run this file
+through SWIG and compile its output. As before, simply add a SWIG
+step to your makefile, compile its output file into a shareable
+object, and you're in business. <A class="docLink" HREF="#python2-CHP-19-EX-13">Example 19-13</A> is
+a Linux makefile that does the job.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-19-EX-13"></A>Example 19-13. PP2E\Integrate\Extend\Swig\Environ\makefile.environ-swig </H5>
+<PRE># build environ.so extension from SWIG generated code 
+
+# unless you've run make install
+SWIG = ../myswig
+PY   = $(MYPY)
+
+environ.so: environ_wrap.c
+	gcc environ_wrap.c -g -I$(PY)/Include -I$(PY) -shared -o environ.so
+
+environ_wrap.c: environ.i
+	$(SWIG) -python environ.i
+
+clean:
+	rm -f *.o *.so core 
+force:
+	rm -f *.o *.so core environ_wrap.c environ_wrap.doc</PRE>
+
+
+<P class="docText">When run on <I>environ.i</I>, SWIG generates two
+files -- <I>environ_wrap.doc</I> (a list of wrapper
+function descriptions) and <I>environ_wrap.c</I> (the
+glue code module file). Because the functions being wrapped here live
+in standard linked-in C libraries, there is nothing to combine with
+the generated code; this makefile simply runs SWIG and compiles the
+wrapper file into a C extension module, ready to be imported:
+</P>
+
+<PRE>[mark@toy ~/....../Integrate/Extend/Swig/Environ]$ <B>make -f makefile.environ-swig </B>
+../myswig -python environ.i
+Generating wrappers for Python
+gcc environ_wrap.c -g -I/<I>... </I><I> more</I><I>... </I> -shared -o environ.so</PRE>
+
+<P class="docText">And now you're really done. The resulting C extension module is
+linked when imported, and used as before (except that SWIG handled
+all the gory bits):
+</P>
+
+<PRE>[mark@toy ~/....../Integrate/Extend/Swig/Environ]$ <B>python</B>
+&gt;&gt;&gt; <B>import environ</B>
+&gt;&gt;&gt; <B>environ.getenv('USER')</B>
+'mark'
+&gt;&gt;&gt; <B>environ.putenv('USER=gilligan')             </B># use C lib call pattern now
+0
+&gt;&gt;&gt; <B>environ.getenv('USER')</B>
+'gilligan'
+
+&gt;&gt;&gt; <B>dir(environ)</B>
+['__doc__', '__file__', '__name__', 'getenv', 'putenv']
+&gt;&gt;&gt; <B>environ.__name__, environ.__file__, environ</B>
+('environ', './environ.so', &lt;module 'environ' from './environ.so'&gt;)</PRE>
+
+<P class="docText">You could also run SWIG over the C header file where
+<TT>getenv</TT> and <TT>putenv</TT> are defined,
+but that would result in wrappers for every function in the header
+file. With the input file coded here, you'll wrap only two
+library functions.
+</P>
+
+
+
+<ul></ul>
+</td>
+</tr>
+</table>
+<td></td>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+          <a href="0596000855_python2-CHP-19-SECT-4.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+          <a href="0596000855_python2-CHP-19-SECT-6.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+</body></html>

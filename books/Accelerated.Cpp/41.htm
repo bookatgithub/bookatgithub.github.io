@@ -1,0 +1,350 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
+<title>7.4 Generating sentences</title>
+<link rel="stylesheet" type="text/css" href="./acc.css" />
+</head>
+
+<body>
+<div class="prevnext">
+<a href="40.htm"><img src="images/Prev1.gif" /></a>&nbsp;&nbsp;<a href="42.htm"><img src="images/Next1.gif" /></a>
+</div>
+<h3>7.4 Generating sentences</h3>
+<p>We'll wrap up this chapter with a slightly more complicated example: We can use a <code>map</code> 
+to write a program that takes a description of a sentence structure—a grammar—and generates 
+random sentences that meet that description. For example, we might describe an 
+English sentence as a noun and a verb, or as a noun, a verb, and an object, and so on.</p>
+<p>The sentences that we can construct will be more interesting if we can handle complicated 
+rules. For example, rather than saying merely that a sentence is a noun followed by 
+a verb, we might allow noun phrases, where a noun phrase is either simply a noun or an 
+adjective followed by a noun phrase. As a concrete example, given the following input</p>
+<div class="prebox"><pre>
+<u><b>Categories</b>        <b>Rules</b>                        </u>
+&lt;noun&gt;            cat
+&lt;noun&gt;            dog
+&lt;noun&gt;            table
+&lt;noun-phrase&gt;     &lt;noun&gt;
+&lt;noun-phrase&gt;     &lt;adjective&gt; &lt;noun-phrase&gt;
+&lt;adjective&gt;       large
+&lt;adjective&gt;       brown
+&lt;adjective&gt;       absurd
+&lt;verb&gt;            jumps
+&lt;verb&gt;            sits
+&lt;location&gt;        on the stairs
+&lt;location&gt;        under the sky
+&lt;location&gt;        wherever it wants
+&lt;sentence&gt;        the &lt;noun-phrase&gt; &lt;verb&gt; &lt;location&gt;
+</pre></div>
+<p>our program might generate</p>
+<div class="prebox"><pre>
+the table jumps wherever it wants
+</pre></div>
+<p>The program should always start by finding a rule for how to make a sentence. In this 
+input, there is only one such rule—the last one in our table:</p>
+<div class="prebox"><pre>
+&lt;sentence&gt;   the &lt;noun-phrase&gt; &lt;verb&gt; &lt;location&gt;
+</pre></div>
+<p>This rule says that to make a sentence, we write the word the, a noun-phrase, a verb, and 
+finally a location. The program begins by randomly selecting a rule that matches 
+&lt;noun-phrase&gt;. Evidently the program chose the rule</p>
+<div class="prebox"><pre>
+&lt;noun-phrase&gt;  &lt;noun&gt;
+</pre></div>
+<p>and then resolved the noun using the rule</p>
+<div class="prebox"><pre>
+&lt;noun&gt;   table
+</pre></div>
+<p>The program must still resolve verb and location, which apparently it did by selecting</p>
+<div class="prebox"><pre>
+&lt;verb&gt;    jumps
+</pre></div>
+<p> for the verb and</p>
+<div class="prebox"><pre>
+&lt;location&gt;    wherever it wants
+</pre></div>
+<p>for the location. Note that this last rule maps a category to several words that wind up in 
+the generated sentence.</p>
+<h4>7.4.1 Representing the rules</h4>
+<p>Our table contains two kinds of entries: categories, which are enclosed in angle brackets, 
+and ordinary words. Each category has one or more rules; each ordinary word stands for 
+itself. When the program sees a string enclosed in angle brackets, we know that the string 
+will represent a category, so we will have to make the program find a rule that matches 
+the category and expand the right-hand part of that rule. If the program sees words that 
+are unadorned by angle brackets, then we know that it will be able to place those words 
+directly into the generated sentence.</p>
+<p>Thinking about how our program might operate, it appears that the program will read 
+a description of how to create sentences, and then randomly generate a sentence. So the 
+first question is: How should we store the description? When we generate sentences, we 
+need to be able to match each category to a rule that will expand that category. For example, 
+we first need to find the rule for how to create a <code>&lt;sentence&gt;</code>; from that rule, we will 
+need to find rules for <code>&lt;noun-phrase&gt;</code>, <code>&lt;verb&gt;</code>, <code>&lt;location&gt;</code>; and so on. Apparently, 
+we'll want a <code>map</code> that maps categories to the corresponding rules.</p>
+<p>But what kind of <code>map</code>? The categories are easy: We can store them as <code>string</code>s, so the 
+key type of our <code>map</code> will be <code>string</code>.</p>
+<p>The value type is more complicated. If we look at the table again, we can see that any 
+given rule may be a collection of <code>string</code>s. For example, the category <code>sentence</code> is associated 
+with a rule that has four components: the word <code>the</code> and three other <code>string</code>s, 
+which are themselves categories. We know how to represent values of this kind: We can 
+<p>use a <code>vector&lt;string&gt;</code> to hold each rule. The problem is that each category may appear 
+more than once in the input. For example, in our sample input description, the category 
+<code>&lt;noun&gt;</code> appears three times, as do the categories <code>&lt;adjective&gt;</code> and <code>&lt;location&gt;</code>. 
+Because these categories appear three times, each one will have three matching rules.</p>
+<p>The easiest way to manage multiple instances of the same key will be to store each collection 
+of rules in its own <code>vector</code>. Thus, we'll store the grammar in a <code>map</code> from <code>string</code> 
+to <code>vector</code>s, which themselves hold <code>vector&lt;string&gt;</code>.</p>
+<p>This type is quite a mouthful. Our program will be clearer if we introduce synonyms 
+for our intermediate types. We said that each rule is a <code>vector&lt;string&gt;</code>, and that each 
+category maps to a <code>vector</code> of these rules. Our analysis implies that we really want to 
+define three types—one for the rule, one for a collection of rules, and one for the map:</p>
+<div class="prebox"><pre>
+typedef vector&lt;string&gt; Rule;
+typedef vector&lt;Rule&gt; Rule_collection;
+typedef map&lt;string, Rule_collection&gt; Grammar;
+</pre></div>
+<h4>7.4.2 Reading the grammar</h4>
+<p>Having resolved how to represent the grammar, let's write a function to read it:</p>
+<div class="prebox"><pre>
+// <i>read a grammar from a given input stream </i>
+Grammar read_grammar(istream&amp; in)
+{
+    Grammar ret;
+    string line;
+
+    // <i>read the input</i>
+    while (getline(in, line)) {
+
+        // split <i>the input into words </i>
+        vector&lt;string&gt; entry = split(line);
+        if (!entry.empty())
+            // <i>use the category to store the associated rule</i>
+            ret[entry[0]].push_back(
+                Rule(entry.begin() + 1, entry.end()));
+    }
+    return ret;
+}
+</pre></div>
+<p>The function will read from an input stream and generate a <code>Grammar</code> as output. The 
+<code>while</code> loop looks like many that we've seen before: It reads a line at a time from <code>in</code> and 
+stores what it read in <code>line</code>. The <code>while</code> terminates when we run out of input or 
+encounter invalid data.</p>
+<p>The body of the <code>while</code> is astonishingly concise. We use the <code>split</code> function from 
+&sect;6.1.1/103 to break the input into words, and store the resulting <code>vector</code> in a variable 
+called <code>entry</code>. If <code>entry</code> is empty, we saw a blank input line, so we disregard it. Otherwise, 
+we know that the first element in <code>entry</code> will be the category that we are defining.</p>
+<p>We use this element as the index into <code>ret</code>. The expression <code>ret[entry[0]]</code> yields 
+the object of type <code>Rule_collection</code> that is associated with the category in <code>entry[0]</code>, 
+remembering that a <code>Rule_collection</code> is a <code>vector</code>, each element of which holds a 
+<code>Rule</code> (or, equivalently, a <code>vector&lt;string&gt;</code>). Therefore, <code>ret[entry[0]]</code> is a <code>vector</code>, 
+onto the back of which we push the rule that we just read. That rule is in <code>entry</code>, starting 
+with the second element; the first element in <code>entry</code> is the category. We construct a new, 
+unnamed <code>Rule</code>, by copying the elements from <code>entry</code> (except for the first element), and 
+push that newly created <code>Rule</code> onto the back of the <code>Rule_collection</code> indexed by <code>ret[entry[0]]</code> .</p>
+<h4>7.4.3 Generating the sentence</h4>
+<p>Having read all the input, we must next generate a random sentence. We know that our 
+input will be a grammar, and that we want to produce a sentence. Our output will be a 
+<code>vector&lt;string&gt;</code> that represents the output sentence.</p>
+<p>That's the easy part. The more interesting problem is how the function should work. 
+We know that initially we'll need to find a rule that corresponds to <code>&lt;sentence&gt;</code>. Moreover, 
+we know that we are going to build our output in pieces, which we will assemble 
+from various rules and parts of rules.</p>
+<p>In principle, we could concatenate those pieces to form our result. However, because 
+there is no built-in concatenation operation for <code>vector</code>s, we will start with an empty 
+<code>vector</code> and call <code>push_back</code> repeatedly on it.</p>
+<p>These two constraints—starting with <code>&lt;sentence&gt;</code>, and calling <code>push_back</code> repeatedly 
+on an initially empty <code>vector</code>—suggest that we are going to want to define our sentence 
+generator in terms of an auxiliary function, which we will call as follows:</p>
+<div class="prebox"><pre>
+vector&lt;string&gt; gen_sentence(const Grammar&amp; g)
+{
+    vector&lt;string&gt; ret;
+    gen_aux(g, &quot;&lt;sentence&gt;&quot;, ret);
+    return ret;
+}
+</pre></div>
+<p>In effect, the call to <code>gen_aux</code> is a request to use the grammar <code>g</code> to generate a sentence 
+according to the <code>&lt;sentence&gt;</code> rule, and to append that sentence to <code>ret</code>.</p>
+<p>Our remaining task is to define <code>gen_aux</code>. Before we do so, we note that <code>gen_aux</code> will 
+have to determine whether a word represents a category, which it will do by checking 
+whether the word is bracketed. We shall, therefore, define a predicate to do so:</p>
+<div class="prebox"><pre>
+bool bracketed(const string&amp; s)
+{
+return s.size() &gt; 1 &amp;&amp; s[0] == '&lt;' &amp;&amp; s[s.size() - 1] == '&gt;';
+}
+</pre></div>
+<p>The job of <code>gen_aux</code> is to expand the input <code>string</code> that it is given as its second argument 
+by looking up that <code>string</code> in the grammar that is its first parameter and placing its output 
+into its third parameter. By &quot;expand&quot; we mean the process that we described in 
+&sect;7.4/129. If our <code>string</code> is bracketed, we then have to find a corresponding rule, which 
+we'll expand in place of the bracketed category. If the input <code>string</code> is not bracketed, 
+then the input itself is part of our output and can be pushed onto the output <code>vector</code> with 
+no further processing:</p>
+<div class="prebox"><pre>
+void
+gen_aux(const Grammar&amp; g, const string&amp; word, vector&lt;string&gt;&amp; ret)
+{
+    if (!bracketed(word)) {
+        ret.push_back(word);
+    } else {
+        // <i>locate the rule that corresponds to </i>word
+        Grammar::const_iterator it = g.find(word);
+        if (it == g.end())
+            throw logic_error(&quot;empty rule&quot;);
+
+        // <i>fetch the set of possible rules</i>
+        const Rule_collection&amp; c = it-&gt;second;
+
+        // <i>from which we select one at random</i>
+        const Rule&amp; r = c[nrand(c.size())];
+
+        // <i>recursively expand the selected rule</i>
+        for (Rule::const_iterator i = r.begin(); i != r.end(); ++i)
+            gen_aux(g, *i, ret);
+    }
+}
+</pre></div>
+<p>Our first job is trivial: If the word is not bracketed, it represents itself, so we can append it 
+to <code>ret</code> and we're done. Now comes the interesting part: finding in <code>g</code> the rule that corresponds 
+to our word. You might think that we could simply refer to <code>g[word]</code>, but doing 
+so would give us the wrong result. Recall from &sect;7.2/125 that when you try to index a <code>map</code> 
+with a nonexistent key, it automatically creates an element with that key. That will never 
+do in this case, because we don't want to litter our grammar with spurious rules. Moreover, 
+<code>g</code> is a <code>const map</code>, so even if we wanted to create new entries, we couldn't do so. 
+Indeed, <code>[]</code> isn't even defined on a <code>const map</code>.</p>
+<p>Evidently, we must use a different facility: The <code>find</code> member of the <code>map</code> class looks for 
+the element, if any, with the given key, and returns an iterator that refers to that element if 
+it can find one. If no such element exists in <code>g</code>, the <code>find</code> algorithm returns <code>g.end()</code>. The 
+comparison between <code>it</code> and <code>g.end()</code>, therefore, serves to ensure that the rule exists. If it 
+doesn't exist, that means the input was inconsistent—it used a bracketed word without a 
+corresponding rule—so we throw an exception.</p>
+<p>At this point, <code>it</code> is an iterator that refers to an element of <code>g</code>, which is a <code>map</code>. Dereferencing 
+this iterator yields a <code>pair</code>, the second member of which is the value of the <code>map</code> 
+element. Therefore, <code>it-&gt;second </code>denotes the collection of rules that correspond to this 
+category. For convenience, we define a reference named <code>c</code> as a synonym for this object.</p>
+<p>Our next job is to select a random element from this collection, which we do in the initialization 
+of <code>r</code>. This code</p>
+<div class="prebox"><pre>
+const Rule&amp; r = c[nrand(c.size())];
+</pre></div>
+<p>is unfamiliar, and is, therefore/worth a close look. First, recall that we defined <code>c</code> to be a 
+<code>Rule_collection</code>, which is a kind of <code>vector</code>. We call a function named <code>nrand</code>, which 
+we will define in &sect;7.4.4/135, to select a random element of this <code>vector</code>. When we give 
+<code>nrand</code> an argument <code>n</code>, it returns a random integer in the range <code>[0, n)</code>. Finally, we 
+define <code>r</code> as a synonym for that element.</p>
+<p>Our final task in <code>gen_aux</code> is to examine every element of <code>r</code>. If the element is bracketed, 
+we have to expand it into a sequence of words; otherwise, we append it to <code>ret</code>. 
+What may seem like magic on first reading is that this processing is exactly what we 
+are doing in <code>gen_aux</code>—and therefore, we can call <code>gen_aux</code> to do it!</p>
+<p>Such a call is called <i><b>recursive</b>, </i>and it is one of those techniques that looks like it can't 
+possibly work—until you've tried it a few times. To convince yourself that this function 
+works, begin by noting that the function obviously works if word is not bracketed.</p>
+<p>Next, assume that <code>word</code> is bracketed, but its rule's right-hand side has no bracketed 
+words of its own. It should still be easy to see that the program will work in this case, 
+because when it makes each recursive call, the <code>gen_aux</code> that it calls will immediately see 
+that the word is not bracketed. Therefore, it will append the word to <code>ret</code> and return.</p>
+<p>The next step is to assume that <code>word</code> refers to a slightly more complicated rule—one 
+that uses bracketed words in its right-hand side, but only words that refer to rules with no 
+bracketed words of their own. When you encounter a recursive call to <code>gen_aux</code>, do not 
+try to figure out what it does. Instead, remember that you have already convinced yourself 
+that it works in this case, because you know that at worst, its argument is a category 
+that does not lead to any further bracketed words. Eventually, you will see that the function 
+works in all cases, because each recursive call simplifies the argument.</p>
+<p>We do not know any sure way to explain recursion. Our experience is that people 
+stare at recursive programs for a long time without understanding how they work. Then, 
+one day, they suddenly get it—and they don't understand why they ever thought it was 
+difficult. Evidently, the key to understanding recursion is to begin by understanding 
+recursion. The rest is easy.</p>
+<p>Having written <code>gen_sentence</code>, <code>read_grammar</code>, and the associated auxiliary functions, 
+we'll want to use them:</p>
+<div class="prebox"><pre>
+int main() {
+    // <i>generate the sentence</i>
+    vector&lt;string&gt; sentence = gen_sentence(read_grammar(cin));
+
+    // <i>write the first word, if any</i>
+    vector&lt;string&gt;::const_iterator it = sentence.begin();
+    if (!sentence.empty()) {
+        cout &lt;&lt; *it;
+        ++it;
+    }
+	
+    // <i>write the rest of the words, each preceded by a space </i>
+    while (it != sentence.end()) {
+        cout &lt;&lt; &quot; &quot; &lt;&lt; *it;
+        ++it;
+    }
+    cout &lt;&lt; endl;
+    return 0;
+}
+</pre></div>
+<p>We read the grammar, generate a sentence from it, and then write the sentence a word at 
+a time. The only even minor complexity is that we put a space in front of the second and 
+subsequent words of the sentence.</p>
+<h4>7.4.4 Selecting a random element</h4>
+<p>It is now time to write <code>nrand</code>. We begin by noting that the standard library includes a 
+function named <code>rand</code> (defined in <code>&lt;cstdlib&gt;</code>). That function takes no arguments, and 
+returns a random integer in the range <code>[0, RAND_MAX]</code>, where <code>RAND_MAX</code> is a large integer 
+that is also defined in <code>&lt;cstdlib&gt;</code>. Our job is to reduce the range <code>[0, RAND_MAX]</code>, 
+which includes both <code>0</code> and <code>RAND_MAX</code>, to <code>[0, n)</code>, which includes <code>0</code> but not<code> n</code>, with the 
+understanding that<code> n &lt;= RAND_MAX</code>.</p>
+<p>You might think that it would suffice to compute <code>rand() % n</code>, which is the remainder 
+when dividing the random integer by <code>n</code>. In practice, this technique fails for two reasons.</p>
+<p>The most important reason is pragmatic: <code>rand()</code> really returns only pseudo-random 
+numbers. Many C++ implementations' pseudo-random-number generators give remainders 
+that aren't very random when the quotients are small integers. For example, it is not 
+uncommon for successive results of <code>rand()</code> to be alternately even and odd. In that case, 
+if <code>n</code> is 2, successive results of <code>rand() % n</code> will alternate between 0 and <code>1</code>.</p>
+<p>There is another, more subtle reason to avoid using <code>rand() % n</code>: If the value of <code>n</code> is 
+large, and <code>RAND_MAX</code> is not evenly divisible by <code>n</code>, some remainders will appear more 
+often than others. For example, suppose that <code>RAND_MAX</code> is 32767 (the smallest permissible 
+value of <code>RAND_MAX</code> for any implementation) and <code>n</code> is 20000. In that case, there 
+would be two distinct values of <code>rand()</code> that would cause <code>rand() % n</code> to be 10000 
+(namely, 10000 and 30000), but only one value of <code>rand()</code> that would cause <code>rand() % n </code>
+to be 15000 (namely, 15000). Therefore, the naive implementation of <code>nrand</code> would 
+yield 10000 as a value of <code>nrand(20000)</code> twice as often as it would yield 15000.</p>
+<p>To avoid these pitfalls, we'll use a different strategy, by dividing the range of available 
+random numbers into buckets of exactly equal size. Then we can compute a random 
+number and return the number of the corresponding bucket. Because the buckets are of 
+equal size, some random numbers may not fall into any bucket at all. In that case, we 
+keep asking for random numbers until we get one that fits.</p>
+<p>The function is easier to write than to describe:</p>
+<div class="prebox"><pre>
+// <i>return a random integer in the range </i>[0, n)
+int nrand(int n)
+{
+    if (n &lt;= 0 || n &gt; RAND_MAX)
+        throw domain_error(&quot;Argument to nrand is out of range&quot;);
+
+    const int bucket_size = RAND_MAX / n;
+    int r;
+
+    do r = rand() / bucket_size;
+    while (r &gt;= n);
+
+    return r;
+}
+</pre></div>
+<p>The definition of <code>bucket_size</code> relies on the fact that integer division truncates its result. 
+This property implies that <code>RAND_MAX / n</code> is the largest integer that is less than or equal to 
+the exact quotient. As a consequence, <code>bucket_size</code> is the largest integer with the property 
+that <code>n * bucket_size &lt;= RAND_MAX</code>.</p>
+<p>The next statement is a <b>do while </b>statement. A <code>do while</code> is like a <code>while</code> statement, 
+except that it always executes the body at least once, and tests the condition at the end. If 
+that condition yields <code>true</code>, then the loop repeats, executing the <code>push_back</code> until the 
+<code>while</code> fails. In this case, the body of the loop sets <code>r</code> to a bucket number. Bucket 0 will 
+correspond to values of <code>rand()</code> in the range <code>[0, bucket_size)</code>, bucket <code>1</code> will correspond 
+to values in the range <code>[bucket_size, bucket_size * 2)</code>, and so on. If the 
+value of <code>rand()</code> is so large that <code>r &gt;= n</code>, the program will continue trying random numbers 
+until it finds one that it likes, at which point it returns the corresponding value of <code>r</code>.</p>
+<p>For example, let's assume that <code>RAND_MAX</code> is 32767 and <code>n</code> is 20000. Then <code>bucket_size</code> 
+will be <code>1</code>, and <code>nrand</code> will work by discarding random numbers until it 
+finds one less than 20000. As another example, assume that <code>n</code> is 3. Then <code>bucket_size</code> 
+will be 10922. In this case, values of <code>rand()</code> in the range <code>[0, 10922)</code> will yield 0, values 
+in the range <code>[10922, 21844)</code> will yield <code>1</code>, values in the range <code>[21844, 32766)</code> will 
+yield 2, and values of 32766 or 32767 will be discarded.</p>
+<div class="prevnext">
+<a href="40.htm"><img src="images/Prev1.gif" /></a>&nbsp;&nbsp;<a href="42.htm"><img src="images/Next1.gif" /></a>
+</div>
+</body>
+</html>

@@ -1,0 +1,152 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;6.18.&nbsp;Automatically Initializing Instance Variables from _ _init_ _ Arguments</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-6-sect-17.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-6-sect-19.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-6-SECT-18"></a>
+<h3 class="docSection1Title" id="409771-884">Recipe 6.18. Automatically Initializing Instance Variables from _ _init_ _ Arguments</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Peter Otten, Gary Robinson, Henry Crutcher, Paul
+Moore, Peter Schwalm, Holger Krekel</span><a name="pythoncook2-CHP-6-ITERM-2214"></a></p>
+
+<a name="pythoncook2-CHP-6-SECT-18.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText">You want to avoid writing and maintaining <tt>_ _init_
+_</tt> methods that consist of almost nothing but a series of
+<tt>self.something = something</tt> assignments. <a name="pythoncook2-CHP-6-ITERM-2215"></a></P>
+
+
+<a name="pythoncook2-CHP-6-SECT-18.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">You can "factor out" the
+attribute-assignment task to an auxiliary function:</p>
+
+<pre>def attributesFromDict(d):
+    self = d.pop('self')
+    for n, v in d.iteritems( ):
+        setattr(self, n, v)</pre><BR>
+
+
+<p class="docText">Now, the typical boilerplate code for an <tt>_ _init_
+_</tt> method such as:</p>
+
+<pre>    def _ _init_ _(self, foo, bar, baz, boom=1, bang=2):
+        self.foo = foo
+        self.bar = bar
+        self.baz = baz
+        self.boom = boom
+        self.bang = bang</pre><BR>
+
+
+<p class="docText">can become a short, crystal-clear one-liner:</P>
+
+<pre>    def _ _init_ _(self, foo, bar, baz, boom=1, bang=2):
+        attributesFromDict(locals( ))</pre><br>
+
+
+
+<a name="pythoncook2-CHP-6-SECT-18.3"></a>
+<H4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">As long as no additional logic is in the body of <tt>_ _init_
+_</tt>, the <tt>dict</tt> returned by calling the
+built-in function <tt>locals</tt> contains only the
+arguments that were passed to <tt>_ _init_ _</tt> (plus
+those arguments that were not passed but have default values).
+Function <tt>attributesFromDict</tt> extracts the object,
+relying on the convention that the object is always an argument named
+'<tt>self</tt>', and then interprets all other items in the
+dictionary as names and values of attributes to set. A similar but
+simpler technique, not requiring an auxiliary function,
+is:<a name="pythoncook2-CHP-6-ITERM-2216"></a></p>
+
+<pre>    def _ _init_ _(self, foo, bar, baz, boom=1, bang=2): 
+        self._ _dict_ _.update(locals( )) 
+        del self.self</pre><br>
+
+
+<p class="docText">However, this latter technique has a serious defect when compared to
+the one presented in this recipe's Solution: by
+setting attributes directly into <tt>self._ _dict_ _</tt>
+(through the latter's <tt>update</tt>
+method), it does not play well with properties and other advanced
+descriptors, while the approach in this recipe's
+Solution, using built-in <tt>setattr</tt>, is impeccable in
+this respect.</P>
+
+<p class="docText"><i>attributesFromDict</i> is not meant for use in an
+<tt>_ _init_ _</tt> method that contains more code, and
+specifically one that uses some local variables, because
+<I>attributesFromDict</i> cannot easily distinguish, in the
+dictionary that is passed as its only argument <I>d</i>,
+between arguments of <tt>_ _init_ _</tt> and other local
+variables of <tt>_ _init_ _</tt>. If
+you're willing to insert a little introspection in
+the auxiliary function, this limitation may be overcome:</P>
+
+<a name="pythoncook2-CHP-6-ITERM-2217"></a><pre>def attributesFromArguments(d):
+    self = d.pop('self')
+    codeObject = self._ _init_ _.im_func.func_code
+    argumentNames = codeObject.co_varnames[1:codeObject.co_argcount]
+    for n in argumentNames:
+        setattr(self, n, d[n])</pre><BR>
+
+
+<p class="docText">By extracting the code object of the <tt>_ _init_ _</tt>
+method, function <i>attributesFromArguments</i>
+<span class="docEmphasis">is</span> able to limit itself to the names of
+<tt>_ _init_ _</tt>'s arguments. Your
+<tt>_ _init_ _</tt> method can then call
+<tt>attributesFromArguments(locals( ))</tt>, instead of
+<tt>attributesFromDict(locals( ))</tt>, if and when it
+needs to continue, after the call, with more code that may define
+other local variables.</p>
+
+<p class="docText">The key limitation of <i>attributesFromArguments</i> is
+that it does <span class="docEmphasis">not</span> support <tt>_ _init_
+_</tt> having a last special argument of the
+<tt>**kw</tt> kind. Such support can be added, with yet
+more introspection, but it would require more black magic and
+complication than the functionality is probably worth. If you
+nevertheless want to explore this possibility, you can use the
+<tt>inspect</tt> module of the standard library, rather
+than the roll-your-own approach used in function
+<i>attributeFromArguments</i>, for introspection purposes.
+<tt>inspect.getargspec(self._ _init_ _)</tt> gives you both
+the argument names and the indication of whether <tt>self._
+_init_ _</tt> accepts a <tt>**kw</tt> form. See <a class="docLink" href="pythoncook2-CHP-6-SECT-19.html#pythoncook2-CHP-6-SECT-19">Recipe 6.19</a> for more information
+about function <tt>inspect.getargspec</tt>. Remember the
+golden rule of Python programming: "Let the standard
+library do it!"<a name="pythoncook2-CHP-6-ITERM-2218"></a></p>
+
+
+<a name="pythoncook2-CHP-6-SECT-18.4"></a>
+<h4 class="docSection2Title">See Also</h4>
+
+<p class="docText"><span class="docEmphasis">Library Reference</span> and <span class="docEmphasis">Python in a
+Nutshell</span> docs for the built-in function
+<tt>locals</tt>, methods of type <tt>dict</tt>,
+special method <tt>_ _init_ _</tt>, and introspection
+techniques (including module <tt>inspect</tt>).<a name="pythoncook2-CHP-6-ITERM-2219"></a></p>
+
+
+
+<ul></ul></TD></TR></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-6-sect-17.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-6-sect-19.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

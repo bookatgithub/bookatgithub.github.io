@@ -1,0 +1,315 @@
+<html><head>
+<META http-equiv="Content-Type" content="text/html">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="7.2 The socket Module"-->
+<link rel="STYLESHEET" type="text/css" href="FILES/style.css">
+<link rel="STYLESHEET" type="text/css" href="FILES/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+	<a href="0596000960_pythonsl-CHP-7-SECT-1.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+	<a href="0596000960_pythonsl-CHP-7-SECT-3.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr>
+<td valign="top"><A NAME="pythonsl-CHP-7-SECT-2"></A>
+<H3 class="docSection1Title">7.2 The socket Module</H3>
+
+<P class="docText">
+
+<A NAME="pythonsl-IDXTERM-546"></A>
+<A NAME="pythonsl-IDXTERM-547"></A>
+
+
+The <TT>socket</TT> module implements an interface to the socket communication
+layer. You can create both client and server sockets using this
+module.</P>
+
+<P class="docText">Let's start with a client example.  The client in <A class="docLink" HREF="#pythonsl-CHP-7-EX-1">Example 7-1</A> connects to a
+time protocol server, reads the 4-byte response, and converts it to a
+time value.</P>
+
+
+<H5 class="docExampleTitle"><A NAME="pythonsl-CHP-7-EX-1"></A>Example 7-1. Using the socket Module to Implement a Time Client</H5>
+
+<PRE>
+File: socket-example-1.py
+
+import socket
+import struct, time
+
+# server
+HOST = "www.python.org"
+PORT = 37
+
+# reference time (in seconds since 1900-01-01 00:00:00)
+TIME1970 = 2208988800L # 1970-01-01 00:00:00
+
+# connect to server
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.connect((HOST, PORT))
+
+# read 4 bytes, and convert to time value
+t = s.recv(4)
+t = struct.unpack("!I", t)[0]
+t = int(t - TIME1970)
+
+s.close()
+
+# print results
+print "server time is", time.ctime(t)
+print "local clock is", int(time.time()) - t, "seconds off"
+
+<B>server time is Sat Oct 09 16:42:36 1999
+local clock is 8 seconds off</B></PRE>
+
+
+<P class="docText">
+
+<A NAME="IXT-7-189692"></A>
+<A NAME="IXT-7-189693"></A>
+
+The <TT>socket</TT> factory function creates a new socket
+of the given type (in this case, an Internet stream socket, also known
+as a TCP socket).  The <TT>connect</TT> method attempts to
+connect this socket to the given server.  Once that has succeeded, the
+<TT>recv</TT> method is used to read data.</P>
+
+<P class="docText">
+
+<A NAME="IXT-7-189694"></A>
+
+
+Creating a server socket is done in a similar fashion.  But instead of
+connecting to a server, you <TT>bind</TT> the socket to a
+port on the local machine, tell it to <TT>listen</TT> for
+incoming connection requests, and process each request as fast as
+possible.</P>
+
+<P class="docText"><A class="docLink" HREF="#pythonsl-CHP-7-EX-2">Example 7-2</A> creates a time server, bound to port 8037 on the
+local machine (port numbers up to 1024 are reserved for system
+services, and you have to have root privileges to use them to
+implement services on a Unix system).</P>
+
+
+<H5 class="docExampleTitle"><A NAME="pythonsl-CHP-7-EX-2"></A>Example 7-2. Using the socket Module to Implement a Time Server</H5>
+
+<PRE>
+File: socket-example-2.py
+
+import socket
+import struct, time
+
+# user-accessible port
+PORT = 8037
+
+# reference time
+TIME1970 = 2208988800L
+
+# establish server
+service = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+service.bind(("", PORT))
+service.listen(1)
+
+print "listening on port", PORT
+
+while 1:
+    # serve forever
+    channel, info = service.accept()
+    print "connection from", info
+    t = int(time.time()) + TIME1970
+    t = struct.pack("!I", t)
+    channel.send(t) # send timestamp
+    channel.close() # disconnect
+
+<B>listening on port 8037
+connection from ('127.0.0.1', 1469)
+connection from ('127.0.0.1', 1470)
+...</B></PRE>
+
+
+<P class="docText">
+
+<A NAME="IXT-7-189695"></A>
+<A NAME="IXT-7-189696"></A>
+
+The <TT>listen</TT> call tells the socket that we're
+willing to accept incoming connections.  The argument gives the size
+of the connection queue (which holds connection requests that our
+program hasn't gotten around to processing yet).  Finally, the
+<TT>accept</TT> loop returns the current time to any
+client bold enough to connect.</P>
+
+<P class="docText">Note that the <TT>accept</TT> function returns a new
+socket object, which is directly connected to the client.  The
+original socket is only used to establish the connection; all further
+traffic goes via the new socket.</P>
+
+<P class="docText">To test this server, we can use <A class="docLink" HREF="#pythonsl-CHP-7-EX-3">Example 7-3</A>, a generalized version of <A class="docLink" HREF="#pythonsl-CHP-7-EX-1">Example 7-1</A>.</P>
+
+
+<H5 class="docExampleTitle"><A NAME="pythonsl-CHP-7-EX-3"></A>Example 7-3. A Time Protocol Client</H5>
+
+<PRE>
+File: timeclient.py
+
+import socket
+import struct, sys, time
+
+# default server
+host = "localhost"
+port = 8037
+
+# reference time (in seconds since 1900-01-01 00:00:00)
+TIME1970 = 2208988800L # 1970-01-01 00:00:00
+
+def gettime(host, port):
+    # fetch time buffer from stream server
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.connect((host, port))
+    t = s.recv(4)
+    s.close()
+    t = struct.unpack("!I", t)[0]
+    return int(t - TIME1970)
+
+if _ _name_ _ == "_ _main_ _":
+    # command-line utility
+    if sys.argv[1:]:
+        host = sys.argv[1]
+        if sys.argv[2:]:
+            port = int(sys.argv[2])
+        else:
+            port = 37 # default for public servers
+
+    t = gettime(host, port)
+    print "server time is", time.ctime(t)
+    print "local clock is", int(time.time()) - t, "seconds off"
+
+<B>server time is Sat Oct 09 16:58:50 1999
+local clock is 0 seconds off</B></PRE>
+
+
+<P class="docText">
+
+<A NAME="IXT-7-189697"></A>
+<A NAME="IXT-7-189698"></A>
+
+
+The sample script in <A class="docLink" HREF="#pythonsl-CHP-7-EX-3">Example 7-3</A> can also be used as a module; to get the current
+time from a server, import the <TT>timeclient</TT> module,
+then call the <TT>gettime</TT> function.</P>
+
+<P class="docText">Thus far, we've used stream (or TCP) sockets.  The time protocol
+specification also mentions UDP sockets, or datagrams.  Stream sockets
+work pretty much like a phone line; you'll know if someone at the
+remote end picks up the receiver, and you'll notice when she hangs up.
+In contrast, sending datagrams is more like shouting into a dark
+room.  There might be someone there, but you won't know unless she
+replies.</P>
+
+<P class="docText">
+<A NAME="IXT-7-189699"></A>
+<A NAME="pythonsl-IDXTERM-556"></A>
+
+
+<A class="docLink" HREF="#pythonsl-CHP-7-EX-4">Example 7-4</A> shows that you don't need to connect to send data over a datagram socket.
+Instead, you use the <TT>sendto</TT> method, which takes
+both the data and the address of the receiver.  To read incoming
+datagrams, use the <TT>recvfrom</TT> method.</P>
+
+
+
+<H5 class="docExampleTitle"><A NAME="pythonsl-CHP-7-EX-4"></A>Example 7-4. Using the socket Module to Implement a Datagram Time Client</H5>
+
+<PRE>
+File: socket-example-4.py
+
+import socket
+import struct, time
+
+# server
+HOST = "localhost"
+PORT = 8037
+
+# reference time (in seconds since 1900-01-01 00:00:00)
+TIME1970 = 2208988800L # 1970-01-01 00:00:00
+
+# connect to server
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+# send empty packet
+s.sendto("", (HOST, PORT))
+
+# read 4 bytes from server, and convert to time value
+t, server = s.recvfrom(4)
+t = struct.unpack("!I", t)[0]
+t = int(t - TIME1970)
+
+s.close()
+
+print "server time is", time.ctime(t)
+print "local clock is", int(time.time()) - t, "seconds off"
+
+<B>server time is Sat Oct 09 16:42:36 1999
+local clock is 8 seconds off</B></PRE>
+
+
+<P class="docText">Note that <TT>recvfrom</TT> returns two values: the actual
+data and the address of the sender.  Use the latter if you need to
+reply.</P>
+
+<P class="docText"><A class="docLink" HREF="#pythonsl-CHP-7-EX-5">Example 7-5</A> shows the corresponding server.</P>
+
+
+<H5 class="docExampleTitle"><A NAME="pythonsl-CHP-7-EX-5"></A>Example 7-5. Using the socket Module to Implement a Datagram Time Server</H5>
+
+<PRE>
+File: socket-example-5.py
+
+import socket
+import struct, time
+
+# user-accessible port
+PORT = 8037
+
+# reference time
+TIME1970 = 2208988800L
+
+# establish server
+service = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+service.bind(("", PORT))
+
+print "listening on port", PORT
+
+while 1:
+    # serve forever
+    data, client = service.recvfrom(0)
+    print "connection from", client
+    t = int(time.time()) + TIME1970
+    t = struct.pack("!I", t)
+    service.sendto(t, client) # send timestamp
+
+<B>listening on port 8037
+connection from ('127.0.0.1', 1469)
+connection from ('127.0.0.1', 1470)
+...</B></PRE>
+
+
+<P class="docText">The main difference is that the server uses <TT>bind</TT>
+to assign a known port number to the socket and sends data back to
+the client address returned by <TT>recvfrom</TT>.</P>
+
+<a href="0596000960_"><img src="FILES/pixel.gif" width="1" height="1" border="0"></a><ul></ul>
+</td>
+</tr>
+</table>
+<td></td>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+          <a href="0596000960_pythonsl-CHP-7-SECT-1.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+          <a href="0596000960_pythonsl-CHP-7-SECT-3.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+</body></html>

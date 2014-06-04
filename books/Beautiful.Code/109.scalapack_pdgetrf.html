@@ -1,0 +1,182 @@
+<html><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<link href="styles/globalstyle.css" type="text/css" rel="stylesheet"/>
+<link title="medium" href="styles/two.css" type="text/css" rel="stylesheet"/>
+<script src="scripts/main.js" type="text/javascript" language="javascript"></script>
+<title>Section 14.7. ScaLAPACK PDGETRF</title>
+</head><body>
+<DIV class=h3 style="MARGIN-TOP: 0px; PADDING-BOTTOM: 1em; WIDTH: 100%; PADDING-TOP: 0px"><SPAN>How Elegant Code Evolves with Hardware The Case of Gaussian Elimination</SPAN><SPAN> &gt; ScaLAPACK PDGETRF</SPAN></DIV>
+<DIV></DIV>
+<DIV>
+<DIV><A name=scalapack_pdgetrf></A>
+<H3 class=docSection1Title id=-100000>14.7. ScaLAPACK PDGETRF</H3>
+<P class=docText><A name="LAPACK is"></A>LAPACK is designed to be highly efficient on vector processors, high-performance "super-scalar" workstations, and shared-memory multiprocessors. LAPACK can also be used sat-isfactorily on all types of scalar machines (PCs, workstations, and mainframes). However, LAPACK in its present form is less likely to give good performance on other types of parallel architectures—for example, massively parallel Single Instruction Multiple Data (SIMD) machines, or Multiple Instruction Multiple Data (MIMD) distributed-memory machines. The ScaLAPACK effort was intended to adapt LAPACK to these new architectures.<A name=idx-CHP-14-1209></A></P>
+<P class=docText><A name="ScaLAPACK software"></A>By creating the ScaLAPACK software library, we extended the LAPACK library to scalable MIMD, distributed-memory, concurrent computers. For such machines, the memory hierarchy includes the off-processor memory of other processors, in addition to the hierarchy of registers, cache, and local memory on each processor.</P>
+<P class=docText><A name="routines are"></A>Like LAPACK, the ScaLAPACK routines are based on block-partitioned algorithms in order to minimize the frequency of data movement between different levels of the memory hierarchy. The fundamental building blocks of the <A name=idx-CHP-14-1210></A><A name="are distributed"></A>ScaLAPACK library are distributed-memory versions of the <A name=idx-CHP-14-1211></A>Level-2 and <A name=idx-CHP-14-1212></A><A name="of Basic"></A>Level-3 BLAS, and a set of Basic Linear Algebra Communication Subprograms (<A name=idx-CHP-14-1213></A><A name="In the"></A>BLACS) for communication tasks that arise frequently in parallel linear algebra computations. In the ScaLAPACK routines, all interprocessor communication occurs within the distributed BLAS and the BLACS, so the source code of the top software layer of ScaLAPACK looks very similar to that of LAPACK.</P>
+<P class=docText>The <A name=idx-CHP-14-1214></A><A name=to></A>ScaLAPACK solution to <A name=idx-CHP-14-1215></A><A name=in></A>LU factorization is shown in <A class=docLink href="javascript:moveTo('scalapack_variant_fortran_coding');">Example 14-5</A>.<A name=I_indexterm14_tt318></A><A name=I_indexterm14_tt319></A><A name=I_indexterm14_tt320></A><A name=I_indexterm14_tt321></A></P><A name=scalapack_variant_fortran_coding></A>
+<H5 class=docExampleTitle id=title-ID0EIPDK>Example 14-5. ScaLAPACK variant (Fortran 90 coding)</H5>
+<P>
+<TABLE cellSpacing=0 cellPadding=5 width=* border=1>
+<TBODY>
+<TR>
+<TD>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedHeight>     SUBROUTINE PDGETRF( M, N, A, IA, JA, DESCA, IPIV, INFO )
+      INTEGER            BLOCK_CYCLIC_2D, CSRC_, CTXT_, DLEN_, DTYPE_,
+     $                   LLD_, MB_, M_, NB_, N_, RSRC_
+      PARAMETER          ( BLOCK_CYCLIC_2D = 1, DLEN_ = 9, DTYPE_ = 1,
+     $                     CTXT_ = 2, M_ = 3, N_ = 4, MB_ = 5, NB_ = 6,
+     $                     RSRC_ = 7, CSRC_ = 8, LLD_ = 9 )
+      DOUBLE PRECISION   ONE
+      PARAMETER          ( ONE = 1.0D+0 )
+      CHARACTER          COLBTOP, COLCTOP, ROWBTOP
+      INTEGER            I, ICOFF, ICTXT, IINFO, IN, IROFF, J, JB, JN,
+     $                   MN, MYCOL, MYROW, NPCOL, NPROW
+      INTEGER            IDUM1( 1 ), IDUM2( 1 )
+      EXTERNAL           BLACS_GRIDINFO, CHK1MAT, IGAMN2D, PCHK1MAT, PB_TOPGET,
+     $                   PB_TOPSET, PDGEMM, PDGETF2, PDLASWP, PDTRSM, PXERBLA
+      INTEGER            ICEIL
+      EXTERNAL           ICEIL
+      INTRINSIC          MIN, MOD
+*     Get grid parameters
+      ICTXT = DESCA( CTXT_ )
+      CALL BLACS_GRIDINFO( ICTXT, NPROW, NPCOL, MYROW, MYCOL )
+*     Test the input parameters
+      INFO = 0 
+      IF( NPROW.EQ.-1 ) THEN
+         INFO = -(600+CTXT_)
+      ELSE
+         CALL CHK1MAT( M, 1, N, 2, IA, JA, DESCA, 6, INFO )
+         IF( INFO.EQ.0 ) THEN
+            IROFF = MOD( IA-1, DESCA( MB_ ) )
+            ICOFF = MOD( JA-1, DESCA( NB_ ) )
+            IF( IROFF.NE.0 ) THEN
+               INFO = -4
+            ELSE IF( ICOFF.NE.0 ) THEN 
+               INFO = -5 
+           ELSE IF( DESCA( MB_ ).NE.DESCA( NB_ ) ) THEN 
+              INFO = -(600+NB_)
+           END IF 
+        END IF 
+        CALL PCHK1MAT( M, 1, N, 2, IA, JA, DESCA, 6, 0, IDUM1, IDUM2, INFO )
+     END IF
+     IF( INFO.NE.0 ) THEN 
+        CALL PXERBLA( ICTXT, '<A name=idx-CHP-14-1216></A>PDGETRF', -INFO )
+        RETURN
+     END IF
+     IF( DESCA( M_ ).EQ.1 ) THEN
+        IPIV( 1 ) = 1
+        RETURN
+     ELSE IF( M.EQ.0 .OR. N.EQ.0 ) THEN
+        RETURN 
+     END IF
+*    Split-ring topology for the communication along process rows
+     CALL PB_TOPGET( ICTXT, 'Broadcast', 'Rowwise', ROWBTOP )
+     CALL PB_TOPGET( ICTXT, 'Broadcast', '<A name=idx-CHP-14-1217></A>Columnwise', COLBTOP )
+     CALL PB_TOPGET( ICTXT, 'Combine', 'Columnwise', COLCTOP )
+     CALL PB_TOPSET( ICTXT, 'Broadcast', 'Rowwise', 'S-ring' )
+     CALL PB_TOPSET( ICTXT, 'Broadcast', 'Columnwise', ' ' )
+     CALL PB_TOPSET( ICTXT, 'Combine', 'Columnwise', ' ' )
+*    Handle the first block of columns separately
+     MN = MIN( M, N )
+     IN = MIN( ICEIL( IA, DESCA( MB_ ) )*DESCA( MB_ ), IA+M-1 )
+     JN = MIN( ICEIL( JA, DESCA( NB_ ) )*DESCA( NB_ ), JA+MN-1 )
+     JB = JN - JA + 1
+*    Factor diagonal and subdiagonal blocks and test for exact
+*    singularity.
+     CALL PDGETF2( M, JB, A, IA, JA, DESCA, IPIV, INFO )
+     IF( JB+1.LE.N ) THEN
+*       Apply interchanges to columns JN+1:JA+N-1.
+        CALL PDLASWP('Forward', 'Rows', N-JB, A, IA, JN+1, DESCA, IA, IN, IPIV )
+*       Compute block row of U.
+        CALL PDTRSM( 'Left', 'Lower', 'No transpose', 'Unit', JB,
+    $                N-JB, ONE, A, IA, JA, DESCA, A, IA, JN+1, DESCA )
+*
+        IF( JB+1.LE.M ) THEN
+*          Update trailing submatrix.
+           CALL PDGEMM( 'No transpose', 'No transpose', M-JB,N-JB, JB,
+    $                   -ONE, A, IN+1, JA, DESCA, A, IA, JN+1, DESCA,
+    $                   ONE, A, IN+1, JN+1, DESCA )
+        END IF
+     END IF
+*    Loop over the remaining blocks of columns.
+     DO 10 J = JN+1, JA+MN-1, DESCA( NB_ )
+        JB = MIN( MN-J+JA, DESCA( NB_ ) )
+        I = IA + J - JA
+*
+*       Factor diagonal and subdiagonal blocks and test for exact
+*       singularity. 
+*
+        CALL PDGETF2( M-J+JA, JB, A, I, J, DESCA, IPIV, IINFO ) 
+*
+        IF( INFO.EQ.0 .AND. IINFO.GT.0 ) INFO = IINFO + J - JA
+*
+
+*       Apply interchanges to columns JA:J-JA.
+*
+        CALL PDLASWP('Forward', 'Rowwise', J-JA, A, IA, JA, DESCA, I,I+JB-1, IPIV)
+        IF( J-JA+JB+1.LE.N ) THEN
+*          Apply interchanges to columns J+JB:JA+N-1.
+           CALL PDLASWP( 'Forward', 'Rowwise', N-J-JB+JA, A, IA, J+JB,
+    $                    DESCA, I, I+JB-1, IPIV )
+*          Compute block row of U.
+           CALL PDTRSM( 'Left', 'Lower', 'No transpose', 'Unit', JB,
+    $                   N-J-JB+JA, ONE, A, I, J, DESCA, A, I, J+JB,
+    $                   DESCA )
+           IF( J-JA+JB+1.LE.M ) THEN
+*             Update trailing submatrix.
+              CALL PDGEMM( 'No transpose', 'No transpose', M-J-JB+JA,
+    $                      N-J-JB+JA, JB, -ONE, A, I+JB, J, DESCA, A,
+    $                      I, J+JB,  DESCA, ONE, A, I+JB, J+JB, DESCA )
+           END IF 
+        END IF
+  10 CONTINUE
+     IF( INFO.EQ.0 ) INFO = MN + 1
+     CALL IGAMN2D(ICTXT, 'Rowwise', ' ', 1, 1, INFO, 1, IDUM1,IDUM2, -1,-1, MYCOL)
+     IF( INFO.EQ.MN+1 ) INFO = 0
+     CALL PB_TOPSET( ICTXT, 'Broadcast', 'Rowwise', ROWBTOP )
+     CALL PB_TOPSET( ICTXT, 'Broadcast', 'Columnwise', COLBTOP )
+     CALL PB_TOPSET( ICTXT, 'Combine', 'Columnwise', COLCTOP ) 
+     RETURN 
+     END
+
+
+					    </PRE><BR></TD></TR></TBODY></TABLE></P>
+<P class=docText><A name="design of"></A>In order to simplify the design of <A name=idx-CHP-14-1218></A><A name="and because"></A>ScaLAPACK, and because the BLAS have proven to be very useful tools outside LAPACK, we chose to build a <A name=idx-CHP-14-1219></A>Parallel BLAS, or <A name=idx-CHP-14-1220></A><A name="paper by"></A>PBLAS (described in the paper by Choi et al. listed under "Further Reading"), whose interface is as similar to the BLAS as possible. This decision has permitted the <A name=idx-CHP-14-1221></A>ScaLAPACK <A name=idx-CHP-14-1222></A><A name="quite similar"></A>code to be quite similar, and sometimes nearly identical, to the analogous LAPACK code.<A name=I_indexterm14_tt322></A><A name=I_indexterm14_tt323></A></P>
+<P class=docText><A name="our aim"></A>It was our aim that the <A name=idx-CHP-14-1223></A><A name="a distributed"></A>PBLAS would provide a distributed memory standard, just as the BLAS provided a shared memory standard. This would simplify and encourage the development of high-performance and portable <A name=idx-CHP-14-1224></A><A name="small set"></A>parallel numerical software, as well as providing manufacturers with just a small set of routines to be optimized. The acceptance of the PBLAS requires reasonable compromises between competing goals of functionality and simplicity.</P>
+<P class=docText><A name="operate on"></A>The PBLAS operate on matrices distributed in a two-dimensional block cyclic layout. Because such a data layout requires many parameters to fully describe the distributed matrix, we have chosen a more object-oriented approach and encapsulated these parameters in an integer <A name=idx-CHP-14-1225></A>array called an <SPAN class=docEmphasis>array descriptor</SPAN>. An array descriptor includes:</P>
+<UL>
+<LI>
+<P class=docList>The descriptor type</P></LI>
+<LI>
+<P class=docList><A name="space for"></A>The BLACS context (a virtual space for messages that is created to avoid collisions between logically distinct messages)</P></LI>
+<LI>
+<P class=docList><A name="the distributed"></A>The number of rows in the distributed matrix</P></LI>
+<LI>
+<P class=docList><A name="The number"></A>The number of columns in the distributed matrix</P></LI>
+<LI>
+<P class=docList>The row block size</P></LI>
+<LI>
+<P class=docList>The column block size</P></LI>
+<LI>
+<P class=docList><A name="over which"></A>The process row over which the first row of the matrix is distributed</P></LI>
+<LI>
+<P class=docList><A name="over which"></A>The process column over which the first column of the matrix is distributed</P></LI>
+<LI>
+<P class=docList><A name="dimension of"></A>The leading dimension of the local array storing the local blocks</P></LI></UL>
+<P class=docText><A name="a call"></A>By using this descriptor, a call to a PBLAS routine is very similar to a call to the corresponding BLAS routine:</P><PRE>	CALL DGEMM ( TRANSA, TRANSB, M, N, K, ALPHA,
+	             A( IA, JA ), LDA,
+	             B( IB, JB ), LDB, BETA,
+	             C( IC, JC ), LDC )
+
+	CALL PDGEMM( TRANSA, TRANSB, M, N, K, ALPHA,
+	             A, IA, JA, DESC_A,
+	             B, JB, DESC_B, BETA,
+	             C, IC, JC, DESC_C )
+</PRE><BR>
+<P class=docText>DGEMM computes <SPAN class=docEmphasis>C = BETA * C + ALPHA * op( A ) * op( B )</SPAN>, where <SPAN class=docEmphasis>op(A)</SPAN> is either <SPAN class=docEmphasis>A</SPAN> or its transpose depending on <SPAN class=docEmphasis>TRANSA, op(B)</SPAN> is similar, <SPAN class=docEmphasis>op(A) is M-by-K</SPAN>, and <SPAN class=docEmphasis>op(B)</SPAN> is <SPAN class=docEmphasis>K-by-N</SPAN>. <SPAN class=docEmphasis>PDGEMM</SPAN><A name="To pass"></A> is the same, with the exception of the way submatrices are specified. To pass the submatrix starting at <SPAN class=docEmphasis>A(IA,JA)</SPAN> to <SPAN class=docEmphasis>DGEMM</SPAN><A name="actual argument"></A>, for example, the actual argument corresponding to the formal argument <SPAN class=docEmphasis>A</SPAN> is simply <SPAN class=docEmphasis>A(IA,JA). PDGEMM</SPAN><A name="to understand"></A>, on the other hand, needs to understand the global storage scheme of <SPAN class=docEmphasis>A</SPAN> to extract the correct submatrix, so <SPAN class=docEmphasis>IA</SPAN> and <SPAN class=docEmphasis>JA</SPAN> must be passed in separately.</P>
+<P class=docText><SPAN class=docEmphasis>DESC_A</SPAN> is the array descriptor for <SPAN class=docEmphasis>A</SPAN><A name=operands></A>. The parameters describing the matrix operands <SPAN class=docEmphasis>B</SPAN><A name=and></A> and <SPAN class=docEmphasis>C</SPAN><A name="those describing"></A> are analogous to those describing <SPAN class=docEmphasis>A</SPAN><A name="matrices and"></A>. In a truly object-oriented environment, matrices and <SPAN class=docEmphasis>DESC_A</SPAN><A name="this would"></A> would be synonymous. However, this would require language support and detract from portability.</P>
+<P class=docText><A name="and scalable"></A>Using message passing and scalable algorithms from the <A name=idx-CHP-14-1226></A><A name="increasing size"></A>ScaLAPACK library makes it possible to factor matrices of arbitrarily increasing size, given machines with more processors. By design, the library computes more than it communicates, so for the most part, data stays locally for processing and travels only occasionally across the interconnect network.</P>
+<P class=docText><A name="number and"></A>But the number and types of messages exchanged between processors can sometimes be hard to manage. The context associated with every distributed matrix lets implementations use separate "universes" for message passing. The use of separate communication contexts by distinct libraries (or distinct library invocations) such as the <A name=idx-CHP-14-1227></A><A name="to the"></A>PBLAS insulates communication internal to the library from external communication. When more than one descriptor array is present in the argument list of a routine in the PBLAS, the individual BLACS context entries must be equal. In other words, the PBLAS do not perform "inter-context" operations.</P>
+<P class=docText><A name="to LAPACK"></A>In the performance sense, ScaLAPACK did to LAPACK what LAPACK did to LINPACK: it broadened the range of <A name=idx-CHP-14-1228></A><A name="hardware where"></A>hardware where LU factorization (and other <A name=idx-CHP-14-1229></A><A name="terms of"></A>codes) could run efficiently. In terms of code elegance, the ScaLAPACK's changes were much more drastic: the same mathematical operation now required large amounts of tedious work. Both the users and the library writers were now forced into explicitly controlling data storage intricacies, because data locality became paramount for performance. The victim was the readability of the code, despite efforts to modularize the code according to the best software engineering practices of the day.</P></DIV></DIV>
+<p>&nbsp;</p><p>&nbsp;</p><!-- 仁·义 -->
+</body></html>

@@ -1,0 +1,586 @@
+<html><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<link href="styles/globalstyle.css" type="text/css" rel="stylesheet"/>
+<link title="medium" href="styles/two.css" type="text/css" rel="stylesheet"/>
+<script src="scripts/main.js" type="text/javascript" language="javascript"></script>
+<title>Section 12.2. The Bio::Graphics Design Process</title>
+</head><body>
+<DIV class=h3 style="MARGIN-TOP: 0px; PADDING-BOTTOM: 1em; WIDTH: 100%; PADDING-TOP: 0px"><SPAN>Growing Beautiful Code in BioPerl</SPAN><SPAN> &gt; The Bio::Graphics Design Process</SPAN></DIV>
+<DIV></DIV>
+<DIV>
+<DIV><A name=the_biographics_design_process></A>
+<H3 class=docSection1Title id=-100000>12.2. The Bio::Graphics Design Process</H3>
+<P class=docText><A name="not enamored"></A>I'm not enamored of formal design engineering; instead, I typically write out little snippets of pseudocode that describe how I want something to work (a "code story"), play a bit with input and output formats, do a bit of coding, and—if I'm not satisfied with how the system is fitting together—go back and rework the code story. For anything larger than a toy application, I implement little bits of the system and test them out in standalone programs before deciding whether to move forward with that part of the design. I keep my notes in a "stream of consciousness" text file, and commit code to my CVS repository often. I try to make all the code visually appealing and elegant. If it isn't elegant, something's wrong with the design, and I go back to the drawing board.<A name=idx-CHP-12-0891></A></P><A name=designing_how_the_developer_interacts_with_the_module></A>
+<H4 class=docSection2Title id=title-ID0EHHDK>12.2.1. Designing How the Developer Interacts with the Module</H4>
+<P class=docText><A name="task was"></A>My first design task was to figure out the flow of a typical Bio::Graphics application. I started with the code story shown in <A name=idx-CHP-12-0892></A><A class=docLink href="javascript:moveTo('basic_story_for_bioperlgraphics_use_pseudocode');">Example 12-1</A>.<A name=idx-CHP-12-0893></A></P><A name=basic_story_for_bioperlgraphics_use_pseudocode></A>
+<H5 class=docExampleTitle id=title-ID0EBIDK>Example 12-1. Basic story for BioPerl::Graphics use (pseudocode)</H5>
+<P>
+<TABLE cellSpacing=0 cellPadding=5 width=* border=1>
+<TBODY>
+<TR>
+<TD><PRE>1 use <A name=idx-CHP-12-0894></A>Bio::Graphics::Panel;
+
+2 @first_set_of_features  = get_features_somehow( );
+3 @second_set_of_features = get_more_features_somehow( );
+
+4 $panel_<A name=idx-CHP-12-0895></A>object = Bio::Graphics::Panel-&gt;new(panel_options...)
+5 $panel_object-&gt;add_track(\@first_set_of_features,
+                           track_options...);
+6 $panel_object-&gt;add_track(\@second_set_of_features,
+                          track_options...);
+
+7 print $panel_object-&gt;png;
+</PRE><BR></TD></TR></TBODY></TABLE></P>
+<P class=docText><A name="starts out"></A>The code story starts out by bringing in the main Bio::Graphics object class, Bio::Graphics:: Panel (line 1). This object, I reasoned, would hold configuration options for the image as a whole, such as the dimensions of the resulting diagram and its scale (base pairs per pixel), and would be the main object that users interact with.</P>
+<P class=docText><A name="story continues"></A>The code story continues with two calls to fetch arrays of sequence features (lines 2–3). In order to maintain independence from feature databases, I decided that <A name=idx-CHP-12-0896></A><A name="lists of"></A>Bio::Graphics would operate on lists of features that had already been retrieved from a database. Fortunately, BioPerl already supported a variety of <A name=idx-CHP-12-0897></A><A name="represented by"></A>annotation databases via a nicely generic interface. A sequence feature is represented by an interface called Bio::SeqFeatureI, which specifies a set of methods that all sequence features should support. The methods are mostly straightforward; for example, <TT><I>$feature-&gt;</I></TT><TT>start()</TT><A name="starting position"></A> gets the starting position of the feature, <TT><I>$feature-&gt;</I></TT><TT>end()</TT> gets its end position, and <TT><I>$feature-&gt;</I></TT><TT>get_SeqFeatures()</TT><A name="features from"></A> gets its sub-features. To retrieve features from a database, BioPerl has an interface called Bio::Seq-Feature::CollectionI, which provides a standard API for retrieving features sequentially or randomly via queries.</P>
+<P class=docText>The code story then calls <TT>Bio::Graphics::Panel-&gt;new()</TT><A name=calls></A> (line 4), creating a new panel object, and calls <TT>add_track()</TT><A name="twice "></A> twice (line 5–6). This adds two <A name=idx-CHP-12-0898></A><A name="the first"></A>tracks, one each for the first and second sets of features. Each call to <TT>add_track()</TT><A name="argument consisting"></A> takes an initial argument consisting of a reference to the array of features to add, followed by additional arguments controlling the appearance of the track.</P>
+<P class=docText><A name="step in"></A>The last step in the code story is to convert the panel into a PNG file and immediately print the result to standard output.</P>
+<P class=docText><A name="like a"></A>Initially this looked like a reasonable story, but as I thought about it further, I realized there were some basic deficiencies in the API. The biggest problem was that it forces the programmer to load all features into memory before beginning to construct the image. However, it is often convenient to read sequence features one at a time from a file or database. Several of the implementations of <A name=idx-CHP-12-0899></A>Bio::SeqFeature::CollectionI allow you to do this:</P>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedWidth>	$iterator = Bio::SeqFeature::CollectionI-&gt;get_seq_stream(@query_parameters);
+	while ($feature = $iterator-&gt;next_seq) {
+	    # do something with the feature
+	}
+
+
+					    </PRE><BR>
+<P class=docText>Another problem was that once you called <TT>$panel-&gt;add_track()</TT><A name=a></A>, you couldn't change the track's configuration settings. However, I could envision situations in which a <A name=idx-CHP-12-0900></A><A name="want to"></A>developer would want to add a bunch of tracks in advance, and then go back and change an earlier track configuration later.</P>
+<P class=docText><A name=that></A>Finally, it seemed to me that <TT>add_track()</TT><A name="forced the"></A> was too inflexible, in that it forced the developer to add the tracks in a fixed order (top to bottom). However, there should be a way to insert tracks at arbitrary positions.</P>
+<P class=docText><A name="These considerations"></A>These considerations mandated the creation of a Track object:</P><PRE>	$track1 = $panel_object-&gt;add_track(\@set_of_gene_features,
+	                                       track_options..);
+	$track2 = $panel_object-&gt;add_track(\@set_of_variation_features,
+	                                      track_options...);
+</PRE><BR>
+<P class=docText><A name="add features"></A>One could then add features to an existing track like this:</P><PRE>	$track1-&gt;add_features(feature1,feature2,feature3....)
+</PRE><BR>
+<P class=docText><A name="configuration this"></A>or change its configuration this way:</P><PRE>	$track1-&gt;configure(new_options)
+</PRE><BR>
+<P class=docText><A name="to the"></A>This led to the alternative code story shown in <A class=docLink href="javascript:moveTo('basic_story_for_bioperlgraphics_use_pseudocode');">Example 12-1</A>.</P><A name=story_for_bioperlgraphics_use_with_tracks_pseudocode></A>
+<H5 class=docExampleTitle id=title-ID0E3LDK>Example 12-2. Story for BioPerl::Graphics use with tracks (pseudocode)</H5>
+<P>
+<TABLE cellSpacing=0 cellPadding=5 width=* border=1>
+<TBODY>
+<TR>
+<TD><PRE>1 use <A name=idx-CHP-12-0901></A>Bio::Graphics::Panel;
+
+2 $panel_object = Bio::Graphics::Panel-&gt;new(panel_options...)
+3 $track1 = $panel_object-&gt;add_track(bump_true,other_track_options...);
+4 $track2 = $panel_object-&gt;add_track(bump_true,other_track_options...);
+
+5 $collection = Bio::SeqFeature::CollectionI-&gt;new(@args);
+6 $iterator   = $collection-&gt;get_seq_stream(@query_parameters);
+
+7 $genes=0; $variations=0;
+8 while ($feature = $iterator-&gt;next_seq) {
+
+9     if ($feature-&gt;method eq 'gene') {
+10         $track1-&gt;add_feature($feature);
+11         $genes++;
+
+12     } elsif ($feature-&gt;method eq 'variation') {
+13         $track2-&gt;add_feature($feature);
+14         $variations++;
+15     }
+16 }
+
+17 $track1-&gt;configure(bump_false) if $genes      &gt; 100;
+18 $track2-&gt;configure(bump_false) if $variations &gt; 100;
+
+19 print $panel_object-&gt;png;
+</PRE><BR></TD></TR></TBODY></TABLE></P>
+<P class=docText><A name="of the"></A>In this version of the story, we first create two tracks without providing any features up front (lines 3–4). We do, however, provide <TT>add_track()</TT><A name="set to"></A> with a set of options, including a "bump" option that is initially set to true. When <A name=idx-CHP-12-0902></A><A name="I posited"></A>designing this story, I posited that a bump option of true would activate collision control, while a bump option of false would turn collision control off.</P>
+<P class=docText><A name="feature collection"></A>We then create a feature collection object using BioPerl; ordinarily this will be connected to a database of some sort and initiate a query (lines 5–6), returning an iterator across the results. We then call <TT>$iterator-&gt;next_seq</TT><A name="that satisify"></A> repeatedly to return all features that satisify the query (lines 8–16). For each returned feature, we interrogate its type using a method from Bio::SeqFeatureI called <TT>method</TT><A name="If the"></A>. If the feature is of type <TT>gene</TT><A name=to></A>, we add it to <TT>track1</TT><A name="a counter"></A> and bump up a counter for genes. If the feature is of type <TT>variation</TT><A name="it to"></A>, we add it to <TT>track2</TT><A name="a different"></A> and bump up a different counter.</P>
+<P class=docText><A name="and variations"></A>After all features are added, we interrogate the number of genes and variations added. If the total number of either feature exceeds 100, we call the corresponding track's <TT>configure()</TT><A name="order to"></A> method in order to set the bump option to false (17–18). What this achieves is to turn on collision control <A name=idx-CHP-12-0903></A>for <A name=idx-CHP-12-0904></A><A name="manageable number"></A>tracks that contain a manageable number of features, so that overlapping features are moved up and down to avoid covering each other. Tracks with a large number of features, where collision control might create unreasonably tall tracks, have bumping set to false, so that overlapping features can be superimposed.</P><A name=reading_the_code_in_this_chapter></A>
+<P>
+<TABLE class=mm cellSpacing=1 cellPadding=8 width="90%" align=center border=0>
+<TBODY>
+<TR>
+<TD class=mm align=middle><B>READING THE CODE IN THIS CHAPTER</B></TD></TR>
+<TR>
+<TD bgColor=#eeeeee>
+<P class=docText><A name=idx-CHP-12-0905></A><A name="a language"></A>Bio::Graphics and BioPerl are written in Perl, a language which is deceptively similar to C or Java, but has many cryptic idiosyncrasies. If you don't know Perl, don't sweat it. Just read through the code examples to get a general sense of the logic of the <A name=idx-CHP-12-0906></A><A name="To help"></A>design. To help you understand what's going on, here's a quick <A name=idx-CHP-12-0907></A><A name="quirkier parts"></A>summary of the quirkier parts of Perl syntax:</P><A name=idx-CHP-12-0908></A><A name=idx-CHP-12-0909></A><A name=idx-CHP-12-0910></A><A name=idx-CHP-12-0911></A><A name=idx-CHP-12-0912></A><A name=I_indexterm12_tt263></A>
+<DL class=docList>
+<DT><BR>
+<P><SPAN class=docPubcolor><TT><I>$variable_name</I></TT> </SPAN></P></DT>
+<DD>
+<P class=docList><A name="that starts"></A>A variable name that starts with a dollar sign ($) is a scalar variable. It holds a single-valued string or number.</P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><TT><I>@variable_name</I></TT> </SPAN></P></DT>
+<DD>
+<P class=docList><A name="name that"></A>A variable name that starts with an at-sign (@) is an ordered array. It holds multiple strings or numbers, indexed by their numeric position in the array. When addressing a member of the array, one places the index in square brackets:<A name=idx-CHP-12-0908></A></P><PRE>	$foo[3] = 'element three';
+</PRE><BR>
+<P class=docList><A name="of the"></A>There's a $ in front of the variable name because the individual element is scalar.</P>
+<P class=docList><A name="list of"></A>Within subroutine and method definitions, a special array named @_ holds the list of arguments passed to the subroutine.</P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><TT><I>%variable_name</I></TT> </SPAN></P></DT>
+<DD>
+<P class=docList><A name="name that"></A>A variable name that starts with a percent sign (%) is an <A name=idx-CHP-12-0909></A><A name="strings or"></A>unordered hash. It holds multiple strings or numbers (the hash <SPAN class=docEmphasis>values</SPAN>) indexed by strings (the hash <SPAN class=docEmphasis>keys</SPAN><A name="pairs to"></A>). When assigning a list of key/value pairs to a hash, one uses this notation:<A name=idx-CHP-12-0910></A></P><PRE>	%clade = (monkey=&gt;'mammal',
+	          frog=&gt;'amphibian',
+	          gazelle=&gt;'mammal');
+</PRE><BR>
+<P class=docList><A name="When addressing"></A>When addressing a member of the hash, one places the key in curly braces:</P><PRE>	print "The clade of a monkey is ", $clade{monkey};
+</PRE><BR></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><TT><I>$object-&gt;method('arg1','arg2','arg3')</I></TT> </SPAN></P></DT>
+<DD>
+<P class=docList><A name="an object"></A>The -&gt; arrow indicates an object-oriented <A name=idx-CHP-12-0911></A><A name="is stored"></A>method call. The object is stored in the scalar variable <TT><I>$object</I></TT><A name="call takes"></A>. The method call takes zero or more arguments.<A name=idx-CHP-12-0912></A></P>
+<P class=docList><A name="no arguments"></A>If there are no arguments, the parentheses can be omitted, which looks weird to C and Java folk:</P><PRE>	<TT><I>$object-&gt;method;</I></TT>
+</PRE><BR>
+<P class=docList><A name="in a"></A>Within the definition of a method, the object is usually stored in a scalar named <TT>$self</TT><A name="is a"></A>, although this is a matter of coding style.<A name=I_indexterm12_tt263></A></P></DD></DL></TD></TR></TBODY></TABLE></P><BR><A name=setting_options></A>
+<H4 class=docSection2Title id=title-ID0E2SDK>12.2.2. Setting Options</H4>
+<P class=docText><A name="I hadn"></A>Up to this point I hadn't figured out how options would be set. I decided that for consistency with the BioPerl coding style, options should be passed as tag/value pairs in the format <TT><I>-option_name=&gt;option_value</I></TT><A name="would create"></A>. For example, the following method call would create a track with feature drawings 10 pixels high, a background color of blue, and collision control <TT>(bump)</TT><A name="turned on"></A> turned on:<A name=idx-CHP-12-0913></A></P><PRE>	$track1 = $panel_object&gt;add_track(\@features,
+	                                  -height    =&gt; 10,
+	                                  -bgcolor   =&gt; 'blue',
+	                                  -bump      =&gt; 1);
+</PRE><BR>
+<P class=docText><A name="be able"></A>Later on, one would be able to change any of these options by calling <TT>configure()</TT><A name="off collision"></A>. This example turns off collision control:</P><PRE>	$track1&gt;configure(-bump =&gt; 0);
+</PRE><BR>
+<P class=docText><A name="the power"></A>Eventually, I extended the power of track <A name=idx-CHP-12-0914></A><A name="making it"></A>configuration options by making it possible to use code references (a type of callback) as option values, but the first iteration of the <A name=idx-CHP-12-0915></A>module did not have this feature. I'll discuss it later in this chapter.</P>
+<P class=docText><A name="up with"></A>What configuration options should the track object support? I quickly came up with a small number of standard track options, the most important of which was <TT>glyph</TT>:</P><PRE>	-glyph =&gt; 'glyph_type'
+</PRE><BR>
+<P class=docText><A name="I wanted"></A>As described earlier, I wanted to be able to support a wide range of visual representations for features. The <TT>-glyph</TT><A name="way of"></A> option was the end developer's way of accessing this range of representations. For example <TT>-glyph=&gt;'box'</TT> should render features as simple rectangles, <TT>-glyph=&gt;'oval'</TT><A name="sized ovals"></A> should render features as appropriately sized ovals, and <TT>-glyph=&gt;'arrow'</TT><A name="should draw"></A> should draw arrows.</P>
+<P class=docText>In addition to <TT>-glyph</TT><A name="in the"></A>, other options included in the original <A name=idx-CHP-12-0916></A>design were:</P>
+<DL class=docList>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docPubcolor><SPAN class=docMonofont>-fgcolor</SPAN></SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList><A name="features rendered"></A>Foreground (line) color of features rendered in the track</P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docPubcolor><SPAN class=docMonofont>-bgcolor</SPAN></SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList><A name="of features"></A>Background (fill) color of features rendered in the track</P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docPubcolor><SPAN class=docMonofont>-bump</SPAN></SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList><A name="on collision"></A>Whether to turn on collision control</P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docPubcolor><SPAN class=docMonofont>-label</SPAN></SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList>Whether to print each feature's name above it</P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docPubcolor><SPAN class=docMonofont>-description</SPAN></SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList>Whether to print each feature's description below it</P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docPubcolor><SPAN class=docMonofont>-height</SPAN></SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList>The height of each feature</P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docPubcolor><SPAN class=docMonofont>-key</SPAN></SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList>A label for the track as a whole</P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docPubcolor><SPAN class=docMonofont>-tkcolor</SPAN></SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList>Background color for the track</P></DD></DL>
+<P class=docText>I was aware that fancy glyphs might have special-purpose <A name=idx-CHP-12-0917></A>options that the simple ones wouldn't, so I had to <A name=idx-CHP-12-0918></A><A name="list of"></A>design the code library in such a way that the list of <A name=idx-CHP-12-0919></A><A name=to></A>options passed to <TT>add_track()</TT> was extensible.</P>
+<P class=docText><A name="to take"></A>The Panel also needed to take options for such things as the desired image width and the conversion scale between pixels and base pairs. I made up a small number of panelspecific options that included:</P>
+<DL class=docList>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docPubcolor><SPAN class=docMonofont>-width</SPAN></SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList>Width of the image, in pixels</P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docPubcolor><SPAN class=docMonofont>-length</SPAN></SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList><A name="base pairs"></A>Length of the sequence segment, in base pairs</P></DD></DL>
+<P class=docText><A name="I could"></A>I could now flesh out the code story to show the specifics of each of the <A name=idx-CHP-12-0920></A>Bio::Graphics calls, as shown in <A class=docLink href="javascript:moveTo('detailed_story_for_bioperlgraphics_use_pseudocode');">Example 12-3</A>.</P><A name=detailed_story_for_bioperlgraphics_use_pseudocode></A>
+<H5 class=docExampleTitle id=title-ID0E51DK>Example 12-3. Detailed story for BioPerl::Graphics use (pseudocode)</H5>
+<P>
+<TABLE cellSpacing=0 cellPadding=5 width=* border=1>
+<TBODY>
+<TR>
+<TD>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedHeight>1 use Bio::Graphics::Panel;
+
+2 $panel_object = Bio::Graphics::Panel&gt;new(-width  =&gt; 800,
+                                           -length =&gt; 50000);
+3 $track1 = $panel_object-&gt;add_track(-glyph  =&gt; 'box',
+                                     -height =&gt; 12,
+                                     -bump   =&gt; 1,
+                                     -key    =&gt; 'Protein-coding Genes');
+
+4 $track2 = $panel_object-&gt;add_track(-glyph  =&gt; 'triangle',
+                                     -height =&gt; 6,
+                                     -bump   =&gt; 1,
+                                     -key    =&gt; 'Sequence Variants');
+
+5 $collection = Bio::SeqFeature::CollectionI-&gt;new(@args);
+6 $iterator   = $collection-&gt;get_seq_stream(@query_parameters);
+
+7 $genes=0; $variations=0;
+8 while ($feature = $iterator-&gt;next_seq) {
+
+9     if ($feature-&gt;method eq 'gene') {
+10         $track1-&gt;add_feature($feature);
+11         $genes++;
+
+12     } elsif ($feature-&gt;method eq 'variation') {
+13         $track2-&gt;add_feature($feature);
+14         $variations++;
+15     }
+16 }
+17 $track1-&gt;configure(-bump =&gt; 0) if $genes      &gt; 100;
+18 $track2-&gt;configure(-bump =&gt; 0) if $variations &gt; 100;
+
+19 print $panel_object-&gt;png;
+
+
+					    </PRE><BR></TD></TR></TBODY></TABLE></P><A name=choosing_object_classes></A>
+<H4 class=docSection2Title id=title-ID0EJ2DK>12.2.3. Choosing Object Classes</H4>
+<P class=docText>The last major <A name=idx-CHP-12-0921></A><A name="selecting the"></A>design task was selecting the main object classes that the developer would interact with. From the code story, it first seemed that there were two main classes:<A name=idx-CHP-12-0922></A><A name=idx-CHP-12-0923></A></P><A name=idx-CHP-12-0924></A><A name=idx-CHP-12-0925></A><A name=idx-CHP-12-0926></A>
+<DL class=docList>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docEmphasis>Bio::Graphics::Panel</SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList><A name="class would"></A>Objects of this class would represent the entire diagram and would typically be divided into a series of horizontal tracks. <A name=idx-CHP-12-0924></A><A name="responsible for"></A>Bio::Graphics::Panel would be responsible for positioning each track in its drawing area and for converting feature coordinates (expressed in base pairs) into glyph coordinates (expressed in pixels).<A name=idx-CHP-12-0925></A></P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docEmphasis>Bio::Graphics::Track</SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList><A name="class would"></A>Objects of this class would represent the tracks that make up the panel. Tracks would primarily be responsible for positioning and drawing glyphs.<A name=idx-CHP-12-0926></A></P></DD></DL>
+<P class=docText><A name="be objects"></A>What about glyphs? It seemed natural to me that glyphs should be objects and should contain the internal logic for drawing themselves. All glyphs should inherit from a generic <A name=idx-CHP-12-0927></A><A name="knew how"></A>Bio::Graphics::Glyph object that knew how to do basic drawing. As one called the Track object's <TT>add_feature()</TT><A name="glyphs by"></A> method, it would create new glyphs by calling the Glyph constructor like this:</P><PRE>	$glyph = Bio::Graphics::Glyph-&gt;new(-feature=&gt;$feature);
+</PRE><BR>
+<P class=docText><A name="draw itself"></A>Then, when the Track needed to draw itself, it would have a <TT>draw()</TT><A name="method similar"></A> method similar to this:</P><PRE>	sub draw {
+	  @glyphs = $self-&gt;get_list_of_glyphs( );
+
+	  for $glyph (@glyphs) {
+	      $glyph-&gt;draw;
+	  }
+
+	  # draw other stuff in the track, for example, its label
+	}
+</PRE><BR>
+<P class=docText><A name="by fetching"></A>This subroutine starts by fetching a list of the Glyph objects that we created during <TT>add_feature()</TT><A name="each glyph"></A>. It then invokes each glyph's <TT>draw()</TT><A name="have it"></A> method to have it draw itself. Finally, it draws stuff specific to the track, such as the track label.</P>
+<P class=docText><A name="more about"></A>As I thought more about Bio::Graphics::Glyph, I realized that they had to embody a bit of cleverness. Recall that a sequence feature can have an internal structure with subfeatures, sub-subfeatures, and so forth, and that each of the components of the internal structure needs to be laid out using collision control, and then drawn according to user preferences. This layout and draw behavior is very glyph-like, and so it seemed to make sense to let glyphs contain subglyphs in parallel to the feature/subfeature structure. The Glyph <TT>new()</TT> routine would look something like this:</P><PRE>	sub new {
+	  $self = shift; # get self
+	  $feature = shift; # get feature
+	  for $subfeature ($feature-&gt;get_SeqFeatures) {
+	      $subglyph = <A name=idx-CHP-12-0928></A>Bio::Graphics::Glyph-&gt;new(-feature=&gt;$subfeature);
+	      $self-&gt;add_subpart($subglyph);
+	  }
+	}
+</PRE><BR>
+<P class=docText><A name="add the"></A>For each of the feature's subfeatures we create a new subglyph, and add the subglyph to an internal list. Because we call <TT>new()</TT><A name="subfeature has"></A> recursively, if a subfeature has subfeatures itself, it creates another level of nested glyphs.</P>
+<P class=docText><A name="all its"></A>To draw itself and all its subglyphs, a top-level glyph's drawing routine would look something like this:</P><PRE>	sub draw {
+	  @subglyphs = $self-&gt;get_subparts( )
+
+	  for $subglyph (@subglyphs) {
+	     $subglyph-&gt;draw;
+	  }
+
+	  # draw ourself somehow
+	}
+</PRE><BR>
+<P class=docText>This bit of pseudocode calls <TT>get_subparts()</TT><A name="created by"></A> to get all the subglyphs created by our constructor. It loops through each subglyph and calls its <TT>draw()</TT><A name="The code"></A> methods. The code then does its own drawing.</P>
+<P class=docText><A name="was struck"></A>At this point, I was struck by the fact that the Glyph <TT>draw()</TT><A name="essentially identical"></A> pseudocode routine was essentially identical to the Track <TT>draw()</TT><A name="I realized"></A> method shown earlier. I realized that I could unify the two classes by simply arranging for <TT>add_track()</TT><A name="manage a"></A> to create and manage a single internal feature <A name=idx-CHP-12-0929></A>object associated with the track. Subsequent calls to <TT>add_feature()</TT> would in fact add subfeatures to the feature.</P>
+<P class=docText><A name="that this"></A>I fooled around with some test code and found out that this worked quite well. In addition to the benefits of removing redundant drawing code, I was able to consolidate all the code dealing with passing and configuring track and glyph options. So, tracks became a <A name=idx-CHP-12-0930></A>subclass of <TT>Bio::Graphics::Glyph</TT> named <TT>Bio::Graphics::Glyph::track</TT>, and the Panel's <TT>add_track()</TT><A name="up looking"></A> method ended up looking like this (simplified somewhat):<A name=idx-CHP-12-0931></A></P><PRE>	sub add_track {
+	   my $self = shift;
+	   my $features = shift;
+	   my @options = @_;
+	   my $top_level_feature = Bio::Graphics::Feature-&gt;new(-type=&gt;'track');
+	   my $track_glyph =
+	        Bio::Graphics::Glyph::track-&gt;new(\@options);
+
+	   if ($features) {
+	      $track_glyph-&gt;add_feature($_) foreach @$features;
+	   }
+
+	   $self-&gt;do_add_track($track_glyph);
+	   return $track_glyph;
+	}
+</PRE><BR>
+<P class=docText><A name="first code"></A>To accommodate the very first code story, in which the caller passes a list of features to <TT>add_track()</TT><A name="to be"></A>, I allow the first argument to be a list of features. In the actual code, I do runtime type checking on the first argument to distinguish a list of features from the first option. This allows the caller to call <TT>add_track()</TT><A name="either using"></A> either using the style from the first code story:</P><PRE>	$panel-&gt;add_track(\@list_of_features,@options)
+</PRE><BR>
+<P class=docText><A name="style from"></A>or using the style from the second code story:</P><PRE>	$panel-&gt;add_track(@options)
+</PRE><BR>
+<P class=docText><TT>add_track()</TT><A name="new feature"></A> then creates a new feature of type <TT>track</TT><A name="lightweight feature"></A> using a lightweight feature class that I wrote for <A name=idx-CHP-12-0932></A><A name="performance reasons"></A>Bio::Graphics (this was necessary for performance reasons; the standard BioPerl feature <A name=idx-CHP-12-0933></A><A name=for></A>objects are memory- and performance-intensive). This class is passed to the constructor for <TT>Bio::Graphics::Glyph::track</TT>.<A name=idx-CHP-12-0934></A></P>
+<P class=docText><A name="list of"></A>If the list of features was provided, the method loops through the list and calls the track glyph's <TT>add_feature()</TT> method.</P>
+<P class=docText>Lastly, the <TT>add_track()</TT><A name="to an"></A> method adds the track to an internal list of tracks that have been added to the panel and returns the track glyph to the caller.</P>
+<P class=docText>The track's <TT>add_feature()</TT><A name="subglyphs contained"></A> method is used to create subglyphs contained within the track. It is called either by the glyph constructor or later on by the developer when he calls <TT>$track-&gt;add_feature()</TT><A name="the code"></A>. Conceptually, the code looks like this:</P><PRE>	sub add_feature {
+	  my $self = shift;
+	  my $feature = shift;
+	  my $subglyph = Bio::Graphics::Glyph-&gt;new(-feature=&gt;$feature);
+	  $self-&gt;add_subpart($subglyph);
+	}
+</PRE><BR>
+<P class=docText><A name="constructor for"></A>I show the constructor for Bio::Graphics::Glyph being called in a hardcoded manner, but in practice there will be many different types of glyphs, so the choice of what subclass of Bio::Graphics::Glyph to create must be done at runtime based on options provided by the user. I discuss how I decided to do this in the next section.</P><A name=option_processing></A>
+<H4 class=docSection2Title id=title-ID0EGDEK>12.2.4. Option Processing</H4>
+<P class=docText><A name="in the"></A>The next step in the <A name=idx-CHP-12-0935></A><A name="was to"></A>design process was to figure out how glyphs would be created <A name=idx-CHP-12-0936></A><A name="and parcel"></A>dynamically. This was part and parcel of the general problem of handling user-configurable options. Recall from the code stories that I wanted options to be specified at track creation like this:<A name=idx-CHP-12-0937></A><A name=I_indexterm12_tt275></A><A name=I_indexterm12_tt276></A></P><PRE>	$panel-&gt;add_track(-glyph   =&gt; 'arrow',
+	                  -fgcolor =&gt; 'blue',
+	                  -height  =&gt; 22)
+</PRE><BR>
+<P class=docText>This example asks the panel to create a track containing <TT>arrow</TT><A name="As decided"></A> glyphs whose foreground color is blue and whose height is 22 pixels. As decided in the previous section, <TT>add_track()</TT><A name="a hardcoded"></A> will create a hardcoded track glyph of type <TT>Bio::Graphics::Glyph::track</TT> and pass these <A name=idx-CHP-12-0938></A>options to its <TT>new()</TT> constructor. Later, when the track glyph's <TT>add_feature()</TT><A name="create a"></A> method is called, it will create a new subglyph for each feature to display.<A name=idx-CHP-12-0939></A></P>
+<P class=docText>However, this leaves three unresolved questions:</P>
+<DIV style="FONT-WEIGHT: bold">
+<OL class=docList type=1>
+<LI>
+<DIV style="FONT-WEIGHT: normal">
+<P class=docList>How does the track glyph's <TT>add_feature()</TT><A name="of subglyph"></A> method figure out what type of subglyph to create?</P>
+<P class=docList><A name="We want"></A>We want to create different glyphs to display different types of features based on user preferences. Thus, in the previous example, the user wants to populate the track with a series of <TT>arrow</TT><A name="value of"></A> glyphs, based on the value of the <TT>-glyph</TT> option. The pseudocode for <TT>$track-&gt;add_feature()</TT><A name="section hardcoded"></A> in the previous section hardcoded a call to <TT>Bio::Graphics:: Glyph-&gt;new( )</TT><A name="the production"></A>, but in the production code, we would want to <A name=idx-CHP-12-0940></A><A name="appropriate glyph"></A>dynamically select the appropriate glyph subclass—for example, <TT>Bio::Graphics::Glyph::arrow</TT>.</P></DIV></LI>
+<LI>
+<DIV style="FONT-WEIGHT: normal">
+<P class=docList>How do these subglyphs know what type of sub-subglyphs to create?</P>
+<P class=docList><A name="represented by"></A>Recall that features can contain subfeatures, and that each subfeature is represented by a subglyph that is part of the main glyph. In the previous example, the track glyph first created a series of arrow glyphs based on the value of the <TT>-glyph</TT><A name="glyph was"></A> option. The arrow glyph was then responsible for creating any subglyphs that it needed; these subglyphs were responsible for creating sub-subglyphs, and so forth. How does the arrow glyph decide what type of subglyph to create?</P></DIV></LI>
+<LI>
+<DIV style="FONT-WEIGHT: normal">
+<P class=docList><A name="options passed"></A>How are the other options passed to the newly created glyph?</P>
+<P class=docList><A name="of the"></A>For instance, what object keeps track of the values for the <TT>-fgcolor</TT><A name=and></A> and <TT>-height</TT> options in the example?</P></DIV></LI></OL></DIV>
+<P class=docText><A name="glyph type"></A>Because choosing the glyph type is a special case of <A name=idx-CHP-12-0941></A><A name="decided to"></A>processing configuration options, I decided to attack this problem first. My first thought was that each glyph should have the responsibility of managing its options, but I quickly lost enthusiasm for this idea. Since a track may contain thousands of glyphs, it would be quite inefficient for each one to keep a complete copy of its configuration. I also thought of storing options in the <TT>Panel</TT><A name="feel right"></A> object, but this didn't feel right, since the panel has its own options that are distinct from track-specific options.</P>
+<P class=docText><A name="I came"></A>The solution that I came up with was to create a series of glyph "factories," of type <TT>Bio::Graphics::Glyph::Factory</TT>. Each time a track is created, the <TT>Panel</TT><A name="and subglyph"></A> creates a corresponding factory initialized with the caller's desired options. Each glyph and subglyph in the track contains a reference to the factory, and makes calls to the factory to get its options. Hence, if the panel has four tracks, there are four <TT>Bio::Graphics::Glyph::Factory</TT> objects.<A name=idx-CHP-12-0942></A></P>
+<P class=docText><A name="came up"></A>Once I came up with the idea of a factory, the problems of how to create the appropriate glyph and subglyph types became easy. The factory stores the user's choice of glyph (e.g., <TT>arrow</TT><A name="other options"></A>) along with all the other options. The factory has a method named <TT>make_glyph()</TT><A name="as needed"></A> that creates glyphs and subglyphs as needed, using the stored <A name=idx-CHP-12-0943></A><A name="option to"></A>option to decide what glyph subclass to use.</P>
+<P class=docText><A name="that all"></A>This choice implies that all glyphs contained inside the track share the same class. In other words, if a particular feature contains three nested levels of subfeatures, and the user has selected the <TT>arrow</TT><A name="for the"></A> glyph to use for the features in the track, then each arrow glyph contains arrow subglyphs, and these contain arrow sub-subglyphs. This sounds like a serious limitation, but it actually makes some sense. Typically, a glyph and its subparts act together, and making them all of the subclass allows one to keep all the relevant code in one place. Furthermore, glyphs can escape this restriction by overriding their <TT>new()</TT><A name="order to"></A> constructors in order to create subglyphs of whatever type they choose.</P>
+<P class=docText>The final <A name=idx-CHP-12-0944></A>Bio::Graphics::Glyph::<A name=idx-CHP-12-0945></A><A name="just a"></A>Factory class has just a few <A name=idx-CHP-12-0946></A>methods:</P><A name=idx-CHP-12-0947></A><A name=idx-CHP-12-0948></A><A name=idx-CHP-12-0949></A>
+<DL class=docList>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docEmphasis>The constructor</SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList>The constructor creates a new factory:</P>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedWidth>	$factory = <A name=idx-CHP-12-0947></A>Bio::Graphics::Glyph::Factory-&gt;new(-options=&gt; \%options, -panel =&gt; $panel);
+
+
+					    </PRE><BR>
+<P class=docList><A name="by the"></A>During construction, it takes a list of options passed to it by the panel's <TT>add_track()</TT><A name="stores them"></A> method and stores them internally. The factory can also hold a copy of the panel. I added this so that the factory could provide information about the panel, such as the panel's scale.</P>
+<P class=docList><A name="passed as"></A>The options are actually passed as a reference to a hash (a Perl dictionary of name/ value pairs). The Panel's <TT>add_track()</TT><A name="of turning"></A> method has the minor duty of turning the list of <TT><I>-option=&gt;$value</I></TT><A name="pairs passed"></A> pairs passed to it into a hash to pass to the factory's <TT>new()</TT> method.</P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docEmphasis>The</SPAN> <SPAN class=docPubcolor><SPAN class=docMonofont>option( )</SPAN></SPAN> <SPAN class=docEmphasis>method</SPAN></SPAN></P></DT>
+<DD>
+<P class=docList><A name="the factory"></A>Given an option name, the factory looks up its value and returns it:<A name=idx-CHP-12-0948></A></P><PRE>	<TT><I>$option_value</I></TT> = $factory-&gt;option <TT><I>('option_name')</I></TT>
+</PRE><BR>
+<P class=docList><A name="by this"></A>If no option by this name is set, <TT>option()</TT><A name="see whether"></A> looks to see whether there is a default value and returns that.</P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docEmphasis>The</SPAN> <SPAN class=docPubcolor><SPAN class=docMonofont>make_glyph( )</SPAN></SPAN> <SPAN class=docEmphasis>method</SPAN></SPAN></P></DT>
+<DD>
+<P class=docList><A name="of features"></A>Given a list of features, the factory creates a list of glyphs of the appropriate class:<A name=idx-CHP-12-0949></A></P><PRE>	@glyphs = $factory-&gt;make_glyph<TT><I>($feature1,$feature2,$feature3...)</I></TT>
+</PRE><BR></DD></DL>
+<P class=docText>Now we'll look at a simplified version of the Bio::Graphics::Glyph::Factory code:</P>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedHeight>	1 package Bio::Graphics::Glyph::Factory;
+
+	2 use strict;
+
+	3 my %GENERIC_OPTIONS = (
+	4                        bgcolor    =&gt; 'turquoise',
+	5                        fgcolor    =&gt; 'black',
+	6                        fontcolor  =&gt; 'black',
+	7                        font2color =&gt; 'turquoise',
+	8                        height     =&gt; 8,
+	9                        font       =&gt; 'gdSmallFont',
+	10                       glyph      =&gt; 'generic',
+	11                       );
+	12 sub new {
+	13   my $<A name=idx-CHP-12-0950></A>class = shift;
+	14   my %args  = @_;
+	15   my $<A name=idx-CHP-12-0951></A>options    = $args{-options};        # the options, as a hash reference
+	16   my $panel      = $args{-panel};
+	17   return bless {
+	18                 options =&gt; $options,
+	19                 panel   =&gt; $panel,
+	20                 },$class;
+	21 }
+
+	22 sub option {
+	23   my $self = shift;
+	24   my $option_name = shift;
+	25   $option_name    = lc $option_name; # all options are lower case
+	26   if (exists $self-&gt;{options}{$option_name}) {
+	27     return $self-&gt;{options}{$option_name};
+	28   } else {
+	29     return $GENERIC_OPTIONS{$option_name};
+	30   }
+	31 }
+
+	32 sub make_glyph {
+	33   my $self = shift;
+	34   my @result;
+
+	35   my $glyph_type  = $self-&gt;option('glyph');
+	36   my $glyph_class = '<A name=idx-CHP-12-0952></A>Bio::Graphics::Glyph::' . $glyph_type;
+	37   eval("require $glyph_class"!) unless $glyph_class-&gt;can('new');
+
+	38   for my $feature (@_) {
+	39     my $glyph = $glyph_class-&gt;new(-feature =&gt; $f,
+	40                                      -factory =&gt; $self);
+
+	41     push @result,$glyph;
+
+	42   }
+	43   return @result;
+	44 }
+
+	45 1;
+
+
+					    </PRE><BR>
+<P class=docText><A name="strict type"></A>I start by declaring the package name and turning on strict type checking (lines 1 and 2).</P>
+<P class=docText><A name="define a"></A>I then define a package-specific hash containing some generic glyph options to use as fallback defaults. Among the options are a default background color, a default height, and a default font (lines 3–11).</P>
+<P class=docText>The <TT>new()</TT><A name="from "></A> constructor reads its arguments from @_ (the Perl subroutine argument list) into a hash named <TT>%args</TT><A name="named arguments"></A>. It then looks for two named arguments, <TT>-options</TT><A name=and></A> and <TT>-panel</TT><A name="options into"></A>. It saves these options into an internal anonymous hash under the keys <TT>options</TT> and <TT>panel</TT><A name="using the"></A>, creates the object using the Perl <TT>bless</TT><A name="it "></A> function, and returns it (lines 12–21).</P>
+<P class=docText><A name=the></A>The definition of the <TT>option()</TT><A name="requested option"></A> method occupies lines 22–31. I read the factory object and the requested option name from the subroutine argument list. I then call the built-in <TT>lc()</TT><A name="put the"></A> function to put the <A name=idx-CHP-12-0953></A><A name="order to"></A>option name into lowercase, in order to shield the method's behavior from developers who forget whether an option is named <TT>-height</TT> or <TT>-Height</TT><A name="of a"></A>. I look for the existence of a like-named key in the options hash that I created in <TT>new()</TT><A name="and if"></A>, and if it is present, I return the corresponding value. Otherwise, I use the option name to index into <TT>%GENERIC_OPTIONS</TT><A name="If there"></A> and return that value. If there is no corresponding key in either the options hash or <TT>%GENERIC_OPTIONS</TT><A name="returning an"></A>, I end up returning an undefined value.</P>
+<P class=docText>The <TT>make_glyph()</TT><A name="how Perl"></A> method (lines 32–44) demonstrates how Perl can <A name=idx-CHP-12-0954></A><A name="module at"></A>dynamically load a module at runtime. I first look up the desired glyph type by using <TT>option()</TT> to look up the value of the <TT>glyph</TT> option. Note that the key/value pair <TT>glyph=&gt;'generic'</TT> is defined in <TT>%GENERIC_OPTIONS;</TT><A name="a specific"></A> this means that if the programmer neglected to ask for a specific glyph type, <TT>option()</TT> returns <TT>generic</TT>.</P>
+<P class=docText><A name="load the"></A>I now load the requested glyph <A name=idx-CHP-12-0955></A>class if needed. By convention, all <A name=idx-CHP-12-0956></A>subclasses of Bio:: Graphics::Glyph are named <TT>Bio::Graphics::Glyph:</TT><TT><I>subclass_name</I></TT>. The <TT>generic</TT><A name="class of"></A> glyph has a Perl class of <TT>Bio::Graphics::Glyph::generic</TT>, the <TT>arrow</TT> glyph lives in <TT>Bio::Graphics::Glyph:: arrow</TT><A name="string concatention"></A>, and so forth. I use a string concatention operation (.) to create the fully qualified class name. I then compile and load this class into memory using <TT><A name="require "></A>require $glyph_class</TT>. The call to <TT>require</TT><A name="a string"></A> is wrapped inside a string and passed to the Perl compiler using <TT>eval()</TT><A name="to prevent"></A>. This is done to prevent Perl from trying to invoke <TT>require()</TT><A name="time the"></A> at the time the Factory definition is compiled. To avoid unnecessary recompilation, I load the class only if I detect that its <TT>new()</TT><A name="already exist"></A> constructor does not already exist, indicating that the class is not yet loaded.<A name=idx-CHP-12-0957></A></P>
+<P class=docText><A name="invoking the"></A>I loop through each feature passed in the @_ subroutine argument array, invoking the selected glyph class's <TT>new()</TT><A name="created glyph"></A> constructor. Each newly created glyph is placed on an array, which I then return to the caller.</P>
+<P class=docText><A name="the module"></A>The last line of the module is 1, which ends all Perl modules for mostly historical reasons.</P>
+<P class=docText>Notice that the <A name=idx-CHP-12-0958></A><A name="has now"></A>design of the glyph constructor has now been extended so that each glyph is constructed using two named arguments: the feature and the factory object. By passing a copy of the factory, each glyph can get at its relevant options. Here are excerpts of two relevant methods from Bio::Graphics::Glyph:</P><A name=idx-CHP-12-0959></A><A name=idx-CHP-12-0960></A><A name=idx-CHP-12-0961></A>
+<DL class=docList>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docPubcolor><SPAN class=docMonofont>factory( )</SPAN></SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList><A name="This returns"></A>This returns the factory object that was passed to the glyph when it was constructed:<A name=idx-CHP-12-0959></A></P><PRE>	sub factory {
+	  my $self = shift;
+	  return $self-&gt;{factory};
+	}
+</PRE><BR></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docPubcolor><SPAN class=docMonofont>option( )</SPAN></SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList><A name="method to"></A>This is a pass-through method to get the value of a named option:</P><PRE>	sub option {
+	  my $self = shift;
+	  my ($option_name) = @_;
+	  return $self-&gt;factory-&gt;option($option_name);
+	}
+</PRE><BR>
+<P class=docList>The glyph calls <TT>factory()</TT><A name="factory and"></A> to get its factory and immediately calls the factory's <TT>option()</TT><A name="get the"></A> method to get the value of the option specified on the subroutine argument list.<A name=idx-CHP-12-0960></A><A name=idx-CHP-12-0961></A></P></DD></DL><A name=code_example></A>
+<H4 class=docSection2Title id=title-ID0ESTEK>12.2.5. Code Example</H4>
+<P class=docText><A name="all together"></A>To put it all together, <A class=docLink href="javascript:moveTo('a_script_that_uses_biographics');">Example 12-4</A> is a simple illustration of <A name=idx-CHP-12-0962></A>Bio::Graphics in action. Its output is shown in <A class=docLink href="javascript:moveTo('the_output_from_example_12-4');">Figure 12-2</A>.<A name=I_indexterm12_tt284></A><A name=I_indexterm12_tt285></A></P><A name=a_script_that_uses_biographics></A>
+<H5 class=docExampleTitle id=title-ID0EWUEK>Example 12-4. A script that uses Bio::Graphics</H5>
+<P>
+<TABLE cellSpacing=0 cellPadding=5 width=* border=1>
+<TBODY>
+<TR>
+<TD>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedHeight>1 #!/usr/bin/perl
+
+2 use strict;
+
+3 use Bio::Graphics; 
+4 use Bio::SeqFeature::Generic;
+5 my $bsg = 'Bio::SeqFeature::Generic';
+
+6 my $span         = $bsg-&gt;new(-start=&gt;1,-end=&gt;1000);
+
+7 my $test1_feat   = $bsg-&gt;new(-start=&gt;300,-end=&gt;700,
+8                                 -display_name=&gt;'Test Feature',
+9                                 -source_tag=&gt;'This is only a test');
+
+10 my $test2_feat = $bsg-&gt;new(-start=&gt;650,-end=&gt;800,
+11                               -display_name=&gt;'Test Feature 2');
+
+12 my $panel        = Bio::Graphics::Panel-&gt;new(-width=&gt;600,-length=&gt;$span-&gt;length,
+13                                                 -pad_left=&gt;12,-pad_right=&gt;12);
+
+14 $panel-&gt;add_track($span,-glyph=&gt;'arrow',-double=&gt;1,-tick=&gt;2);
+
+15 $panel-&gt;add_track([$test1_feat,$test2_feat],
+16                      -glyph =&gt; 'box',
+17                      -bgcolor =&gt; 'orange',
+18                      -font2color =&gt; 'red',
+19                      -height =&gt;20,
+20                      -label  =&gt; 1,
+21                      -description =&gt; 1,
+22   );
+
+23 print $panel-&gt;png;
+
+
+					    </PRE><BR></TD></TR></TBODY></TABLE></P><A name=the_output_from_example_12-4></A>
+<P>
+<CENTER>
+<H5 class=docFigureTitle>Figure 12-2. The output from <A class=docLink href="javascript:moveTo('a_script_that_uses_biographics');">Example 12-4</A></H5><IMG id="" height=88 alt="" src="images/the_biographics_design_process.0.png" width=500 border=0> </CENTER>
+<P></P><BR>
+<P class=docText>We load the <A name=idx-CHP-12-0963></A>Bio::Graphics library and one of BioPerl's standard Bio::SeqFeatureI classes, <A name=idx-CHP-12-0964></A><A name="of the"></A>Bio::SeqFeature::Generic (lines 3–4). In order to avoid repeatedly typing out the full name of the feature class, we store it in a variable (line 5).<A name=idx-CHP-12-0965></A></P>
+<P class=docText><A name="create three"></A>We then create three Bio::SeqFeature::Generic objects. One feature starts at position 1 and ends at position 1000, and will be used to draw a track containing the scale for the image (line 6). Two others will be features in a second track (lines 7–11).</P>
+<P class=docText><A name="it options"></A>We create the panel, passing it options that specify its width in pixels, its length in base pairs, and additional whitespace to pad the image with on the left and right (lines 12–13).</P>
+<P class=docText><A name="the image"></A>Next, we create a track for the image scale (line 14). It consists of a single feature, contained in the variable <TT>$span</TT><A name="and options"></A>, and options that select the <TT>arrow</TT> glyph, make the arrow double-headed <TT>(-double=&gt;1)</TT><A name="major and"></A>, and print both major and minor tick marks on the arrow <TT>(-tick=&gt;2)</TT>.</P>
+<P class=docText><A name="create a"></A>Now it's time to create a track for the two features, <TT>$test1_feat</TT> and <TT>$test2_feat</TT><A name="a second"></A>. We add a second track, this time specifying options to use the <TT>box</TT><A name="background color"></A> glyph with a background color of orange, a <A name=idx-CHP-12-0966></A><A name="selectively turn"></A>description font color of red, and a height of 20 pixels. We also selectively turn on the printing of the feature name and description (lines 15–22).</P>
+<P class=docText><A name="step is"></A>The last step is to call the panel object's <TT>png()</TT><A name="into a"></A> method to convert it into a PNG graphic, and to print the graphic to standard output where it can be saved to a file or piped to a graphics display program (line 23).</P><A name=dynamic_options></A>
+<H4 class=docSection2Title id=title-ID0EMXEK>12.2.6. Dynamic Options</H4>
+<P class=docText>The original Bio::Graphics::Glyph::Factory <A name=idx-CHP-12-0967></A><A name="idea of"></A>design was based around the idea of simple static option values. However, as I started working with the first version of Bio::Graphics, I realized that it would be handy to give the developer the ability to compute some options dynamically.<A name=idx-CHP-12-0968></A></P>
+<P class=docText><A name="For example"></A>For example, scattered along the genome are sites on the DNA where <A name=idx-CHP-12-0969></A><A name="a regulatory"></A>regulatory proteins attach. When a regulatory protein attaches to a specific site of the DNA (a process called "binding"), a nearby gene is typically turned on or off. Some binding sites are strong, while others are weak, and the strength of the DNA/protein <A name=idx-CHP-12-0970></A><A name="often of"></A>binding interaction is often of great importance to understanding how the regulatory interaction works.</P>
+<P class=docText><A name="a track"></A>To create a track showing the <A name=idx-CHP-12-0971></A><A name="strengths of"></A>positions and relative strengths of <A name=idx-CHP-12-0972></A><A name="of rectangles"></A>DNA/protein binding site features, a developer might want to show a series of rectangles. The start and end of each rectangle would show the span of the feature, and its background (interior) color would show the strength of binding: white for weak, pink for medium, and red for strong. Under the original design the developer could specify the background color for all features in the track like this:</P><PRE>	@features = get_features_somehow();
+	$panel-&gt;add_track(\@features,
+	                     -glyph =&gt; 'generic',
+	                     -bgcolor =&gt; 'pink');
+</PRE><BR>
+<P class=docText><A name="no way"></A>However, this offered no way to set the color on a feature-by-feature basis.</P>
+<P class=docText><A name="I went"></A>When I realized this limitation, I went back and extended the API to allow the values of options to be <TT>CODE</TT> references. These are <A name=idx-CHP-12-0973></A><A name="can define"></A>anonymous subroutines that Perl programmers can define in a variety of ways and are used in much the same way that function pointers are used in C. Here is a revised <TT>add_track()</TT><A name="call that"></A> call that takes advantage of this facility:</P><PRE>	$panel-&gt;add_track(\@features,
+	                     -glyph =&gt; 'box',
+	                     -bgcolor =&gt; sub {
+	                           my $feature = shift;
+	                           my $score = $feature-&gt;score;
+	                           return 'white' if $score &lt; 0.25;
+	                           return 'pink' if $score &lt; 0.75;
+	                           return 'red';
+	                     }
+	                   );
+</PRE><BR>
+<P class=docText><A name="the value"></A>This works as follows: the value of <TT>-bgcolor</TT> is an anonymous <TT>CODE</TT> reference created <A name=idx-CHP-12-0974></A>using the <TT>sub</TT><A name="subroutine name"></A> keyword without a subroutine name. The code is invoked at runtime each time the glyph wants to access the value of its <TT>bgcolor</TT><A name="receives the"></A> option. The subroutine receives the corresponding feature on its argument array and calls its <TT>score()</TT><A name="the binding"></A> method to get the binding-site strength. Assuming that the binding-site strength is represented as a floating-point number between 0 and 1.0, I return an option value of <TT>white</TT> if the score is less than 0.25, a value of <TT>pink</TT> if the score is greater than 0.25 but less than 0.75, and <TT>red</TT> if it is greater than 0.75. <A name=idx-CHP-12-0975></A><A class=docLink href="javascript:moveTo('colorizing_the_background_according_to_dynamically_changing_');">Figure 12-3</A> shows how this might look.</P><A name=colorizing_the_background_according_to_dynamically_changing_></A>
+<P>
+<CENTER>
+<H5 class=docFigureTitle>Figure 12-3. Colorizing the background according to dynamically changing values</H5><IMG id="" height=50 alt="" src="images/the_biographics_design_process.1.png" width=500 border=0> </CENTER>
+<P></P><BR>
+<P class=docText><A name="for every"></A>In the end, I made it possible to use code callbacks for every option passed to <TT>add_track()</TT>, including the <TT>-glyph</TT><A name="gives the"></A> option itself. This gives the end user an amazing amount of flexibility for customizing and extending the library. For example, it greatly simplifies "semantic zooming," or changing the appearance of tracks depending on the size of the region to display. The following callback turns off collision control when the region gets larger than 50,000 bp:</P><PRE>	-bump =&gt; sub {
+	     my ($feature,$option_name,$glyph) = @_; # get all args
+	     return $glyph-&gt;panel-&gt;length &lt; 50_000;
+	  }
+</PRE><BR>
+<P class=docText><A name="at a"></A>Let's now have a look at a simplified version of the revised option-<A name=idx-CHP-12-0976></A>processing code. First, I modified <A name=idx-CHP-12-0977></A>Bio::Graphics::Glyph::Factory to look like this:</P>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedWidth>	# In Bio::Graphics::Glyph::Factory
+	sub option {
+	  my $self = shift;
+	  my ($glyph,$option_name) = @_;
+	  $<A name=idx-CHP-12-0978></A>option_name   = lc $option_name; # all options are lowercase
+	  my $value;
+	  if (exists $self-&gt;{options}{$option_name}) {
+	     $value = $self-&gt;{options}{$option_name};
+	  } else {
+	     $value = $GENERIC_OPTIONS{$option_name};
+	  }
+
+	  return $value unless ref $value eq 'CODE';
+
+	  my $feature = $glyph-&gt;feature;
+	  my $eval = eval {$value-&gt;($feature,$option_name,$glyph)};
+	  warn "Error while evaluating "$option_name' option for glyph $glyph, feature
+	$feature: ",$@,"\n"
+	      if $@;
+
+	  return defined $eval &amp;&amp; $eval eq '*default*' ?
+	  $GENERIC_OPTIONS{$option_name}
+	                                               : $eval;
+	}
+
+
+					    </PRE><BR>
+<P class=docText><A name="arguments rather"></A>The method now takes two arguments rather than one. The first argument is the current glyph, while the second one is the option name as before. Once again, the factory looks first in its hash of track-specific options and then in the defaults hash (<TT>%GENERIC_OPTIONS</TT><A name="the option"></A>)if the option wasn't named in the track configuration.</P>
+<P class=docText><A name="comes after"></A>However, additional logic now comes after retrieving the option value. I call Perl's <TT>ref()</TT><A name="up the"></A> function to look up the data type of the contents of <TT>$value</TT><A name="is a"></A>. If it is a code reference, <TT>ref()</TT> returns the string <TT>CODE</TT>. If I don't get <TT>CODE</TT><A name="the value"></A>, I just return the value as before. Otherwise, I get the corresponding feature by calling the glyph's <TT>feature()</TT><A name="reference invocation"></A> method, and then invoke the code reference by using Perl's anonymous code reference invocation syntax:<A name=idx-CHP-12-0979></A></P><PRE>	<TT><I>$value-&gt;($feature,$option_name,$glyph)</I></TT>
+</PRE><BR>
+<P class=docText><A name="argument passed"></A>The first argument passed to the callback is the feature, the second is the option name, and the third is the glyph itself.</P>
+<P class=docText><A name="cause a"></A>Because the callback might cause a runtime error, I defend against this possibility by wrapping the entire call in an <TT>eval {}</TT><A name="error in"></A> block. In case of a fatal error in the callback, this will return an undefined value and place Perl error diagnostics into the special scalar $@. After invoking the callback, I check whether $@ is nonempty and, if so, print a nonfatal warning.</P>
+<P class=docText><A name="The last"></A>The last step is to return the value derived from the callback. I thought it would be useful for the callback to be able to indicate that it wanted to use the default value for the named option. The last line of code simply checks whether the callback returned the string <TT>*default*</TT><A name="value from"></A> and, if so, returns the value from the defaults hash.</P>
+<P class=docText><A name="change in"></A>To accommodate this change in the factory's <TT>option()</TT><A name="to make"></A> method, I had to make a corresponding change to <TT>Bio::Graphics::Glyph-&gt;option()</TT>:<A name=idx-CHP-12-0980></A><A name=idx-CHP-12-0981></A></P><PRE>	# In Bio::Graphics::Glyph
+	sub option {
+	  my $self = shift;
+	  my ($option_name) = @_;
+	  return $self-&gt;factory-&gt;option($self,$option_name);
+	}
+</PRE><BR>
+<P class=docText><A name="with callbacks"></A>As I worked with callbacks, I found them to be an increasingly useful concept. For example, I realized that callbacks handle semantic zooming very nicely. The gene glyph draws a detailed representation <A name=idx-CHP-12-0982></A><A name="when viewing"></A>of a protein-coding gene's internal structure, which is fine at high magnifications, but doesn't work when viewing very large regions, where the details become so small that they are indistinguishable. However, one can apply a callback to the <TT>-glyph</TT><A name="order to"></A> option in order to <A name=idx-CHP-12-0983></A><A name=rectangular></A>dynamically select the simple rectangular <TT>box</TT> glyph rather than the <TT>gene</TT><A name="smaller than"></A> glyph whenever the gene is smaller than five percent of the displayed region:</P><PRE>	$panel-&gt;add_track(
+	      -glyph =&gt; sub {
+	          my ($feature,$panel) = @_;
+	          return 'box' if $feature-&gt;length/$panel-&gt;length &lt; 0.05;
+	          return 'gene';
+	            },
+	      -height =&gt; 12,
+	      -font2color =&gt; 'red',
+	      -label_transcripts =&gt; 1,
+	      -label =&gt; 1,
+	      -description =&gt; 1,
+	     );
+</PRE><BR>
+<P class=docText><A name="Note that"></A>Note that the callback arguments for the <TT>-glyph</TT><A name="from other"></A> option are different from other options because this value is needed before the glyph is created. Instead of passing the feature, option name, and glyph, the callback passes the feature and the panel object.</P>
+<P class=docText><A name="callback feature"></A>As it happens, the callback feature became one of the most popular features of <A name=idx-CHP-12-0984></A><A name="went on"></A>Bio::Graphics. As time went on, I added callbacks liberally to other parts of the API, including when <A name=idx-CHP-12-0985></A><A name="to the"></A>processing options passed to the Panel constructor, and in the code that decides in what order to sort features from top to bottom.</P>
+<P class=docText>On various occasions, users found uses for callbacks that I hadn't <A name=idx-CHP-12-0986></A><A name="to specify"></A>anticipated. To give one nice example, I provided a way for users to specify a callback to do some direct drawing on the Panel after it drew its gridlines but before it drew the glyphs. Years later, an enterprising genome biologist figured out how to use this feature to create diagrams that compare the genomes of species whose chromosomes have undergone structural changes relative to one other. The gridline callback draws colored polygons that connect features of one chromosome to the corresponding features in the other (<A class=docLink href="javascript:moveTo('clever_use_of_biographics_callbacks_allows_related_features_');">Figure 12-4</A>).</P>
+<P class=docText><A name="also a"></A>There is also a dark side to the Bio::Graphics::Factory story. In my initial burst of enthusiasm, I added a slew of other features to the option-getting and -setting methods that I omitted from the code examples shown here. One feature was the ability to initialize a factory using a web-style cascading stylesheet. Another feature provided detailed information to each callback concerning the current glyph's relationship to other glyphs in its track or to the top-level glyph. In practice, these features have never been used and are now hanging around as dead code.<A name=I_indexterm12_tt295></A></P><A name=clever_use_of_biographics_callbacks_allows_related_features_></A>
+<P>
+<CENTER>
+<H5 class=docFigureTitle><A name="callbacks allows"></A>Figure 12-4. Clever use of Bio::Graphics callbacks allows related features on two chromosomes to be compared</H5><IMG id="" height=202 alt="" src="images/the_biographics_design_process.2.png" width=500 border=0> </CENTER>
+<P></P><BR></DIV></DIV>
+<p>&nbsp;</p><p>&nbsp;</p><!-- 仁·义 -->
+</body></html>

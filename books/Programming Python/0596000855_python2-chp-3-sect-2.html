@@ -1,0 +1,382 @@
+<html><head>
+<META http-equiv="Content-Type" content="text/html">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="3.2 Forking Processes"-->
+<link rel="STYLESHEET" type="text/css" href="FILES/style.css">
+<link rel="STYLESHEET" type="text/css" href="FILES/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+	<a href="0596000855_python2-CHP-3-SECT-1.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+	<a href="0596000855_python2-CHP-3-SECT-3.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr>
+<td valign="top"><A NAME="python2-CHP-3-SECT-2"></A>
+<H3 class="docSection1Title">3.2 Forking Processes</H3>
+
+<P class="docText">Forked processes are the traditional way to structure parallel tasks,
+and are a fundamental part of the Unix tool set. Forking is based on
+the notion of <span class="docEmphasis">copying</span> programs: when a program
+calls the fork routine, the operating system makes a new copy of that
+program in memory, and starts running that copy in parallel with the
+original. Some systems don't really copy the original program
+(it's an expensive operation), but the new copy works as if it
+was a literal copy.
+</P>
+
+<P class="docText">After a fork operation, the original copy of the program is called
+the <span class="docEmphasis">parent</span> process, and the copy created by
+<TT>os.fork</TT> is called the <span class="docEmphasis">child</span>
+process. In general, parents can make any number of children, and
+children can create child processes of their own -- all forked
+processes run independently and in parallel under the operating
+system's control. It is probably simpler in practice than
+theory, though; the Python script in <A class="docLink" HREF="#python2-CHP-3-EX-1">Example 3-1</A>
+forks new child processes until you type a "q" at the
+console.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-3-EX-1"></A>Example 3-1. PP2E\System\Processes\fork1.py </H5>
+<PRE># forks child processes until you type 'q'
+
+import os
+
+def child(  ):
+    print 'Hello from child',  os.getpid(  )
+    os._exit(0)  # else goes back to parent loop
+
+def parent(  ):
+    while 1:
+        newpid = os.fork(  )
+        if newpid == 0:
+            child(  )
+        else:
+            print 'Hello from parent', os.getpid(  ), newpid
+        if raw_input(  ) == 'q': break
+
+parent(  )</PRE>
+
+
+<P class="docText">Python's process forking tools, available in the
+<TT>os</TT> module, are simply thin wrappers over standard
+forking calls in the C library. To start a new, parallel process,
+call the <TT>os.fork</TT> built-in function. Because this
+function generates a copy of the calling program, it returns a
+different value in each copy: zero in the child process, and the
+process ID of the new child in the parent. Programs generally test
+this result to begin different processing in the child only; this
+script, for instance, runs the <TT>child</TT> function in
+child processes only.<sup class="docFootnote"><A class="docLink" HREF="#">[2]</A></sup>
+</P>
+<blockquote><p class="docFootnote"><sup><A NAME="">[2]</A></sup> At least in the current Python
+implementation, calling <TT>os.fork</TT> in a Python script
+actually copies the Python interpreter process (if you look at your
+process list, you'll see two Python entries after a fork). But
+since the Python interpreter records everything about your running
+script, it's okay to think of <TT>fork</TT> as
+copying your program directly. It really will, if Python scripts are
+ever compiled to binary machine code.</p></blockquote>
+
+<P class="docText">Unfortunately, this won't work on Windows today;
+<TT>fork</TT> is at odds with the Windows model, and a port
+of this call is still in the works. But because forking is ingrained
+into the Unix programming model, this script works well on Unix and
+Linux:
+</P>
+
+<PRE>[mark@toy]$ <B>python fork1.py</B>
+Hello from parent 671 672
+Hello from child 672
+
+Hello from parent 671 673
+Hello from child 673
+
+Hello from parent 671 674
+Hello from child 674
+<B>q</B></PRE>
+
+<P class="docText">These messages represent three forked child processes; the unique
+identifiers of all the processes involved are fetched and displayed
+with the <TT>os.getpid</TT> call. A subtle point: The
+<TT>child</TT> process function is also careful to exit
+explicitly with an <TT>os._exit</TT> call. We'll
+discuss this call in more detail later in this chapter, but if
+it's not made, the child process would live on after the
+<TT>child</TT> function returns (remember, it's just
+a copy of the original process). The net effect is that the child
+would go back to the loop in <TT>parent</TT> and start
+forking children of its own (i.e., the parent would have
+grandchildren). If you delete the exit call and rerun, you'll
+likely have to type more than one "q" to stop, because
+multiple processes are running in the <TT>parent</TT>
+function.
+</P>
+
+<P class="docText">In <A class="docLink" HREF="#python2-CHP-3-EX-1">Example 3-1</A>, each process exits very soon after
+it starts, so there's little overlap in time. Let's do
+something slightly more sophisticated to better illustrate multiple
+forked processes running in parallel. <A class="docLink" HREF="#python2-CHP-3-EX-2">Example 3-2</A>
+starts up 10 copies of itself, each copy counting up to 10 with a
+one-second delay between iterations. The
+<TT>time.sleep</TT> built-in call simply pauses the calling
+process for a number of seconds (pass a floating-point value to pause
+for fractions of seconds).
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-3-EX-2"></A>Example 3-2. PP2E\System\Processes\fork-count.py </H5>
+<PRE>############################################################
+# fork basics: start 10 copies of this program running in 
+# parallel with the original; each copy counts up to 10
+# on the same stdout stream--forks copy process memory, 
+# including file descriptors; fork doesn't currently work 
+# on Windows: use os.spawnv to start programs on Windows 
+# instead; spawnv is roughly like a fork+exec combination;
+############################################################
+
+import os, time
+
+def counter(count):
+    for i in range(count): 
+        time.sleep(1)
+        print '[%s] =&gt; %s' % (os.getpid(  ), i)
+
+for i in range(10):
+    pid = os.fork(  )
+    if pid != 0:
+        print 'Process %d spawned' % pid
+    else:
+        counter(10)
+        os._exit(0)
+
+print 'Main process exiting.'</PRE>
+
+
+<P class="docText">When run, this script starts 10 processes immediately and exits. All
+10 forked processes check in with their first count display one
+second later, and every second thereafter. Child processes continue
+to run, even if the parent process that created them terminates:
+</P>
+
+<PRE>mark@toy]$ <B>python fork-count.py </B>
+Process 846 spawned
+Process 847 spawned
+Process 848 spawned
+Process 849 spawned
+Process 850 spawned
+Process 851 spawned
+Process 852 spawned
+Process 853 spawned
+Process 854 spawned
+Process 855 spawned
+Main process exiting.
+[mark@toy]$ 
+[846] =&gt; 0
+[847] =&gt; 0
+[848] =&gt; 0
+[849] =&gt; 0
+[850] =&gt; 0
+[851] =&gt; 0
+[852] =&gt; 0
+[853] =&gt; 0
+[854] =&gt; 0
+[855] =&gt; 0
+[847] =&gt; 1
+[846] =&gt; 1
+<I> ...more output deleted...</I></PRE>
+
+<P class="docText">The output of all these processes shows up on the same screen,
+because they all share the standard output stream. Technically, a
+forked process gets a copy of the original process's global
+memory, including open file descriptors. Because of that, global
+objects like files start out with the same values in a child process.
+But it's important to remember that global memory is copied,
+not shared -- if a child process changes a global object, it
+changes its own copy only. (As we'll see, this works
+differently in threads, the topic of the next section.)
+</P>
+
+<A NAME="python2-CHP-3-SECT-2.1"></A>
+<H4 class="docSection2Title">3.2.1 The fork/exec Combination</H4>
+
+<P class="docText">Examples <A class="docLink" HREF="#python2-CHP-3-EX-1">Example 3-1</A> and <A class="docLink" HREF="#python2-CHP-3-EX-2">Example 3-2</A> child processes simply ran a function within
+the Python program and exited. On Unix-like platforms, forks are
+often the basis of starting independently running programs that are
+completely different from the program that performed the
+<TT>fork</TT> call. For instance, <A class="docLink" HREF="#python2-CHP-3-EX-3">Example 3-3</A> forks new processes until we type
+"q" again, but child processes run a brand new program
+instead of calling a function in the same file.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-3-EX-3"></A>Example 3-3. PP2E\System\Processes\fork-exec.py </H5>
+<PRE># starts programs until you type 'q'
+
+import os
+
+parm = 0
+while 1:
+    parm = parm+1
+    pid = os.fork(  )
+    if pid == 0:                                             # copy process
+        os.execlp('python', 'python', 'child.py', str(parm)) # overlay program
+        assert 0, 'error starting program'                   # shouldn't return
+    else:
+        print 'Child is', pid
+        if raw_input(  ) == 'q': break</PRE>
+
+
+<P class="docText">If you've done much Unix development, the
+<TT>fork</TT>/<TT>exec</TT> combination will
+probably look familiar. The main thing to notice is the
+<TT>os.execlp</TT> call in this code. In a nutshell, this
+call <span class="docEmphasis">overlays</span> (i.e., replaces) the program
+running in the current process with another program. Because of that,
+the <span class="docEmphasis">combination</span> of <TT>os.fork</TT>
+and <TT>os.execlp</TT> means start a new process, and run a
+new program in that process -- in other words, launch a new
+program in parallel with the original program.
+</P>
+
+<A NAME="python2-CHP-3-SECT-2.1.1"></A>
+<H5 class="docSection3Title">3.2.1.1 os.exec call formats</H5>
+
+<P class="docText">The arguments to <TT>os.execlp</TT> specify the program to
+be run by giving command-line arguments used to start the program
+(i.e., what Python scripts know as <TT>sys.argv</TT>). If
+successful, the new program begins running and the call to
+<TT>os.execlp</TT> itself never returns (since the original
+program has been replaced, there's really nothing to return
+to). If the call does return, an error has occurred, so we code an
+<TT>assert</TT> after it that will always raise an
+exception if reached.
+</P>
+
+<P class="docText">There are a handful of <TT>os.exec</TT> variants in the
+Python standard library; some allow us to configure environment
+variables for the new program, pass command-line arguments in
+different forms, and so on. All are available on both Unix and
+Windows, and replace the calling program (i.e., the Python
+interpreter). <TT>exec</TT> comes in eight flavors, which
+can be a bit confusing unless you generalize:
+</P>
+
+<DL class="docList">
+<DT><span class="docPubcolor"><span class="docPubcolor"><span class="docMonofont">os.execv(</span></span> <TT><I>program,</I></TT> <TT><I>commandlinesequence</I></TT><span class="docPubcolor"><span class="docMonofont">)</span></span> </span></DT>
+<DD>
+<P class="docList">The basic "v" <TT>exec</TT> form is passed an
+executable program's name, along with a list or tuple of
+command-line argument strings used to run the executable (that is,
+the words you would normally type in a shell to start a program).
+</P>
+</DD><DT><span class="docPubcolor"><span class="docPubcolor"><span class="docMonofont">os.execl(</span></span> <TT><I>program,</I></TT> <TT><I>cmdarg1,</I></TT> <TT><I>cmdarg2,...</I></TT> <TT><I>cmdargN</I></TT><span class="docPubcolor"><span class="docMonofont">)</span></span> </span></DT>
+<DD>
+<P class="docList">The basic "l" <TT>exec</TT> form is passed an
+executable's name, followed by one or more command-line
+arguments passed as individual function arguments. This is the same
+as <TT>os.execv(</TT><TT><I>program,</I></TT>
+<TT>(</TT><TT><I>cmdarg1,</I></TT>
+<TT><I>cmdarg2,...</I></TT><TT>))</TT>.
+</P>
+</DD><DT><span class="docPubcolor"><span class="docPubcolor"><span class="docMonofont">os.execlp</span></span>, <span class="docPubcolor"><span class="docMonofont">os.execvp</span></span></span></DT>
+<DD>
+<P class="docList">Adding a "p" to the <TT>execv</TT> and
+<TT>execl</TT> names means that Python will locate the
+executable's directory using your system search-path setting
+(i.e., PATH).
+</P>
+</DD><DT><span class="docPubcolor"><span class="docPubcolor"><span class="docMonofont">os.execle</span></span>, <span class="docPubcolor"><span class="docMonofont">os.execve</span></span></span></DT>
+<DD>
+<P class="docList">Adding an "e" to the <TT>execv</TT> and
+<TT>execl</TT> names means an extra, <span class="docEmphasis">last</span>
+argument is a dictionary containing shell environment
+variables to send to the program.
+</P>
+</DD><DT><span class="docPubcolor"><span class="docPubcolor"><span class="docMonofont">os.execvpe</span></span>, <span class="docPubcolor"><span class="docMonofont">os.execlpe</span></span></span></DT>
+<DD>
+<P class="docList">Adding both "p" and "e" to the basic
+<TT>exec</TT> names means to use the search-path,
+<span class="docEmphasis">and</span> accept a shell environment settings
+dictionary.
+</P>
+</DD>
+</DL>
+
+<P class="docText">So, when the script in <A class="docLink" HREF="#python2-CHP-3-EX-3">Example 3-3</A> calls
+<TT>os.execlp</TT>, individually passed parameters specify
+a command line for the program to be run on, and the word
+"python" maps to an executable file according to the
+underlying system search-path setting ($PATH). It's as if we
+were running a command of the form <TT>python</TT>
+<TT>child.py</TT> <TT>1</TT> in a shell, but with
+a different command-line argument on the end each time.
+</P>
+
+
+
+<A NAME="python2-CHP-3-SECT-2.1.2"></A>
+<H5 class="docSection3Title">3.2.1.2 Spawned child program</H5>
+
+<P class="docText">Just as when typed at a shell, the string of arguments passed to
+<TT>os.execlp</TT> by the <TT>fork-exec</TT>
+script in <A class="docLink" HREF="#python2-CHP-3-EX-3">Example 3-3</A> starts another Python program
+file, shown in <A class="docLink" HREF="#python2-CHP-3-EX-4">Example 3-4</A>.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-3-EX-4"></A>Example 3-4. PP2E\System\Processes\child.py </H5>
+<PRE>import os, sys
+print 'Hello from child', os.getpid(  ), sys.argv[1]</PRE>
+
+
+<P class="docText">Here is this code in action on Linux. It doesn't look much
+different from the original <I>fork1.py</I>, but
+it's really running a new <span class="docEmphasis">program</span> in each
+forked process. The more observant readers may notice that the child
+process ID displayed is the same in the parent program and the
+launched <I>child.py</I>
+program -- <TT>os.execlp</TT> simply overlays a program
+in the same process:
+</P>
+
+<PRE>[mark@toy]$ <B>python fork-exec.py</B>
+Child is 1094
+Hello from child 1094 1
+
+Child is 1095
+Hello from child 1095 2
+
+Child is 1096
+Hello from child 1096 3
+<B>q</B></PRE>
+
+<P class="docText">There are other ways to start up programs in Python, including the
+<TT>os.system</TT> and <TT>os.popen</TT> we met
+in <A class="docLink" HREF="0596000855_python2-CHP-2.html#python2-CHP-2">Chapter 2</A> (to start shell command lines), and
+the <TT>os.spawnv</TT> call we'll meet later in this
+chapter (to start independent programs on Windows); we further
+explore such process-related topics in more detail later in this
+chapter. We'll also discuss additional process topics in later
+chapters of this book. For instance, forks are revisited in <A class="docLink" HREF="0596000855_python2-CHP-10.html#python2-CHP-10">Chapter 10</A>, to deal with "zombies" -- dead
+processes lurking in system tables after their demise.
+</P>
+
+
+
+
+<a href="0596000855_"><img src="FILES/pixel.gif" width="1" height="1" border="0"></a><ul></ul>
+</td>
+</tr>
+</table>
+<td></td>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+          <a href="0596000855_python2-CHP-3-SECT-1.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+          <a href="0596000855_python2-CHP-3-SECT-3.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+</body></html>

@@ -1,0 +1,183 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
+<title>14.4 An improvement on controllable handles</title>
+<link rel="stylesheet" type="text/css" href="./acc.css" />
+</head>
+
+<body>
+<div class="prevnext">
+<a href="91.htm"><img src="images/Prev1.gif" /></a>&nbsp;&nbsp;<a href="93.htm"><img src="images/Next1.gif" /></a>
+</div>
+<h3>14.4 An improvement on controllable handles</h3>
+<p>Useful as our controllable handle might be, it doesn't quite do all we want. For example, 
+suppose we want to use it to reimplement the <code>Str</code> class from Chapter 12. As we saw in 
+&sect;12.3.4/219, we implicitly copy a lot of characters to form the new <code>Str</code>s that result from 
+concatenating two existing <code>Str</code> objects. By reference-counting the <code>Str</code> class, we might 
+think that we can avoid at least some of these copies:</p>
+<div class="prebox"><pre>
+// <i>does this version work? </i>
+class Str {
+    friend std::istream&amp; operator&gt;&gt;(std::istream&amp;, Str&amp;);
+public:
+    Str&amp; operator+=(const Str&amp; s) {
+        data.make_unique();
+        std::copy(s.data-&gt;begin(), s.data-&gt;end(),
+                  std::back_inserter(*data));
+        return *this;
+    }
+
+    // <i>interface as before</i>
+    typedef Vec&lt;char&gt;::size_type size_type;
+
+    // <i>reimplement constructors to create</i> Ptrs
+    Str(): data(new Vec&lt;char&gt;) {  }
+    Str(const char* cp): data(new Vec&lt;char&gt;) {
+        std::copy(cp, cp + std::strlen(cp),
+                  std::back_inserter(*data));
+    }
+
+    Str(size_type n, char c): data(new Vec&lt;char&gt;(n, c)) { }
+    template&lt;class In&gt; Str(In i, In j): data(new Vec&lt;char&gt;) {
+        std::copy(i, j, std::back_inserter(*data));
+    }
+
+    // <i>call make_unique as necessary</i>
+    char&amp; operator[](size_type i) {
+        data.make_unique();
+        return (*data)[i];
+    } 
+    const char&amp; operator[](size_type i) const { return (*data)[i]; }
+    size_type size() const { return data-&gt;size(); }
+private:
+    // <i>store a Ptr to a </i>vector
+    Ptr&lt; Vec&lt;char&gt; &gt; data;
+};
+// <i>as implemented in &sect;12.3.2/216 and &sect;12.3.3/219</i>
+std::ostream&amp; operator&lt;&lt;(std::ostream&amp;, const Str&amp;);
+Str operator+(const Str&amp;, const Str&amp;);
+</pre></div>
+<p>We have preserved the interface to <code>Str</code>, but we have fundamentally changed the implementation. 
+Instead of holding a <code>vector</code> directly in each <code>Str</code> object, we store a <code>Ptr</code> to the 
+<code>vector</code>. This design allows multiple <code>Str</code>s to share the same underlying character data. 
+The constructors initialize this <code>Ptr</code> by allocating a new <code>vector</code> initialized with the appropriate 
+values. The code for the operations that read, but do not change, <code>data</code> are 
+unchanged from our previous version. Of course, these operations now operate on a <code>Ptr</code>, 
+so there is an indirection through the pointer stored in the <code>Ptr</code> to get at the underlying 
+characters that make up the <code>Str</code>. The interesting operations are the ones that change the 
+<code>Str</code>, such as the input operator, the compound concatenation operator, and the 
+non<code>const</code> version of the subscript operator.</p>
+<p>For example, look at the implementation of <code>Str::operator+=</code>. It wants to append 
+data to the underlying <code>vector</code>, so it calls <code>data.make_unique()</code>. Once it has done so, 
+the <code>Str</code> object has its own copy of the underlying data, which it can modify freely.</p>
+<h4>14.4.1 Copying types that we can't control</h4>
+<p>Unfortunately, the definition of <code>make_unique</code> has a serious problem:</p>
+<div class="prebox"><pre>
+template&lt;class T&gt;
+void Ptr&lt;T&gt;::make_unique()
+{
+    if (*refptr != 1) {
+        --*refptr;
+        refptr = new size_t(1);
+        p = p ? p-&gt;clone() : 0;       // <i>here is the problem</i>
+    }
+}
+</pre></div>
+<p>Look at the call to <code>p-&gt;clone</code>. Because we are using a <code>Ptr&lt; vector&lt;char&gt; &gt;</code>, this call 
+will try to call the <code>clone</code> function that is a member of <code>vector&lt;char&gt;</code>. Unfortunately, no 
+such function exists!</p>
+<p>Yet the <code>clone</code> function has to be a member of the class to which we are attaching a 
+<code>Ptr</code>, because only in that way can it be a <code>virtual</code> function. In other words, making 
+<code>clone</code> a member is critically important to making it possible for <code>Ptr</code> to work across all 
+members of an inheritance hierarchy; yet doing so is impossible, because we can't change 
+the definition of the <code>Vec</code> class. That class is designed to implement a subset of the interface 
+to the standard <code>vector</code> class. If we add a <code>clone</code> member, we'll no longer have a 
+subset because we'll have added a member that <code>vector</code> does not have. What can we do?</p>
+<p>Solutions to tough problems such as this one often involve what we jokingly call 
+the fundamental theorem of software engineering: <i>All problems can be solved by introducing an 
+extra level of indirection. </i>The problem is that we are trying to call a member function that 
+does not exist, and we have no way to cause the member function to exist. The solution, 
+then, is not to call the member function directly but to define an intermediary global function 
+that we can both call and create. We will still call this new function <code>clone</code></p>
+<div class="prebox"><pre>
+template&lt;class T&gt; T* clone(const T* tp)
+{
+    return tp-&gt;clone();
+}
+</pre></div>
+<p>and change our <code>make_unique</code> member to call it</p>
+<div class="prebox"><pre>
+template&lt;class T&gt;
+void Ptr&lt;T&gt;::make_unique()
+{
+    if (*refptr != 1) {
+        --*refptr;
+        refptr = new size_t(1);
+        p = p ? clone(p): 0;   //<i> call the global (not member) version of </i>clone
+    }
+}
+</pre></div>
+<p>It should be clear that introducing this intermediary function does not change the behavior 
+of <code>make_unique</code>. It still calls <code>clone</code>, which still calls the <code>clone</code> member of the object 
+that is being copied. However, <code>make_unique</code> now works through a level of indirection:</p>
+<p>It calls the nonmember <code>clone</code> function, which in turn calls the <code>clone</code> member for 
+the object to which p points. For classes such as <code>Student_info</code> that define <code>clone</code>, this indirection 
+buys us nothing. But for classes such as <code>Str</code> that hold <code>Ptr</code>s to types that do not 
+provide a <code>clone</code> function, the indirection is exactly what we need to make the whole 
+thing work. For these latter types, we can define yet another intermediary function:</p>
+<div class="prebox"><pre>
+// <i>the key to making </i>Ptr&lt; Vec&lt;char&gt; &gt; <i>work</i>
+template&lt;&gt;
+Vec&lt;char&gt;* clone(const Vec&lt;char&gt;* vp)
+{
+    return new Vec&lt;char&gt;(*vp);
+}
+</pre></div>
+<p>The use of <code>template&lt;&gt;</code> at the beginning of this function indicates that the function is a 
+<i><b>template specialization</b>. </i>Such specializations define a particular version of a template function 
+for the specific argument type. By defining this specialization, we are saying that 
+<code>clone</code> behaves differently when we give it a pointer to a <code>Vec&lt;char&gt;</code> than it behaves 
+when we give it any other pointer type. When we pass <code>clone</code> a <code>Vec&lt;char&gt;*</code> argument, 
+the compiler will use this specialized version of <code>clone</code>. When we pass other types of 
+pointers, it will instantiate the general template form of <code>clone</code>, which calls the member 
+<code>clone</code> for the pointer that it was passed. Our specialized version uses the <code>Vec&lt;char&gt;</code> 
+copy constructor to construct a new <code>Vec&lt;char&gt;</code> from the one that we gave it. It is true 
+that this specialization of <code>clone</code> does not offer virtual behavior, but we do not need it to 
+do so because there are no classes derived from <code>Vec</code>.</p>
+<p>What we have done, then, is to moderate our reliance on the <code>clone</code> member by recognizing 
+that the member might not exist. By introducing the extra indirection, we have 
+made it possible to specialize the <code>clone</code> template to do whatever is appropriate to copy 
+an object of a particular class, be it to use a <code>clone</code> member, to call a copy constructor, or 
+something else entirely. In the absence of a specialization, the <code>Ptr</code> class will use the 
+<code>clone</code> member, but it will do so only if there is a call to <code>make_unique</code>. In other words</p>
+<ul>
+<li>If you use <code>Ptr&lt;T&gt;</code> but you don't use <code>Ptr&lt;T&gt;::make_unique</code>, then it doesn't matter 
+whether <code>T::clone</code> is defined.</li>
+<li>If you use <code>Ptr&lt;T&gt;::make_unique</code>, and <code>T::clone</code> is defined, <code>make_unique</code> will 
+use <code>T::clone</code>.</li>
+<li>If you use <code>Ptr&lt;T&gt;::make_unique</code>, and you don't want to use <code>T::clone</code> (perhaps 
+because it doesn't exist), you can specialize <code>clone&lt;T&gt;</code> to do whatever you want.</li>
+</ul>
+<p>The extra indirection has made it possible to control the behavior of <code>Ptr</code> in great detail. 
+All that remains is the hard part—deciding what you wanted to do in the first place.</p>
+<h4>14.4.2 When is a copy necessary?</h4>
+<p>One last part of this example is worth reviewing in detail. Look back at the definitions of 
+the two versions of <code>operator[]</code>. One of them calls <code>data.make_unique</code>; the other 
+doesn't. Why the difference?</p>
+<p>The difference relates to whether the function is a <code>const</code> member. The second version 
+of <code>operator[]</code> is a <code>const</code> member function, which means that it promises not to change 
+the contents of the object. It keeps this promise by returning a <code>const char&amp;</code> to its caller. 
+Therefore, there is no harm in sharing its underlying <code>Vec&lt;char&gt;</code> object with other <code>Str</code> 
+objects. After all, the user can't use the value obtained to change the value of the <code>Str</code>.</p>
+<p>In contrast, the first version of <code>operator[]</code> returns a <code>char&amp;</code>, which means that a user 
+could use this return value to change the contents of the <code>Str</code>. If the user does so, we want 
+to limit the change to this <code>Str</code> and not propagate the change to any other <code>Str</code>s that might 
+happen to share the underlying <code>Vec</code>. We defend against the possibility of changing the 
+value of any other <code>Str</code> objects by calling <code>make_unique</code> on the <code>Ptr</code> before returning a reference 
+to a character of the <code>Vec</code>.</p>
+<div class="prevnext">
+<a href="91.htm"><img src="images/Prev1.gif" /></a>&nbsp;&nbsp;<a href="93.htm"><img src="images/Next1.gif" /></a>
+</div>
+</body>
+</html>

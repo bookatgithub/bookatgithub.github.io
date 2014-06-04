@@ -1,0 +1,159 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>10.9 Cache Array Routing Protocol</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="squid-CHP-10-SECT-8.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="squid-CHP-10-SECT-10.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="squid-CHP-10-SECT-9"></A>
+<H3 class="docSection1Title">10.9 Cache Array Routing Protocol</H3>
+
+<P class="docText">CARP is an algorithm <A NAME="squid-CHP-10-ITERM-1676"></A>that partitions
+<I>URI-space</I> among a group of caching proxies. In
+other words, each URI is assigned to one of the caches. CARP
+maximizes hit ratios and minimizes duplication of objects among the
+group of caches. The protocol consists of two major components: a
+Routing Function and a Proxy Array Membership Table. Unlike ICP,
+HTCP, and Cache Digests, CARP can't predict whether
+a particular request will be a cache hit. Thus, you
+can't use CARP with siblings—only parents.</P>
+
+<P class="docText">The basic idea behind CARP is that you have a group, or array, of
+parent caches to handle all the load from users or child caches. A
+cache array is one way to handle ever-increasing loads. You can add
+more array members whenever you need more capacity. CARP is a
+deterministic algorithm. That is, the same request always goes to the
+same array member (as long as the array size doesn't
+change). Unlike ICP and HTCP, CARP doesn't use query
+messages.</P>
+
+<P class="docText">Another interesting thing about CARP is that you have the choice to
+deploy it in a number of different places. For example, one approach
+is to make all user-agents execute the CARP algorithm. You could
+probably accomplish this with a Proxy Auto-Configuration (PAC)
+function, written in JavaScript (see <A class="docLink" HREF="squid-APP-F.html#squid-APP-F">Appendix F</A>).
+However, you're likely to have certain web agents on
+your network that don't implement or support PAC
+files. Another option is to use a two-level cache hierarchy. The
+lower level (child caches) accept requests from all user-agents, and
+they execute the CARP algorithm to select the parent cache for each
+request. However, unless your network is very large, many caches can
+be more of a burden than a benefit. Finally, you can also implement
+CARP within the array itself. That is, user-agents connect to a
+random member of the cache array, but each member forwards cache
+misses to another member of the array based on the CARP algorithm.</P>
+
+<P class="docText">CARP was designed to be better than a simple hashing algorithm, which
+typically works by applying a hash function, such as MD5, to URIs.
+The algorithm then calculates the modulus for the number of array
+members. It might be as simple as this pseudocode:</P>
+
+<PRE>N = MD5(URI) % num_caches;
+next_hop = Caches[N];</PRE>
+
+<P class="docText">This technique uniformly spreads the URIs among all the caches. It
+also provides a consistent mapping (maximizing cache hits), as long
+as the number of caches remains constant. When caches are added or
+removed, however, this algorithm changes the mapping for most of the
+URIs.</P>
+
+<P class="docText">CARP's Routing Function improves on this technique
+in two ways. First, it allows for unequal sharing of the load. For
+example, you can configure one parent to receive twice as many
+requests as another. Second, adding or removing array members
+minimizes the fraction of URIs that get reassigned.</P>
+
+<P class="docText">The downside to CARP is that it is relatively CPU-intensive. For each
+request, Squid calculates a "score"
+for each parent. The request is sent to the parent cache with the
+highest score. The complexity of the algorithm is proportional to the
+number of parents. In other words, CPU load increases in proportion
+to the number of CARP parents. However, the calculations in CARP have
+been designed to be faster than, say, MD5, and other cryptographic
+hash functions.</P>
+
+<P class="docText">In addition to the load-sharing algorithm, CARP also has a protocol
+component. The Membership Table has a well-defined structure and
+syntax so that all clients of a single array can have the same
+configuration. If some clients are configured differently, CARP
+becomes less useful because not all clients send the same request to
+the same parent. Note that Squid doesn't currently
+implement the Membership Table feature.</P>
+
+<P class="docText">Squid's CARP implementation is lacking in another
+way. The protocol says that if a request can't be
+forwarded to the highest-scoring parent cache, it should be sent to
+the second-highest-scoring member. If that also fails, the
+application should give up. Squid currently uses only the
+highest-scoring parent cache.</P>
+
+<P class="docText">CARP was originally documented as an Internet Draft in 1998, which is
+now expired. It was developed by Vinod Valloppillil of Microsoft and
+Keith W. Ross of the University of Pennsylvania. With a little
+searching, you can still find the old document out there on the
+Internet. You may even be able to find some documentation on the
+Microsoft sites. You can also find more information on CARP in my
+O'Reilly book <span class="docEmphasis">Web Caching</span>.</P>
+
+<A NAME="squid-CHP-10-SECT-9.1"></A>
+<H4 class="docSection2Title">10.9.1 Configuring Squid for CARP</H4>
+
+<P class="docText">To use CARP in Squid, you must
+<A NAME="squid-CHP-10-ITERM-1677"></A><A NAME="squid-CHP-10-ITERM-1678"></A>first run the
+<I>./configure</I> script with the
+<I>—enable-carp</I> option. Next, you must add
+<TT>carp-load-factor</TT> options to the
+<span class="docEmphasis">cache_peer</span> lines for parents that are members of
+the array. The following is an example.</P>
+
+<PRE>cache_peer neighbor1.host.name parent 3128 0 carp-load-factor=0.3
+cache_peer neighbor2.host.name parent 3128 0 carp-load-factor=0.3
+cache_peer neighbor3.host.name parent 3128 0 carp-load-factor=0.4</PRE>
+
+<P class="docText">Note that all <TT>carp-load-factor</TT> values must add up
+to 1.0. Squid checks for this condition and complains if it finds a
+discrepancy. Additionally, the <span class="docEmphasis">cache_peer</span> lines
+must be listed in order of increasing load factor values. Only recent
+versions of Squid check that this condition is true.</P>
+
+<P class="docText">Remember that CARP is treated somewhat specially with regard to a
+neighbor's alive/dead state. Squid normally declares
+a neighbor dead (and ceases sending requests to it) after 10 failed
+connections. In the case of CARP, however, Squid skips a parent that
+has one or more failed connections. Once Squid is working with CARP,
+you can monitor it with the <I>carp</I> cache manager
+page. See <A class="docLink" HREF="squid-CHP-14-SECT-2.html#squid-CHP-14-SECT-2.1.49">Section 14.2.1.49</A> for more information.</P>
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="squid-CHP-10-SECT-8.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="squid-CHP-10-SECT-10.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

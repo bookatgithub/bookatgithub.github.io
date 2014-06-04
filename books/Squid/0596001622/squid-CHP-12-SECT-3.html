@@ -1,0 +1,216 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>12.3 HTTP Digest Authentication</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="squid-CHP-12-SECT-2.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="squid-CHP-12-SECT-4.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="squid-CHP-12-SECT-3"></A>
+<H3 class="docSection1Title">12.3 HTTP Digest Authentication</H3>
+
+<P class="docText">Digest authentication is <A NAME="squid-CHP-12-ITERM-1787"></A><A NAME="squid-CHP-12-ITERM-1788"></A>designed to be significantly more
+secure than Basic. It makes extensive use of cryptographic hash
+functions and other tricks. Essentially, instead of sending a
+cleartext password, the user-agent sends a "message
+digest" of the password, username, and other
+information. (See RFC 2617 and
+O'Reilly's <span class="docEmphasis">HTTP: The
+Definitive Guide</span> for more information.)</P>
+
+<P class="docText">HTTP Digest authentication supports the<A NAME="squid-CHP-12-ITERM-1789"></A><A NAME="squid-CHP-12-ITERM-1790"></A> following
+<span class="docEmphasis">auth_param</span> parameters:</P>
+
+<UL><LI><P class="docList"><TT>auth_param digest program</TT>
+<TT><I>command</I></TT></P></LI><LI><P class="docList"><TT>auth_param digest children</TT>
+<TT><I>number</I></TT></P></LI><LI><P class="docList"><TT>auth_param digest realm</TT>
+<TT><I>string</I></TT></P></LI><LI><P class="docList"><TT>auth_param digest nonce_garbage_interval</TT>
+<TT><I>time-specification</I></TT></P></LI><LI><P class="docList"><TT>auth_param digest nonce_max_duration</TT>
+<TT><I>time-specification</I></TT></P></LI><LI><P class="docList"><TT>auth_param digest nonce_max_count</TT>
+<TT><I>number</I></TT></P></LI><LI><P class="docList"><TT>auth_param digest nonce_strictness on|off</TT></P></LI></UL>
+<P class="docText">The <TT>program</TT>, <TT>children</TT>, and
+<TT>realm</TT> parameters are the same as for Basic
+authentication. All of the unique parameters relate to Digest
+authentication's use of something called
+<I>nonce</I>.</P>
+
+<P class="docText">A nonce is a special string of data, which changes occasionally.
+During the authentication process, the server (Squid in this case)
+provides a nonce value to the client. The client uses the nonce value
+when generating the digest. Without the nonce data, an attacker could
+simply intercept and replay the digest values to gain access to
+Squid.</P>
+
+<P class="docText">The <TT>nonce_garbage_interval</TT> parameter tells
+<A NAME="squid-CHP-12-ITERM-1791"></A>Squid how often to clean up the nonce
+cache. The default value is every 5 minutes. A very busy cache with
+many Digest authentication clients may benefit from more frequent
+nonce garbage collection.</P>
+
+<P class="docText">The <TT>nonce_max_duration</TT> parameter specifies
+<A NAME="squid-CHP-12-ITERM-1792"></A>how long each nonce value remains
+valid. When a client attempts to use a nonce value older than the
+specified time, Squid generates a 401 (Unauthorized) response and
+sends along a fresh nonce value so the client can re-authenticate.
+The default value is 30 minutes. Note that any captured
+<TT>Authorization</TT> headers can be used in a replay
+attack until the nonce value expires. Setting the
+<TT>nonce_max_duration</TT> too low, however, causes Squid
+to generate 401 responses more often. Each 401 response essentially
+wastes the user's time as the client and server
+renegotiate their authentication credentials.</P>
+
+<P class="docText">The <TT>nonce_max_count</TT> parameter places
+<A NAME="squid-CHP-12-ITERM-1793"></A>an upper limit on how many times a
+nonce value may be used. After the specified number of requests,
+Squid returns a 401 (Unauthorized) response and a new nonce value.
+The default is 50 requests.</P>
+
+<P class="docText">Nonce counts are another feature designed to prevent replay attacks.
+Squid sends <TT>qop=auth</TT> in its 401 responses. This
+causes user-agents to include a nonce count in their requests, and to
+use the nonce count when generating the digest itself. Nonce count
+values must always increase over time. A decreasing nonce count
+indicates a replay attack. However, the counts may increase, but skip
+some values, for example: 5,6,8,9. The
+<TT>nonce_strictness</TT> parameter determines what Squid
+does in this case. If set to <TT>on</TT>, Squid returns a
+401 response if a nonce count doesn't equal the
+previous nonce count plus one. If set to <TT>off</TT>,
+Squid allows gaps in the nonce count values.</P>
+
+<P class="docText">Here is a complete example:</P>
+
+<PRE>auth_param digest program /usr/local/squid/libexec/digest_pw
+auth_param digest children 8
+auth_param digest realm Access to Squid
+auth_param digest nonce_garbage_interval 10 minutes
+auth_param digest nonce_max_duration 45 minutes
+auth_param digest nonce_max_count 100
+auth_param digest nonce_strictness on
+
+acl KnownUsers proxy_auth REQUIRED
+http_access allow KnownUsers</PRE>
+
+<P class="docText">Next I will discuss the Digest authentication helper programs that
+come with Squid.</P>
+
+<A NAME="squid-CHP-12-SECT-3.1"></A>
+<H4 class="docSection2Title">12.3.1 password</H4>
+
+<P class="docText"><I>./configure —enable-auth=digest
+—enable-digest-auth-helpers=password</I></P>
+
+<P class="docText">This is a simple, reference implementation of Digest authentication
+for Squid. It demonstrates how to write a Digest-based authentication
+helper. This code simply reads usernames and passwords from a
+plaintext file. The format of this file is as follows:</P>
+
+<PRE>username:password</PRE>
+
+<P class="docText">The password file pathname is the single argument to the
+<I>digest_pw_auth</I> program. For example:</P>
+
+<PRE>auth_param digest program /usr/local/squid/libexec/digest_pw_auth
+        /usr/local/squid/etc/digest_passwd
+auth_param digest realm Some Nifty Realm</PRE>
+
+<P class="docText">Squid doesn't provide any tools to maintain a
+password file in this format. If you choose to use Digest
+authentication, you must manage the file on your own, perhaps with a
+text editor or Perl scripts.</P>
+
+
+<A NAME="squid-CHP-12-SECT-3.2"></A>
+<H4 class="docSection2Title">12.3.2 Digest Authentication API</H4>
+
+<P class="docText">If you'd like to write your own
+<A NAME="squid-CHP-12-ITERM-1794"></A><A NAME="squid-CHP-12-ITERM-1795"></A><A NAME="squid-CHP-12-ITERM-1796"></A>Digest authentication helper, you need to
+understand the communication between Squid and the helper process.
+The exchange is similar to that for Basic authentication, albeit a
+little more complicated.</P>
+
+<P class="docText">The first difference is that Squid writes the username and realm
+string, rather than username and password, to the helper process.
+These strings are quoted and separated by a colon. For example:</P>
+
+<PRE>"bobby":"Tom Landry Middle School"</PRE>
+
+<P class="docText">The second difference is that the helper process returns an MD5
+digest string, rather than <TT>OK</TT>, if the username is
+valid. As with Basic authentication, the helper process writes
+<TT>ERR</TT> if the user doesn't exist or
+if the input from Squid is unparseable for some reason.</P>
+
+<P class="docText">The helper returns an MD5 digest with the username, realm, and
+password. The three strings are concatenated together and separated
+by colons:</P>
+
+<PRE>username:realm:password</PRE>
+
+<P class="docText">Remember that the password isn't sent in the HTTP
+request. Rather, the helper retrieves the user's
+password from a database (like the plaintext file used by the
+<span class="docEmphasis">password</span> helper). For example,
+let's say that Bobby's password is
+<TT>CapeRs</TT>. The helper process receives the username
+and realm from Squid, gets the password from its database, and
+calculates an MD5 checksum of this string:</P>
+
+<PRE>bobby:Tom Landry Middle School:CapeRs</PRE>
+
+<P class="docText">The Squid source code includes a library function,
+<I>DigestCalcHA1( )</I>, which implements this
+calculation. We can test all this in a terminal window to see what
+the helper returns:</P>
+
+<PRE>% echo 'bobby:CapeRs' &gt; /tmp/pw
+% echo bogus_input | digest_pw_auth /tmp/pw
+ERR
+% echo "nouser":"some realm" | digest_pw_auth /tmp/pw
+ERR
+% echo '"bobby":"Tom Landry Middle School"' | digest_pw_auth /tmp/pw
+c7ca3efda238c65b2d48684a51baa90e</PRE>
+
+<P class="docText">Squid stores this MD5 checksum and uses it in other parts of the
+Digest authentication algorithm. Note that the checksum only changes
+when the user changes his password. In Squid's
+current Digest implementation, these checksums are kept in memory as
+long as the user remains active. If the user is inactive for
+<span class="docEmphasis">authenticate_ttl</span> seconds, the MD5 checksum may
+be removed from Squid's memory. Upon the next
+request from that user, Squid asks the external helper process to
+calculate it again.</P>
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="squid-CHP-12-SECT-2.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="squid-CHP-12-SECT-4.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

@@ -1,0 +1,158 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;2.8.&nbsp;Updating a Random-Access File</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-2-sect-7.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-2-sect-9.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-2-SECT-8"></a>
+<h3 class="docSection1Title" id="409771-884">Recipe 2.8. Updating a Random-Access File</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Luther Blissett</span></p>
+
+<a name="pythoncook2-CHP-2-SECT-8.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-2-ITERM-1641"></a>
+<a name="pythoncook2-CHP-2-ITERM-1642"></a>You want to read a binary record from
+somewhere inside a large file of fixed-length records, change some or
+all of the values of the record's fields, and write
+the record back.</P>
+
+
+<a name="pythoncook2-CHP-2-SECT-8.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">Read the record, unpack it, perform whatever computations you need
+for the update, pack the fields back into the record, seek to the
+start of the record again, write it back. Phew. Faster to code than
+to say:</p>
+
+<pre>import struct
+format_string = '8l'                # e.g., say a record is 8 4-byte integers
+thefile = open('somebinfile', 'r+b')
+record_size = struct.calcsize(format_string)
+thefile.seek(record_size * record_number)
+buffer = thefile.read(record_size)
+fields = list(struct.unpack(format_string, buffer))
+# Perform computations, suitably modifying fields, then:
+buffer = struct.pack(format_string, *fields)
+thefile.seek(record_size * record_number)
+thefile.write(buffer)
+thefile.close( )</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-2-SECT-8.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">This approach works only on files (generally binary ones) defined in
+terms of records that are all the same, fixed size; it
+doesn't work on normal text files. Furthermore, the
+size of each record must be that defined by a
+<tt>struct</tt> format string, as shown in the
+recipe's code. A typical format string, for example,
+might be '<tt>8l</tt>', to specify that each record is made
+up of eight four-byte integers, each to be interpreted as a signed
+value and unpacked into a Python <tt>int</tt>. In this
+case, the <tt><I>fields</i></tt> variable in the recipe
+would be bound to a list of eight <tt>int</tt>s. Note that
+<tt>struct.unpack</tt> returns a tuple. Because tuples are
+immutable, the computation would have to rebind the entire
+<tt><I>fields</I></tt> variable. A list is mutable, so
+each field can be rebound as needed. Thus, for convenience, we
+explicitly ask for a list when we bind
+<tt><i>fields</i></tt>. Make sure, however, not to alter
+the length of the list. In this case, it needs to remain composed of
+exactly eight integers, or the <tt>struct.pack</tt> call
+will raise an exception when we call it with a
+<tt><i>format_string</i></tt> of '<tt>8l</tt>'.
+Also, this recipe is not suitable when working with records that are
+not all of the same, unchanging length.</P>
+
+<p class="docText"><a name="pythoncook2-CHP-2-ITERM-1643"></a>To seek back to the start of the record,
+instead of using the <tt>record_size*record_number</tt>
+offset again, you may choose to do a relative seek:</p>
+
+<pre>thefile.seek(-record_size, 1)</pre><br>
+
+
+<p class="docText">The second argument to the <tt>seek</tt> method
+(<tt>1</tt>) tells the file object to seek relative to the
+current position (here, so many bytes back, because we used a
+negative number as the first argument).
+<tt>seek</tt>'s default is to seek to an
+absolute offset within the file (i.e., from the start of the file).
+You can also explicitly request this default behavior by calling
+<tt>seek</tt> with a second argument of
+<tt>0</tt>.</P>
+
+<p class="docText">You don't need to open the file just before you do
+the first <tt>seek</tt>, nor do you need to close it right
+after the <tt>write</tt>. Once you have a file object that
+is correctly opened (i.e., for updating and as a binary rather than a
+text file), you can perform as many updates on the file as you want
+before closing the file again. These calls are shown here to
+emphasize the proper technique for opening a file for random-access
+updates and the importance of closing a file when you are done with
+it.</p>
+
+<p class="docText">The file needs to be opened for updating (i.e., to allow both reading
+and writing). That's what the
+'<tt>r+b</tt>' argument to <tt>open</tt> means:
+open for reading and writing, but do not implicitly perform any
+transformations on the file's contents because the
+file is a binary one. (The '<tt>b</tt>' part is unnecessary
+but still recommended for clarity on Unix and Unix-like systems.
+However, it's absolutely crucial on other platforms,
+such as Windows.) If you're creating the binary file
+from scratch, but you still want to be able to go back, reread, and
+update some records without closing and reopening the file, you can
+use a second argument of '<tt>w+b</tt>' instead. However, I
+have never witnessed this strange combination of requirements; binary
+files are normally first created (by opening them with
+'<tt>wb</tt>', writing data, and closing the file) and
+later reopened for updating with '<tt>r+b</tt>'.</P>
+
+<p class="docText">While this approach is normally useful only on a file whose records
+are all the same size, another, more advanced possibility exists: a
+separate "index file" that provides
+the offset and length of each record inside the
+"data file". Such indexed
+sequential access approaches aren't much in fashion
+any more, but they used to be very important. Nowadays, one meets
+just about only text files (of many kinds, more and more often XML
+ones), databases, and occasional binary files with fixed-length
+records. Still, if you do need to access an indexed sequential binary
+file, the code is quite similar to that shown in this recipe, except
+that you must obtain the <i>record_size</I> and the offset
+argument to pass to <tt>thefile.seek</tt> by reading them
+from the index file, rather than computing them yourself as shown in
+this recipe's Solution.</P>
+
+
+<a name="pythoncook2-CHP-2-SECT-8.4"></a>
+<h4 class="docSection2Title">See Also</h4>
+
+<p class="docText">The sections of the <span class="docEmphasis">Library Reference</span> and
+<span class="docEmphasis">Python in a Nutshell</span> on file objects and the
+<tt>struct</tt> module; <span class="docEmphasis">Perl
+Cookbook</span> recipe 8.13.</p>
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-2-sect-7.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-2-sect-9.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

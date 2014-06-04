@@ -1,0 +1,249 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;18.8.&nbsp;Implementing a Bag (Multiset) Collection Type</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-18-sect-7.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-18-sect-9.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-18-SECT-8"></a>
+<h3 class="docSection1Title">Recipe 18.8. Implementing a Bag (Multiset) Collection Type</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Raymond Hettinger, Alex Martelli, Matt R</span></p>
+
+<a name="pythoncook2-CHP-18-SECT-8.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-18-ITERM-3095"></a>You need a
+<tt>set</tt>-like collection type that lets each element be
+in the set a number of times. In other words, you need a collection
+type of the kind that is known as <tt>multiset</tt> in C++
+and SQL, and <tt>bag</tt> in Smalltalk, Objective C, and
+Haskell's <tt>Edison</tt> module.</P>
+
+
+<a name="pythoncook2-CHP-18-SECT-8.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">We can implement <tt>bag</tt> as a class. We could restrict
+the implementation to language constructs that are present in Python
+2.3 or are easy to emulate; however, such restrictions would give
+substantial inefficiencies or complications with comparison to a pure
+Python 2.4 implementation. So, here is a Python 2.4 implementation,
+with no attempt to support Python 2.3:</p>
+
+<pre>from operator import itemgetter
+from heapq import nlargest
+class bag(object):
+    def _ _init_ _(self, iterable=( )):
+        # start empty, then add the `iterable' if any
+        self._data = {  }
+        self.update(iterable)
+    def update(self, iterable):
+        # update from an element-&gt;count mapping, or from any iterable
+        if isinstance(iterable, dict):
+            for elem, n in iterable.iteritems( ):
+                self[elem] += n
+        else:
+            for elem in iterable:
+                self[elem] += 1 
+    def _ _contains_ _(self, elem):
+        # delegate membership test
+        return elem in self._data
+    def _ _getitem_ _(self, elem):
+        # default all missing items to a count of 0
+        return self._data.get(elem, 0)
+    def _ _setitem_ _(self, elem, n):
+        # setting an item to a count of 0 removes the item
+        self._data[elem] = n
+        if n == 0:
+            del self._data[elem]
+    def _ _delitem_ _(self, elem):
+        # delegate to _ _setitem_ _ to allow deleting missing items
+        self[elem] = 0
+    def _ _len_ _(self):
+        # length is computed on-the-fly
+        return sum(self._data.itervalues( ))
+    def _ _nonzero_ _(self):
+        # avoid truth tests using _ _len_ _, as it's relatively slow
+        return bool(self._data)
+    def _ _eq_ _(self, other):
+        # a bag can only equal another bag
+        if not isinstance(other, bag):
+            return False
+        return self._data == other._data
+    def _ _ne_ _(self, other):
+        # a bag always differs from any non-bag
+        return not (self == other)
+    def _ _hash_ _(self):
+        # a bag can't be a dict key nor an element in a set
+        raise TypeError
+    def _ _repr_ _(self):
+        # typical string-representation
+        return '%s(%r)' % (self._ _class_ _._ _name_ _, self._data)
+    def copy(self):
+        # make and return a shallow copy
+        return self._ _class_ _(self._data)
+    _ _copy_ _ = copy # For the copy module
+    def clear(self):
+        # remove all items
+        self._data.clear( )
+    def _ _iter_ _(self):
+        # yield each element the # of times given by its count
+        for elem, cnt in self._data.iteritems( ):
+            for i in xrange(cnt):
+                yield elem
+    def iterunique(self):
+        # yield each element only once
+        return self._data.iterkeys( )
+    def itercounts(self):
+        # yield element-count pairs
+        return self._data.iteritems( )     
+    def mostcommon(self, n=None):
+        # return the n (default: all) most common elements, each as an
+        # element-count pair, as a list sorted by descending counts
+        if n is None:
+            return sorted(self.itercounts( ), key=itemgetter(1), reverse=True)
+        it = enumerate(self.itercounts( ))
+        nl = nlargest(n, ((cnt, i, elem) for (i, (elem, cnt)) in it))
+        return [(elem, cnt) for cnt, i, elem in nl]</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-18-SECT-8.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">Python offers several useful container classes, including built-in
+<tt>tuple</tt>s, <I>list</i>s and
+<tt>dict</tt>s, <tt>set</tt>s (in Python 2.4,
+<tt>sets</tt> are built-in; in Python 2.3,
+they're in module
+<tt>sets</tt>)which, unlike <I>bag</I>s,
+can be seen as "holding only one
+instance" of each of their elementsand
+double-ended queues, <tt>deque</tt>s (in Python 2.4 only,
+in module <tt>collections</tt>). This abundance of
+container classes doesn't mean there is no use for
+yet more. The <tt>bag</tt>, (i.e., multiset), presented in
+this recipe, is widely useful, since counting the numbers of
+occurrences of different objects is a frequent task useful in many
+applications. Rather than coding a <tt>bag</tt> each time
+you need such a container (generally based on a dictionary mapping
+items to counts), it's better to design and code it
+once, put it among one's utilities, and lobby for it
+to become part of the standard library for a future Python, such as
+2.5 (which can be expected sometime in 2006 and will focus on
+enhancements to the standard library rather than to the core
+language).</p>
+
+<p class="docText">The API offered by the <i>bag</i> class presented in this
+recipe is largely based on indexing, due to the strong analogy
+between a <tt>bag</tt> and a mapping of items to counts.
+For example:</p>
+
+<pre>&gt;&gt;&gt; b = bag('banana')
+&gt;&gt;&gt; b['a']
+<B>3</b>
+&gt;&gt;&gt; b['a'] += 1
+&gt;&gt;&gt; b['a']
+<b>4</b>
+&gt;&gt;&gt; del b['a']          # removes all 'a's from the bag
+&gt;&gt;&gt; b['a']
+<b>0</b></pre><BR>
+
+
+<p class="docText">Items that are not in the <tt>bag</tt> can also be used as
+indices, giving a value (i.e., count) of 0; a lot of
+<i>bag</I>'s convenience comes from this
+default. A <i>bag</I> also offers several ways to iterate
+on it (by unique elements; by elements, each repeated as many times
+as its count; by
+<tt>(</tt><tt><I>element</i></tt>,
+<tt><i>count</i></tt><tt>)</tt>
+pairs); and also supplies a handy method <i>mostcommon</i>
+to return
+<tt>(</tt><tt><i>element</i></tt>,
+<tt><i>count</i></tt><tt>)</tt> pairs
+sorted by descending count (all such pairs, or just the top
+<tt><i>n</i></tt>). An example use of
+<i>mostcommon</i>:</P>
+
+<pre>&gt;&gt;&gt; bag(word for line in open('somefile.txt')
+...     for word in line.split( )).mostcommon(5)
+<B>[('to', 83), ('for', 71), ('the', 61), ('of', 53), ('and', 52)]</b></pre><br>
+
+
+<p class="docText">All design choices are tradeoffs. For some applications, it might be
+more convenient to have <tt>bag</tt>'s API
+closer to <tt>set</tt>'s rather than to
+<tt>dict</tt>'s, with an
+<tt>add</tt> method, and binary operators, for example, to
+join two <tt>bags</tt> returning a new one (as
+<tt>list</tt> does with operator <tt>+</tt> and
+<tt>set</tt> does with the
+"or", vertical-bar operator
+<tt>|</tt>). In most cases, this would be overkill. After
+all, "a designer knows he has achieved perfection,
+not when there is nothing left to add, but when there is nothing left
+to take away" (Antoine de Saint-Exup&eacute;ry).
+So, for example, to join two <tt>bags</tt>, getting a new
+one, without altering either input <tt>bag</tt>, code a
+little function using roughly the same
+<tt>update</tt>-based approach you would use with
+<tt>dicts</tt>, as follows:</p>
+
+<pre>def bagjoin(b1, b2):
+    b = bag(b1)
+    b.update(b2)
+    return b</pre><BR>
+
+
+<p class="docText">Just as would be the case for an analogous function joining
+<tt>dict</tt>s, this works, not only when
+<tt><i>b1</i></tt> and <tt><i>b2</i></tt> are
+<tt>bag</tt>s, but also when they are other kinds of
+objects that can be passed to <tt>bag</tt> and
+<tt>bag.update</tt>objects such as arbitrary
+iterables or mappings (generally dictionaries) from items to counts.
+Such polymorphism comes at negligible cost, and it's
+well worth preserving.</p>
+
+<p class="docText">Although the crucial design choices in this recipe are those about
+<i>bag</I>'s API, some implementation
+choices must be made as well. In this recipe's code,
+implementation choices are oriented towards simplicity. In
+particular, there is no attempt to allow this code to run on Python
+2.3. This recipe is optimized for Python 2.4 because it is
+Python's current release and is likely to be used
+soon in lieu of Python 2.3, particularly among Pythonistas who are
+sensitive to performance issues, given the amount of highly
+successful effort that was devoted to optimizing version
+2.4's performance. If Python 2.3 support was deemed
+necessary, it would be best implemented separately, rather than
+hobbling the primary 2.4 implementation with inefficiencies or
+complications.</p>
+
+
+<a name="pythoncook2-CHP-18-SECT-8.4"></a>
+<H4 class="docSection2Title">See Also</h4>
+
+<p class="docText">Smalltalk's <tt>Bag</tt> class at
+<a class="docLink" target="_blank" href="http://www.gnu.org/software/smalltalk/gst-manual/gst_49.html">http://www.gnu.org/software/smalltalk/gst-manual/gst_49.html</a>;
+C++'s <tt>std::multiset</tt> template class at <a class="docLink" target="_blank" href="http://gcc.gnu.org/onlinedocs/libstdc++/latest-doxygen/classstd_1_1multiset.html">http://gcc.gnu.org/onlinedocs/libstdc++/latest-doxygen/classstd_1_1multiset.html</a>.<a name="pythoncook2-CHP-18-ITERM-3096"></a></P>
+
+
+
+<ul></UL></TD></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-18-sect-7.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-18-sect-9.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

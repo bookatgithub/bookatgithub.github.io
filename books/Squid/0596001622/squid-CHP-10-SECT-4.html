@@ -1,0 +1,244 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>10.4 Restricting Requests to Neighbors</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="squid-CHP-10-SECT-3.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="squid-CHP-10-SECT-5.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="squid-CHP-10-SECT-4"></A>
+<H3 class="docSection1Title">10.4 Restricting Requests to Neighbors</H3>
+
+<P class="docText">Many people who use <A NAME="squid-CHP-10-ITERM-1618"></A>hierarchical caching need to control
+or limit requests that Squid sends to its neighbors. Squid has seven
+different directives that affect request routing:
+<span class="docEmphasis">cache_peer_access</span>,
+<span class="docEmphasis">cache_peer_domain</span>,
+<span class="docEmphasis">never_direct</span>,
+<span class="docEmphasis">always_direct</span>,
+<span class="docEmphasis">hierarchy_stoplist</span>,
+<span class="docEmphasis">nonhierarchical_direct</span>, and
+<span class="docEmphasis">prefer_direct</span>.</P>
+
+<A NAME="squid-CHP-10-SECT-4.1"></A>
+<H4 class="docSection2Title">10.4.1 cache_peer_access</H4>
+
+<P class="docText">The <span class="docEmphasis">cache_peer_access</span> directive
+<A NAME="squid-CHP-10-ITERM-1619"></A><A NAME="squid-CHP-10-ITERM-1620"></A>defines an access list for a
+neighbor cache. That is, it determines which requests may, or may
+not, be sent to the neighbor.</P>
+
+<P class="docText">You can use this, for example, to split the flow of FTP and HTTP
+requests. You can send all FTP URIs to one parent and all HTTP URIs
+to another:</P>
+
+<PRE>cache_peer A-parent.my.org parent 3128 3130
+cache_peer B-parent.my.org parent 3128 3130
+acl FTP proto FTP
+acl HTTP proto HTTP
+cache_peer_access A-parent allow FTP
+cache_peer_access B-parent allow HTTP</PRE>
+
+<P class="docText">This configuration ensures that <TT>A-parent</TT> receives
+only requests for FTP URIs, while <TT>B-parent</TT>
+receives only requests for HTTP URIs. This includes ICP/HTCP queries
+as well.</P>
+
+<P class="docText">You might also use <span class="docEmphasis">cache_peer_access</span> to enable
+or disable a neighbor cache during certain times of the day:</P>
+
+<PRE>cache_peer A-parent.my.org parent 3128 3130
+acl DayTime time 07:00-18:00
+cache_peer_access A-parent.my.org deny DayTime</PRE>
+
+
+<A NAME="squid-CHP-10-SECT-4.2"></A>
+<H4 class="docSection2Title">10.4.2 cache_peer_domain</H4>
+
+<P class="docText">The <span class="docEmphasis">cache_peer_domain</span>
+directive<A NAME="squid-CHP-10-ITERM-1621"></A><A NAME="squid-CHP-10-ITERM-1622"></A> is an earlier form of
+<span class="docEmphasis">cache_peer_access</span>. Rather than using the full
+access control feature set, it only uses domain names in URIs. It is
+often used to partition a group of parent caches by domain name. For
+example, if you have a global intranet, you may want to send requests
+to caches located on each continent:</P>
+
+<PRE>cache_peer europe-cache.my.org parent 3128 3130
+cache_peer asia-cache.my.org   parent 3128 3130
+cache_peer aust-cache.my.org   parent 3128 3130
+cache_peer africa-cache.my.org parent 3128 3130
+cache_peer na-cache.my.org     parent 3128 3130
+cache_peer sa-cache.my.org     parent 3128 3130
+cache_peer_domain europe-cache.my.org parent .ch .dk .fr .uk .nl .de .fi ...
+cache_peer_domain asia-cache.my.org parent   .jp .kr .cn .sg .tw .vn .hk ...
+cache_peer_domain aust-cache.my.org parent   .nz .au .aq ...
+cache_peer_domain africa-cache.my.org parent .dz .ly .ke .mz .ma .mg ...
+cache_peer_domain na-cache.my.org parent     .mx .ca .us ...
+cache_peer_domain sa-cache.my.org parent     .br .cl .ar .co .ve ...</PRE>
+
+<P class="docText">Of course, this scheme doesn't address the popular
+global top-level domains, such as <I>.com</I>.</P>
+
+
+<A NAME="squid-CHP-10-SECT-4.3"></A>
+<H4 class="docSection2Title">10.4.3 never_direct</H4>
+
+<P class="docText">The <span class="docEmphasis">never_direct</span> directive is
+an<A NAME="squid-CHP-10-ITERM-1623"></A><A NAME="squid-CHP-10-ITERM-1624"></A> access list for requests that must never
+be sent directly to an origin server. When a request matches this
+access list, it must be sent to a neighbor (usually parent) cache.</P>
+
+<P class="docText">For example, if Squid is behind a firewall, it may be able to talk to
+your "internal" servers directly
+but must send all requests for external servers via the firewall
+proxy (a parent). You can tell Squid "never connect
+directly to sites outside the firewall." To do so,
+tell Squid what is inside the firewall:</P>
+
+<PRE>acl InternalSites dstdomain .my.org
+never_direct allow !InternalSites</PRE>
+
+<P class="docText">The syntax is a little strange. <TT>never_direct allow
+foo</TT> means Squid will not go directly for requests that
+match "foo." Since the set of
+internal sites is easy to specify, I used the negation operator (!)
+to match external sites, which Squid must never directly contact.</P>
+
+<P class="docText">Note that this example doesn't force Squid to
+connect directly to sites that match the
+<span class="docEmphasis">InternalSites</span> ACL. The
+<I>never_direct</I> access rule can only force Squid
+not to contact certain origin servers. You must use the
+<I>always_direct</I> rule to force direct connections
+to origin servers.</P>
+
+<P class="docText">You must take care when using <I>never_direct</I> in
+combination with the other directives that control request routing.
+You can easily create an impossible situation.
+Here's an example:</P>
+
+<PRE>cache_peer A-parent.my.org parent 3128 3130
+acl COM dstdomain .com
+cache_peer_access A-parent.my.org deny COM
+never_direct allow COM</PRE>
+
+<P class="docText">This configuration creates a contradiction because any request whose
+domain name ends with <span class="docEmphasis">.com</span> must go through a
+neighbor cache. However, I defined only one neighbor cache, and
+don't allow the <span class="docEmphasis">.com</span> requests
+to go there. When this happens, Squid emits the
+"cannot forward" error message
+mentioned earlier in <A class="docLink" HREF="squid-CHP-10.html#squid-CHP-10">Chapter 10</A>.</P>
+
+
+<A NAME="squid-CHP-10-SECT-4.4"></A>
+<H4 class="docSection2Title">10.4.4 always_direct</H4>
+
+<P class="docText">As you can probably guess, <A NAME="squid-CHP-10-ITERM-1625"></A><A NAME="squid-CHP-10-ITERM-1626"></A>the list of
+<TT>always_direct</TT> rules tell Squid that some requests
+must be forwarded directly to the origin server. For example, many
+organizations want to keep their local traffic local. An easy way to
+do this is to define an IP address-based ACL and put it in the
+<I>always_direct</I> rule list:</P>
+
+<PRE>acl OurNetwork src 172.16.3.0/24
+always_direct allow OurNetwork</PRE>
+
+
+<A NAME="squid-CHP-10-SECT-4.5"></A>
+<H4 class="docSection2Title">10.4.5 hierarchy_stoplist</H4>
+
+<P class="docText">Internally, Squid flags each client
+<A NAME="squid-CHP-10-ITERM-1627"></A><A NAME="squid-CHP-10-ITERM-1628"></A>request as either hierarchical or
+nonhierarchical. A nonhierarchical request is one that is unlikely to
+result in a cache hit. For example, responses to
+<TT>POST</TT> requests are almost never cachable.
+Forwarding requests for uncachable objects to neighbors is a waste of
+resources when Squid can simply connect to the origin server.</P>
+
+<P class="docText">Some of the rules for differentiating hierarchical and
+nonhierarchical requests are hardcoded in Squid. For example, the
+<TT>POST</TT> and <TT>PUT</TT> methods are always
+nonhierarchical. However, the <span class="docEmphasis">hierarchy_stoplist</span>
+directive allows you to customize the algorithm. It contains a list
+of strings that, when found in a URI, make the request
+nonhierarchical. The default list is:</P>
+
+<PRE>hierarchy_stoplist ? cgi-bin</PRE>
+
+<P class="docText">Thus, any request that contains a question mark or the
+<TT>cgi-bin</TT> string matches the stoplist and becomes
+nonhierarchical.</P>
+
+<P class="docText">By default, Squid prefers to send nonhierarchical requests directly
+to origin servers. Because they are unlikely to result in cache hits,
+they are generally an extra burden on neighbor caches. However, the
+<I>never_direct</I> access control rules override
+<span class="docEmphasis">hierarchy_stoplist</span>. In particular, Squid:</P>
+
+<UL><LI><P class="docList">Never sends ICP/HTCP queries for nonhierarchical requests unless the
+request matches a <I>never_direct</I> rule</P></LI><LI><P class="docList">Never sends ICP/HTCP queries to sibling caches for nonhierarchical
+requests</P></LI><LI><P class="docList">Never looks in neighbor cache digests for nonhierarchical requests</P></LI></UL>
+
+<A NAME="squid-CHP-10-SECT-4.6"></A>
+<H4 class="docSection2Title">10.4.6 nonhierarchical_direct</H4>
+
+<P class="docText">This directive controls the way
+<A NAME="squid-CHP-10-ITERM-1629"></A><A NAME="squid-CHP-10-ITERM-1630"></A>that Squid forwards nonhierarchical (i.e.,
+probably uncachable) requests. By default, Squid prefers to send
+nonhierarchical requests directly to origin servers. This is because
+such requests are unlikely to result in cache hits. I feel it is
+always better to get them directly from the origin server, rather
+than waste time looking for them in neighbor caches. If, for some
+reason, you want to route such requests through the hierarchy,
+disable this directive:</P>
+
+<PRE>nonhierarchical_direct off</PRE>
+
+
+<A NAME="squid-CHP-10-SECT-4.7"></A>
+<H4 class="docSection2Title">10.4.7 prefer_direct</H4>
+
+<P class="docText">This directive controls the way <A NAME="squid-CHP-10-ITERM-1631"></A><A NAME="squid-CHP-10-ITERM-1632"></A>that Squid forwards hierarchical
+(i.e., probably cachable) requests. By default, Squid prefers to send
+such requests to a neighbor cache first and then directly to the
+origin server. You can reverse this behavior by enabling the
+directive:</P>
+
+<PRE>prefer_direct on</PRE>
+
+<P class="docText">In this way, your neighbor caches <A NAME="squid-CHP-10-ITERM-1633"></A>become a backup if communication with
+the origin server fails.</P>
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="squid-CHP-10-SECT-3.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="squid-CHP-10-SECT-5.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

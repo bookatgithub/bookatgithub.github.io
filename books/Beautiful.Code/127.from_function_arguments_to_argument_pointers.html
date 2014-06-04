@@ -1,0 +1,99 @@
+<html><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<link href="styles/globalstyle.css" type="text/css" rel="stylesheet"/>
+<link title="medium" href="styles/two.css" type="text/css" rel="stylesheet"/>
+<script src="scripts/main.js" type="text/javascript" language="javascript"></script>
+<title>Section 17.2. From Function Arguments to Argument Pointers</title>
+</head><body>
+<DIV class=h3 style="MARGIN-TOP: 0px; PADDING-BOTTOM: 1em; WIDTH: 100%; PADDING-TOP: 0px"><SPAN>Another Level of Indirection</SPAN><SPAN> &gt; From Function Arguments to Argument Pointers</SPAN></DIV>
+<DIV></DIV>
+<DIV>
+<DIV><A name=from_function_arguments_to_argument_pointers></A>
+<H3 class=docSection1Title id=-100000>17.2. From Function Arguments to Argument Pointers</H3>
+<P class=docText><A name=Most></A>Most <A name=idx-CHP-17-1383></A>Unix-related operating systems, such as <A name=idx-CHP-17-1384></A>FreeBSD, Linux, and Solaris, use <A name=idx-CHP-17-1385></A><A name="isolate the"></A>function pointers to isolate the implementation of a filesystem from the code that accesses its contents. Interestingly, <A name=idx-CHP-17-1386></A><A name="indirection to"></A>FreeBSD also employs indirection to abstract the read function's arguments.<A name=idx-CHP-17-1387></A></P>
+<P class=docText><A name="first encountered"></A>When I first encountered the call <TT>vop-&gt;vop_read(a)</TT><A name="previous section"></A>, shown in the previous section, I asked myself what that a argument was and what happened to the original four arguments of the hypothetical implementation of the <TT>VOP_READ</TT><A name="uses another"></A> function we saw earlier. After some digging, I found that the kernel uses another level of indirection to layer filesystems on top of each other to an arbitrary depth. This layering allows a filesystem to offer some services (such as translucent views, compression, and encryption) based on the services of another underlying filesystem. Two mechanisms work cleverly together to support this feature: one allows a single bypass function to modify the arguments of any <TT>vop_vector</TT><A name="allows all"></A> function, while another allows all undefined <TT>vop_vector</TT><A name="to the"></A> functions to be redirected to the underlying filesystem layer.</P>
+<P class=docText><A name="in action"></A>You can see both mechanisms in action in <A class=docLink href="javascript:moveTo('example_of_filesystem_layering');">Figure 17-2</A><A name="The figure"></A>. The figure illustrates three file-systems layered on top of one another. On top lies the <SPAN class=docEmphasis>umapfs</SPAN><A name="administrator mounted"></A> filesystem, which the system administrator mounted in order to map user credentials. This is valuable if the system where this particular disk was created used different user IDs. For instance, the administrator might want user ID 1013 on the underlying filesystem to appear as user ID 5325.<A name=idx-CHP-17-1388></A></P><A name=example_of_filesystem_layering></A>
+<P>
+<CENTER>
+<H5 class=docFigureTitle><A name="filesystem layering"></A>Figure 17-2. Example of filesystem layering</H5><IMG id="" height=260 alt="" src="images/from_function_arguments_to_argument_pointers.0.png" width=500 border=0> </CENTER>
+<P></P><BR>
+<P class=docText><A name="top filesystem"></A>Beneath the top filesystem lies the <A name=idx-CHP-17-1389></A>Berkeley Fast Filesystem (<SPAN class=docEmphasis>ffs</SPAN><A name="used by"></A>), the time- and space-efficient filesystem used by default in typical <A name=idx-CHP-17-1390></A>FreeBSD installations. The <SPAN class=docEmphasis>ffs</SPAN><A name="the original"></A> in turn, for most of its operations, relies on the code of the original 4.2 BSD filesystem implementation <SPAN class=docEmphasis>ufs</SPAN>.<A name=idx-CHP-17-1391></A><A name=idx-CHP-17-1392></A><A name=idx-CHP-17-1393></A></P>
+<P class=docText><A name="example shown"></A>In the example shown in the figure, most system calls pass through a common bypass <A name=idx-CHP-17-1394></A>function in <SPAN class=docEmphasis>umapfs</SPAN><A name="Only a"></A> that maps the user credentials. Only a few system calls, such as <TT>rename</TT> and <TT>getattr</TT>, have their own implementations in <SPAN class=docEmphasis>umapfs</SPAN><A name="implementations of"></A>. The ffs layer provides optimized implementations of read and <TT>write;</TT><A name="both rely"></A> both rely on a filesystem layout that is more efficient than the one employed by <SPAN class=docEmphasis>ufs</SPAN><A name=as></A>. Most other operations, such as <TT>open, close, getattr, setatr</TT>, and <TT>rename</TT><A name="the traditional"></A>, are handled in the traditional way. Thus, a <TT>vop_default</TT><A name=the></A> entry in the <SPAN class=docEmphasis>ffs</SPAN> <TT>vop_vector</TT><A name="those functions"></A> structure directs all those functions to call the underlying <SPAN class=docEmphasis>ufs</SPAN> implementations. For example, a <TT>read</TT> system call will pass through <TT>umapfs_bypass</TT> and <TT>ffs_read</TT>, whereas a <TT>rename</TT> call will pass through <TT>umapfs_rename</TT> and<TT> ufs_rename</TT>.</P>
+<P class=docText><A name="a single"></A>Both mechanisms, the bypass and the default, pack the four arguments into a single structure to provide commonality between the different filesystem functions, and also support the groundwork for the bypass function. This is a beautiful design pattern that is easily overlooked within the intricacies of the C code required to implement it.</P>
+<P class=docText><A name="arguments are"></A>The four arguments are packed into a single structure, which as its first field (<TT>a_gen.a_desc</TT><A name="the structure"></A>) contains a description of the structure's contents (<TT>vop_read_desc</TT><A name="can see"></A>, in the following code). As you can see in <A class=docLink href="126.from_code_to_pointers.html#layers_of_indirection_in_the_freebsd_implementation_of_the_r">Figure 17-1</A><A name=idx-CHP-17-1395></A><A name=a></A>, a <TT>read</TT><A name="a file"></A> system call on a file in the FreeBSD kernel will trigger a call to <TT>vn_read</TT><A name="up the"></A>, which will set up the appropriate lowl-evel arguments and call <TT>VOP_READ</TT><A name="pack the"></A>. This will pack the arguments and call <TT>VOP_READ_APV</TT>, which finally calls <TT>vop-&gt;vop_read</TT><A name="actual filesystem"></A> and thereby the actual filesystem read function:</P><PRE>	struct vop_read_args {
+	        struct vop_generic_args a_gen;
+	        struct vnode *a_vp;
+	        struct uio *a_uio;
+	        int a_ioflag;
+	        struct ucred *a_cred;
+	};
+	static _ _inline int VOP_READ(
+	        struct vnode *vp,
+	        struct uio *uio,
+	        int ioflag,
+	        struct ucred *cred)
+	{
+	        struct vop_read_args a;
+
+	        a.a_gen.a_desc = &amp;vop_read_desc;
+	        a.a_vp = vp;
+	        a.a_uio = uio;
+	        a.a_ioflag = ioflag;
+	        a.a_cred = cred;
+	        return (VOP_READ_APV(vp-&gt;v_op, &amp;a));
+	}
+</PRE><BR>
+<P class=docText>This same elaborate dance is performed for calling all other <TT>vop_vector</TT> <A name=idx-CHP-17-1396></A>functions (<TT>stat, write, open, close</TT>, and so on). The <TT>vop_vector</TT> structure also contains a <A name=idx-CHP-17-1397></A>pointer to a <TT>bypass</TT><A name="modifications on"></A> function. This function gets the packed arguments and, after possibly performing some modifications on them (such as, perhaps, mapping <A name=idx-CHP-17-1398></A><A name="from one"></A>user credentials from one administrative domain to another) passes control to the appropriate underlying function for the specific call through the <TT>a_desc</TT> field.</P>
+<P class=docText><A name="of how"></A>Here is an excerpt of how the <SPAN class=docEmphasis>nullfs</SPAN> filesystem implements the bypass function. The <SPAN class=docEmphasis>nullfs</SPAN><A name="of an"></A> filesystem just duplicates a part of an existing filesystem into another location of the global filesystem namespace. Therefore, for most of its operations, it can simply have its <TT>bypass</TT><A name="function call"></A> function call the corresponding function of the underlying filesystem:<A name=idx-CHP-17-1399></A></P><PRE>	#define VCALL(c) ((c)-&gt;a_desc-&gt;vdesc_call(c))
+	int
+	null_bypass(struct vop_generic_args *ap)
+	{
+	    /* ... */
+	      error = VCALL(ap);
+</PRE><BR>
+<P class=docText><A name="the macro"></A>In the preceding code, the macro <TT>VCALL(ap)</TT> will bump the <SPAN class=docEmphasis>vnode</SPAN> operation that called <TT>null_bypass</TT> (for instance <TT>VOP_READ_APV)</TT><A name="You can"></A> one filesystem level down. You can see this trick in action in <A class=docLink href="javascript:moveTo('routing_system_calls_through_a_bypass_function');">Figure 17-3</A>.</P><A name=routing_system_calls_through_a_bypass_function></A>
+<P>
+<CENTER>
+<H5 class=docFigureTitle><A name="system calls"></A>Figure 17-3. Routing system calls through a bypass function</H5><IMG id="" height=321 alt="" src="images/from_function_arguments_to_argument_pointers.1.png" width=500 border=0> </CENTER>
+<P></P><BR>
+<P class=docText>In addition, the <TT>vop_vector</TT><A name=named></A> contains a field named <TT>default</TT> that is a <A name=idx-CHP-17-1400></A>pointer to the <TT>vop_vector</TT><A name="implement some"></A> structure of the underlying filesystem layer. Through that field, if a filesystem doesn't implement some functionality, the request is passed on to a lower level. By <A name=idx-CHP-17-1401></A>populating the <TT>bypass</TT> and the <TT>default</TT><A name=its></A> fields of its <TT>vop_vector</TT> structure, a filesystem can choose among:</P>
+<UL>
+<LI>
+<P class=docList><A name="on its"></A>Handling an incoming request on its own</P></LI>
+<LI>
+<P class=docList><A name="filesystem after"></A>Bypassing the request to a lower-level filesystem after modifying some arguments</P></LI>
+<LI>
+<P class=docList><A name="Directly calling"></A>Directly calling the lower-level filesystem</P></LI></UL>
+<P class=docText><A name="visualize this"></A>In my mind, I visualize this as bits sliding down the ramps, kickers, and spinners of an elaborate pinball machine. The following example from the read system call implementation shows how the system locates the <A name=idx-CHP-17-1402></A>function to call:</P><PRE>	int
+	VOP_READ_APV(struct {	vop_vector	*vop, struct vop_read_args *a)
+	{
+
+	   [...]
+	     /*
+	 * Drill down the <A name=idx-CHP-17-1403></A>filesystem layers to find one
+	 * that implements the function or a bypass
+	 */
+	while (vop != NULL &amp;&amp;
+	            vop-&gt;vop_read == NULL &amp;&amp; vop-&gt;vop_bypass == NULL)
+	                 vop = vop-&gt;vop_default;
+	      /* Call the function or the bypass */
+	        if (vop-&gt;vop_read != NULL)
+	                 rc = vop-&gt;vop_read(a);
+	        else 
+	                 rc = vop-&gt;vop_bypass(&amp;a-&gt;a_gen);
+</PRE><BR>
+<P class=docText><A name="of all"></A>Elegantly, at the bottom of all <A name=idx-CHP-17-1404></A><A name="lies a"></A>filesystem layers lies a filesystem that returns the Unix "operation not supported" error (<TT>EOPNOTSUPP</TT><A name="that wasn"></A>) for any function that wasn't implemented by the filesystems layered on top of it. This is our pinball's drain:</P><PRE>	#define VOP_EOPNOTSUPP ((void*)(uintptr_t)vop_eopnotsupp)
+
+	struct vop_vector default_vnodeops = {
+	        .vop_default =          NULL,
+	        .vop_bypass =           VOP_EOPNOTSUPP,
+	}
+
+	int
+	vop_eopnotsupp(struct vop_generic_args *ap)
+	{
+	          return (EOPNOTSUPP);
+	}
+</PRE><BR></DIV></DIV>
+<p>&nbsp;</p><p>&nbsp;</p><!-- 仁·义 -->
+</body></html>

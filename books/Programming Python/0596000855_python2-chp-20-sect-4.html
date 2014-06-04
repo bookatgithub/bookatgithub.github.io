@@ -1,0 +1,333 @@
+<html><head>
+<META http-equiv="Content-Type" content="text/html">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="20.4 Registering Callback Handler Objects"-->
+<link rel="STYLESHEET" type="text/css" href="FILES/style.css">
+<link rel="STYLESHEET" type="text/css" href="FILES/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+	<a href="0596000855_python2-CHP-20-SECT-3.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+	<a href="0596000855_python2-CHP-20-SECT-5.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr>
+<td valign="top"><A NAME="python2-CHP-20-SECT-4"></A>
+<H3 class="docSection1Title">20.4 Registering Callback Handler Objects</H3>
+
+<P class="docText"><A NAME="python2-IDXTERM-2367"></A> <A NAME="python2-IDXTERM-2368"></A> <A NAME="python2-IDXTERM-2369"></A>In examples thus far, C
+has been running and calling Python code from a standard main program
+flow of control. That's not always the way programs work,
+though; in some cases, programs are modeled on an
+<span class="docEmphasis">event-driven</span> architecture where code is executed
+only in response to some sort of event. The event might be an end
+user clicking a button in a GUI, the operating system delivering a
+signal, or simply software running an action associated with an entry
+in a table.
+</P>
+
+<P class="docText">In any event (pun accidental), program code in such an architecture
+is typically structured as <span class="docEmphasis">callback handlers
+ --</span> chunks of code dispatched by event-processing
+logic. It's easy to use embedded Python code to implement
+callback handlers in such a system; in fact, the event-processing
+layer can simply use the embedded-call API tools we saw earlier in
+this chapter to run Python handlers.
+</P>
+
+<P class="docText">The only new trick in this model is how to make the C layer know what
+code should be run for each event. Handlers must somehow be
+registered to C to associate them with future events. In general,
+there is a wide variety of ways to achieve this code/event
+association; for instance, C programs can:
+</P>
+
+<UL>
+<LI><P class="docList">Fetch and call <span class="docEmphasis">functions</span> by event name from one
+or more <span class="docEmphasis">module</span> files
+</P></LI>
+<LI><P class="docList">Fetch and run code <span class="docEmphasis">strings</span> associated with event
+names in a <span class="docEmphasis">database</span>
+</P></LI>
+<LI><P class="docList">Extract and run code associated with event <span class="docEmphasis">tags</span>
+in HTML or XML<sup class="docFootnote"><A class="docLink" HREF="#">[6]</A></sup>
+</P> <blockquote><p class="docFootnote"><sup><A NAME="">[6]</A></sup> And if C chooses to do so,
+it might even run embedded Python code that uses Python's
+standard HTML and XML processing tools to parse out the embedded code
+associated with an event tag. See the Python library manual for
+details on these parsers.</p></blockquote> </LI>
+<LI><P class="docList">Run Python code that calls back to C to tell it what should be run</P></LI>
+</UL>
+<P class="docText">And so on. Really, any place you can associate objects or strings
+with identifiers is a potential callback registration mechanism. Some
+of these techniques have advantages all their own. For instance,
+callbacks fetched from module files support dynamic reloading (as we
+learned in <A class="docLink" HREF="0596000855_python2-CHP-9.html#python2-CHP-9">Chapter 9</A>, <TT>reload</TT>
+works on modules and does not update objects held directly). And none
+of the first three schemes requires users to code special Python
+programs that do nothing but register handlers to be run later.
+</P>
+
+<P class="docText">It is perhaps more common, though, to register callback handlers with
+the last approach: letting Python code register handlers with C by
+calling back to C through extensions interfaces. Although this scheme
+is not without trade-offs, it can provide a natural and direct model
+in scenarios where callbacks are associated with a large number of
+objects.
+</P>
+
+<P class="docText">For instance, consider a GUI constructed by building a tree of widget
+objects in Python scripts. If each widget object in the tree can have
+an associated event handler, it may be easier to register handlers by
+simply calling methods of widgets in the tree. Associating handlers
+with widget objects in a separate structure such as a module file or
+HTML file requires extra cross-reference work to keep the handlers in
+sync with the tree.<sup class="docFootnote"><A class="docLink" HREF="#">[7]</A></sup>
+</P>
+<blockquote><p class="docFootnote"><sup><A NAME="">[7]</A></sup> If you're looking for a
+more realistic example of Python callback handlers, see the
+TkinterGUI system used extensively in this
+book. Tkinter uses both extending and embedding. Its
+<span class="docEmphasis">extending</span> interface (widget objects) is used to
+register Python callback handlers, which are later run with
+<span class="docEmphasis">embedding</span> interfaces in response to GUI events.
+You can study Tkinter's implementation in the Python source
+distribution for more details, though its Tk library interface logic
+makes it a somewhat challenging read.</p></blockquote>
+
+<P class="docText">The following C and Python files demonstrate the basic coding
+techniques used to implement explicitly registered callback handlers.
+The C file in <A class="docLink" HREF="#python2-CHP-20-EX-9">Example 20-9</A> implements interfaces for
+registering Python handlers, as well as code to run those handlers in
+response to events:
+</P>
+
+<A NAME="IXT-20-338242"></A><A NAME="IXT-20-338243"></A><A NAME="IXT-20-338244"></A><DL class="docList">
+<DT><I><span class="docPubcolor">Event router</span></I></DT>
+<DD>
+<P class="docList"><A NAME="IXT-20-338242"></A>The
+<TT>Route_Event</TT> function responds to an event by
+calling a Python function object previously passed from Python to C.
+</P>
+</DD><DT><I><span class="docPubcolor">Callback registration</span></I></DT>
+<DD>
+<P class="docList"><A NAME="IXT-20-338243"></A>The
+<TT>Register_Handler</TT> function saves a passed-in Python
+function object pointer in a C global variable. Python calls
+<TT>Register_Handler</TT> through a simple
+<TT>cregister</TT> C extension module created by this file.
+</P>
+</DD><DT><I><span class="docPubcolor">Event trigger</span></I></DT>
+<DD>
+<P class="docList"><A NAME="IXT-20-338244"></A>To
+simulate real-world events, the <TT>Trigger_Event</TT>
+function can be called from Python through the generated C module to
+trigger an event.
+</P>
+</DD>
+</DL>
+
+<P class="docText">In other words, this example uses both the embedding and extending
+interfaces we've already met to register and invoke Python
+event handler code.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-20-EX-9"></A>Example 20-9. PP2E\Integrate\Mixed\Regist\cregister.c </H5>
+<PRE>#include &lt;Python.h&gt;
+#include &lt;stdlib.h&gt;
+
+/***********************************************/
+/* 1) code to route events to Python object    */
+/* note that we could run strings here instead */
+/***********************************************/
+
+static PyObject *Handler = NULL;     /* keep Python object in C */
+
+void Route_Event(char *label, int count) 
+{
+    char *cres;
+    PyObject *args, *pres;
+
+    /* call Python handler */
+    args = Py_BuildValue("(si)", label, count);   /* make arg-list */
+    pres = PyEval_CallObject(Handler, args);      /* apply: run a call */
+    Py_DECREF(args);                              /* add error checks */
+
+    if (pres != NULL) {
+        /* use and decref handler result */
+        PyArg_Parse(pres, "s", &amp;cres);
+        printf("%s\n", cres);
+        Py_DECREF(pres);
+    }
+}
+
+/*****************************************************/
+/* 2) python extension module to register handlers   */
+/* python imports this module to set handler objects */
+/*****************************************************/
+
+static PyObject *
+Register_Handler(PyObject *self, PyObject *args)
+{
+    /* save Python callable object */
+    Py_XDECREF(Handler);                 /* called before? */
+    PyArg_Parse(args, "O", &amp;Handler);    /* one argument? */
+    Py_XINCREF(Handler);                 /* add a reference */
+    Py_INCREF(Py_None);                  /* return 'None': success */
+    return Py_None;
+}
+
+static PyObject *
+Trigger_Event(PyObject *self, PyObject *args)
+{
+    /* let Python simulate event caught by C */
+    static count = 0;
+    Route_Event("spam", count++);
+    Py_INCREF(Py_None);  
+    return Py_None;
+}
+
+static struct PyMethodDef cregister_methods[] = {
+    {"setHandler",    Register_Handler},       /* name, address */
+    {"triggerEvent",  Trigger_Event},  
+    {NULL, NULL}
+};
+
+void initcregister(  )                  /* this is called by Python  */
+{                                     /* on first "import cregister" */
+    (void) Py_InitModule("cregister", cregister_methods);
+}</PRE>
+
+
+<P class="docText">Ultimately, this C file is an extension module for Python, not a
+standalone C program that embeds Python (though C could just as well
+be on top). To compile it into a dynamically loaded module file, run
+the makefile in <A class="docLink" HREF="#python2-CHP-20-EX-10">Example 20-10</A> on Linux (and use
+something similar on other platforms). As we learned in the last
+chapter, the resulting <I>cregister.so</I> file will be
+loaded when first imported by a Python script if it is placed in a
+directory on Python's module search path (e.g.,
+".").
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-20-EX-10"></A>Example 20-10. PP2E\Integrate\Mixed\Regist\makefile.regist </H5>
+<PRE>######################################################################
+# Builds cregister.so, a dynamically-loaded C extension  
+# module (shareable), which is imported by register.py
+######################################################################
+
+PY    = $(MYPY)
+PYINC = -I$(PY)/Include -I$(PY)
+
+CMODS = cregister.so 
+
+all: $(CMODS)
+
+cregister.so: cregister.c
+	gcc cregister.c -g $(PYINC) -fpic -shared -o cregister.so
+
+clean: 
+	rm -f *.pyc $(CMODS)</PRE>
+
+
+<P class="docText">Now that we have a C extension module set to register and dispatch
+Python handlers, all we need are some Python handlers. The Python
+module shown in <A class="docLink" HREF="#python2-CHP-20-EX-11">Example 20-11</A> defines two callback
+handler functions and imports the C extension module to register
+handlers and trigger events.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-20-EX-11"></A>Example 20-11. PP2E\Integrate\Mixed\Regist\register.py </H5>
+<PRE>####################################################### 
+# register for and handle event callbacks from C;
+# compile C code, and run with 'python register.py'
+####################################################### 
+
+#
+# C calls these Python functions; 
+# handle an event, return a result
+#
+
+def callback1(label, count):
+    return 'callback1 =&gt; %s number %i' % (label, count)
+
+def callback2(label, count):
+    return 'callback2 =&gt; ' +  label * count
+
+#
+# Python calls a C extension module 
+# to register handlers, trigger events 
+#
+
+import cregister
+
+print '\nTest1:'
+cregister.setHandler(callback1)
+for i in range(3):
+    cregister.triggerEvent(  )         # simulate events caught by C layer
+
+print '\nTest2:'
+cregister.setHandler(callback2)
+for i in range(3):
+    cregister.triggerEvent(  )         # routes these events to callback2 </PRE>
+
+
+<P class="docText">That's it -- the Python/C callback integration is set to go.
+To kick off the system, run the Python script; it registers one
+handler function, forces three events to be triggered, and then
+changes the event handler and does it again:
+</P>
+
+<PRE>[mark@toy ~/.../PP2E/Integration/Mixed/Regist]$ <B>python register.py</B>
+
+Test1:
+callback1 =&gt; spam number 0
+callback1 =&gt; spam number 1
+callback1 =&gt; spam number 2
+
+Test2:
+callback2 =&gt; spamspamspam
+callback2 =&gt; spamspamspamspam
+callback2 =&gt; spamspamspamspamspam</PRE>
+
+<P class="docText">This output is printed by the C event router function, but its
+content is the return values of the handler functions in the Python
+module. Actually, there is something pretty wild going on here under
+the hood. When Python forces an event to trigger, control flows
+between languages like this:
+</P>
+
+<span style="font-weight:bold"><OL class="docList" TYPE="1">
+<LI><span style="font-weight:normal"><P class="docList">From Python to the C event router function</P></span></LI>
+<LI><span style="font-weight:normal"><P class="docList">From the C event router function to the Python handler function</P></span></LI>
+<LI><span style="font-weight:normal"><P class="docList">Back to the C event router function (where the output is printed)</P></span></LI>
+<LI><span style="font-weight:normal"><P class="docList">And finally back to the Python script</P></span></LI>
+</OL></span>
+<P class="docText">That is, we jump from Python to C to Python and back again. Along the
+way, control passes through both extending and embedding interfaces.
+When the Python callback handler is running, there are two Python
+levels active, and one C level in the middle. Luckily, this works;
+Python's API is reentrant, so you don't need to be
+concerned about having multiple Python interpreter levels active at
+the same time. Each level runs different code and operates
+independently.<A NAME="IXTR3-555"></A> <A NAME="IXTR3-556"></A> <A NAME="IXTR3-557"></A>
+</P>
+
+
+<a href="0596000855_"><img src="FILES/pixel.gif" width="1" height="1" border="0"></a><ul></ul>
+</td>
+</tr>
+</table>
+<td></td>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+          <a href="0596000855_python2-CHP-20-SECT-3.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+          <a href="0596000855_python2-CHP-20-SECT-5.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+</body></html>

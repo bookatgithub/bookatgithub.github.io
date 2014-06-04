@@ -1,0 +1,206 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;15.7.&nbsp;Using Twisted Perspective Broker</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-15-sect-6.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-15-sect-8.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-15-SECT-7"></a>
+<h3 class="docSection1Title">Recipe 15.7. Using Twisted Perspective Broker</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Simon Foster</span></p>
+
+<a name="pythoncook2-CHP-15-SECT-7.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText">You want to implement Python clients and servers for some distributed
+processing task, without repetitious
+"boilerplate" code, and with
+excellent performance and scalability characteristics.</P>
+
+
+<a name="pythoncook2-CHP-15-SECT-7.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">Use the <span class="docEmphasis">Perspective Broker</span> (PB) subsystem of the
+<span class="docEmphasis">Twisted</span> framework. A PB server just subclasses
+the PB's <tt>Root</tt> class and adds
+remotely callable methods. Here is an example of a server script
+which adds just one remotely callable method, named
+<i>Pong</I>:</p>
+
+<pre>from twisted.spread import pb
+from twisted.internet import reactor
+PORT = 8992
+class Ponger(pb.Root):
+    def remote_Pong(self, ball):
+        print 'CATCH', ball,
+        ball += 1
+        print 'THROW', ball
+        return ball
+reactor.listenTCP(PORT, pb.BrokerFactory(Ponger( )))
+reactor.run( )</pre><BR>
+
+
+<p class="docText">We could write an equally trivial script for the client side of the
+interaction, but let's instead have a rather
+feature-rich PB client, which deals with important issues often
+ignored in introductory examples of distributed programming, such as
+error handling:<a name="pythoncook2-CHP-15-ITERM-2985"></a> <a name="pythoncook2-CHP-15-ITERM-2986"></a></P>
+
+<pre>from twisted.spread import pb
+from twisted.internet import reactor
+import sys
+PORT = 8992
+DELAY         = 1
+DOG_DELAY     = 2
+RESTART_DELAY = 5
+class Pinger(object):
+    def _ _init_ _(self, host):
+        self.ping = None
+        self.host = host
+        self.ball = 0
+        self._start( )
+    def _start(self):
+        print 'Waiting for Server', self.host
+        dfr = pb.getObjectAt(self.host, PORT, 30)
+        dfr.addCallbacks(self._gotRemote, self._remoteFail)
+    def _gotRemote(self, remote):
+        remote.notifyOnDisconnect(self._remoteFail)
+        self.remote = remote
+        self._ping( )
+    def _remoteFail(self, _ _):
+        if self.ping:
+            print 'ping failed, canceling and restarting'
+            self.ping.cancel( )
+            self.ping = None
+        self.restart = reactor.callLater(RESTART_DELAY, self._start)
+    def _watchdog(self):
+        print 'ping timed out, canceling and restarting'
+        self._start( )
+    def _ping(self):
+        self.dog = reactor.callLater(DOG_DELAY, self._watchdog)
+        self.ball += 1
+        print 'THROW', self.ball,
+        dfr = self.remote.callRemote('Pong', self.ball)
+        dfr.addCallbacks(self._pong, self._remoteFail)
+    def _pong(self, ball):
+        self.dog.cancel( )
+        print 'CATCH',  ball
+        self.ball = ball
+        self.ping = reactor.callLater(DELAY, self._ping)
+if _ _name_ _ == '_ _main_ _':
+    if len(sys.argv) != 2:
+        print 'Usage: %s serverhost' % sys.argv[0]
+        sys.exit(1)
+    host = sys.argv[1]
+    print 'Ping-pong client to host', host
+    Pinger(host)
+    reactor.run( )</pre><br>
+
+
+
+<a name="pythoncook2-CHP-15-SECT-7.3"></a>
+<H4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">Twisted is a framework for <i>asynchronous</i> (also
+known as <span class="docEmphasis">event-driven</span>) programming of network
+clients, servers, proxies, and so on. The asynchronous programming
+model (which Twisted implements through the Reactor Design Pattern
+embodied in the <tt>twisted.internet.reactor</tt> module)
+provides excellent performance and scalability characteristics for
+Twisted-based programs.</p>
+
+<p class="docText">Twisted also includes many subsystems that offer your programs
+ready-to-go networking functionality. One of these subsystems,
+Perspective Broker (PB), is implemented in the
+<tt>twisted.spread.pb</tt> module. PB lets you code
+distributed-programming clients and servers, with an ease of use
+that's most clearly displayed in the server program
+at the start of this recipe's Solution. In just a
+few lines of code, the server class is able to expose remotely
+callable methods: all it takes is subclassing the
+<tt>Root</tt> class of the <tt>pb</tt> module and
+naming each remotely callable method with a prefix of
+<tt>remote_</tt>.</p>
+
+<p class="docText">Most of the client code in this recipe is concerned with diagnosing
+and handling possible problems and errors with the connection to the
+server. Specifically, if the connection fails for any reason,
+including a timeout diagnosed by the watchdog timer that the client
+sets up each time it pings, the client attempts to reconnect to the
+server. If you kill the server, the client keeps trying to reconnect,
+periodically, until you restart the server.</P>
+
+<p class="docText">Error-handling apart, the client is essentially as simple as the
+server. In the method <i>_start</i>, the client calls
+function <tt>getObjectAt</tt> of module
+<tt>twisted.spread.pb</tt>, which takes as its arguments
+the server's host, a port number, and a
+"time-out" delay in seconds. As
+usual in Python networking, the host can be either a network name,
+such as <tt>localhost</tt>, or a string representing an IP
+address, such as <tt>127.0.0.1</tt>.</P>
+
+<p class="docText">If no problems arise, <tt>getObjectAt</tt> returns an
+object that proxies for the remote PB server. The proxy object, in
+turn, has a <tt>callRemote</tt> method, which takes as its
+arguments the method name as a string, followed by any arguments you
+are passing to the remote method. <tt>callRemote</tt>
+returns a Twisted <tt>deferred</tt> object, the lynchpin of
+Twisted's style of asynchronous (event-driven)
+programming. Learning to use <tt>deferred</tt>s effectively
+is the fundamental step in learning to program with Twisted.</p>
+
+<p class="docText">A <tt>deferred</tt> object represents an event that may
+occur in the future (the <I>success-case</i>) or may
+end in failure. Given a <tt>deferred</tt>, you can add
+callbacks to it for both success and failure cases. (You can also
+<span class="docEmphasis">chain</span> callbacks, a possibility that this recipe
+does not exploit.) When the
+<tt>deferred</tt>'s event occurs,
+<span class="docEmphasis">Twisted</span> calls your
+"success-case" callback, passing as
+its argument the "result" of the
+<tt>deferred</tt>. Alternatively, if the
+<tt>deferred</tt> ends in failure,
+<span class="docEmphasis">Twisted</span> calls your
+<I>failure-case</I> callback, passing as its argument
+a failure object that wraps a Python exception object.<a name="pythoncook2-CHP-15-ITERM-2987"></a> <a name="pythoncook2-CHP-15-ITERM-2988"></a></p>
+
+<p class="docText">As you see in this recipe, despite
+<tt>deferred</tt>s' potentially rich and
+vast functionality, their use is really quite simple in most cases.
+For example, in the failure cases, the client in this recipe wants to
+retry connecting: therefore, method <i>_remoteFail</i>
+accepts the failure-object argument with an argument name of
+"two underscores" (<i>_
+_</i>), a common Python convention that indicates the argument
+will be ignored.</p>
+
+
+<a name="pythoncook2-CHP-15-SECT-7.4"></a>
+<h4 class="docSection2Title">See Also</h4>
+
+<p class="docText">The Twisted web site, at <a class="docLink" target="_blank" href="http://www.twistedmatrix.com">http://www.twistedmatrix.com</a>, has abundant
+documentation about all of Twisted's elements and
+subsystems, including Perspective Broker and
+<tt>deferred</tt> objects.</p>
+
+
+
+<a href="5991535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-15-sect-6.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-15-sect-8.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

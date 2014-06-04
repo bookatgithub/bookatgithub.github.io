@@ -1,0 +1,186 @@
+<html><head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="B.9 A Custom Text Compressor"-->
+<link rel="STYLESHEET" type="text/css" href="FILES/style.css">
+<link rel="STYLESHEET" type="text/css" href="FILES/docsafari.css">
+<style type="text/css">	.tt1    {font-size: 10pt;}</style>
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<td class="tt1"><a href="NFO/lib.html">[ Team LiB ]</a></td><td valign="top" class="tt1" align="right">
+	<a href="0321112547_app02lev1sec8.html"><img src="FILES/btn_prev.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+	<a href="0321112547_app02lev1sec10.html"><img src="FILES/btn_next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="app02lev1sec9"></A><H3 class="docSection1Title">B.9 A Custom Text Compressor</H3>
+<P class="docText">Most styles of compression require a decompression pass before one is able to do something useful with a source document. Many (de)compressors can operate as a stream, producing only the needed bytes of a compressed or decompressed stream in sequence. In some cases, formats even insert recovery or bookkeeping bytes that allow streams to begin within documents (rather than from the very beginning). Programmatic wrappers can make compressed documents or strings look like plaintext ones at the appropriate API layer. Nonetheless, even streaming decompressors require a computational overhead to get at the plaintext content of a compressed document.</P>
+<P class="docText">An excellent example of a streaming (de)compressor with an API wrapper is <span class="docEmphasis"><TT>gzip.GzipFile()</TT></span>. Although not entirely transparent, you can compress and decompress documents without any explicit call to a (de)compression function using this wrapper. <span class="docEmphasis"><TT>gzip.GzipFile()</TT></span> provides a file-like interface, but it is also easy to operate on a purely in-memory file using the support of <span class="docEmphasis"><TT>cStringIO.StringIO()</TT>. </span>For example:</P>
+<pre>
+&gt;&gt;&gt; from gzip import GzipFile
+&gt;&gt;&gt; from cStringIO import StringIO
+&gt;&gt;&gt; sio = StringIO()
+&gt;&gt;&gt; writer = GzipFile(None, 'wb', 9, sio)
+&gt;&gt;&gt; writer.write('Mary had a little lamb\n')
+&gt;&gt;&gt; writer.write('its fleece as white as snow\n')
+&gt;&gt;&gt; writer.close()
+&gt;&gt;&gt; sio.getvalue()[:20]
+'\x1f\x8b\x08\x00k\xc1\x9c&lt;\x02\xff'
+&gt;&gt;&gt; reader = GzipFile(None, 'rb', 9, StringIO(sio.getvalue()))
+&gt;&gt;&gt; reader.read()[:20]
+'Mary had a little la'
+&gt;&gt;&gt; reader.seek(30)
+&gt;&gt;&gt; reader.read()
+'ece as white as snow\n'
+</pre>
+<P class="docText">One thing this example shows is that the underlying compressed string is more or less gibberish. Although the file-like API hides the details from an application programmer, the decompression process is also stateful in its dependence on a symbol table built from the byte sequence in the compressed text. You cannot expect to make sense of a few bytes in the middle of the compressed text without a knowledge of the prior context.</P>
+<P class="docText">A different approach to compression can have significant advantages in operating on natural-language textual sources. A group of researchers in Brazil and Chile have examined techniques for "word-based Huffman compression." The general strategy of these researchers is to treat whole words as the symbol set for a Huffman table, rather than merely naive byte values. In natural languages, a limited number of (various length, multibyte) words occur with a high frequency, and savings result if such words are represented with shorter byte sequences. In general, such reduced representation is common to all compression techniques, but word-based Huffman takes the additional step of retaining byte boundaries (and uses fixed symbol mapping, as with other Huffman variants).</P>
+<P class="docText">A special quality of word-based Huffman compressed text is that it need not undergo decompression to be searched. This quality makes it convenient to store textual documents in compressed form, without incurring the requirement to decompress them before they are useful. Instead, if one is searching for words directly contained in the symbol table, one can merely precompress the search terms, then use standard searching algorithms. Such a search can be either against an in-memory string or against a file-like source; in general a search against a precompressed target will be <span class="docEmphasis">faster</span> than one against an uncompressed text. In code, one would use snippets similar to:</P>
+<pre>
+small_text = word_Huffman_compress(big_text)
+search_term = "Foobar"
+coded_term = word_Huffman_compress(search_term)
+offset = small_text.find(coded_term)
+coded_context = small_text[offset-10:offset+10+len(search_term)]
+plain_context = word_Huffman_expand(coded_context)
+</pre>
+<P class="docText">A sophisticated implementation of word-based Huffman compression can obtain better compression sizes than does <span class="docEmphasis"><TT>zlib</TT></span>. For simplicity, the module below sacrifices optimal compression to the goal of clarity and brevity of code. A fleshed-out implementation could add a number of features.</P>
+<P class="docText">The presented module <span class="docEmphasis"><TT>word-huffman</TT></span> uses a fixed number of bytes to encode each word in the symbol table. This number of bytes can be selected to be 1, 2, or 3 (thereby limiting the table to a generous 2 million entries). The module also separates the generation of a symbol table from the actual compression/decompression. The module can be used in a context where various documents get encoded using the same symbol table—the table presumably generated based on a set of canonical documents. In this situation, the computational requirement of symbol table generation can happen just once, and the symbol table itself need not be transmitted along with each compressed document. Of course, nothing prevents you from treating the document being processed currently as said canonical statistical word source (thereby somewhat improving compression).</P>
+<P class="docText">In the algorithm utilized by <span class="docEmphasis"><TT>word-huffman</TT></span>, only high-bit bytes are utilized in the symbol table. The lower 128 ASCII characters represent themselves as literals. Any ASCII character sequence that is not in the symbol table is represented as itself—including any short words that would not benefit from encoding. Any high-bit characters that occur in the original source text are escaped by being preceded by an OxFF byte. As a result, high-bit characters are encoded using two bytes; this technique is clearly only useful for encoding (mostly) textual files, not binary files. Moreover, only character values 0x80-OxFE are used by the symbol table (OxFF <span class="docEmphasis">always</span> signals a literal high-bit character in the encoding).</P>
+<P class="docText">The <span class="docEmphasis"><TT>word_huffman</TT></span> algorithm is not entirely stateless in the sense that not every subsequence in a compressed text can be expanded without additional context. But very little context is required. Any low-bit character always literally represents itself. A high-bit character, however, might be either an escaped literal, a first byte of a symbol table entry, or a non-first byte of a symbol table entry. In the worst case, where a 3-byte symbol table is used, it is necessary to look back two bytes from an arbitrary position in the text to determine the full context. Normally, only one byte lookback is necessary. In any case, words in the symbol table are separated from each other in the uncompressed text by nonalpha low-bit characters (usually whitespace), so parsing compressed entries is straightforward.</P>
+<H5 class="docExampleTitle"><A NAME="app02list01"></A> word_huffman.py</H5>
+
+<PRE>
+wordchars = '-_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+
+def normalize_text(txt):
+    "Convert non-word characters to spaces"
+    trans = [' '] * 256
+    for c in wordchars: trans[ord(c)] = c
+    return txt.translate('' .join(trans))
+
+def build_histogram(txt, hist={}):
+    "Incrementally build a histogram table from text source(s)"
+    for word in txt.split():
+        hist[word] = hist.get(word, 0)+1
+    return hist
+
+def optimal_Nbyte(hist, entrylen=2):
+    "Build optimal word list for nominal symbol table byte-length"
+    slots = 127**entrylen
+    words = []
+    for word, count in hist.items():
+        gain = count * (len(word)-entrylen)
+        if gain &gt; 0: words.append((gain, word))
+    words.sort()
+    words.reverse()
+    return [w[1] for w in words[:slots]]
+
+def tables_from_words(words):
+    "Create symbol tables for compression and expansion"
+    # Determine ACTUAL best symbol table byte length
+    if len(words) &lt; 128: entrylen = 1
+    elif len(words) &lt;= 16129: entrylen = 2
+    else: entrylen = 3 # assume &lt; <SUP>~</SUP>2M distinct words
+    comp_table = {}
+    # Escape hibit characters
+    for hibit_char in map(chr, range(128,256)):
+        comp_table[hibit_char] = chr(255)+hibit_char
+    # Literal low-bit characters
+    for lowbit_char in map(chr, range(128)):
+        comp_table[lowbit_char] = lowbit_char
+    # Add word entries
+    for word, index in zip(words, range(len(words))):
+        comp_table[word] = symbol(index, entrylen)
+    # Reverse dictionary for expansion table
+    exp_table = {}
+    for key, val in comp_table.items():
+        exp_table[val] = key
+    return (comp_table, exp_table, entrylen)
+
+def symbol(index, entrylen):
+    "Determine actual symbol from word sequence and symbol length"
+    if entrylen == 1:
+        return chr(128+index)
+    if entrylen == 2:
+        byte1, byte2 = divmod(index, 128)
+        return chr(128+byte1)+chr(128+byte2)
+    if entrylen == 3:
+        byte1, rem = divmod(index, 16129)
+        byte2, byte3 = divmod(rem, 128)
+        return chr(128+bytel)+chr(128+byte2)+chr(128+byte3)
+    raise ValueError, "symbol byte len must be 1 &lt;= S &lt;=3: "+'entrylen'
+
+def word_Huffman_compress(text, comp_table):
+    "Compress text based on word-to-symbol table"
+    comp_text = []
+    maybe_entry = []
+    for c in text+chr(0):   # force flush of final word
+        if c in wordchars:
+            maybe_entry.append(c)
+        else:
+            word = ''.join(maybe_entry)
+            comp_text.append(comp_table.get(word, word))
+            maybe_entry = []
+            comp_text.append(comp_table[c])
+    return ''.join(comp_text[:-1])
+
+def word_Huffman_expand(text, exp_table, entrylen):
+    "Expand text based on symbol-to-word table"
+    exp_text = []
+    offset = 0
+    end = len(text)
+    while offset &lt; end:
+        c = text[offset]
+        if ord(c) == 255:   # escaped highbit character
+            exp_text.append(text[offset+1])
+            offset += 2
+        elif ord(c) &gt;= 128: # symbol table entry
+            symbol = text[offset:offset+entrylen]
+            exp_text.append(exp_table[symbol])
+            offset += entrylen
+        else:
+            exp_text.append(c)
+            offset += 1
+    return ''.join(exp_text)
+
+def Huffman_find(pat, comp_text, comp_table):
+    "Find a (plaintext) substring in compressed text"
+    comp_pat = word_Huffman_compress(pat, comp_table)
+    return comp_text.find(comp_pat)
+
+if __name__=='__main__':
+    import sys, glob
+    big_text = []
+    for fpat in sys.argv[1:]:
+        for fname in glob.glob(fpat):
+            big_text.append(open(fname).read())
+    big_text = ''.join(big_text)
+    hist = build_histogram(normalize_text(big_text))
+    for entrylen in (1, 2, 3):
+        comp_words = optimal_Nbyte(hist, entrylen)
+        comp_table, exp_table, entrylen_ = tables_from_words(comp_words)
+        comp_text = word_Huffman_compress(big_text, comp_table)
+        exp_text = word_Huffman_expand(comp_text, exp_table, entrylen_)
+        print "Nominal/actual symbol length (entries): %i/%i (%i)" % \
+              (entrylen, entrylen_, len(comp_words))
+        print "Compression ratio: %i%%" % \
+              ((100*len(comp_text))/len(big_text))
+        if big_text == exp_text:
+            print "*** Compression/expansion cycle successful!\n"
+        else:
+            print "*** Failure in compression/expansion cycle!\n"
+        # Just for fun, here's a search against compressed text
+        pos = Huffman_find('Foobar', comp_text, comp_table)
+</PRE>
+<P class="docText">The <span class="docEmphasis"><TT>word_huffman</TT></span> module, while simple and fairly short, is still likely to be useful—and it lays the basis for a fleshed-out variant. The compression obtained by the algorithm above is a comparatively modest 50–60 percent of the size of the original text (in informal tests). But given that locality of decompression of subsegments is both possible and cheap, there is nearly no disadvantage to this transformation for stored documents. Word searches become quicker basically in direct proportion to the length reduction.</P>
+<P class="docText">One likely improvement would be to add run-length compression of whitespace (or generally of nonalpha characters); doing so would lose none of the direct searchability that this algorithm is designed around, and in typical electronic natural-language texts would result in significant additional compression. Moreover, a pleasant side effect of the <span class="docEmphasis"><TT>word-huffman</TT></span> transformation is that transformed documents become <span class="docEmphasis">more</span> compressible under Lempel-Ziv-based techniques (i.e., cumulatively). In other words, there is benefit in precompressing documents with <span class="docEmphasis"><TT>word-huffman</TT></span> if you intend to later compress them with <TT>gzip,</TT> <TT>zip</TT>, or similar tools.</P>
+<P class="docText">More aggressive improvements might be obtained by allowing variable byte-length symbol table entries and/or by claiming some additional low-bit control codes for the symbol table (and escaping literals in the original text). You can experiment with such variations, and your results might vary somewhat depending upon the details of application-specific canonical texts.</P>
+<P class="docText">Search capabilities might also be generalized—but this would require considerably greater effort. In the referenced research article below, the authors show how to generalize to direct regular-expression searching against word-based Huffman encoded texts. The <span class="docEmphasis"><TT>word-huffman</TT></span> implementation allows certain straightforward transformations of regular expressions (where literal words occur within them) for searching against compressed documents, but a number of caveats and restrictions apply. Overcoming most such limitations would involve digging into Python's underlying regular expression engine, but it is possible in principle.</P>
+<a href="0321112547_10061533.html"><img src="FILES/pixel.gif" width="1" height="1" border="0"></a><ul></ul></td></tr></table>
+<td></td>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<td class="tt1"><a href="NFO/lib.html">[ Team LiB ]</a></td><td valign="top" class="tt1" align="right">
+          <a href="0321112547_app02lev1sec8.html"><img src="FILES/btn_prev.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+          <a href="0321112547_app02lev1sec10.html"><img src="FILES/btn_next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+</body></html>

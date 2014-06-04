@@ -1,0 +1,166 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;20.4.&nbsp;Caching Attribute Values</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-20-sect-3.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-20-sect-5.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-20-SECT-4"></a>
+<h3 class="docSection1Title">Recipe 20.4. Caching Attribute Values</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Denis S. Otkidach</span></p>
+
+<a name="pythoncook2-CHP-20-SECT-4.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-20-ITERM-3132"></a>You want to be able to compute
+attribute values, either per instance or per class, on demand, with
+automatic caching.</P>
+
+
+<a name="pythoncook2-CHP-20-SECT-4.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">Custom descriptors are the right tools for this task:</p>
+
+<pre>class CachedAttribute(object):
+    ''' Computes attribute value and caches it in the instance. '''
+    def _ _init_ _(self, method, name=None):
+        # record the unbound-method and the name
+        self.method = method
+        self.name = name or method._ _name_ _
+    def _ _get_ _(self, inst, cls):
+        if inst is None:
+            # instance attribute accessed on class, return self
+            return self
+        # compute, cache and return the instance's attribute value
+        result = self.method(inst)
+        setattr(inst, self.name, result)
+        return result
+class CachedClassAttribute(CachedAttribute):
+    ''' Computes attribute value and caches it in the class. '''
+    def _ _get_ _(self, inst, cls):
+        # just delegate to CachedAttribute, with 'cls' as ``instance''
+        return super(CachedClassAttribute, self)._ _get_ _(cls, cls)</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-20-SECT-4.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">If your class instances have attributes that must be computed on
+demand but don't generally change after
+they're first computed, custom descriptor
+<I>CachedAttribute</i> as presented in this recipe is just
+the ticket. Here is a toy example of use (with Python 2.4 syntax):</P>
+
+<pre>class MyObject(object):
+    def _ _init_ _(self, n):
+        self.n = n
+    @CachedAttribute
+    def square(self):
+        return self.n * self.n
+m = MyObject(23)
+print vars(m)                               # 'square' not there yet
+# emits: <B>{'n': 23}</b>
+print m.square                              # ...so it gets computed
+# emits: <b>529</b>
+print vars(m)                               # 'square' IS there now
+# emits:<b> {'square': 529, 'n': 23}</b>
+del m.square                                # flushing the cache
+print vars(m)                               # 'square' removed  
+# emits: <b>{'n': 23}</b>
+m.n = 42
+print vars(m)
+# emits: <b>{'n': 42}</b>                   # still no 'square'
+print m.square                              # ...so gets recomputed
+# emits:<B> 1764</b>
+print vars(m)                               # 'square' IS there again
+# emits: <b>{'square': 1764, 'n': 23}</b></pre><br>
+
+
+<p class="docText">As you see, after the first access to <I>m.square</i>, the
+<I>square</i> attribute is cached in instance
+<tt><I>m</I></tt>, so it will not get recomputed for that
+instance. If you need to flush the cache, for example, to change
+<i>m.n</i>, so that <i>m.square</i> will get
+recomputed if it is ever accessed again, just <tt>del
+m.square</tt>. Remember, attributes can be removed in Python! To
+use this code in Python 2.3, remove the decorator syntax
+<tt>@CachedAttribute</tt> and insert instead an assignment
+<tt>square = CachedAttribute(square)</tt>
+<span class="docEmphasis">after</span> the end of the <tt>def</tt>
+statement for method <i>square</i>.</p>
+
+<p class="docText">Custom descriptor <i>CachedClassAttribute</i> is just a
+simple variant of <i>CachedAttribute</i>, easily obtained
+by inheritance: it computes the value by calling a method on the
+class rather than the instance, and it caches the result on the
+class, too. This may help when all instances of the class need to see
+the same cached value. <i>CachedClassAttribute</i> is
+mostly meant for cases in which you do not need to flush the cache
+because its <tt>_ _get_ _</tt> method usually wipes away
+the instance descriptor itself:</P>
+
+<pre>class MyClass(object):
+    class_attr = 23
+    @CachedClassAttribute
+    def square(cls):
+        return cls.class_attr * cls.class_attr
+x = MyClass( )
+y = MyClass( )
+print x.square
+# emits: <B>529</b>
+print y.square
+# emits: <b>529</b>
+del MyClass.square
+print x.square         # raises an AttributeError exception</pre><br>
+
+
+<p class="docText">However, when you do need a cached class attribute with the ability
+to occasionally flush it, you can still get it with a little trick.
+To implement this snippet so it works as intended, just add the
+statement:</P>
+
+<pre>class MyClass(MyClass): pass</pre><br>
+
+
+<p class="docText">right after the end of the <tt>class MyClass</tt> statement
+and before generating any instance of <i>MyClass</i>. Now,
+two class objects are named <i>MyClass</i>, a hidden
+"base" one that always holds the
+custom descriptor instance, and an outer
+"subclass" one that is used for
+everything else, including making instances and holding the cached
+value if any. Whether this trick is a reasonable one or whether
+it's too cute and clever for its own good, is a
+judgment call you can make for yourself! Perhaps it would be clearer
+to name the base class <i>MyClassBase</I> and use
+<tt>class MyClass(MyClassBase)</tt>, rather than use the
+same name for both classes; the mechanism would work in exactly the
+same fashion, since it is not dependent on the names of classes.</p>
+
+
+<a name="pythoncook2-CHP-20-SECT-4.4"></a>
+<H4 class="docSection2Title">See Also</h4>
+
+<p class="docText">Custom descriptors are best documented at Raymond
+Hettinger's web page: <a class="docLink" target="_blank" href="http://users.rcn.com/python/download/Descriptor.htm">http://users.rcn.com/python/download/Descriptor.htm</a>.<a name="pythoncook2-CHP-20-ITERM-3133"></a></P>
+
+
+
+<ul></UL></TD></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-20-sect-3.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-20-sect-5.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

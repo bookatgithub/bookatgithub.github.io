@@ -1,0 +1,225 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;9.4.&nbsp;Working with a Thread Pool</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-9-sect-3.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-9-sect-5.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-9-SECT-4"></a>
+<h3 class="docSection1Title">Recipe 9.4. Working with a Thread Pool</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: John Nielsen, Justin A</span></p>
+
+<a name="pythoncook2-CHP-9-SECT-4.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-9-ITERM-2537"></a>You want your main thread to be able to
+farm out processing tasks to a pool of worker threads.</P>
+
+
+<a name="pythoncook2-CHP-9-SECT-4.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText"><a name="pythoncook2-CHP-9-ITERM-2538"></a>The
+<tt>Queue.Queue</tt> type is the simplest and most
+effective way to coordinate a pool of worker threads. We could group
+all the needed data structures and functions into a class, but
+there's no real need to. So, here they are, shown as
+globals instead:</p>
+
+<pre>import threading, Queue, time, sys
+# Globals (start with a capital letter)
+Qin  = Queue.Queue( )
+Qout = Queue.Queue( )
+Qerr = Queue.Queue( )
+Pool = [  ]
+def report_error( ):
+    ''' we "report" errors by adding error information to Qerr '''
+    Qerr.put(sys.exc_info( )[:2])
+def get_all_from_queue(Q):
+    ''' generator to yield one after the others all items currently
+        in the Queue Q, without any waiting
+    '''
+    try:
+        while True:
+            yield Q.get_nowait( )
+    except Queue.Empty:
+        raise StopIteration
+def do_work_from_queue( ):
+    ''' the get-some-work, do-some-work main loop of worker threads '''
+    while True:
+        command, item = Qin.get( )       # implicitly stops and waits
+        if command == 'stop':
+            break
+        try:
+            # simulated work functionality of a worker thread
+            if command == 'process':
+                result = 'new' + item
+            else:
+                raise ValueError, 'Unknown command %r' % command
+        except:
+            # unconditional except is right, since we report _all_ errors
+            report_error( )
+        else:
+            Qout.put(result)
+def make_and_start_thread_pool(number_of_threads_in_pool=5, daemons=True):
+    ''' make a pool of N worker threads, daemonize, and start all of them '''
+    for i in range(number_of_threads_in_pool):
+         new_thread = threading.Thread(target=do_work_from_queue)
+         new_thread.setDaemon(daemons)
+         Pool.append(new_thread)
+         new_thread.start( )
+def request_work(data, command='process'):
+    ''' work requests are posted as (command, data) pairs to Qin '''
+    Qin.put((command, data))
+def get_result( ):
+    return Qout.get( )     # implicitly stops and waits
+def show_all_results( ):
+    for result in get_all_from_queue(Qout):
+        print 'Result:', result
+def show_all_errors( ):
+    for etyp, err in get_all_from_queue(Qerr):
+        print 'Error:', etyp, err
+def stop_and_free_thread_pool( ):
+    # order is important: first, request all threads to stop...:
+    for i in range(len(Pool)):
+        request_work(None, 'stop')
+    # ...then, wait for each of them to terminate:
+    for existing_thread in Pool:
+        existing_thread.join( )
+    # clean up the pool from now-unused thread objects
+    del Pool[:]</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-9-SECT-4.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">It is generally a mistake to architect a multithreading program on
+the premise of having it spawn arbitrarily high numbers of threads as
+needed. Most often, the best architecture for such a program is based
+on farming out work to a fixed and relatively small number of
+<I>worker threads</i>an arrangement known as a
+<I>thread pool</I>. This recipe shows a very simple
+example of a thread pool, focusing on the use of
+<tt>Queue.Queue</tt> instances as the most useful and
+simplest way for inter-thread communication and synchronization.</p>
+
+<p class="docText">In this recipe, worker threads run function
+<i>do_work_from_queue</i>, which has the right structure
+for a typical worker thread but does really minimal
+"processing" (just as an example).
+In this case, the worker thread computes a
+"result" by prepending the string
+'<tt>new</tt>' to each arriving item (note that this
+implicitly assumes that arriving items are strings). In your
+applications, of course, you will have, in the equivalent of this
+<i>do_work_from_queue</I> function, more substantial
+processing, and quite possibly different kinds of processing
+depending on the value of the <i>command</i> parameter.</P>
+
+<p class="docText">In addition to the worker threads in the pool, a multithreading
+program often has other specialized threads for various purposes,
+such as interfacing to various entities external to the program (a
+GUI, a database, a library that is not guaranteed to be thread-safe).
+In this recipe, such specialized threads are not shown. However, it
+does include at least a "main
+thread", which starts and stops the thread pool,
+determines the units of work to be farmed out, and eventually gathers
+all results and any errors that may have been reported.</p>
+
+<p class="docText">In your applications, you may or may not want to start and stop the
+thread pool repeatedly. Most typically, you may start the pool as a
+part of your program's initialization, leave it
+running throughout, and stop it, if at all, only as a part of your
+program's final cleanup. If you set your worker
+threads as "daemons", as this
+recipe's function
+<I>make_and_start_thread_pool</i> sets them by default, it
+means that your program will not continue running when only worker
+threads are left. Rather, your program will terminate as soon as the
+main thread terminates. Again, this arrangement is a typically
+advisable architecture. At any rate, the recipe also provides a
+function <I>stop_and_free_thread_pool</I>, just in case you
+<span class="docEmphasis">do</span> want to terminate and clean up your thread
+pool at some point (and possibly later make and restart another one
+with another call to <i>make_and_start_thread_pool</i>).</p>
+
+<p class="docText">An example use of the functionality in this recipe might be:</p>
+
+<pre>for i in ('_ba', '_be', '_bo'): request_work(i)
+make_and_start_thread_pool( )
+stop_and_free_thread_pool( )
+show_all_results( )
+show_all_errors( )</pre><br>
+
+
+<p class="docText">The output from this snippet should normally be:</p>
+
+<pre>Result: new_ba
+Result: new_be
+Result: new_bo</pre><br>
+
+
+<p class="docText">although it's <span class="docEmphasis">possible</span> (but
+quite unlikely) that two of the results might end up exchanged. (If
+ordering of results is important to you, be sure to add a progressive
+number to the work requests you post from the main thread, and report
+it back to the main thread as part of each result or error.)</p>
+
+<p class="docText">Here is a case where an error occurs and gets reported:</p>
+
+<pre>for i in ('_ba', 7, '_bo'): request_work(i)
+make_and_start_thread_pool( )
+stop_and_free_thread_pool( )
+show_all_results( )
+show_all_errors( )</pre><br>
+
+
+<p class="docText">The output from this snippet should normally be (net of an extremely
+unlikely, but not impossible, exchange between the two
+"Result" lines):</p>
+
+<pre>Result: new_ba
+Result: new_bo
+Error: exceptions.TypeError cannot concatenate 'str' and 'int' objects</pre><br>
+
+
+<p class="docText">The worker thread that gets the item <tt>7</tt> reports a
+<tt>TypeError</tt> because it tries to concatenate the
+string '<tt>new</tt>' with this item, which is an
+<tt>int</tt>an invalid operation. Not to worry: we
+have the <tt>try</tt>/<tt>except</tt> statement
+in function <I>do_work_from_queue</I> exactly to catch any
+kind of error, and <tt>Queue</tt> <i>Qerr</i> and
+functions <I>report_error</i> and
+<i>show_all_errors</i> exactly to ensure that errors do not
+pass silently, unless explicitly silenced, which is a key point of
+Python's general approach to programming.</p>
+
+
+<a name="pythoncook2-CHP-9-SECT-4.4"></a>
+<h4 class="docSection2Title">See Also</h4>
+
+<p class="docText"><span class="docEmphasis">Library Reference</span> docs on
+<tt>tHReading</tt> and <tt>Queue</tt> modules;
+<span class="docEmphasis">Python in a Nutshell</span> chapter on
+threads.<a name="pythoncook2-CHP-9-ITERM-2539"></a></p>
+
+
+
+<a href="5991535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><UL></ul></TD></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-9-sect-3.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-9-sect-5.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

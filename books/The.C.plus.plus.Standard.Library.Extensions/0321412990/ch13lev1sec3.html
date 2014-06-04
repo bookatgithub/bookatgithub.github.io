@@ -1,0 +1,263 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Section 13.2.&nbsp; Engine Templates in the TR1 Library</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=ch13lev1sec2.html><img src="images/prev.gif" width="60" height="17" border="0" align="absmiddle" alt="Previous Page"></a>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=ch13lev1sec4.html><img src="images/next.gif" width="60" height="17" border="0" align="absmiddle" alt="Next Page"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><a name="ch13lev1sec3"></a>
+<h3 id="680422-856" class="docSection1Title">13.2. Engine Templates in the TR1 Library</h3>
+<p class="docText">The TR1 library provides six templates that define engines. <a class="docLink" href="#ch13lev2sec4">Sections 13.2.1</a> <a class="docLink" href="#ch13lev2sec7">13.2.4</a> describe the <span class="docEmphasis">basic</span> engines; <a class="docLink" href="#ch13lev2sec8">Sections 13.2.5</a> and <a class="docLink" href="#ch13lev2sec9">13.2.6</a>, <span class="docEmphasis">compound</span> engines. The six templates satisfy all the requirements for engines, so you can use them as patterns if you write your own engine. You don't have to follow any of these patterns, though, so long as your engine provides all the required operations.</p>
+<p class="docText">The library also provides a class named <tt>random_device</tt> (<a class="docLink" href="ch13lev1sec4.html#ch13lev1sec4">Section 13.3</a>) and nine predefined engines, in the form of typedefs for particular template specializations (<a class="docLink" href="ch13lev1sec5.html#ch13lev1sec5">Section 13.4</a>).</p>
+<p class="docText">In the discussion that follows, some of the details are in the template declaration itself. In the text following the declaration, I'll explain the things that need more details than can easily fit in the declaration, including the details of the algorithm that the template implements and the contents of the engine's state.</p>
+<p class="docText">Every engine has a <span class="docEmphasis">state</span> that is used to generate successive values. The size of an engine's state and its <span class="docEmphasis">text representation</span>, written by the stream inserter and read by the stream extractor, are exactly specified by TR1.<sup class="docFootnote"><a class="docLink" href="#ch13fn8">[8]</a></sup> As a result, applications compiled with different implementations of the library and running on different hardware can share an engine's state. This is used for parallelizing calculations and for checkpointing. <span class="docEmphasis">Parallelizing a calculation</span> means distributing parts of the calculation to different processors, which requires being able to start an engine at a known state, even with a different <a name="iddle1143"></a><a name="iddle1425"></a><a name="iddle1543"></a>implementation of that engine. <span class="docEmphasis">Checkpointing</span> means saving a long-running application's state periodically so that the calculation can be resumed on the same machine if it gets interrupted. This does not require portability across systems.</p><blockquote><p class="docFootnote"><sup><a name="ch13fn8">[8]</a></sup> Of course, this doesn't mean that every implementation must exactly follow these details, just that it must act as if it did. In particular, several of the TR1 engines can be implemented more efficiently by holding more state values than TR1 requires. However, in all cases, the text written to a stream must be as specified.</p></blockquote>
+<a name="ch13lev2sec4"></a>
+<h4 id="title-IDAR5EII" class="docSection2Title">13.2.1. Basic Engine <tt>linear_congruential</tt></h4>
+<div class="docText"><pre>template&lt;class UType, UType A, UType C, UType M&gt;
+  class linear_congruential {
+public:
+  <span class="docEmphasis">// engine interface</span>
+  typedef UType <span class="docEmphasis">result_type</span>;
+  <span class="docEmphasis">linear_congruential</span>() { seed(); }
+  explicit <span class="docEmphasis">linear_congruential</span>(unsigned long x0) { seed(x0); }
+  template&lt;class Seeder&gt;
+    <span class="docEmphasis">linear_congruential</span> (Seeder&amp; s) { seed(s); }
+  void <span class="docEmphasis">seed</span>(unsigned long x0 = 1);
+  template&lt;class Seeder&gt;
+    void <span class="docEmphasis">seed</span>(Seeder&amp; s) { seed(s()); }
+  result_type <span class="docEmphasis">min</span>() const;
+  result_type <span class="docEmphasis">max</span>() const;
+  result_type <span class="docEmphasis">operator()</span>();
+
+  <span class="docEmphasis">// type-specific members</span>
+  static const UType <span class="docEmphasis">multiplier</span> = A;
+  static const UType <span class="docEmphasis">increment</span> = C;
+  static const UType <span class="docEmphasis">modulus</span> = M;
+  };
+</pre></div><br>
+<blockquote>
+<p class="docText">The class template describes a simple engine that produces values of type <tt>UType</tt>, using the recurrence relation <span class="docEmphasis">x<sub>i</sub></span>=(<span class="docEmphasis">A*x<sub>i</sub></span><sub>-1</sub>+<span class="docEmphasis">C</span>) mod <span class="docEmphasis">M</span>.</p>
+<p class="docText">If the value of the template argument <tt>M</tt> is 0, it is treated as if it were <tt>std::numeric_limits&lt;UType&gt;::max() + 1</tt>.<sup class="docFootnote"><a class="docLink" href="#ch13fn9">[9]</a></sup> The type argument <tt>UType</tt> must be an unsigned integral type that is large enough to store values up to <tt>M - 1</tt>. The values of the template arguments <tt>A</tt> and <tt>C</tt> must be in the range <tt>[0, M-1]</tt>.</p>
+<p class="docText">The size of the engine's state is 1, and its value is the last value returned by <tt>operator()</tt> or, if no call has been made to <tt>operator()</tt>, the seed value.</p>
+<p class="docText"><a name="iddle1469"></a><a name="iddle1544"></a>The member function <tt>seed(unsigned long x0)</tt> sets the state of the engine to the value <tt>x0</tt>, unless <tt>x0</tt> is 0 and <span class="docEmphasis">C</span> mod <span class="docEmphasis">M</span> is 0, in which case it sets the state to 1.<sup class="docFootnote"><a class="docLink" href="#ch13fn10">[10]</a></sup></p>
+<blockquote><p class="docFootnote"><sup><a name="ch13fn9">[9]</a></sup> Conceptually, that is. That value can't be represented in an object of type <tt>UType</tt>.</P></blockquote><blockquote><p class="docFootnote"><sup><a name="ch13fn10">[10]</a></sup> This avoids the degenerate case of a generator that produces nothing but 0 values.</p></blockquote></blockquote>
+<p class="docText">This template implements the commonly used linear congruential algorithm. If you choose the template arguments carefully, it can produce long random sequences. If you choose badly, the sequences can be short, or they can show other patterns. The predefined generators <tt>minstd_rand0</tt> (see <a class="docLink" href="ch13lev1sec5.html#ch13lev2sec10">Section 13.4.1</a>) and <tt>minstd_rand</tt> (see <a class="docLink" href="ch13lev1sec5.html#ch13lev2sec11">Section 13.4.2</a>) are well understood and have good properties.</P>
+<p class="docText">Linear congruential engines as a rule are fast, especially if the value of <tt>M</tt> is the same as the size of an unsigned integral type, which avoids having to do the final division on most hardware. The implementation should use an efficient integral type to hold intermediate values when it computes a new value. However, if <tt>M</tt> is larger than the square root of the system's largest unsigned integral value, the engine can be quite slow, because the implementation may have to resort to multiple-precision arithmetic.</p>
+
+<a name="ch13lev2sec5"></a>
+<h4 id="title-IDAUEFII" class="docSection2Title">13.2.2. Basic Engine <tt>mersenne_twister</tt></H4>
+<div class="docText"><pre>template&lt;class UType, int W, int N, int R,
+    UType A, int U, int S,
+    UType B, int T, UType C, int L&gt;
+  class mersenne_twister {
+public:
+  <span class="docEmphasis">// engine interface</span>
+  typedef UType <span class="docEmphasis">result_type</span>;
+  <span class="docEmphasis">mersenne_twister</span>() { seed(); }
+  explicit mersenne_twister(unsigned long x0) { seed(x0); }
+  template&lt;class Seeder&gt;
+    <span class="docEmphasis">mersenne_twister</span>(Seeder&amp; s) { seed(s); }
+  void <span class="docEmphasis">seed</span>();
+  void <span class="docEmphasis">seed</span>(unsigned long x0 = 5489);
+  template&lt;class Seeder&gt;
+    void <span class="docEmphasis">seed</span>(Seeder&amp; s);
+  result_type <span class="docEmphasis">min</span>() const;
+  result_type <span class="docEmphasis">max</span>() const;
+  result_type <span class="docEmphasis">operator()</span>();
+
+  <span class="docEmphasis">// type-specific members</span>
+  static const int <span class="docEmphasis">word_size</span> = W;
+  static const int <span class="docEmphasis">state_size</span> = N;
+  static const int <span class="docEmphasis">shift_size</span> = M;
+  static const int <span class="docEmphasis">mask_bits</span> = R;
+  static const int UType <span class="docEmphasis">parameter_a</span> = A;
+  static const int <span class="docEmphasis">output_u</span> = U;
+  static const int <span class="docEmphasis">output_s</span> = S;
+  static const UType <span class="docEmphasis">output_b</span> = B;
+  static const int <span class="docEmphasis">output_t</span> = T;
+  static const UType <span class="docEmphasis">output_c</span> = C;
+  static const int <span class="docEmphasis">output_l</span> = L;
+  };
+</pre></div><BR>
+<blockquote>
+<p class="docText">The class template describes a simple engine that produces values of type <tt>UType</tt> by applying the following recurrence relation:</p>
+<ul><li><p class="docList"><span class="docEmphasis">y<sub>i</sub></span> = (UM &amp;<span class="docEmphasis">x<sub>i</sub><sub>-</sub><sub>N</sub></span>)<span class="docEmphasis">|</span>(LM &amp;<span class="docEmphasis">x<sub>i</sub><sub>-</sub></span><sub>(</sub><span class="docEmphasis"><sub>N</sub><sub>-</sub></span><sub>1</sub><sub>)</sub>)</p></LI><LI><p class="docList">If the lowest bit of <span class="docEmphasis">y<sub>i</sub></span> is set, <span class="docEmphasis">x<sub>i</sub></span> = <span class="docEmphasis">x<sub>i</sub><sub>-</sub></span><sub>(</sub><span class="docEmphasis"><sub>N</sub><sub>-</sub><sub>M</sub></span><sub>)</sub> &#923;(<span class="docEmphasis">y<sub>i</sub></span> <span class="docEmphasis">&gt;&gt;</span>1)&#923;<span class="docEmphasis">A</span></P></LI><li><p class="docList">Otherwise, <span class="docEmphasis">x<sub>i</sub></span> = <span class="docEmphasis">x<sub>i</sub><sub>-</sub></span><sub>(</sub><span class="docEmphasis"><sub>N</sub><sub>-</sub><sub>M</sub></span><sub>)</sub> &#923;(<span class="docEmphasis">y<sub>i</sub></span> <span class="docEmphasis">&gt;&gt;</span>1)</p></LI></UL>
+<p class="docText">then computing the result, <span class="docEmphasis">o</span>(<span class="docEmphasis">x<sub>i</sub></span>), from the new value of <span class="docEmphasis">x<sub>i</sub></span>, as follows:</p>
+<ul><LI><p class="docList"><span class="docEmphasis">z</span>1<span class="docEmphasis">i</span> = <span class="docEmphasis">x<sub>i</sub></span> &#923;(<span class="docEmphasis">x<sub>i</sub></span> <span class="docEmphasis">&gt;&gt;U</span>)</P></li><li><p class="docList"><span class="docEmphasis">z</span>2<span class="docEmphasis">i</span> = <span class="docEmphasis">z</span>1<span class="docEmphasis">i</span> &#923;((<span class="docEmphasis">z</span>1<span class="docEmphasis">i</span> <span class="docEmphasis">&lt;&lt;S</span>)&amp;<span class="docEmphasis">B</span>)</p></li><LI><p class="docList"><span class="docEmphasis">z</span>3<span class="docEmphasis">i</span> = <span class="docEmphasis">z</span>2<span class="docEmphasis">i</span> &#923;(<span class="docEmphasis">z</span>2<span class="docEmphasis">i</span> <span class="docEmphasis">&lt;&lt;T</span>)&amp;<span class="docEmphasis">C</span>)</p></LI><li><p class="docList"><span class="docEmphasis">o</span>(<span class="docEmphasis">x<sub>i</sub></span>)= <span class="docEmphasis">z</span>3<span class="docEmphasis">i</span> &#923;(<span class="docEmphasis">z</span>3<span class="docEmphasis">i</span> <span class="docEmphasis">&gt;&gt;</span>1)</p></li></ul>
+<p class="docText">where all the computations are performed modulo 2<span class="docEmphasis"><sup>W</sup></span>, UM is a value of type <tt>UType</tt> with only its upper <tt>W-R</tt> bits set, and LM is a value of type <tt>UType</tt> with only its lower <tt>R</tt> bits set.</p>
+<p class="docText">The type argument <tt>UType</tt> must be an unsigned integral type whose width is at least <tt>W</tt> bits; that is, it must be able to hold values up to 2<span class="docEmphasis"><sup>W</sup></span> - 1. In addition:</p>
+<ul><li><p class="docList">1 <img src=images/U2264.jpg border=0> <span class="docEmphasis">M</span> <img src=images/U2264.jpg border=0> <span class="docEmphasis">N</span></p></li><li><p class="docList">0 <img src=images/U2264.jpg border=0> <span class="docEmphasis">R, U, S, T, L</span> <img src=images/U2264.jpg border=0> <span class="docEmphasis">W</span></p></li><li><p class="docList">0 <img src=images/U2264.jpg border=0> <span class="docEmphasis">A, B, C</span> <img src=images/U2264.jpg border=0> 2 <span class="docEmphasis"><sup>W</sup></span> - 1</p></li></ul>
+<p class="docText">The size of the engine's state is <tt>N</tt>, and its value is the sequence of values <span class="docEmphasis">x<sub>i</sub><sub></sub><sub>N</sub>, ...,x<sub>i</sub><sub></sub></span><sub>1</sub>, in that order.</p>
+<p class="docText"><a name="iddle1555"></a><a name="iddle1760"></a>The member function <tt>seed(unsigned long x0)</tt> sets <span class="docEmphasis">x<sub>-</sub><sub>N</sub></span> to <span class="docEmphasis">x0</span> mod 2<span class="docEmphasis"><sup>W</sup></span>, then, iteratively, sets</P>
+<p class="docText"><span class="docEmphasis">x<sub>-</sub><sub>N</sub></span><sub>+</sub><span class="docEmphasis"><sub>i</sub></span> = [<span class="docEmphasis">i</span>+1812433253((<span class="docEmphasis">x<sub>-</sub><sub>N</sub></span><sub>+</sub><span class="docEmphasis"><sub>i</sub><sub>-</sub></span><sub>1</sub><span class="docEmphasis">&gt;&gt;</span>(<span class="docEmphasis">W</span> -2))&#923;(<span class="docEmphasis">x<sub>-</sub><sub>N</sub></span><sub>+</sub><span class="docEmphasis"><sub>i</sub><sub>-</sub></span><sub>1</sub>))] mod 2<span class="docEmphasis">W</span></p>
+<p class="docText">for <span class="docEmphasis">i</span> = 1 <span class="docEmphasis">...N</span> - 1.</P>
+<p class="docText">The template member function <tt>seed(Gen&amp; g)</tt> sets the object's state to the successive values <span class="docEmphasis">g</span>() mod 2<span class="docEmphasis"><sup>W</sup></span>, respectively.</p>
+</blockquote>
+<p class="docText">The template implements the Mersenne Twister algorithm. The most commonly used version of the Mersenne Twister is implemented by <tt>mt19937</tt> (see <a class="docLink" href="ch13lev1sec5.html#ch13lev2sec12">Section 13.4.3</a>).</p>
+<p class="docText">The algorithm is fast, but it has a large state, requiring <tt>N*W</tt> bits of storage.<sup class="docFootnote"><a class="docLink" href="#ch13fn11">[11]</a></sup> An implementation typically updates all the state values at once, rather than changing them one at a time, as the algorithm specifies. This approach is faster, but it requires twice as much storage space.</P><blockquote><p class="docFootnote"><sup><a name="ch13fn11">[11]</a></sup> For example, the most common form of the Mersenne Twister, embodied in <tt>mt19937</tt>, requires 624 32-bit values to store its state.</P></blockquote>
+
+<a name="ch13lev2sec6"></a>
+<h4 id="title-IDAOSFII" class="docSection2Title">13.2.3. Basic Engine <tt>subtract_with_carry</tt></h4>
+<div class="docText"><pre>template&lt;class IType, IType M, int S, int R&gt;
+  class subtract_with_carry {
+public:
+  <span class="docEmphasis">// engine interface</span>
+  typedef IType <span class="docEmphasis">result_type</span>;
+  <span class="docEmphasis">subtract_with_carry</span>() { seed(); }
+  explicit <span class="docEmphasis">subtract_with_carry</span>(unsigned long x0) { seed(x0); }
+  template&lt;class Seeder&gt;
+    <span class="docEmphasis">subtract_with_carry</span>(Seeder&amp; s) { seed(s); }
+  void <span class="docEmphasis">seed</span>(unsigned long x0 = 19780503);
+  template&lt;class Seeder&gt;
+    void <span class="docEmphasis">seed</span>(Seeder&amp; s);
+  result_type <span class="docEmphasis">min</span>() const;
+  result_type <span class="docEmphasis">max</span>() const;
+  result_type <span class="docEmphasis">operator()</span>();
+
+  <span class="docEmphasis">// type-specific members</span>
+  static const IType <span class="docEmphasis">modulus</span> = M;
+  static const int <span class="docEmphasis">short_lag</span> = S;
+  static const int <span class="docEmphasis">long_lag</span> = R;
+  };
+</pre></div><br>
+<blockquote>
+<p class="docText"><a name="iddle1556"></a><a name="iddle1761"></a>The class template describes a simple engine that produces values of type <tt>IType</tt> by applying the recurrence relation <span class="docEmphasis">x<sub>i</sub></span> = (<span class="docEmphasis">x<sub>i</sub><sub>-</sub><sub>S</sub></span> - <span class="docEmphasis">x<sub>i</sub><sub>-</sub><sub>R</sub></span> - <span class="docEmphasis">cy<sub>i</sub><sub>-</sub></span><sub>1</sub>) mod <span class="docEmphasis">M</span>, where <span class="docEmphasis">cy<sub>i</sub></span> = 1 if <span class="docEmphasis">x<sub>i</sub><sub>-</sub><sub>S</sub></span> - <span class="docEmphasis">x<sub>i</sub><sub>-</sub><sub>R</sub></span> - <span class="docEmphasis">cy<sub>i</sub><sub>-</sub></span><sub>1</sub> <span class="docEmphasis">&lt;</span> 0; otherwise, <span class="docEmphasis">cy<sub>i</sub></span> = 0.</p>
+<p class="docText">The type argument <tt>IType</tt> must be an integral type large enough to hold values up to <tt>M</tt>. In addition, 0 <span class="docEmphasis">&lt;</span> <span class="docEmphasis">S</span> <span class="docEmphasis">&lt;</span> <span class="docEmphasis">R</span>.</P>
+<p class="docText">The size of the engine's state is <tt>R</tt>, and its value is the sequence of values <span class="docEmphasis">x<sub>i</sub><sub>-</sub><sub>R</sub>, ...,x<sub>i</sub><sub>-</sub></span><sub>1</sub><span class="docEmphasis">, cy<sub>i</sub><sub>-</sub></span><sub>1</sub>, in that order.</P>
+<p class="docText">The member function <tt>seed(unsigned long x0)</tt> creates a generator object, <tt>lcg</tt>, of type <tt>linear_congruential&lt;unsigned long, 2147483563, 40014, 0&gt;</tt>. It initalizes it with the value <tt>x0</tt> if <tt>x0</tt> is not zero; otherwise, with the value <tt>19780503</tt>. It then generates successive state values <span class="docEmphasis">x<sub>-</sub><sub>R</sub>,...,x<sub>-</sub></span><sub>1</sub> with <span class="docEmphasis">lcg</span>() mod <span class="docEmphasis">M</span>, then sets <span class="docEmphasis">cy<sub>-</sub></span><sub>1</sub> to 1 if <span class="docEmphasis">x<sub>-</sub></span><sub>1</sub> is 0; otherwise, to 0.</P>
+<p class="docText">The member function template <tt>seed(Gen&amp; g)</tt> accumulates unsigned 32-bit values produced by calling <tt>g()</tt> to generate successive state values <span class="docEmphasis">x<sub>-</sub><sub>R</sub>,...,x<sub>-</sub></span><sub>1</sub>, then sets <span class="docEmphasis">cy<sub>-</sub></span><sub>1</sub> to 1 if <span class="docEmphasis">x<sub>-</sub></span><sub>1</sub> is 0, otherwise to 0. Formally, with <span class="docEmphasis">N</span>=<img src=images/U230A.jpg border=0>(<span class="docEmphasis">M</span>+31)/32<img src=images/U230B.jpg border=0>, the function uses <span class="docEmphasis">g</span>() to generate <span class="docEmphasis">N*R</span> successive values <span class="docEmphasis">Z</span><sub>0</sub><span class="docEmphasis">,Z</span><sub>1</sub><span class="docEmphasis">,...,Z<sub>N</sub><sub>*</sub><sub>R</sub><sub>-</sub></span><sub>1</sub> and initializes the engine's state <span class="docEmphasis">x<sub>-</sub><sub>R</sub>,...,x<sub>-</sub></span><sub>1</sub> to the values (<span class="docEmphasis">Z</span><sub>0</sub>&#183; 2 <sup>0</sup>+<span class="docEmphasis">&#183; &#183; &#183;</span> +<span class="docEmphasis">Z<sub>N</sub><sub>-</sub></span><sub>1</sub>&#183; 2<sup>32</sup>(<span class="docEmphasis">N-</span>1)) mod <span class="docEmphasis">M, ...,</span>(<span class="docEmphasis">Z<sub>N</sub><sub>*</sub><sub>R</sub><sub>-</sub><sub>N</sub></span> 2<sup>0</sup>+<span class="docEmphasis">...</span> +<span class="docEmphasis">Z<sub>N</sub><sub>*</sub><sub>R</sub><sub>-</sub></span><sub>1</sub> 2<sup>32</sup>(<span class="docEmphasis">N-</span>1)) mod <span class="docEmphasis">M</span>.</P>
+</blockquote>
+<p class="docText">The engine generates values without multiplication, so it is quite fast.<sup class="docFootnote"><a class="docLink" href="#ch13fn12">[12]</a></sup> With suitable lags, it generates pretty good random sequences. It can be improved significantly by discarding some of the generated values, as done by <tt>ranlux3</tt>(see <a class="docLink" href="ch13lev1sec5.html#ch13lev2sec13">Section 13.4.4</a>) and <tt>ranlux4</tt> (see <a class="docLink" href="ch13lev1sec5.html#ch13lev2sec14">Section 13.4.5</a>).</p><blockquote><p class="docFootnote"><sup><a name="ch13fn12">[12]</a></sup> Don't worry about the modulus operation; mathematically, that requires division, but in fact, it's simply a test and a subtraction.</p></blockquote>
+
+<a name="ch13lev2sec7"></a>
+<H4 id="title-IDAP2J0I" class="docSection2Title">13.2.4. Basic Engine <tt>subtract_with_carry_01</tt></H4>
+<div class="docText"><pre>template&lt;class RType, IType W, int S, int R&gt;
+  class subtract_with_carry_01 {
+public:
+  <span class="docEmphasis">// engine interface</span>
+  typedef RType <span class="docEmphasis">result_type</span>;
+  <span class="docEmphasis">subtract_with_carry_01</span>() { seed(); }
+  explicit <span class="docEmphasis">subtract_with_carry_01</span> (unsigned long x0)
+    { seed (x0); }
+template&lt;class Seeder&gt;
+  <span class="docEmphasis">subtract_with_carry_01</span> (Seeder&amp; s) { seed (s); }
+void <span class="docEmphasis">seed</span>(unsigned long x0 = 19780503);
+template&lt;class Seeder&gt;
+  void <span class="docEmphasis">seed</span>(Seeder&amp; s);
+result_type <span class="docEmphasis">min</span>() const;
+result_type <span class="docEmphasis">max</span>() const;
+result_type <span class="docEmphasis">operator()</span> ();
+
+<span class="docEmphasis">// type-specific members</span>
+static const <span class="docEmphasis">IType word_size</span> = W;
+static const int <span class="docEmphasis">short_lag</span> = S;
+static const int <span class="docEmphasis">long_lag</span> = R;
+};
+</pre></div><br>
+<blockquote>
+<p class="docText">The class template describes a simple engine that produces values of type <tt>RType</tt> by applying the recurrence relation <span class="docEmphasis">x<sub>i</sub></span> = (<span class="docEmphasis">x<sub>i</sub><sub></sub><sub>S</sub></span> - <span class="docEmphasis">x<sub>i</sub><sub></sub><sub>R</sub></span> - <span class="docEmphasis">cy<sub>i</sub><sub></sub></span><sub>1</sub><sup>)</sup> mod 1, where <span class="docEmphasis">cy<sub>i</sub></span> = 2<span class="docEmphasis"><sup>-W</sup></span> if <span class="docEmphasis">x<sub>i</sub><sub></sub><sub>S</sub></span> - <span class="docEmphasis">x<sub>i</sub><sub></sub><sub>R</sub></span> - <span class="docEmphasis">cy<sub>i</sub><sub></sub></span><sub>1</sub> <span class="docEmphasis">&lt;</span> 0; otherwise, <span class="docEmphasis">cy<sub>i</sub></span> = 0.</p>
+<p class="docText">The type argument <tt>RType</tt> must be a floating-point type with enough precision to hold all the bits in the generated values. In addition, 0 <span class="docEmphasis">&lt;</span> <span class="docEmphasis">S</span> <span class="docEmphasis">&lt;</span> <span class="docEmphasis">R</span>.</P>
+<p class="docText">The size of the engine's state is <tt>R</tt>. With <span class="docEmphasis">N</span> = <span class="docEmphasis">|</span>(<span class="docEmphasis">W</span> + 31)<span class="docEmphasis">/</span>32 <span class="docEmphasis">|</span>, each value <span class="docEmphasis">x<sub>i</sub><sub>-</sub><sub>k</sub></span> can be represented as (<span class="docEmphasis">z<sub>k,</sub></span><sub>0</sub> + <span class="docEmphasis">z<sub>k,</sub></span><sub>1</sub> &#183;2 <sup>32</sup> + <span class="docEmphasis">...</span> + <span class="docEmphasis">z<sub>k,N</sub><sub></sub></span><sub>1</sub> &#183;2<sup>32 (<span class="docEmphasis">N-</span>1)</sup>)<span class="docEmphasis">/</span>2<span class="docEmphasis"><sup>W</sup></span> . The textual representation of the state is the textual representation of the values <span class="docEmphasis">z<sub>R</sub><sub>,</sub></span><sub>0</sub><span class="docEmphasis">, ...,z<sub>R</sub><sub>,</sub><sub>N</sub><sub>-</sub></span><sub>1</sub><span class="docEmphasis">, ...,z</span><sub>1</sub><span class="docEmphasis"><sub>,</sub></span><sub>0</sub><span class="docEmphasis">, ...,z</span><sub>1</sub><span class="docEmphasis"><sub>,</sub><sub>N</sub><sub>-</sub></span><sub>1</sub><span class="docEmphasis">,cy<sub>i</sub><sub>-</sub></span><sub>1</sub> &#183;2<span class="docEmphasis"><sup>W</sup></span>.</P>
+<p class="docText">The member function <tt>seed(unsigned long x0)</tt> creates a generator object, <tt>lcg</tt>, of type <tt>linear_congruential&lt;unsigned long, 2147483563, 40014, 0&gt;</tt>. It initalizes it with the value <tt>x0</tt> if <tt>x0</tt> is not zero; otherwise, with the value <tt>19780503</tt>. It then generates successive state values <span class="docEmphasis">x<sub>-</sub><sub>R</sub>, ...,x<sub>-</sub></span><sub>1</sub> with <span class="docEmphasis">lcg()</span>&#183; 2<span class="docEmphasis"><sup></sup>W</span> mod 1, then sets <span class="docEmphasis">cy<sub>-</sub></span><sub>1</sub> to 2<span class="docEmphasis"><sup>-W</sup></span> if <span class="docEmphasis">x<sub>-</sub></span><sub>1</sub> is 0; otherwise, to 0.</p>
+<p class="docText">The member function template <tt>seed(Gen&amp; g)</tt> accumulates unsigned 32-bit values produced by calling <tt>g()</tt> to generate successive state values <span class="docEmphasis">x<sub>-</sub><sub>R</sub>, ...,x<sub>-</sub></span><sub>1</sub>, then sets <span class="docEmphasis">cy<sub>-</sub></span><sub>1</sub> to 2<span class="docEmphasis"><sup>-</sup>W</span> if <span class="docEmphasis">x<sub>-</sub></span><sub>1</sub> is 0, otherwise to 0. Formally, with <span class="docEmphasis">N</span>=<img src=images/U230A.jpg border=0>(<span class="docEmphasis">M</span>+31)/32<img src=images/U230B.jpg border=0>, the function uses <span class="docEmphasis">g</span>() to generate <span class="docEmphasis">N*R</span> successive values <span class="docEmphasis">Z</span><sub>0</sub><span class="docEmphasis">,Z</span><sub>1</sub><span class="docEmphasis">,...,Z<sub>N</sub><sub>*</sub><sub>R</sub><sub>-</sub></span><sub>1</sub> and initializes the engine's state <span class="docEmphasis">x<sub>-</sub><sub>R</sub>,...,x<sub>-</sub></span><sub>1</sub> to the values (<span class="docEmphasis">Z</span><sub>0</sub>&#183;2<sup>0</sup>+&#183; &#183; &#183;+<span class="docEmphasis">Z<sub>N</sub><sub>-</sub></span><sub>1</sub>&#183;2<sup>32</sup>(<span class="docEmphasis"><sup>N</sup></span>-<sup>1)</sup>)&#183;2<sup>-</sup><span class="docEmphasis"><sup>W</sup></span> mod 1,...,(<span class="docEmphasis">Z<sub>N</sub><sub>*</sub><sub>R</sub><sub>-</sub><sub>N</sub></span> &#183;2<sup>0</sup>+<span class="docEmphasis">&#183; &#183; &#183;</span> +<span class="docEmphasis">Z<sub>N</sub><sub>*</sub><sub>R</sub><sub>-</sub></span><sub>1</sub> 2<sup>32(<span class="docEmphasis">N-</span>1)</sup>) 2<span class="docEmphasis"><sup>-W</sup></span> mod 1.</p>
+</blockquote>
+<p class="docText"><a name="iddle1212"></a><a name="iddle1542"></a>The engine generates floating-point values in the range <tt>[0.0, 1.0)</tt>. If you wade through the details of the specification, you'll see that with a binary floating-point implementation, the returned values have no more than <tt>W</tt> bits in their fraction. Other floating-point representations may need more bits but must return the same values as the binary representation.</p>
+<p class="docText">Just like <tt>subtract_with_carry</tt>, this algorithm is quite fast. Its predefined versions are <tt>ranlux_base_01</tt> (<a class="docLink" href="ch13lev1sec5.html#ch13lev2sec15">Section 13.4.6</a>) and <tt>ranlux64_base_01</tt>(<a class="docLink" href="ch13lev1sec5.html#ch13lev2sec16">Section 13.4.7</a>). Also like <tt>subtract_with_carry</tt>, with suitable lags, it generates pretty good random sequences, which can be improved by discarding some of the values, as done by <tt>ranlux3_01</tt> (see <a class="docLink" href="ch13lev1sec5.html#ch13lev2sec17">Section 13.4.8</a>) and <tt>ranlux4_01</tt> (see <a class="docLink" href="ch13lev1sec5.html#ch13lev2sec18">Section 13.4.9</a>).</p>
+
+<a name="ch13lev2sec8"></a>
+<H4 id="title-IDA1JK0I" class="docSection2Title">13.2.5. Compound Engine <tt>discard_block</tt></h4>
+<div class="docText"><pre>template&lt;class Eng, int P, int R&gt;
+  class discard_block {
+public:
+  <span class="docEmphasis">// engine interface</span>
+  typedef typename base_type::result_type <span class="docEmphasis">result_type</span>;
+  <span class="docEmphasis">discard_block</span>() : eng(), n(0) {}
+  explicit <span class="docEmphasis">discard_block</span>(const base_type&amp; e)
+    : eng(e), n(0) {}
+  explicit <span class="docEmphasis">discard_block</span>(unsigned long x0)
+    : eng(x0), n(0) {}
+  template&lt;class Gen&gt;
+    <span class="docEmphasis">discard_block</span> (Gen&amp; g) : eng(g), n(0) {}
+  void <span class="docEmphasis">seed</span>() { eng. seed(); }
+  template&lt;class Gen&gt;
+    void <span class="docEmphasis">seed</span>(Gen&amp; g) { eng.seed (g); }
+  const base_type&amp; <span class="docEmphasis">base</span>() const { return eng; }
+  result_type <span class="docEmphasis">min</span>() const { return eng.min(); }
+  result_type <span class="docEmphasis">max</span>() const { return eng.max(); }
+  result_type <span class="docEmphasis">operator()</span>();
+
+  <span class="docEmphasis">// type-specific members</span>
+  typedef Eng <span class="docEmphasis">base_type</span>;
+  static const int <span class="docEmphasis">block_size</span> = P;
+  static const int <span class="docEmphasis">used_block</span> = R;
+
+  <span class="docEmphasis">// exposition only:</span>
+private:
+  Eng eng;
+  int n;
+  };
+</pre></div><BR>
+<blockquote>
+<p class="docText"><a name="iddle1557"></a><a name="iddle1912"></a>The class template describes a compound engine whose <tt>operator()</tt> returns the first <tt>P</tt> values returned by the engine <tt>eng</tt>, then discards the next <tt>P - R</tt> values returned by <tt>eng</tt>, and then repeats this cycle as necessary.</p>
+<p class="docText">The type argument <tt>Eng</tt> must be an engine type that satisfies the requirements set out at the beginning of this chapter. In addition, 0 <span class="docEmphasis">&lt;</span> <span class="docEmphasis">R</span> <span class="docEmphasis">&lt;</span>= <span class="docEmphasis">P</span>.<sup class="docFootnote"><a class="docLink" href="#ch13fn13">[13]</a></sup></p>
+<p class="docText">The size of the engine's state is one more than the size of <tt>eng</tt>'s state. Its textual representation is the textual representation of <tt>eng</tt>, followed by the textual representation of the number of calls to <tt>operator()</tt> since the beginning of the current cycle.</p>
+<blockquote><p class="docFootnote"><sup><a name="ch13fn13">[13]</a></sup> The TR requires 0 <span class="docEmphasis">&lt;</span>= <span class="docEmphasis">R</span> <span class="docEmphasis">&lt;</span>= <span class="docEmphasis">P</span>, but passing 0 for the template argument <tt>R</tt> has the same effect as passing 1. There's no benefit from using 0.</p></blockquote></blockquote>
+<p class="docText">The engine can sometimes be used to improve the quality of another engine.<sup class="docFootnote"><a class="docLink" href="#ch13fn14">[14]</a></sup> See, for example, <tt>ranlux3</tt> (<a class="docLink" href="ch13lev1sec5.html#ch13lev2sec13">Section 13.4.4</a>), <tt>ranlux4</tt> (<a class="docLink" href="ch13lev1sec5.html#ch13lev2sec14">Section 13.4.5</a>), <tt>ranlux3_01</tt> (<a class="docLink" href="ch13lev1sec5.html#ch13lev2sec17">Section 13.4.8</a>), and <tt>ranlux4_01</tt> (<a class="docLink" href="ch13lev1sec5.html#ch13lev2sec18">Section 13.4.9</a>).</p><blockquote><p class="docFootnote"><sup><a name="ch13fn14">[14]</a></sup> But heed Knuth's warning that modifying random number generators often makes them worse. See [Knu98a, 26].</p></blockquote>
+
+<a name="ch13lev2sec9"></a>
+<h4 id="title-IDAAPK0I" class="docSection2Title">13.2.6. Compound Engine <tt>xor_combine</tt></h4>
+<div class="docText"><pre>template&lt;class Eng1, int S1, class Eng2, int S2&gt;
+  class xor_combine {
+public:
+  <span class="docEmphasis">// engine interface</span>
+  typedef <span class="docEmphasis">see below result_type</span>;
+  <span class="docEmphasis">xor_combine</span>() : eng1 (), eng2() {}
+  <span class="docEmphasis">xor_combine</span> (const base1_type&amp; e1, const base2_type&amp; e2)
+     : eng1 (e1), eng2 (e2) {}
+  <span class="docEmphasis">xor_combine</span>(unsigned long x0) : eng1 (x0), eng2 (x0 + 1) {}
+  template &lt;class Gen&gt;
+     <span class="docEmphasis">xor_combine</span>(Gen&amp; g) : eng1(g), eng2(g) {}
+  void <span class="docEmphasis">seed</span>() { eng1.seed(); eng2.seed(); }
+  template&lt;class Gen&gt;
+    void <span class="docEmphasis">seed</span>(Gen&amp; g) { eng1.seed(g); eng2.seed(g); }
+  const base1_type&amp; <span class="docEmphasis">base1</span>() const { return eng1; }
+  const base2_type&amp; <span class="docEmphasis">base2</span>() const { return eng2; }
+  result_type <span class="docEmphasis">min</span>() const;
+  result_type <span class="docEmphasis">max</span>() const;
+  result_type <span class="docEmphasis">operator()</span>();
+  <span class="docEmphasis">// type-specific members</span>
+  typedef Eng1 <span class="docEmphasis">base1_type</span>;
+  typedef Eng2 <span class="docEmphasis">base2_type</span>;
+  static const int <span class="docEmphasis">shift1</span> = S1;
+  static const int <span class="docEmphasis">shift2</span> = S2;
+
+  <span class="docEmphasis">// exposition only:</span>
+private:
+  Eng1 eng1;
+  Eng2 eng2;
+  };
+</pre></div><br>
+<blockquote>
+<p class="docText"><a name="iddle1548"></a><a name="iddle1563"></a>The class template describes a compound engine whose <tt>operator()</tt> returns <tt>(eng1() &lt;&lt; shift1)</tt> &#923; <tt>(eng2() &lt;&lt; shift2)</tt>.</p>
+<p class="docText">The type arguments <tt>Eng1</tt> and <tt>Eng2</tt> must be engine types that satisfy the requirements set out at the beginning of this chapter. Each type's nested member typedef <tt>result_type</tt> must be an integral type. The template's nested type <tt>xor_combine::result_type</tt> is the one of those two nested types that provides the most storage. In addition, 0 <span class="docEmphasis">&lt;</span>= <span class="docEmphasis">s</span>1 and 0 <span class="docEmphasis">&lt;</span>= <span class="docEmphasis">s</span>2.</p>
+<p class="docText">The size of the engine's state is the sum of the sizes of the states of <tt>eng1</tt> and <tt>eng2</tt>. Its textual representation is the textual representation of <tt>eng1</tt>, followed by the textual representation of <tt>eng2</tt>.</p>
+</blockquote>
+<p class="docText">The engine combines the results of two engines, using left shifts and bitwise exclusive OR. Except in unusual circumstances, at least one of the two shift values should be 0. For best results, the engine whose value is not shifted should produce values ranging from 0 to 2<span class="docEmphasis"><sup>n</sup></span> <span class="docEmphasis">-</span> 1, and the shifted values from the other engine should be somewhere in that range.</p>
+
+
+</TD></TR></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=ch13lev1sec2.html><img src="images/prev.gif" width="60" height="17" border="0" align="absmiddle" alt="Previous Page"></a>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=ch13lev1sec4.html><img src="images/next.gif" width="60" height="17" border="0" align="absmiddle" alt="Next Page"></a>
+</div></td></tr></table>
+</body></html>

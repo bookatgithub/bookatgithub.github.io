@@ -1,0 +1,249 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;6.12.&nbsp;Checking an Instance for Any State Changes</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-6-sect-11.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-6-sect-13.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-6-SECT-12"></a>
+<h3 class="docSection1Title">Recipe 6.12. Checking an Instance for Any State Changes</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: David Hughes</span><a name="pythoncook2-CHP-6-ITERM-2164"></a></p>
+
+<a name="pythoncook2-CHP-6-SECT-12.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText">You need to check whether any changes to an
+instance's state have occurred to selectively save
+instances that have been modified since the last
+"save" operation.</P>
+
+
+<a name="pythoncook2-CHP-6-SECT-12.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText"><a name="pythoncook2-CHP-6-ITERM-2165"></a>An effective
+solution is a <i>mixin class</I>a class you
+can multiply inherit from and that is able to take snapshots of an
+instance's state and compare the
+instance's current state with the last snapshot to
+determine whether or not the instance has been modified:</p>
+
+<pre>import copy
+class ChangeCheckerMixin(object):
+    containerItems = {dict: dict.iteritems, list: enumerate}
+    immutable = False
+    def snapshot(self):
+        ''' create a "snapshot" of self's state -- like a shallow copy, but
+            recursing over container types (not over general instances:
+            instances must keep track of their own changes if needed).  '''
+        if self.immutable:
+            return
+        self._snapshot = self._copy_container(self._ _dict_ _)
+    def makeImmutable(self):
+        ''' the instance state can't change any more, set .immutable '''
+        self.immutable = True
+        try:
+            del self._snapshot
+        except AttributeError:
+            pass
+    def _copy_container(self, container):
+        ''' semi-shallow copy, recursing on container types only '''
+        new_container = copy.copy(container)
+        for k, v in self.containerItems[type(new_container)](new_container):
+            if type(v) in self.containerItems:
+                new_container[k] = self._copy_container(v)
+            elif hasattr(v, 'snapshot'):
+                v.snapshot( )
+        return new_container
+    def isChanged(self):
+        ''' True if self's state is changed since the last snapshot '''
+        if self.immutable:
+            return False
+        # remove snapshot from self._ _dict_ _, put it back at the end
+        snap = self._ _dict_ _.pop('_snapshot', None)
+        if snap is None:
+            return True
+        try:
+            return self._checkContainer(self._ _dict_ _, snap)
+        finally:
+            self._snapshot = snap
+    def _checkContainer(self, container, snapshot):
+        ''' return True if the container and its snapshot differ '''
+        if len(container) != len(snapshot):
+            return True
+        for k, v in self.containerItems[type(container)](container):
+            try:
+                ov = snapshot[k]
+            except LookupError:
+                return True
+            if self._checkItem(v, ov):
+                return True
+        return False
+    def _checkItem(self, newitem, olditem):
+        ''' compare newitem and olditem.  If they are containers, call
+            self._checkContainer recursively.  If they're an instance with
+            an 'isChanged' method, delegate to that method.  Otherwise,
+            return True if the items differ. '''
+        if type(newitem) != type(olditem):
+            return True
+        if type(newitem) in self.containerItems:
+            return self._checkContainer(newitem, olditem)
+        if newitem is olditem:
+            method_isChanged = getattr(newitem, 'isChanged', None)
+            if method_isChanged is None:
+                return False
+            return method_isChanged( )
+        return newitem != olditem</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-6-SECT-12.3"></a>
+<H4 class="docSection2Title">Discussion</h4>
+
+<p class="docText">I often need change-checking functionality in my applications. For
+example, when a user closes the last GUI window over a certain
+document, I need to check whether the document was changed since the
+last "save" operation; if it was,
+then I need to pop up a small window to give the user a choice
+between saving the document, losing the latest changes, or canceling
+the window-closing operation.</P>
+
+<p class="docText"><a name="pythoncook2-CHP-6-ITERM-2166"></a>
+<a name="pythoncook2-CHP-6-ITERM-2167"></a>The class
+<I>ChangeCheckerMixin</i>, which this recipe describes,
+satisfies this need. The idea is to multiply derive all of your data
+classes, meaning all classes that hold data the user views and may
+change, from <i>ChangeCheckerMixin</i> (as well as from any
+other bases they need). When the data has just been loaded from or
+saved to persistent storage, call method <i>snapshot</I> on
+the top-level, document data class instance. This call takes a
+"snapshot" of the current state,
+basically a shallow copy of the object but with recursion over
+containers, and calls the <i>snapshot</i> methods on any
+contained instance that has such a method. Any time afterward, you
+can call method <I>isChanged</i> on any data class instance
+to check whether the instance state was changed since the time of its
+last snapshot.</P>
+
+<p class="docText">As container types, <i>ChangeCheckerMixin</I>, as
+presented, considers only <tt>list</tt> and
+<tt>dict</tt>. If you also use other types as containers,
+you just need to add them appropriately to the
+<I>containerItems</i> dictionary. That dictionary must map
+each container type to a function callable on an instance of that
+type to get an iterator on indices and values (with indices usable to
+index the container). Container type instances must also support
+being shallowly copied with standard library Python function
+<tt>copy.copy</tt>. For example, to add Python
+2.4's <tt>collections.deque</tt> as a
+container to a subclass of <i>ChangeCheckerMixin</i>, you
+can code:</p>
+
+<pre>import collections
+class CCM_with_deque(ChangeCheckerMixin):
+    containerItems = dict(ChangeCheckerMixin.containerItems)
+    containerItems[collections.deque] = enumerate</pre><br>
+
+
+<p class="docText">since <tt>collections.deque</tt> can be
+"walked over" with
+<tt>enumerate</tt>, just like <tt>list</tt> can.</p>
+
+<p class="docText">Here is a toy example of use for <i>ChangeChecherMixin</i>:</p>
+
+<pre>if _ _name_ _ == '_ _main_ _':
+    class eg(ChangeCheckerMixin):
+        def _ _init_ _(self, *a, **k):
+            self.L = list(*a, **k)
+        def _ _str_ _(self):
+            return 'eg(%s)' % str(self.L)
+        def _ _getattr_ _(self, a):
+            return getattr(self.L, a)
+    x = eg('ciao')
+    print 'x =', x, 'is changed =', x.isChanged( )
+    # emits:<b> x = eg(['c', 'i', 'a', 'o']) is changed = True</b>
+    # now, assume x gets saved, then...:
+    x.snapshot( )
+    print 'x =', x, 'is changed =', x.isChanged( )
+    # emits: <b>x = eg(['c', 'i', 'a', 'o']) is changed = False</b>
+    # now we change x...:
+    x.append('x')
+    print 'x =', x, 'is changed =', x.isChanged( )
+    # emits: <b>x = eg(['c', 'i', 'a', 'o', 'x']) is changed = True</b></pre><br>
+
+
+<p class="docText">In class <tt>eg</tt> we only subclass
+<I>ChanceCheckerMixin</I> because we need no other bases.
+In particular, we cannot usefully subclass <tt>list</tt>
+because the change-checking functionality works only on state that is
+kept in an instance's dictionary; so, we must hold a
+list object in our instance's dictionary, and
+delegate to it as needed (in this toy example, we delegate all
+nonspecial methods, automatically, via <tt>_ _getattr_
+_</tt>). With this precaution, we see that the
+<i>isChanged</i> method correctly reflects the crucial
+tidbitwhether the instance's state has been
+changed since the last call to <I>snapshot</i> on the
+instance.</p>
+
+<p class="docText">An implicit assumption of this recipe is that your
+application's data class instances are organized in
+a hierarchical fashion. The tired old (but still valid) example is an
+invoice containing header data and detail lines. Each instance of the
+details data class could contain other instances, such as product
+details, which may not be modifiable in the current activity but are
+probably modifiable elsewhere. This is the reason for the
+<i>immutable</i> attribute and the
+<i>makeImmutable</i> method: when the attribute is set by
+calling the method, any outstanding snapshot for the instance is
+dropped to save memory, and further calls to either
+<I>snapshot</i> or <I>isChanged</i> can return
+very rapidly.</P>
+
+<p class="docText"><a name="pythoncook2-CHP-6-ITERM-2168"></a>If your data does not lend itself to such
+hierarchical structuring, you may have to take full deep copies, or
+even "snapshot" a document instance
+by taking a full pickle of it, and check for changes by comparing the
+new pickle with the last one previously taken. That may be all right
+on very fast machines, or when the amount of data
+you're handling is rather modest. In my tests,
+however, it shows up as being unacceptably slow for substantial
+amounts of data on more ordinary machines. This recipe, when your
+data organization is suitable for its application, can offer better
+performance. If some of your data classes also contain data that is
+automatically computed or, for other reasons, does not need to be
+saved, store such data in instances of subordinate classes (which do
+<span class="docEmphasis">not</span> inherit from
+<i>ChangeCheckerMixin</I>), rather than either holding the
+data as attributes or storing it in ordinary containers such as lists
+and dictionaries.</P>
+
+
+<a name="pythoncook2-CHP-6-SECT-12.4"></a>
+<h4 class="docSection2Title">See Also</H4>
+
+<p class="docText"><span class="docEmphasis">Library Reference</span> and <span class="docEmphasis">Python in a
+Nutshell</span> documentation on multiple inheritance, the
+<tt>iteritems</tt> method of dictionaries, and built-in
+functions <tt>enumerate</tt>,
+<tt>isinstance</tt>, and
+<tt>hasattr</tt>.<a name="pythoncook2-CHP-6-ITERM-2169"></a></P>
+
+
+
+<a href="5991535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-6-sect-11.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-6-sect-13.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

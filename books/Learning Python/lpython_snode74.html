@@ -1,0 +1,453 @@
+<HTML><HEAD><META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=iso-8859-1">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="6.10 Class Gotchas"-->
+<LINK REL="stylesheet" href="FILES/sbolM.css">
+</HEAD>
+<BODY link="#354278" vlink="#000066" alink="#000080" topmargin="0">
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right"><a href="lpython_snode73.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a> <a href="lpython_snode75.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a></td></table>
+<FONT>
+<h3>6.10
+Class Gotchas</h3>
+
+
+<p>Most class issues can usually be boiled down to namespace issues
+(which makes sense, given that classes are just namespaces with a few
+extra tricks up their sleeves).</p>
+
+
+
+
+<A NAMe="idx642"></a><h4>6.10.1
+Changing Class Attributes Can Have Side Effects</h4>
+
+
+<P>Theoretically speaking, <A NAme="idx582"></a>classes (and class instances) are
+all mutable objects. Just as with built-in lists and dictionaries,
+they can be changed in place, by assigning to their attributes. As
+with lists and dictionaries, this also means that changing a class or
+instance object may impact multiple references to it.</p>
+
+
+
+<P>That's usually what we want (and is how objects change their
+state in general), but this becomes especially critical to know when
+changing class attributes. Because all instances generated from a
+class share the class's namespace, any changes at the class
+level are reflected in all instances, unless they have their own
+versions of changed class attributes.</P>
+
+
+
+<P>Since classes, modules, and instances are all just objects with
+attribute namespaces, you can normally change their attributes at
+runtime by assignments. Consider the following class; inside the
+class body, the assignment to name <Tt class="monofont">a</tt> generates an
+attribute <tt class="monofont">X.a</tt>, which lives in the class object at
+runtime and will be inherited by all of <tt cLaSs="monofont">X</tt>'s
+instances:</P>
+
+
+
+<pRE cLAsS="monofont">&gt;&gt;&gt;<b> class X:</B>
+...<B>     a = 1       </B> # class attribute
+...
+&gt;&gt;&gt;<B> I = X()</b>
+&gt;&gt;&gt;<b> I.a              </b># inherited by instance
+1
+&gt;&gt;&gt;<b> X.a</B>
+1</PRE>
+
+
+<p>So far so good. But notice what happens when we change the class
+attribute dynamically: it also changes it in every object which
+inherits from the class. Moreover, new instances created from the
+class get the dynamically set value, regardless of what the
+class's source code says:</p>
+
+
+
+<prE CLAss="monofont">&gt;&gt;&gt;<b> X.a = 2          </b># may change more than X
+&gt;&gt;&gt;<B> I.a              </B># I changes too
+2
+&gt;&gt;&gt;<B> J = X()          </B># J inherits from X's runtime values
+&gt;&gt;&gt;<b> J.a             </b> # (but assigning to J.a changes a in J, not X or I)
+2</pre>
+
+
+
+<h5>6.10.1.1
+Solution</h5>
+
+
+<p>Useful feature or dangerous trap? You be the judge, but you can
+actually get work done by changing class attributes, without ever
+making a single instance. In fact, this technique can simulate
+"records" or "structs" in other languages.
+For example, consider the following unusual but legal Python program:</p>
+
+
+
+<pre class="monofont">class X: pass                          # make a few attribute namespaces
+class Y: pass
+
+X.a = 1                                # use class attributes as variables
+X.b = 2                                # no instances anywhere to be found
+X.c = 3
+Y.a = X.a + X.b + X.c
+
+for X.i in range(Y.a): print X.i       # prints 0..5</pre>
+
+
+<P>Here, classes <tT claSs="monofont">X</TT> and <tT ClAsS="monofont">Y</TT> work like
+file-less modules—namespaces for storing variables we
+don't want to clash. This is a perfectly legal Python
+programming trick, but is less appropriate when applied to classes
+written by others; you can't always be sure that class
+attributes you change aren't critical to the class's
+internal behavior. If you're out to simulate a C struct, you
+may be better off changing instances than classes, since only one
+object is affected:</P>
+
+
+
+<pre cLASS="monofont">&gt;&gt;&gt; <b>class Record: pass</b>
+...
+&gt;&gt;&gt; <b>X = Record()</b>
+<A NAMe="idx583"></a>&gt;&gt;&gt; <b>X.name = 'bob'</b>
+&gt;&gt;&gt; <B>X.job  = 'Pizza maker'</B></PRe>
+
+
+
+
+
+
+
+<h4>6.10.2
+Multiple Inheritance: Order Matters</h4>
+
+
+<p>This may be obvious, but is worth underscoring: if you
+use<a name="idx584"></a>
+<a name="idx585"></a>
+multiple inheritance, the order in which superclasses are listed in a
+<tt clAsS="monofont">class</tt> statement header can be critical. For
+instance, in the example we saw earlier, suppose that the
+<tT cLAsS="monofont">Super</Tt> implemented a <Tt CLASs="monofont"> </tt>_
+_<tT CLAss="monofont"> repr </tt>__<TT CLass="monofont"> </tT> method too; would
+we then want to inherit <TT Class="monofont">Lister</tt>'s or
+<tt class="monofont">Super</tt>'s? We would get it from whichever
+class is listed first in <tt claSs="monofont">Sub</Tt>'s class header,
+since inheritance searches left to right. But now suppose
+<tt ClASs="monofont">Super</TT> and <tT cLASS="monofont">Lister</tt> have their own
+versions of other names too; if we want one name from
+<tt CLASs="monofont">Super</tt> and one from <tT CLAss="monofont">Lister</tt>, we
+have to override inheritance by manually assigning to the attribute
+name in the <TT CLass="monofont">Sub</tt> class:</p>
+
+
+
+<pre class="monofont">def __repr__(self): ...
+    def other(self): ...
+
+    def __repr__(self): ...
+    def other(self): ...
+
+class Sub(Super, Lister):  # pick up Super's __repr__, by listing it first
+    other = Lister.other   # but explicitly pick up Lister's version of other  
+    def __init__(self): 
+        ...</pre>
+
+
+
+<h5>6.10.2.1
+Solution</h5>
+
+
+<p>Multiple inheritance is an advanced tool; even if you understood the
+last paragraph, it's still a good idea to use it sparingly and
+carefully. Otherwise, the meaning of a name may depend on the order
+in which classes are mixed in an arbitrarily far removed subclass.</P>
+
+
+
+
+
+
+
+
+<h4>6.10.3
+Class Function Attributes Are Special</H4>
+
+
+<p>This one is<a nAmE="idx586"></A> simple if you understand
+Python's underlying object model, but it tends to trip up new
+users with backgrounds in other OOP languages (especially Smalltalk).
+In Python, class method functions can never be called without an
+instance. Earlier in the chapter, we talked about unbound methods:
+when we fetch a method function by qualifying a class (instead of an
+instance), we get an unbound method. Even though they are defined
+with a <tT ClAsS="monofont">def</TT> statement, unbound method objects are
+not simple functions; they cannot be called without an instance.</P>
+
+
+
+<p>For example, suppose we want to use class attributes to count how
+many instances are generated from a class. Remember, class attributes
+are shared by all instances, so we can store the counter in the class
+object itself:</p>
+
+
+
+<prE CLAss="monofont">class Spam:
+    numInstances = 0
+    def __init__(self):
+        Spam.numInstances = Spam.numInstances + 1
+    def printNumInstances():
+        print "Number of instances created: ", Spam.numInstances</prE>
+
+
+<P>This won't work: the <TT clasS="monofont">printNumInstances</TT>
+method still expects an instance to be passed in when called, because
+the function is associated with a class (even though there are no
+arguments in the <Tt class="monofont">def</tt> header):</p>
+
+
+
+<pre class="monofont">&gt;&gt;&gt; <b>from spam import *</b>
+&gt;&gt;&gt; <b>a = Spam()</B>
+&gt;&gt;&gt; <b>b = Spam()</B>
+&gt;&gt;&gt; <b>c = Spam()</b>
+&gt;&gt;&gt; <b>Spam.printNumInstances()</B>
+Traceback (innermost last):
+  File "&lt;stdin&gt;", line 1, in ?
+TypeError: unbound method must be called with class instance 1st argument</pRE>
+
+
+
+<h5>6.10.3.1
+Solution</H5>
+
+
+<P>Don't expect this: unbound methods aren't exactly the
+same as simple functions. This is really a knowledge issue, but if
+you want to call functions that access class members without an
+instance, just make them simple functions, not class methods. This
+way, an instance isn't expected in the call:</p>
+
+
+
+<PrE CLAss="monofont">def printNumInstances():
+    print "Number of instances created: ", Spam.numInstances
+
+class Spam:
+    numInstances = 0
+    def __init__(self):
+        Spam.numInstances = Spam.numInstances + 1
+
+&gt;&gt;&gt; <b>import spam</b>
+&gt;&gt;&gt; <B>a = spam.Spam()</B>
+&gt;&gt;&gt; <B>b = spam.Spam()</B>
+&gt;&gt;&gt; <b>c = spam.Spam()</b>
+&gt;&gt;&gt; <b>spam.printNumInstances()</b>
+Number of instances created:  3</PRE>
+
+
+<P>We can also make this work by calling through an instance, as usual:</p>
+
+
+
+<pre CLASs="monofont">class Spam:
+    numInstances = 0
+    def __init__(self):
+        Spam.numInstances = Spam.numInstances + 1
+    def printNumInstances(self):
+        print "Number of instances created: ", Spam.numInstances
+
+&gt;&gt;&gt; <b>from spam import Spam</b>
+&gt;&gt;&gt; <b>a, b, c = Spam(), Spam(), Spam()</b>
+&gt;&gt;&gt; <b>a.printNumInstances()</b>
+Number of instances created:  3
+&gt;&gt;&gt; <b>b.printNumInstances()</b>
+Number of instances created:  3
+&gt;&gt;&gt; <b>Spam().printNumInstances()</b>
+Number of instances created:  4</pre>
+
+
+<p>Some language theorists claim that this means Python doesn't
+have class methods, only instance methods. We suspect they really
+mean Python classes don't work the same as in some other
+language. Python really has bound and unbound method objects, with
+well-defined semantics; qualifying a class gets you an unbound
+method, which is a special kind of function. Python really does have
+class attributes, but functions in classes expect an instance
+argument.</p>
+
+
+
+<p>Moreover, since Python already provides <i>modules</i>
+as a namespace partitioning tool, there's usually no need to
+package functions in classes unless they implement object behavior.
+Simple functions in modules usually do most of what instance-less
+class methods could. For example, in the first example in this
+section, <tT cLass="monofont">printNumInstances</Tt> is already associated
+with the class, because it lives in the same module.</P>
+
+
+
+
+
+
+
+
+<H4>6.10.4
+Methods, Classes, and Nested Scopes</h4>
+
+
+<P>Classes introduce a local <A nAmE="idx587"></A>scope just as functions do, so the same
+sorts of scope gotchas can happen in a <TT clasS="monofont">class</TT>
+statement body. Moreover, methods are further nested functions, so
+the same issues apply. Confusion seems to be especially common when
+classes are nested. For instance, in the following example, the
+<Tt claSS="monofont">generate</TT> function is supposed to return an
+instance of the nested <tt clASS="monofont">Spam</Tt> class. Within its
+code, the class name <tt class="monofont">Spam</tt> is assigned in the
+<tt class="monofont">generate</tt> function's local scope. But within
+the class's <tT cLass="monofont">method</Tt> function, the class name
+<TT cLAsS="monofont">Spam</tT> is not visible; <TT Class="monofont">method</TT> has
+access only to its own local scope, the module surrounding
+<TT clasS="monofont">generate</TT>, and built-in names:</P>
+
+
+
+<pre cLASS="monofont">def generate():
+    class Spam:
+        count = 1
+        def method(self):        # name Spam not visible:
+            print Spam.count     # not local (def), global (module), built-in
+    return Spam()
+
+generate().method()
+
+C:\python\examples&gt; <b>python nester.py</b>
+Traceback (innermost last):
+  File "nester.py", line 8, in ?
+    generate().method()
+  File "nester.py", line 5, in method
+    print Spam.count             # not local (def), global (module), built-in
+NameError: Spam</pre>
+
+
+
+<h5>6.10.4.1
+Solution</h5>
+
+
+<p>The most general piece of advice we can pass along here is to
+remember the LGB rule; it works in classes and method functions just
+as it does in simple functions. For instance, inside a method
+function, code has unqualified access only to local names (in the
+method <tt class="monofont">def</tt>), global names (in the enclosing
+module), and built-ins. Notably missing is the enclosing
+<tt cLaSs="monofont">class</tt> statement; to get to class attributes,
+methods need to qualify <Tt CLaSS="monofont">self</tT>, the instance. To
+call one method from another, the caller must route the call through
+<tT CLAss="monofont">self</tt> (e.g., <TT CLass="monofont">self.method()</tT>).</P>
+
+
+
+<P>There are a variety of ways to get the example above to work. One of
+the simplest is to move the name <Tt claSS="monofont">Spam</TT> out to the
+enclosing module's scope with global declarations; since
+<tt class="monofont">method</tt> sees names in the enclosing module by the
+LGB rule, <tt class="monofont">Spam</tt> references work:</p>
+
+
+
+<pRe ClasS="monofont">def generate():
+    global Spam                 # force Spam to module scope
+    class Spam:
+        count = 1
+        def method(self):
+            print Spam.count    # works: in global (enclosing module)
+    return Spam()
+
+generate().method()             # prints 1</pRE>
+
+
+<p>Perhaps better, we can also restructure the example such that class
+<TT cLaSS="monofont">Spam</TT> is defined at the top level of the module by
+virtue of its nesting level, rather than <tt clASS="monofont">global</Tt>
+declarations. Both the nested <tt cLASS="monofont">method</tt> function and
+the top-level <tt CLASs="monofont">generate</tt> find
+<tt class="monofont">Spam</tt> in their global scopes:</p>
+
+
+
+<pre clasS="monofont">def generate():
+    return Spam()
+
+class Spam:                    # define at module top-level
+    count = 1
+    def method(self):
+        print Spam.count       # works: in global (enclosing module)
+
+generate().method()</pRe>
+
+
+<p>We can also get rid of the <tT cLAsS="monofont">Spam</Tt> reference in
+<Tt CLASs="monofont">method</tt> altogether, by using the special <tT CLAss="monofont">
+</tt>__<TT CLass="monofont"> class </tT>__<TT Class="monofont"> </tt>
+attribute, which, as we've seen, returns an instance's
+class object:</p>
+
+
+
+<pre class="monofont">def generate():
+    class Spam:
+        count = 1
+        def method(self):
+            print self.__class__.count       # works: qualify to get class
+    return Spam()
+
+generate().method()</pre>
+
+
+<p>Finally, we could use the <i>mutable default
+</I> argument trick we saw in <a href="lpython_cnode42.html">Chapter 4</A> to
+make this work, but it's so complicated we're almost
+embarrassed to show you; the prior solutions usually make more sense:</p>
+
+
+
+<PRe CLaSs="monofont">def generate():
+    class Spam:
+        count = 1
+        fillin = [None]
+        def method(self, klass=fillin):     # save from enclosing scope
+            print klass[0].count            # works: default plugged-in
+    Spam.fillin[0] = Spam
+    return Spam()
+
+generate().method()</PRE>
+
+
+<P>Notice that we can't say <tt clASS="monofont">klass=Spam</Tt> in
+<tt cLASS="monofont">method</tt>'s <tt CLASs="monofont">def</tt> header,
+because the name <tt class="monofont">Spam</tt> isn't visible in
+<tt class="monofont">Spam</tT>'s body either; it's not local (in
+the class body), global (the enclosing module), or built-in.
+<tT claSs="monofont">Spam</TT> only exists in the
+<tT ClAsS="monofont">generate</TT> function's local scope, which
+neither the nested class nor its<A name="idx588"></A> method can see. The LGB rule works the
+same for<A NAme="idx589"></a>
+both.</p>
+
+
+
+</FONT>
+ 
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right"><a href="lpython_snode73.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a> <a href="lpython_snode75.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a></td></table>
+</BODY></HTML>

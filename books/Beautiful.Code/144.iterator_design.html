@@ -1,0 +1,183 @@
+<html><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<link href="styles/globalstyle.css" type="text/css" rel="stylesheet"/>
+<link title="medium" href="styles/two.css" type="text/css" rel="stylesheet"/>
+<script src="scripts/main.js" type="text/javascript" language="javascript"></script>
+<title>Section 19.4. Iterator Design</title>
+</head><body>
+<DIV class=h3 style="MARGIN-TOP: 0px; PADDING-BOTTOM: 1em; WIDTH: 100%; PADDING-TOP: 0px"><SPAN>Multidimensional Iterators in NumPy</SPAN><SPAN> &gt; Iterator Design</SPAN></DIV>
+<DIV></DIV>
+<DIV>
+<DIV><A name=iterator_design></A>
+<H3 class=docSection1Title id=-100000>19.4. Iterator Design</H3>
+<P class=docText><A name="As described"></A>As described previously, an iterator is an abstract concept that encapsulates the idea of walking through each element of an array. The basic pseudocode for an iterator-based loop used <A name=idx-CHP-19-1554></A>in NumPy is:<A name=idx-CHP-19-1555></A></P><PRE>	set up iterator
+	  (including pointing the current value to the first value in the array)
+	while iterator not done:
+	    <TT><I>process the current value</I></TT>
+	point the current value to the next value
+</PRE><BR>
+<P class=docText>Everything but <TT><I><A name=value></A>process the current value </I></TT><A name="by the"></A>must be handled by the iterator and deserves discussion. As a result, there are basically three parts to the <A name=idx-CHP-19-1556></A>iterator design:</P>
+<DIV style="FONT-WEIGHT: bold">
+<OL class=docList type=1>
+<LI>
+<DIV style="FONT-WEIGHT: normal">
+<P class=docList><A name="the next"></A>Moving to the next value</P></DIV></LI>
+<LI>
+<DIV style="FONT-WEIGHT: normal">
+<P class=docList>Termination</P></DIV></LI>
+<LI>
+<DIV style="FONT-WEIGHT: normal">
+<P class=docList>Setup</P></DIV></LI></OL></DIV>
+<P class=docText><A name="be discussed"></A>These will each be discussed separately. The design considerations that went into <A name=idx-CHP-19-1557></A>NumPy's <A name=idx-CHP-19-1558></A><A name="a loop"></A>iterators included making the overhead for using them inside of a loop as small as possible and making them as fast as possible.</P><A name=iterator_progression></A>
+<H4 class=docSection2Title id=title-ID0ERYDK>19.4.1. Iterator Progression</H4>
+<P class=docText><A name="decision is"></A>The first decision is the order in which the elements will be taken. Although one could conceive of an iterator with no guarantee of the order in which the elements are taken, it is useful most of the time for the programmer to know the order. As a result, iterators <A name=idx-CHP-19-1559></A><A name="specific order"></A>in NumPy follow a specific order. The order is obtained using a relatively simple approach patterned after simple counting (with wrap-around) using a tuple of digits. Let a tuple of <SPAN class=docEmphasis>N</SPAN><A name="in the"></A> integers represent the current position in the array, with <SPAN class=docEmphasis>(0,…,0)</SPAN><A name="representing the"></A> representing the first element of the <SPAN class=docEmphasis>n</SPAN><SUB>1</SUB> x <SPAN class=docEmphasis>n</SPAN><SUB>2</SUB> x … x <SPAN class=docEmphasis>n<SUB>N</SUB></SPAN> array, and (<SPAN class=docEmphasis>n</SPAN><SUB>1</SUB>-1, <SPAN class=docEmphasis>n</SPAN><SUB>2</SUB>-1,…, <SPAN class=docEmphasis>n<SUB>N</SUB>-1)</SPAN> representing the last element.<A name=idx-CHP-19-1560></A><A name=idx-CHP-19-1561></A></P>
+<P class=docText><A name="integers represents"></A>This tuple of integers represents an <SPAN class=docEmphasis>N</SPAN><A name="is found"></A>-digit counter. The next position is found by incrementing the last digit by one. If, during this process, the <SPAN class=docEmphasis>i<SUP>th</SUP></SPAN> digit reaches <SPAN class=docEmphasis>n<SUB>i</SUB></SPAN><A name="set to"></A>, it is set to 0, and the <SPAN class=docEmphasis>(i</SPAN>-1)<SPAN class=docEmphasis><SUP>th</SUP></SPAN><A name="by "></A> digit is incremented by 1.</P>
+<P class=docText><A name="as follows"></A>For example, the counting for a 3 x 2 x 4 array would proceed as follows:</P>
+<DL class=docList>
+<DD>(0,0,0) (0,0,1) (0,0,2) (0,0,3) (0,1,0) (0,1,1) (0,1,2) (0,1,3) (1,0,0) … (2,1,2) (2,1,3)</DD></DL>
+<P class=docText><A name="increment would"></A>The next increment would produce <TT>(0,0,0)</TT><A name="be set"></A>, and the iterator would be set up to start all over again.</P>
+<P class=docText><A name="of the"></A>This counter is the essence of the <A name=idx-CHP-19-1562></A><A name="NumPy iterator"></A>NumPy iterator. The way it is incremented plays an important part in the iterator implementation. As a result, the implementation of the counter will be discussed in a subsequent section. Assuming that this counter that specifies the current position in the array is available, a pointer to the current value in the array can always be obtained by multiplying the integers of the counter by the stride values defined with the array, yielding the number of bytes to add to the memory address of the first element of the array.</P>
+<P class=docText>For example, if <TT>data</TT><A name="to the"></A> is a pointer to the start of the array, <TT>counter</TT><A name="and strides"></A> is the counter (or coordinate) array, and strides is an array of <TT>stride</TT> values, the following operations:</P><PRE>	currptr = (char *)data;
+	for (i=0; i&lt;N; i++) currptr += counter[i]*strides[i];
+</PRE><BR>
+<P class=docText>set <TT>currptr</TT><A name="byte of"></A> to the (first byte of the) current value of the array.</P>
+<P class=docText><A name="compute this"></A>In fact, rather than compute this multiplication every time a pointer to the current value is needed, the implementation can keep track of the pointer at the same time that it keeps track of the counter, making adjustments every time the counter is altered. For example, when the <SPAN class=docEmphasis>i<SUP>th</SUP></SPAN> index of the counter is incremented by 1, <TT>currptr</TT> is incremented by <TT>strides[i]</TT>. When the <SPAN class=docEmphasis>i<SUP>th</SUP></SPAN> index is reset to 0, this is the same as subtracting <SPAN class=docEmphasis>n<SUB>i</SUB></SPAN><A name="current value"></A>-1 from the current index, and therefore the memory address of the current value of the array should be decremented by <SPAN class=docEmphasis>(n<SUB>i</SUB></SPAN>-1) -<TT>strides[i]</TT>.</P>
+<P class=docText><A name="general case"></A>For the general case, the <A name=idx-CHP-19-1563></A>iterator <A name=idx-CHP-19-1564></A><A name="the position"></A>maintains the counter specifying the position in the array along with a pointer to the current value. In the case of an array whose elements are all next to each other in memory, keeping track of this counter is unnecessary extra work because the memory address of the current value of the array can be maintained just by incrementing its value by the size of each element in the array when the next value is desired.</P><A name=iterator_termination></A>
+<H4 class=docSection2Title id=title-ID0EO4DK>19.4.2. Iterator Termination</H4>
+<P class=docText><A name="iterator "></A>Another important aspect of the iterator (especially when it is used in a loop) is figuring out when the iterator is finished and how to signal that information. The most general approach to signaling is to attach a flag variable to the iterator that is checked each time around the loop, and set when there are no more elements to iterate through.<A name=idx-CHP-19-1565></A><A name=idx-CHP-19-1566></A></P>
+<P class=docText><A name="One possible"></A>One possible way to set this flag would be to look for the transition in the first-dimension counter from <SPAN class=docEmphasis>n</SPAN><SUB>1</SUB><A name="with this"></A>-1 to 0. The problem with this approach is that it requires a temporary variable to store the last counter value, so it doesn't work for contiguous arrays, which do not keep track of the counter.</P>
+<P class=docText><A name="to do"></A>The easiest thing to do, however, is just remember that a particular number (<SPAN class=docEmphasis>n</SPAN>1 x…x <SPAN class=docEmphasis>nN</SPAN><A name="will take"></A>) of iterations will take place given the size of the array. This number can be stored in the iterator structure. Then, during each iterator stage, this number can be decremented. When it reaches 0, the iterator should terminate.</P>
+<P class=docText><A name=idx-CHP-19-1567></A><A name="slight modification"></A>NumPy uses a slight modification of this countdown. In order to preserve the total number of iterations as another piece of information, as well as to keep a running counter of the total number of iterations so far, <A name=idx-CHP-19-1568></A>NumPy uses an integer counter that counts <SPAN class=docEmphasis>up</SPAN><A name="number of"></A> from zero. The iteration terminates when this number reaches the total number of elements.</P><A name=iterator_setup></A>
+<H4 class=docSection2Title id=title-ID0EE6DK>19.4.3. Iterator Setup</H4>
+<P class=docText><A name="iterator is"></A>When the iterator is created, the size of the underlying array must be computed and stored. In addition, the integer counter must be set to 0, and the coordinate counter must be initialized to <TT>(0,0,…,0)</TT><A name="iterator can"></A>. Finally, NumPy determines whether the iterator can be based on simple contiguous memory and sets a flag to remember the answer.<A name=idx-CHP-19-1569></A><A name=idx-CHP-19-1570></A></P>
+<P class=docText><A name="the "></A>In order to speed up the "back-tracking step" that occurs whenever an index in the counter moves from <SPAN class=docEmphasis>n<SUB>i</SUB></SPAN><A name="to "></A>-1 to 0, the product of <SPAN class=docEmphasis>(n<SUB>i</SUB></SPAN>-1) x<TT>strides[i]</TT><A name="stored for"></A> is precalculated and stored for each index. In addition to avoid repeatedly computing <SPAN class=docEmphasis>n<SUB>i</SUB></SPAN><A name="precomputed and"></A>-1, this is also precomputed and stored in the structure.</P>
+<P class=docText><A name="is doubtful"></A>While it is doubtful that there is any speed increase in storing this easily computed quantity, it is still very useful to have the dimensions of the array stored in the iterator structure. In the same manner, it is useful to have information about strides stored directly in the iterator, along with a variable tracking how many dimensions the underlying array has. With the dimensions and strides of the array stored in the iterator, modifications to how the array is interpreted later can be easily accomplished by modifying these values in the <A name=idx-CHP-19-1571></A>iterator and not <A name=idx-CHP-19-1572></A><A name="array itself"></A>in the underlying array itself. This is especially useful in implementing <SPAN class=docEmphasis>broadcasting</SPAN><A name="as if"></A>, which makes arrays that are not shaped the same appear as if they were shaped the same (as will be explained later).</P>
+<P class=docText><A name="of precomputed"></A>Finally, an array of precomputed factors is stored to simplify the calculations involved in the one-to-one mapping between the single integer counter into the array and its <SPAN class=docEmphasis>N</SPAN><A name="the array"></A>-index counterpart. For example, every item in the array can be referenced by a single integer <SPAN class=docEmphasis>k</SPAN> between 0 and <SPAN class=docEmphasis>n</SPAN><SUB>1</SUB> x … x <SPAN class=docEmphasis>nN</SPAN>-<SUB>1</SUB>-<SUP>1</SUP> or by a tuple of integers: <SPAN class=docEmphasis>(k</SPAN>1,…,<SPAN class=docEmphasis>kN)</SPAN><A name=by></A>. The relationship can be defined by <SPAN class=docEmphasis>l</SPAN><SUB>1</SUB>=<SPAN class=docEmphasis>k</SPAN> and:</P>
+<P class=docText><IMG id="" height=179 alt="" src="images/iterator_design.0.png" width=257 border=0> </P>
+<P class=docText><IMG id="" height=170 alt="" src="images/iterator_design.1.png" width=434 border=0> </P>
+<P class=docText><A name="Going back"></A>Going back the other way, the relationship is:</P>
+<P class=docText><IMG id="" height=139 alt="" src="images/iterator_design.2.png" width=316 border=0> </P>
+<P class=docText><A name="the parentheses"></A>The terms within the parentheses of the previous equation are precomputed and stored in the iterator as an array of factors, to facilitate mapping back and forth between the two ways of thinking about the <SPAN class=docEmphasis>N</SPAN>-dimensional index.</P><A name=iterator_counter_tracking></A>
+<H4 class=docSection2Title id=title-ID0E1CEK>19.4.4. Iterator Counter Tracking</H4>
+<P class=docText><A name="track of"></A>Code for keeping track of the <SPAN class=docEmphasis>N</SPAN><A name="is fairly"></A>-dimensional index counter is fairly straightforward. A distinction must be made between the case when the iterator will simply add 1 to the last index and when wrapping might occur. Whenever wrapping occurs, it has the potential to cause other indices to wrap as well. Therefore, there must be some kind of <TT>for</TT><A name="all the"></A> loop to handle all the altered indices.<A name=idx-CHP-19-1573></A></P>
+<P class=docText><A name="the counter"></A>A straightforward approach is to start at the end of the counter, or coordinate, array and work backward. At each index position, the code checks to see whether the coordinate is currently smaller than <SPAN class=docEmphasis>n<SUB>i</SUB></SPAN><A name="it just"></A>-1. If it is, it just adds 1 to that coordinate position and adds <TT>strides[i]</TT><A name="of the"></A> to the memory address of the current value pointer. Whenever this happens, the <TT>for</TT><A name="counter increment"></A> loop can break early, and the counter increment is done.</P>
+<P class=docText><A name="If the"></A>If the <SPAN class=docEmphasis>i<SUP>th</SUP></SPAN><A name="than or"></A> coordinate is greater than or equal to <SPAN class=docEmphasis>n<SUB>i</SUB></SPAN><A name="be reset"></A>-1, it needs to be reset to 0 and (<SPAN class=docEmphasis>n<SUB>i</SUB></SPAN>-1)x<TT>strides[i]</TT><A name="subtracted from"></A> must be subtracted from the memory address of the current value pointer (to move back to the beginning of that dimension). In this case, the previous index position is checked.</P>
+<P class=docText>All the necessary <A name=idx-CHP-19-1574></A><A name="represented in"></A>information can be represented in a structure we'll call <TT>it</TT>. The contents are:</P>
+<DL class=docList>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docPubcolor><SPAN class=docMonofont>coords</SPAN></SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList>The coordinate index, <SPAN class=docEmphasis>N</SPAN></P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docPubcolor><SPAN class=docMonofont>dims_m1</SPAN></SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList>The index of the highest element <SPAN class=docEmphasis>n<SUB>i</SUB></SPAN>-1 for each dimension</P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docPubcolor><SPAN class=docMonofont>strides</SPAN></SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList>The stride in each dimension</P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docPubcolor><SPAN class=docMonofont>backstrides</SPAN></SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList><A name="the end"></A>The amount to move back in order to return from the end of each dimension to the beginning: (<SPAN class=docEmphasis>n<SUB>i</SUB></SPAN>-1) x <TT>strides[i]</TT></P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docPubcolor><SPAN class=docMonofont>nd_m1</SPAN></SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList><A name="of dimensions"></A>The number of dimensions</P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docPubcolor><SPAN class=docMonofont>currptr</SPAN></SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList><A name="for the"></A>A pointer to memory for the current position in the array</P></DD></DL>
+<P class=docText><A name="then be"></A>The code for the counter-tracking can then be written in C as follows:</P><PRE>	for (i=it-&gt;nd_m1; i&gt;=0; i--) {
+	    if (it-&gt;coords[i] &lt; it-&gt;dims_m1[i]) {
+	        it-&gt;coords[i]++;
+	        it-&gt;dataptr += it-&gt;strides[i];
+	        break;
+	    }
+	    else {
+	        it-&gt;coords[i] = 0;
+	        it-&gt;dataptr -= it-&gt;backstrides[i];
+	    }
+	}
+</PRE><BR>
+<P class=docText><A name="This implementation"></A>This implementation uses the <TT>break</TT> statement and a <TT>for</TT><A name="have used"></A> loop. We could instead have used a <TT>while</TT><A name="flag indicating"></A> statement and a flag indicating whether to continue looping:</P><PRE>	done = 0;
+	i = it-&gt;nd_m1;
+	while (!done || i&gt;=0) {
+	    if (it-&gt;coords[i] &lt; it-&gt;dims_m1[i]) {
+	       it-&gt;coords[i]++;
+	       it-&gt;dataptr += it-&gt;strides[i];
+	       done = 1;
+	    }
+	    else {
+	         it-&gt;coords[i] = 0;
+	         it-&gt;dataptr -= it-&gt;backstrides[i];
+	    }
+	    i--;
+	}
+</PRE><BR>
+<P class=docText><A name="the reason"></A>Part of the reason I chose the <TT>for</TT><A name="that the"></A> loop implementation is that the <TT>while</TT> loop looks a lot like the <TT>for</TT> loop (<A name=idx-CHP-19-1575></A><A name=idx-CHP-19-1576></A>initialize counter, check against a value, decrement the counter), anyway. I typically reserve <TT>while</TT><A name="single iteration"></A> loops for situations where the iteration requires more than a single iteration index. A bigger reason for choosing the <TT>for</TT><A name="that this"></A> loop version, however, is that this code snippet implementing the counter increment will be used as a macro inside of every <A name=idx-CHP-19-1577></A><A name="avoid defining"></A>iterator loop. I wanted to avoid defining the extra variable <TT>done</TT>.</P><A name=iterator_structure></A>
+<H4 class=docSection2Title id=title-ID0EKJEK>19.4.5. Iterator Structure</H4>
+<P class=docText><A name="position to"></A>We are now in a position to understand the entire structure of the <A name=idx-CHP-19-1578></A><A name="NumPy iterator"></A>NumPy iterator. It's represented as the following <TT>struct</TT> in C:<A name=idx-CHP-19-1579></A><A name=idx-CHP-19-1580></A></P><PRE>	typedef struct {
+	    PyObject_HEAD
+	    int nd_m1;
+	    npy_intp index, size;
+	    npy_intp coords[NPY_MAXDIMS];
+	    npy_intp dims_m1[NPY_MAXDIMS];
+	    npy_intp strides[NPY_MAXDIMS];
+	    npy_intp backstrides[NPY_MAXDIMS];
+	    npy_intp factors[NPY_MAXDIMS];
+	    PyArrayObject *ao;
+	    char *dataptr;
+	    npy_bool contiguous;
+	} <A name=idx-CHP-19-1581></A>PyArrayIterObject;
+</PRE><BR>
+<P class=docText><A name="this structure"></A>The arrays in this structure (<TT>coords, dims_m1, strides, backstrides</TT>, and <TT>factors</TT><A name="dimensions controlled"></A>) are fixed-size arrays with dimensions controlled by the <TT>NPY_MAXDIMS</TT><A name="was made"></A> constant. This choice was made to simplify memory management. However, it does limit the number of dimensions that can be used. It could easily be handled differently by dynamically allocating the needed memory when the iterator is created; such a change would not alter the fundamental behavior.</P>
+<P class=docText>The <TT>npy_intp</TT><A name="just large"></A> variables are integers just large enough to hold a pointer for the platform. <TT>npy_bool</TT> is a flag that should be either TRUE or FALSE. The <TT>PyObject_HEAD</TT><A name="Python objects"></A> part of the structure contains the required portion that all Python objects must contain.</P>
+<P class=docText><A name="the variables"></A>All of the variables have been explained before, but for clarity they are:</P><A name=idx-CHP-19-1582></A><A name=idx-CHP-19-1583></A>
+<DL class=docList>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docPubcolor><SPAN class=docMonofont>nd_m1</SPAN></SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList><A name="number of"></A>One less than the number of dimensions of the array: <SPAN class=docEmphasis>N</SPAN>-1.</P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docPubcolor><SPAN class=docMonofont>index</SPAN></SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList><A name="element the"></A>A running counter indicating which element the iterator is currently at in the array. This counter runs from 0 to <TT>size</TT>-1.</P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docPubcolor><SPAN class=docMonofont>size</SPAN></SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList><A name="The total"></A>The total number of elements in the array: <SPAN class=docEmphasis>n</SPAN><SUB>1</SUB> x <SPAN class=docEmphasis>n</SPAN><SUB>2</SUB> x…x <SPAN class=docEmphasis>n<SUB>N</SUB></SPAN>.</P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docPubcolor><SPAN class=docMonofont>coords</SPAN></SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList>An array of <SPAN class=docEmphasis>N</SPAN><A name="or the"></A> integers providing the counter, or the <SPAN class=docEmphasis>N</SPAN><A name="current element"></A>-dimensional location of the current element.</P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docPubcolor><SPAN class=docMonofont>dims_m1</SPAN></SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList><A name=of></A>An array of <SPAN class=docEmphasis>N</SPAN> <A name=idx-CHP-19-1582></A><A name="less than"></A>integers providing one less than the number of elements along each dimension: <SPAN class=docEmphasis>n</SPAN>1-<SUB>1</SUB>, <SPAN class=docEmphasis>n</SPAN><SUB>2</SUB>-<SUP>1</SUP>,…, <SPAN class=docEmphasis>n<SUB>N</SUB></SPAN>-<SUP>1</SUP>.</P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docPubcolor><SPAN class=docMonofont>strides</SPAN></SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList>An array of <SPAN class=docEmphasis>N</SPAN><A name="to the"></A> integers providing the number of bytes to skip when advancing to the next element in a particular dimension.</P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docPubcolor><SPAN class=docMonofont>backstrides</SPAN></SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList><A name=of></A>An array of <SPAN class=docEmphasis>N</SPAN><A name="of bytes"></A> integers providing the number of bytes to subtract when the internal index counter rolls from <SPAN class=docEmphasis>n<SUB>i</SUB></SPAN>-1 to 0 in a particular dimension.</P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docPubcolor><SPAN class=docMonofont>factors</SPAN></SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList><A name="in rapidly"></A>An array of factors useful in rapidly calculating the mapping between the one-dimensional index and the <SPAN class=docEmphasis>N</SPAN>-dimensional <TT>coords</TT><A name="This array"></A> array. This array is needed only if <TT>PyArray_ITER_GOTO1D</TT> is called.</P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docPubcolor><SPAN class=docMonofont>ao</SPAN></SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList><A name="the underlying"></A>A pointer to the underlying array this <A name=idx-CHP-19-1583></A>iterator is built from.</P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docPubcolor><SPAN class=docMonofont>datapr</SPAN></SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList><A name="the "></A>A pointer to the (first byte of) the current value of the array.</P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docPubcolor><SPAN class=docMonofont>contiguous</SPAN></SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList><A name="this iterator"></A>TRUE (1) if this iterator is for a contiguous array and FALSE (0) if otherwise. This is the same as <TT>(ao-&gt;flags &amp; NPY_C_CONTIGUOUS)</TT><A name="find the"></A>. It's much simpler to find the next element in the array each time when the array is contiguous, so it is worth checking for.</P></DD></DL></DIV></DIV>
+<p>&nbsp;</p><p>&nbsp;</p><!-- 仁·义 -->
+</body></html>

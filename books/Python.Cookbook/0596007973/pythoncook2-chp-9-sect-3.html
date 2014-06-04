@@ -1,0 +1,168 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;9.3.&nbsp;Using a Queue.Queue as a Priority Queue</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-9-sect-2.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-9-sect-4.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-9-SECT-3"></a>
+<h3 class="docSection1Title">Recipe 9.3. Using a Queue.Queue as a Priority Queue</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Simo Salminen, Lee Harr, Mark Moraes, Chris
+Perkins, Greg Klanderman</span></p>
+
+<a name="pythoncook2-CHP-9-SECT-3.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-9-ITERM-2530"></a> <a name="pythoncook2-CHP-9-ITERM-2531"></a>You want to use a
+<tt>Queue.Queue</tt> instance, since it is the best way to
+communicate among threads. However, you need the additional
+functionality of being able to specify a priority value associated
+with each item on the queue, so that items with a lower (more urgent)
+priority value are fetched before others with a higher (less urgent)
+priority value.</P>
+
+
+<a name="pythoncook2-CHP-9-SECT-3.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">Among its many advantages, <tt>Queue.Queue</tt> offers an
+elegant architecture that eases subclassing for purposes of
+specializing queueing behavior. Specifically,
+<tt>Queue.Queue</tt> exposes several methods specifically
+designed to be overridden in a subclass, to get specialized queueing
+behavior without worrying about synchronization issues.</p>
+
+<p class="docText"><a name="pythoncook2-CHP-9-ITERM-2532"></a>We can exploit
+this elegant architecture and module <tt>heapq</tt> from
+the Python Standard Library to build the needed priority-queue
+functionality pretty easily. However, we also need to shadow and wrap
+<tt>Queue.Queue</tt>'s
+<tt>put</tt> and <tt>get</tt> methods, to
+decorate each item with its priority and posting time upon
+<tt>put</tt>, and strip off these decorations upon
+<tt>get</tt>:</P>
+
+<pre>import Queue, heapq, time
+class PriorityQueue(Queue.Queue):
+   # Initialize the queue
+    def _init(self, maxsize):
+        self.maxsize = maxsize
+        self.queue = [  ]
+    # Return the number of items that are currently enqueued
+    def _qsize(self):
+        return len(self.queue)
+    # Check whether the queue is empty
+    def _empty(self):
+        return not self.queue
+    # Check whether the queue is full
+    def _full(self):
+        return self.maxsize &gt; 0 and len(self.queue) &gt;= self.maxsize
+    # Put a new item in the queue
+    def _put(self, item):
+        heapq.heappush(self.queue, item)
+    # Get an item from the queue
+    def _get(self):
+        return heapq.heappop(self.queue)
+    # shadow and wrap Queue.Queue's own `put' to allow a 'priority' argument
+    def put(self, item, priority=0, block=True, timeout=None):
+        decorated_item = priority, time.time( ), item
+        Queue.Queue.put(self, decorated_item, block, timeout)
+    # shadow and wrap Queue.Queue's own `get' to strip auxiliary aspects
+    def get(self, block=True, timeout=None):
+        priority, time_posted, item = Queue.Queue.get(self, block, timeout)
+        return item</pre><br>
+
+
+
+<a name="pythoncook2-CHP-9-SECT-3.3"></a>
+<H4 class="docSection2Title">Discussion</H4>
+
+<p class="docText"><a name="pythoncook2-CHP-9-ITERM-2533"></a>Given an
+instance <tt><i>q</I></tt> of this
+recipe's <I>PriorityQueue</i> class, you
+can call <tt>q.put(anitem)</tt> to enqueue an item with
+"normal" priority (here defined as
+<tt>0</tt>), or <tt>q.put(anitem, prio)</tt> to
+enqueue an item with a specific priority
+<tt><i>prio</i></tt>. At the time <tt>q.get()</tt> gets called (presumably in another thread), items with
+the lowest priority will be returned first, bypassing items with
+higher priority. Negative priorities are lower than
+"normal", thus suitable for
+"urgent" items; positive
+priorities, higher than "normal",
+indicate items that may wait longer, since other items with
+"normal" priority will get fetched
+before them. Of course, if you're not comfortable
+with this conception of priorities, nothing stops you from altering
+this recipe's code accordingly: for example, by
+changing sign to the priority value when you build the
+<i>decorated_item</I> at the start of method
+<tt>put</tt>. If you do so, items posted with positive
+priority will become the urgent ones and items posted with negative
+priority will become the can-wait-longer ones.</p>
+
+<p class="docText"><tt>Queue.Queue</tt>'s architecture
+deserves study, admiration, and imitation. Not only is
+<tt>Queue.Queue</tt>, all on its own, the best way to
+architect communication among threads, but this same class is also
+designed to make it easy for you to subclass and specialize it with
+queueing disciplines different from its default FIFO (first-in,
+first-out), such as the priority-based queueing discipline
+implemented in this recipe. Specifically,
+<tt>Queue.Queue</tt> uses the wonderful Template Method
+Design Pattern (<a class="docLink" target="_blank" href="http://www.aleax.it/Python/os03_template_dp.pdf">http://www.aleax.it/Python/os03_template_dp.pdf</a>
+). This DP enables <tt>Queue.Queue</tt> itself
+to take care of the delicate problems connected with locking, while
+delegating the queueing discipline to specific methods
+<tt>_put</tt>, <tt>_get</tt>, and so on, which
+may be overridden by subclasses; such <i>hook
+methods</I> then get called in a context where synchronization
+issues are not a concern.<a name="pythoncook2-CHP-9-ITERM-2534"></a></p>
+
+<p class="docText">In this recipe, we also need to override
+<tt>Queue.Queue</tt>'s
+<tt>put</tt> and <tt>get</tt> methods, because we
+need to add a <I>priority</i> optional argument to
+<tt>put</tt>'s signature, decorate the
+<I>item</I> before we put it on the queue (so that the
+<tt>heapq</tt> module's mechanisms will
+produce the order we wantlowest priority first, and, among
+items posted with equal priority, FIFO ordering), and undecorate each
+decorated item that we get back from the queue to return the naked
+<i>item</i>. All of these auxiliary tweaks use nothing but
+local variables, however, so they introduce no synchronization
+worries whatsoever. Each thread gets its own stack; therefore, any
+code that uses nothing but local variables (and thus cannot possibly
+alter any state accessible from other threads, or access any state
+that other threads might alter) is inherently thread-safe.</p>
+
+
+<a name="pythoncook2-CHP-9-SECT-3.4"></a>
+<h4 class="docSection2Title">See Also</h4>
+
+<p class="docText">Modules <tt>Queue</tt> and <tt>heapq</tt> of the
+Python Standard Library are documented in <span class="docEmphasis">Library
+Reference</span> and <span class="docEmphasis">Python in a
+Nutshell</span>; the Template Method Design Pattern is
+illustrated at <a class="docLink" target="_blank" href="http://www.strakt.com/docs/os03_template_dp.pdf">http://www.strakt.com/docs/os03_template_dp.pdf</a>;
+<a class="docLink" href="pythoncook2-CHP-19-SECT-14.html#pythoncook2-CHP-19-SECT-14">Recipe 19.14</a>, and <a class="docLink" href="pythoncook2-CHP-5-SECT-7.html#pythoncook2-CHP-5-SECT-7">Recipe 5.7</a>, show other examples
+of coding and using priority queues.<a name="pythoncook2-CHP-9-ITERM-2535"></a> <a name="pythoncook2-CHP-9-ITERM-2536"></a></p>
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-9-sect-2.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-9-sect-4.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

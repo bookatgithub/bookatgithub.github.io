@@ -1,0 +1,769 @@
+<html><head>
+<META http-equiv="Content-Type" content="text/html">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="10.5 A Simple Python File Server"-->
+<link rel="STYLESHEET" type="text/css" href="FILES/style.css">
+<link rel="STYLESHEET" type="text/css" href="FILES/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+	<a href="0596000855_python2-CHP-10-SECT-4.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+	<a href="0596000855_python2-CHP-11.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr>
+<td valign="top"><A NAME="python2-CHP-10-SECT-5"></A>
+<H3 class="docSection1Title">10.5 A Simple Python File Server</H3>
+
+<P class="docText"><A NAME="python2-IDXTERM-724"></A>
+<A NAME="python2-IDXTERM-725"></A>Time
+for something more realistic. Let's conclude this chapter by
+putting some of these socket ideas to work in something a bit more
+useful than echoing text back and forth. <A class="docLink" HREF="#python2-CHP-10-EX-10">Example 10-10</A>
+implements both the server-side and client-side logic needed to ship
+a requested file from server to client machines over a raw socket.
+</P>
+
+<P class="docText">In effect, this script implements a simple file download system. One
+instance of the script is run on the machine where downloadable files
+live (the server), and another on the machines you wish to copy files
+to (the clients). Command-line arguments tell the script which flavor
+to run and optionally name the server machine and port number over
+which conversations are to occur. A server instance can respond to
+any number of client file requests at the port on which it listens,
+because it serves each in a thread.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-10-EX-10"></A>Example 10-10. PP2E\Internet\Sockets\getfile.py </H5>
+<PRE>########################################################
+# implement client and server side logic to transfer an
+# arbitrary file from server to client over a socket; 
+# uses a simple control-info protocol rather than 
+# separate sockets for control and data (as in ftp),
+# dispatches each client request to a handler thread,
+# and loops to transfer the entire file by blocks; see
+# ftplib examples for a higher-level transport scheme;
+########################################################
+
+import sys, os, thread, time
+from socket import *
+def now(): return time.ctime(time.time())
+
+blksz = 1024
+defaultHost = 'localhost'
+defaultPort = 50001
+
+helptext = """
+Usage...
+server=&gt; getfile.py  -mode server            [-port nnn] [-host hhh|localhost]
+client=&gt; getfile.py [-mode client] -file fff [-port nnn] [-host hhh|localhost]
+"""
+
+def parsecommandline():
+    dict = {}                        # put in dictionary for easy lookup
+    args = sys.argv[1:]              # skip program name at front of args
+    while len(args) &gt;= 2:            # example: dict['-mode'] = 'server'
+        dict[args[0]] = args[1]
+        args = args[2:]
+    return dict
+
+def client(host, port, filename):
+    sock = socket(AF_INET, SOCK_STREAM)
+    sock.connect((host, port)) 
+    sock.send(filename + '\n')                 # send remote name with dir
+    dropdir = os.path.split(filename)[1]       # file name at end of dir path
+    file = open(dropdir, 'wb')                 # create local file in cwd
+    while 1:
+        data = sock.recv(blksz)                # get up to 1K at a time
+        if not data: break                     # till closed on server side
+        file.write(data)                       # store data in local file
+    sock.close()
+    file.close()
+    print 'Client got', filename, 'at', now()
+    
+def serverthread(clientsock):
+    sockfile = clientsock.makefile('r')        # wrap socket in dup file obj
+    filename = sockfile.readline()[:-1]        # get filename up to end-line
+    try:
+        file = open(filename, 'rb')
+        while 1:
+            bytes = file.read(blksz)           # read/send 1K at a time
+            if not bytes: break                # until file totally sent
+            sent = clientsock.send(bytes)
+            assert sent == len(bytes)
+    except:
+        print 'Error downloading file on server:', filename
+    clientsock.close()
+        
+def server(host, port):
+    serversock = socket(AF_INET, SOCK_STREAM)     # listen on tcp/ip socket
+    serversock.bind((host, port))                 # serve clients in threads
+    serversock.listen(5)
+    while 1:
+        clientsock, clientaddr = serversock.accept()
+        print 'Server connected by', clientaddr, 'at', now()
+        thread.start_new_thread(serverthread, (clientsock,))
+        
+def main(args):
+    host = args.get('-host', defaultHost)         # use args or defaults
+    port = int(args.get('-port', defaultPort))    # is a string in argv
+    if args.get('-mode') == 'server':             # None if no -mode: client
+        if host == 'localhost': host = ''         # else fails remotely
+        server(host, port)
+    elif args.get('-file'):                       # client mode needs -file
+        client(host, port, args['-file'])
+    else:
+        print helptext
+
+if __name__ == '__main__':
+    args = parsecommandline()
+    main(args)</PRE>
+
+
+<P class="docText">This script doesn't do much different than the examples we saw
+earlier. Depending on the command-line arguments passed, it invokes
+one of two functions:
+</P>
+
+<UL>
+<LI><P class="docList"><A NAME="IXT-10-337333"></A>
+<A NAME="IXT-10-337334"></A>The
+<TT>server</TT> function farms out each incoming client
+request to a thread that transfers the requested file's bytes.
+</P></LI>
+<LI><P class="docList">The <TT>client</TT> function sends the server a
+file's name and stores all the bytes it gets back in a local
+file of the same name.
+</P></LI>
+</UL>
+<P class="docText">The most novel feature here is the protocol between client and
+server: the client starts the conversation by shipping a filename
+string up to the server, terminated with an end-of-line character,
+and including the file's directory path in the server. At the
+server, a spawned thread extracts the requested file's name by
+reading the client socket, and opens and transfers the requested file
+back to the client, one chunk of bytes at a time.
+</P>
+
+<A NAME="python2-CHP-10-SECT-5.1"></A>
+<H4 class="docSection2Title">10.5.1 Running the File Server and Clients</H4>
+
+<P class="docText">Since the server uses threads to process clients, we can test both
+client and server on the same Windows machine. First, let's
+start a server instance, and execute two client instances on the same
+machine while the server runs:
+</P>
+
+<PRE><I>[server window, localhost]</I></PRE>
+
+<PRE>C:\...\PP2E\Internet\Sockets&gt;<B>python getfile.py -mode server </B>
+Server connected by ('127.0.0.1', 1089) at Thu Mar 16 11:54:21 2000
+Server connected by ('127.0.0.1', 1090) at Thu Mar 16 11:54:37 2000
+
+<I> [client window, localhost]</I></PRE>
+
+<PRE>C:\...\Internet\Sockets&gt;<B>ls</B>
+class-server.py   echo.out.txt      testdir           thread-server.py
+echo-client.py    fork-server.py    testecho.py
+echo-server.py    getfile.py        testechowait.py
+
+C:\...\Internet\Sockets&gt;<B>python getfile.py -file testdir\python15.lib -port 50001</B>
+Client got testdir\python15.lib at Thu Mar 16 11:54:21 2000
+
+C:\...\Internet\Sockets&gt;<B>python getfile.py -file testdir\textfile</B>
+Client got testdir\textfile at Thu Mar 16 11:54:37 2000</PRE>
+
+<P class="docText">Clients run in the directory where you want the downloaded file to
+appear -- the client instance code strips the server directory
+path when making the local file's name. Here the
+"download" simply copied the requested files up to the
+local parent directory (the DOS <I>fc</I> command
+compares file contents):
+</P>
+
+<PRE>C:\...\Internet\Sockets&gt;<B>ls</B>
+class-server.py   echo.out.txt      <B>python15.lib</B>      testechowait.py
+echo-client.py    fork-server.py    testdir           <B>textfile</B>
+echo-server.py    getfile.py        testecho.py       thread-server.py
+
+C:\...\Internet\Sockets&gt;<B>fc /B python1.lib testdir\python15.lib</B>
+Comparing files python15.lib and testdir\python15.lib
+FC: no differences encountered
+
+C:\...\Internet\Sockets&gt;<B>fc /B textfile testdir\textfile</B>
+Comparing files textfile and testdir\textfile
+FC: no differences encountered</PRE>
+
+<P class="docText">As usual, we can run server and clients on different machines as
+well. Here the script is being used to run a remote server on a Linux
+machine and a few clients on a local Windows PC (I added line breaks
+to some of the command lines to make them fit). Notice that client
+and server machine times are different now -- they are fetched
+from different machine's clocks and so may be arbitrarily
+skewed:
+</P>
+
+<PRE><I> [server telnet window: first message is the python15.lib request</I>
+<I> in client window1]</I>
+[lutz@starship lutz]$ <B>python getfile.py -mode server </B>
+Server connected by ('166.93.216.248', 1185) at Thu Mar 16 16:02:07 2000
+Server connected by ('166.93.216.248', 1187) at Thu Mar 16 16:03:24 2000
+Server connected by ('166.93.216.248', 1189) at Thu Mar 16 16:03:52 2000
+Server connected by ('166.93.216.248', 1191) at Thu Mar 16 16:04:09 2000
+Server connected by ('166.93.216.248', 1193) at Thu Mar 16 16:04:38 2000
+
+
+<I> [client window 1: started first, runs in thread while other client</I>
+<I> requests are made in client window 2, and processed by other threads]</I>
+C:\...\Internet\Sockets&gt;<B>python getfile.py -mode client 
+                             -host starship.python.net 
+                             -port 50001 -file python15.lib </B>
+Client got python15.lib at Thu Mar 16 14:07:37 2000
+
+C:\...\Internet\Sockets&gt;<B>fc /B python15.lib testdir\python15.lib </B>
+Comparing files python15.lib and testdir\python15.lib
+FC: no differences encountered
+
+
+<I> [client window 2: requests made while client window 1 request downloading]</I>
+C:\...\Internet\Sockets&gt;<B>python getfile.py 
+                             -host starship.python.net -file textfile </B>
+Client got textfile at Thu Mar 16 14:02:29 2000
+
+C:\...\Internet\Sockets&gt;<B>python getfile.py 
+                             -host starship.python.net -file textfile </B>
+Client got textfile at Thu Mar 16 14:04:11 2000
+
+C:\...\Internet\Sockets&gt;<B>python getfile.py 
+                             -host starship.python.net -file textfile </B>
+Client got textfile at Thu Mar 16 14:04:21 2000
+
+C:\...\Internet\Sockets&gt;<B>python getfile.py 
+                             -host starship.python.net -file index.html </B>
+Client got index.html at Thu Mar 16 14:06:22 2000
+
+C:\...\Internet\Sockets&gt;<B>fc textfile testdir\textfile </B>
+Comparing files textfile and testdir\textfile
+FC: no differences encountered</PRE>
+
+<P class="docText">One subtle security point here: the server instance code is happy to
+send any server-side file whose pathname is sent from a client, as
+long as the server is run with a username that has read access to the
+requested file. If you care about keeping some of your server-side
+files private, you should add logic to suppress downloads of
+restricted files. I'll leave this as a suggested exercise here,
+but will implement such filename checks in the
+<TT>getfile</TT> download tool in <A class="docLink" HREF="0596000855_python2-CHP-12-SECT-3.html#python2-CHP-12-EX-1">Example 12-1</A>.<sup class="docFootnote"><A class="docLink" HREF="#">[8]</A></sup>
+</P>
+<blockquote><p class="docFootnote"><sup><A NAME="">[8]</A></sup> We'll see three more
+<TT>getfile</TT> programs before we leave Internet
+scripting. The next chapter's <I>getfile.py</I>
+fetches a file with the higher-level FTP interface rather than using
+raw socket calls, and its <I>http-getfile</I> scripts
+fetch files over the HTTP protocol. <A class="docLink" HREF="0596000855_python2-CHP-12-SECT-3.html#python2-CHP-12-EX-1">Example 12-1</A>
+presents a <I>getfile.cgi</I> script that transfers
+file contents over the HTTP port in response to a request made in a
+web browser client (files are sent as the output of a CGI script).
+All four of the download schemes presented in this text ultimately
+use sockets, but only the version here makes that use
+explicit.</p></blockquote>
+
+<P><A NAME="python2-CHP-10-SIDEBAR-3"></A><TABLE CELLSPACING="0" WIDTH="90%" BORDER="1"><TR><TD>
+<H2 class="docSidebarTitle">Making Sockets Look Like Files</H2>
+
+<P class="docText"><A NAME="IXT-10-337335"></A>For
+illustration purposes, <TT>getfile</TT> uses the socket
+object <TT>makefile</TT> method to wrap the socket in a
+file-like object. Once so wrapped, the socket can be read and written
+using normal file methods; <TT>getfile</TT> uses the file
+<TT>readline</TT> call to read the filename line sent by
+the client.
+</P>
+
+<P class="docText">This isn't strictly required in this example -- we could
+have read this line with the socket <TT>recv</TT> call,
+too. In general, though, the <TT>makefile</TT> method comes
+in handy any time you need to pass a socket to an interface that
+expects a file.
+</P>
+
+<P class="docText">For example, the <TT>pickle</TT> module's
+<TT>load</TT> and <TT>dump</TT> methods expect an
+object with a file-like interface (e.g., <TT>read</TT> and
+<TT>write</TT> methods), but don't require a physical
+file. Passing a TCP/IP socket wrapped with the
+<TT>makefile</TT> call to the pickler allows us to ship
+serialized Python objects over the Internet. See <A class="docLink" HREF="0596000855_python2-CHP-16.html#python2-CHP-16">Chapter 16</A>, for more details on object serialization
+interfaces.
+</P>
+
+<P class="docText">More generally, any component that expects a file-like method
+protocol will gladly accept a socket wrapped with a socket object
+<TT>makefile</TT> call. Such interfaces will also accept
+strings wrapped with the built-in <TT>StringIO</TT> module,
+and any other sort of object that supports the same kinds of method
+calls as built-in file objects. As always in Python, we code to
+protocols  -- object interfaces -- not to specific datatypes.
+</P>
+</TD></TR></TABLE></P>
+
+
+<A NAME="python2-CHP-10-SECT-5.2"></A>
+<H4 class="docSection2Title">10.5.2 Adding a User-Interface Frontend</H4>
+
+<P class="docText"><A NAME="python2-IDXTERM-729"></A> <A NAME="python2-IDXTERM-730"></A> <A NAME="python2-IDXTERM-731"></A>You might have noticed that we have been
+living in the realm of the command line for all of this
+chapter -- our socket clients and servers have been started from
+simple DOS or Linux shells. There is nothing stopping us from adding
+a nice point-and-click user interface to some of these scripts,
+though; GUI and network scripting are not mutually exclusive
+techniques. In fact, they can be arguably sexy when used together
+well.
+</P>
+
+<P class="docText">For instance, it would be easy to implement a simple Tkinter GUI
+frontend to the client-side portion of the <TT>getfile</TT>
+script we just met. Such a tool, run on the client machine, may
+simply pop up a window with <TT>Entry</TT> widgets for
+typing the desired filename, server, and so on. Once download
+parameters have been input, the user interface could either import
+and call the <TT>getfile.client</TT> function with
+appropriate option arguments, or build and run the implied
+<I>getfile.py</I> command line using tools such as
+<TT>os.system</TT>, <TT>os.fork</TT>,
+<TT>thread</TT>, etc.
+</P>
+
+<A NAME="python2-CHP-10-SECT-5.2.1"></A>
+<H5 class="docSection3Title">10.5.2.1 Using Frames and command lines</H5>
+
+<P class="docText"><A NAME="IXT-10-337336"></A> <A NAME="python2-IDXTERM-733"></A> <A NAME="python2-IDXTERM-734"></A>To help make this all more concrete,
+let's very quickly explore a few simple scripts that add a
+Tkinter frontend to the <TT>getfile</TT> client-side
+program. The first, in <A class="docLink" HREF="#python2-CHP-10-EX-11">Example 10-11</A>, creates a dialog
+for inputting server, port, and filename information, and simply
+constructs the corresponding <TT>getfile</TT> command line
+and runs it with <TT>os.system</TT>.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-10-EX-11"></A>Example 10-11. PP2E\Internet\Sockets\getfilegui-1.py </H5>
+<PRE>##########################################################
+# launch getfile script client from simple Tkinter GUI;
+# could also or os.fork+exec, os.spawnv (see Launcher);
+# windows: replace 'python' with 'start' if not on path; 
+##########################################################
+
+import sys, os
+from Tkinter import *
+from tkMessageBox import showinfo
+
+def onReturnKey():
+    cmdline = ('python getfile.py -mode client -file %s -port %s -host %s' %
+                      (content['File'].get(),
+                       content['Port'].get(), 
+                       content['Server'].get()))
+    os.system(cmdline)
+    showinfo('getfilegui-1', 'Download complete')
+
+box = Frame(Tk())
+box.pack(expand=YES, fill=X)
+lcol, rcol = Frame(box), Frame(box)
+lcol.pack(side=LEFT)
+rcol.pack(side=RIGHT, expand=Y, fill=X)
+
+labels = ['Server', 'Port', 'File']
+content = {}
+for label in labels:
+    Label(lcol, text=label).pack(side=TOP)
+    entry = Entry(rcol)
+    entry.pack(side=TOP, expand=YES, fill=X)
+    content[label] = entry
+
+box.master.title('getfilegui-1')
+box.master.bind('&lt;Return&gt;', (lambda event: onReturnKey()))
+mainloop()</PRE>
+
+
+<P class="docText">When run, this script creates the input form shown in <A class="docLink" HREF="#python2-CHP-10-FIG-1">Figure 10-1</A>. Pressing the Enter key
+(<TT>&lt;Return&gt;</TT>) runs a client-side instance of
+the <TT>getfile</TT> program; when the generated
+<TT>getfile</TT> command line is finished, we get the
+verification pop-up displayed in <A class="docLink" HREF="#python2-CHP-10-FIG-2">Figure 10-2</A>.
+</P>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="python2-CHP-10-FIG-1"></A>Figure 10-1. getfilegui-1 in action</H5>
+<IMG BORDER="0" WIDTH="138" HEIGHT="68" src="FILES/ppy2_1001.gif" ALT="figs/ppy2_1001.gif"></CENTER>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="python2-CHP-10-FIG-2"></A>Figure 10-2. getfilegui-1 verification pop-up</H5>
+<IMG BORDER="0" WIDTH="138" HEIGHT="96" src="FILES/ppy2_1002.gif" ALT="figs/ppy2_1002.gif"></CENTER>
+
+
+
+<A NAME="python2-CHP-10-SECT-5.2.2"></A>
+<H5 class="docSection3Title">10.5.2.2 Using grids and function calls</H5>
+
+<P class="docText"><A NAME="IXT-10-337337"></A> <A NAME="IXT-10-337338"></A>The first user-interface script
+(<A class="docLink" HREF="#python2-CHP-10-EX-11">Example 10-11</A>) uses the <TT>pack</TT>
+geometry manager and <TT>Frames</TT> to layout the input
+form, and runs the <TT>getfile</TT> client as a stand-
+alone program. It's just as easy to use the
+<TT>grid</TT> manager for layout, and import and call the
+client-side logic function instead of running a program. The script
+in <A class="docLink" HREF="#python2-CHP-10-EX-12">Example 10-12</A> shows how.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-10-EX-12"></A>Example 10-12. PP2E\Internet\Sockets\getfilegui-2.py </H5>
+<PRE>###############################################################
+# same, but with grids and import+call, not packs and cmdline;
+# direct function calls are usually faster than running files;
+###############################################################
+
+import getfile
+from Tkinter import *
+from tkMessageBox import showinfo
+
+def onSubmit():
+    getfile.client(content['Server'].get(),
+                   int(content['Port'].get()), 
+                   content['File'].get())
+    showinfo('getfilegui-2', 'Download complete')
+
+box    = Tk()
+labels = ['Server', 'Port', 'File']
+rownum  = 0
+content = {}
+for label in labels:
+    Label(box, text=label).grid(col=0, row=rownum)
+    entry = Entry(box)
+    entry.grid(col=1, row=rownum, sticky=E+W)
+    content[label] = entry
+    rownum = rownum + 1
+
+box.columnconfigure(0, weight=0)   # make expandable
+box.columnconfigure(1, weight=1)
+Button(text='Submit', command=onSubmit).grid(row=rownum, col=0, columnspan=2)
+
+box.title('getfilegui-2')
+box.bind('&lt;Return&gt;', (lambda event: onSubmit()))
+mainloop()</PRE>
+
+
+<P class="docText">This version makes a similar window (<A class="docLink" HREF="#python2-CHP-10-FIG-3">Figure 10-3</A>),
+but adds a button at the bottom that does the same thing as an Enter
+key press -- it runs the <TT>getfile</TT> client
+procedure. Generally speaking, importing and calling functions (as
+done here) is faster than running command lines, especially if done
+more than once. The <TT>getfile</TT> script is set up to
+work either way -- as program or function library.
+</P>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="python2-CHP-10-FIG-3"></A>Figure 10-3. getfilegui-2 in action</H5>
+<IMG BORDER="0" WIDTH="138" HEIGHT="91" src="FILES/ppy2_1003.gif" ALT="figs/ppy2_1003.gif"></CENTER>
+
+
+
+<A NAME="python2-CHP-10-SECT-5.2.3"></A>
+<H5 class="docSection3Title">10.5.2.3 Using a reusable form-layout class</H5>
+
+<P class="docText"><A NAME="IXT-10-337339"></A>
+<A NAME="IXT-10-337340"></A>If you're like me, though,
+writing all the GUI form layout code in those two scripts can seem a
+bit tedious, whether you use packing or grids. In fact, it became so
+tedious to me that I decided to write a general-purpose form-layout
+class, shown in <A class="docLink" HREF="#python2-CHP-10-EX-13">Example 10-13</A>, that handles most of
+the GUI layout grunt work.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-10-EX-13"></A>Example 10-13. PP2E\Internet\Sockets\form.py </H5>
+<PRE># a reusable form class, used by getfilegui (and others)
+
+from Tkinter import *
+entrysize = 40
+
+class Form:                                           # add non-modal form box
+    def __init__(self, labels, parent=None):          # pass field labels list
+        box = Frame(parent)
+        box.pack(expand=YES, fill=X)
+        rows = Frame(box, bd=2, relief=GROOVE)        # box has rows, button
+        lcol = Frame(rows)                            # rows has lcol, rcol
+        rcol = Frame(rows)                            # button or return key,
+        rows.pack(side=TOP, expand=Y, fill=X)         # runs onSubmit method
+        lcol.pack(side=LEFT)
+        rcol.pack(side=RIGHT, expand=Y, fill=X)
+        self.content = {}
+        for label in labels:
+            Label(lcol, text=label).pack(side=TOP)
+            entry = Entry(rcol, width=entrysize)
+            entry.pack(side=TOP, expand=YES, fill=X)
+            self.content[label] = entry
+        Button(box, text='Cancel', command=self.onCancel).pack(side=RIGHT)
+        Button(box, text='Submit', command=self.onSubmit).pack(side=RIGHT)
+        box.master.bind('&lt;Return&gt;', (lambda event, self=self: self.onSubmit()))
+
+    def onSubmit(self):                                      # override this
+        for key in self.content.keys():                      # user inputs in 
+            print key, '\t=&gt;\t', self.content[key].get()     # self.content[k]
+
+    def onCancel(self):                                      # override if need
+        Tk().quit()                                          # default is exit
+
+class DynamicForm(Form):
+    def __init__(self, labels=None):
+        import string
+        labels = string.split(raw_input('Enter field names: '))
+        Form.__init__(self, labels)
+    def onSubmit(self):
+        print 'Field values...'
+        Form.onSubmit(self)           
+        self.onCancel()              
+        
+if __name__ == '__main__':
+    import sys
+    if len(sys.argv) == 1:
+        Form(['Name', 'Age', 'Job'])     # precoded fields, stay after submit
+    else:
+        DynamicForm()                    # input fields, go away after submit
+    mainloop()    </PRE>
+
+
+<P class="docText">Running this module standalone triggers its self-test code at the
+bottom. Without arguments (and when double-clicked in a Windows file
+explorer), the self-test generates a form with canned input fields
+captured in <A class="docLink" HREF="#python2-CHP-10-FIG-4">Figure 10-4</A>, and displays the
+fields' values on Enter key presses or Submit button clicks:
+</P>
+
+<PRE>C:\...\PP2E\Internet\Sockets&gt;<B>python form.py</B>
+Job     =&gt;      Educator, Entertainer
+Age     =&gt;      38
+Name    =&gt;      Bob</PRE>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="python2-CHP-10-FIG-4"></A>Figure 10-4. Form test, canned fields</H5>
+<IMG BORDER="0" WIDTH="236" HEIGHT="93" src="FILES/ppy2_1004.gif" ALT="figs/ppy2_1004.gif"></CENTER>
+
+<P class="docText">With a command-line argument, the form class module's self-test
+code prompts for an arbitrary set of field names for the form; fields
+can be constructed as dynamically as we like. <A class="docLink" HREF="#python2-CHP-10-FIG-5">Figure 10-5</A> shows the input form constructed in response
+to the following console interaction. Field names could be accepted
+on the command line, too, but <TT>raw_input</TT> works just
+as well for simple tests like this. In this mode, the GUI goes away
+after the first submit, because
+<TT>DynamicForm.onSubmit</TT> says so:
+</P>
+
+<PRE>C:\...\PP2E\Internet\Sockets&gt;<B>python form.py -</B>
+Enter field names: Name Email Web Locale
+Field values...
+Email   =&gt;      lutz@rmi.net
+Locale  =&gt;      Colorado
+Web     =&gt;      http://rmi.net/~lutz
+Name    =&gt;      mel</PRE>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="python2-CHP-10-FIG-5"></A>Figure 10-5. Form test, dynamic fields</H5>
+<IMG BORDER="0" WIDTH="239" HEIGHT="109" src="FILES/ppy2_1005.gif" ALT="figs/ppy2_1005.gif"></CENTER>
+
+<P class="docText">And last but not least, <A class="docLink" HREF="#python2-CHP-10-EX-14">Example 10-14</A> shows the
+<TT>getfile</TT> user interface again, this time
+constructed with the reusable form layout class. We need to fill in
+only the form labels list, and provide an <TT>onSubmit</TT>
+callback method of our own. All of the work needed to construct the
+form comes "for free," from the imported and widely
+reusable <TT>Form</TT> superclass.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-10-EX-14"></A>Example 10-14. PP2E\Internet\Sockets\getfilegui.py </H5>
+<PRE>#################################################################
+# launch getfile client with a reusable gui form class;
+# os.chdir to target local dir if input (getfile stores in cwd);
+# to do: use threads, show download status and getfile prints;
+#################################################################
+
+from form import Form
+from Tkinter import Tk, mainloop
+from tkMessageBox import showinfo
+import getfile, os
+
+class GetfileForm(Form):
+    def __init__(self, oneshot=0):
+        root = Tk()
+        root.title('getfilegui')
+        labels = ['Server Name', 'Port Number', 'File Name', 'Local Dir?']
+        Form.__init__(self, labels, root)
+        self.oneshot = oneshot
+    def onSubmit(self):
+        Form.onSubmit(self)
+        localdir   = self.content['Local Dir?'].get()
+        portnumber = self.content['Port Number'].get()
+        servername = self.content['Server Name'].get()
+        filename   = self.content['File Name'].get()
+        if localdir:
+            os.chdir(localdir)
+        portnumber = int(portnumber)
+        getfile.client(servername, portnumber, filename)
+        showinfo('getfilegui', 'Download complete')
+        if self.oneshot: Tk().quit()  # else stay in last localdir
+
+if __name__ == '__main__':
+    GetfileForm()
+    mainloop()    </PRE>
+
+
+<P class="docText">The form layout class imported here can be used by any program that
+needs to input form-like data; when used in this script, we get a
+user-interface like that shown in <A class="docLink" HREF="#python2-CHP-10-FIG-6">Figure 10-6</A> under
+Windows (and similar on other platforms).
+</P>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="python2-CHP-10-FIG-6"></A>Figure 10-6. getfilegui in action</H5>
+<IMG BORDER="0" WIDTH="263" HEIGHT="109" src="FILES/ppy2_1006.gif" ALT="figs/ppy2_1006.gif"></CENTER>
+
+<P class="docText">Pressing this form's Submit button or the Enter key makes the
+<TT>getfilegui</TT> script call the imported
+<TT>getfile.client</TT> client-side function as before.
+This time, though, we also first change to the local directory typed
+into the form, so that the fetched file is stored there
+(<TT>getfile</TT> stores in the current working directory,
+whatever that may be when it is called). As usual, we can use this
+interface to connect to servers running locally on the same machine,
+or remotely. Here is some of the interaction we get for both modes:
+</P>
+
+<PRE><I> [talking to a local server]</I>
+C:\...\PP2E\Internet\Sockets&gt;<B>python getfilegui.py </B>
+Port Number     =&gt;      50001
+Local Dir?      =&gt;      temp
+Server Name     =&gt;      localhost
+File Name       =&gt;      testdir\python15.lib
+Client got testdir\python15.lib at Tue Aug 15 22:32:34 2000
+
+<I> [talking to a remote server]</I>
+[lutz@starship lutz]$ <B>/usr/bin/python getfile.py -mode server -port 51234 </B>
+Server connected by ('38.28.130.229', 1111) at Tue Aug 15 21:48:13 2000
+
+C:\...\PP2E\Internet\Sockets&gt;<B>python getfilegui.py </B>
+Port Number     =&gt;      51234
+Local Dir?      =&gt;      temp
+Server Name     =&gt;      starship.python.net
+File Name       =&gt;      public_html/index.html
+Client got public_html/index.html at Tue Aug 15 22:42:06 2000</PRE>
+
+<P class="docText">One caveat worth pointing out here: the GUI is essentially dead while
+the download is in progress (even screen redraws aren't
+handled -- try covering and uncovering the window and you'll
+see what I mean). We could make this better by running the download
+in a thread, but since we'll see how in the next chapter, you
+should consider this problem a preview.
+</P>
+
+<P class="docText">In closing, a few final notes. First of all, I should point out that
+the scripts in this chapter use Tkinter tricks we've seen
+before and won't go into here in the interest of space; be sure
+to see the GUI chapters in this book for implementation hints.
+</P>
+
+<P class="docText">Keep in mind, too, that these interfaces all just add a GUI on top of
+the existing script to reuse its code; any command-line tool can be
+easily GUI-ified in this way to make them more appealing and
+user-friendly. In the next chapter, for example, we'll meet a
+more useful client-side Tkinter user interface for reading and
+sending email over sockets (PyMailGui), which largely just adds a GUI
+to mail-processing tools. Generally speaking, GUIs can often be added
+as almost an afterthought to a program. Although the degree of
+user-interface and core logic separation can vary per program,
+keeping the two distinct makes it easier to focus on each.
+</P>
+
+<P class="docText">And finally, now that I've shown you how to build user
+interfaces on top of this chapter's <TT>getfile</TT>,
+I should also say that they aren't really as useful as they
+might seem. In particular, <TT>getfile</TT> clients can
+talk only to machines that are running a <TT>getfile</TT>
+server. In the next chapter, we'll discover another way to
+download files -- FTP -- which also runs on sockets, but
+provides a higher-level interface, and is available as a standard
+service on many machines on the Net. We don't generally need to
+start up a custom server to transfer files over FTP, the way we do
+with <TT>getfile</TT>. In fact, the user-interface scripts
+in this chapter could be easily changed to fetch the desired file
+with Python's FTP tools, instead of the
+<TT>getfile</TT> module. But rather than spilling all the
+beans here, I'll just say "read on."<A NAME="IXTR3-185"></A> <A NAME="IXTR3-186"></A><A NAME="IXTR3-187"></A> <A NAME="IXTR3-188"></A> <A NAME="IXTR3-189"></A><A NAME="IXTR3-190"></A> <A NAME="IXTR3-191"></A>
+</P>
+
+<P><A NAME="python2-CHP-10-SIDEBAR-4"></A><TABLE CELLSPACING="0" WIDTH="90%" BORDER="1"><TR><TD>
+<H2 class="docSidebarTitle">Using Serial Ports on Windows</H2>
+
+<P class="docText"><A NAME="IXT-10-337341"></A>
+<A NAME="IXT-10-337342"></A>Sockets, the main subject of this chapter,
+are the programmer's interface to network connections in Python
+scripts. As we've seen, they let us write scripts that converse
+with computers arbitrarily located on a network, and they form the
+backbone of the Internet and the Web.
+</P>
+
+<P class="docText">If you're looking for a more low-level way to communicate with
+devices in general, though, you may also be interested in the topic
+of Python's serial port interfaces. This isn't quite
+related to Internet scripting and applies only on Windows machines,
+but it's similar enough in spirit and is discussed often enough
+on the Net to merit a quick look here.
+</P>
+
+<P class="docText">Serial ports are known as "COM" ports on Windows (not to
+be confused with the COM object model), and are identified as
+"COM1", "COM2", and so on. By using
+interfaces to these ports, scripts may engage in low-level
+communication with things like mice, modems, and a wide variety of
+serial devices. Serial port interfaces are also used to communicate
+with devices connected over infrared ports (e.g., hand-held computers
+and remote modems). There are often other higher-level ways to access
+such devices (e.g., the PyRite package for ceasing Palm Pilot
+databases, or RAS for using modems), but serial port interfaces let
+scripts tap into raw data streams and implement device protocols of
+their own.
+</P>
+
+<P class="docText">There are at least three ways to send and receive data over serial
+ports in Python scripts -- a public domain C extension package
+known as Serial, the proprietary MSComm COM server object interface
+published by Microsoft, and the low-level CreateFile file API call
+exported by the Python Windows extensions package, available via
+links at <A class="docLink" target="_blank" HREF="http://www.python.org/default.htm">http://www.python.org</A>.
+</P>
+
+<P class="docText">Unfortunately, there's no time to cover any of these in detail
+in this text. For more information, the O'Reilly book Python
+Programming on Win32 includes an entire section dedicated to serial
+port communication topics. Also be sure to use the search tools at
+Python's web site for up-to-date details on this front.
+</P>
+</TD></TR></TABLE></P>
+
+
+
+
+<ul></ul>
+</td>
+</tr>
+</table>
+<td></td>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+          <a href="0596000855_python2-CHP-10-SECT-4.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+          <a href="0596000855_python2-CHP-11.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+</body></html>

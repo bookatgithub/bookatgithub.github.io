@@ -1,0 +1,1315 @@
+<html><head>
+<META http-equiv="Content-Type" content="text/html">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="10.4 Handling Multiple Clients"-->
+<link rel="STYLESHEET" type="text/css" href="FILES/style.css">
+<link rel="STYLESHEET" type="text/css" href="FILES/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+	<a href="0596000855_python2-CHP-10-SECT-3.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+	<a href="0596000855_python2-CHP-10-SECT-5.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr>
+<td valign="top"><A NAME="python2-CHP-10-SECT-4"></A>
+<H3 class="docSection1Title">10.4 Handling Multiple Clients</H3>
+
+<P class="docText"><A NAME="python2-IDXTERM-653"></A> <A NAME="python2-IDXTERM-654"></A> <A NAME="python2-IDXTERM-655"></A>
+<A NAME="python2-IDXTERM-656"></A>The
+<TT>echo</TT> client and server programs shown previously
+serve to illustrate socket fundamentals. But the server model suffers
+from a fairly major flaw: if multiple clients try to connect to the
+server, and it takes a long time to process a given clients'
+request, the server will fail. More accurately, if the cost of
+handling a given request prevents the server from returning to the
+code that checks for new clients in a timely manner, it won't
+be able to keep up with all the requests, and some clients will
+eventually be denied connections.
+</P>
+
+<P class="docText">In real-world client/server programs, it's far more typical to
+code a server so as to avoid blocking new requests while handling a
+current client's request. Perhaps the easiest way to do so is
+to service each client's request in parallel -- in a new
+process, in a new thread, or by manually switching (multiplexing)
+between clients in an event loop. This isn't a socket issue per
+se, and we've already learned how to start processes and
+threads in <A class="docLink" HREF="0596000855_python2-CHP-3.html#python2-CHP-3">Chapter 3</A>. But since these schemes are
+so typical of socket server programming, let's explore all
+three ways to handle client requests in parallel here.
+</P>
+
+<A NAME="python2-CHP-10-SECT-4.1"></A>
+<H4 class="docSection2Title">10.4.1 Forking Servers</H4>
+
+<P class="docText"><A NAME="python2-IDXTERM-657"></A> <A NAME="python2-IDXTERM-658"></A> <A NAME="python2-IDXTERM-659"></A>The script in <A class="docLink" HREF="#python2-CHP-10-EX-4">Example 10-4</A> works like the original
+<TT>echo</TT> server, but instead forks a new process to
+handle each new client connection. Because the
+<TT>handleClient</TT> function runs in a new process, the
+<TT>dispatcher</TT> function can immediately resume its
+main loop, to detect and service a new incoming request.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-10-EX-4"></A>Example 10-4. PP2E\Internet\Sockets\fork-server.py </H5>
+<A NAME="ch10-idx-1000006584-1"></A><PRE>#########################################################
+# Server side: open a socket on a port, listen for
+# a message from a client, and send an echo reply; 
+# forks a process to handle each client connection;
+# child processes share parent's socket descriptors;
+# fork is less portable than threads--not yet on Windows;
+#########################################################
+
+import os, time, sys
+from socket import *                      # get socket constructor and constants
+myHost = ''                               # server machine, '' means local host
+myPort = 50007                            # listen on a non-reserved port number
+
+sockobj = socket(AF_INET, SOCK_STREAM)           # make a TCP socket object
+sockobj.bind((myHost, myPort))                   # bind it to server port number
+sockobj.listen(5)                                # allow 5 pending connects
+
+def now():                                       # current time on server
+    return time.ctime(time.time())
+
+activeChildren = []
+def reapChildren():                              # reap any dead child processes
+    while activeChildren:                        # else may fill up system table
+        pid,stat = os.waitpid(0, os.WNOHANG)     # don't hang if no child exited
+        if not pid: break
+        activeChildren.remove(pid)
+
+def handleClient(connection):                    # child process: reply, exit
+    time.sleep(5)                                # simulate a blocking activity
+    while 1:                                     # read, write a client socket
+        data = connection.recv(1024)             # till eof when socket closed
+        if not data: break
+        connection.send('Echo=&gt;%s at %s' % (data, now()))
+    connection.close() 
+    os._exit(0)
+
+def dispatcher():                                # listen until process killed
+    while 1:                                     # wait for next connection,
+        connection, address = sockobj.accept()   # pass to process for service
+        print 'Server connected by', address,
+        print 'at', now()
+        reapChildren()                           # clean up exited children now
+        childPid = os.fork()                     # copy this process
+        if childPid == 0:                        # if in child process: handle
+            handleClient(connection)
+        else:                                    # else: go accept next connect
+            activeChildren.append(childPid)      # add to active child pid list
+
+dispatcher()</PRE>
+
+
+<A NAME="python2-CHP-10-SECT-4.1.1"></A>
+<H5 class="docSection3Title">10.4.1.1 Running the forking server</H5>
+
+<P class="docText"><A NAME="IXT-10-337297"></A>Parts of this script are a bit tricky, and
+most of its library calls work only on Unix-like platforms (not
+Windows). But before we get into too many details, let's start
+up our server and handle a few client requests. First off, notice
+that to simulate a long-running operation (e.g., database updates,
+other network traffic), this server adds a five-second
+<TT>time.sleep</TT> delay in its client handler function,
+<TT>handleClient</TT>. After the delay, the original echo
+reply action is performed. That means that when we run a server and
+clients this time, clients won't receive the echo reply until
+five seconds after they've sent their requests to the server.
+<A NAME="IXT-10-337298"></A>
+</P>
+
+<P class="docText">To help keep track of requests and replies, the server prints its
+system time each time a client connect request is received, and adds
+its system time to the reply. Clients print the reply time sent back
+from the server, not their own -- clocks on the server and client
+may differ radically, so to compare apples to apples, all times are
+server times. Because of the simulated delays, we also usually must
+start each client in its own console window on Windows (on some
+platforms, clients will hang in a blocked state while waiting for
+their reply).<A NAME="IXT-10-337299"></A>
+</P>
+
+<P class="docText">But the grander story here is that this script runs one main parent
+process on the server machine, which does nothing but watch for
+connections (in <TT>dispatcher</TT>), plus one child
+process per active client connection, running in parallel with both
+the main parent process and the other client processes (in
+<TT>handleClient</TT>). In principle, the server can handle
+any number of clients without bogging down. To test, let's
+start the server remotely in a Telnet window, and start three clients
+locally in three distinct console windows:
+</P>
+
+<PRE>[server telnet window]
+[lutz@starship uploads]$ <B>uname -a </B>
+Linux starship ...
+[lutz@starship uploads]$ <B>python fork-server.py </B>
+Server connected by ('38.28.162.194', 1063) at Sun Jun 18 19:37:49 2000
+Server connected by ('38.28.162.194', 1064) at Sun Jun 18 19:37:49 2000
+Server connected by ('38.28.162.194', 1067) at Sun Jun 18 19:37:50 2000
+
+<I> [client window 1]</I>
+C:\...\PP2E\Internet\Sockets&gt;<B>python echo-client.py starship.python.net </B>
+Client received: 'Echo=&gt;Hello network world at Sun Jun 18 19:37:54 2000'
+
+<I> [client window 2]</I>
+C:\...\PP2E\Internet\Sockets&gt;<B>python echo-client.py starship.python.net Bruce </B>
+Client received: 'Echo=&gt;Bruce at Sun Jun 18 19:37:54 2000'
+
+<I> [client window 3]</I>
+C:\...\PP2E\Internet\Sockets&gt;python echo-client.py starship.python.net The 
+<B>Meaning of Life </B>
+Client received: 'Echo=&gt;The at Sun Jun 18 19:37:55 2000'
+Client received: 'Echo=&gt;Meaning at Sun Jun 18 19:37:56 2000'
+Client received: 'Echo=&gt;of at Sun Jun 18 19:37:56 2000'
+Client received: 'Echo=&gt;Life at Sun Jun 18 19:37:56 2000'</PRE>
+
+<P class="docText"><A NAME="IXT-10-337300"></A>
+<A NAME="IXT-10-337301"></A> <A NAME="IXT-10-337302"></A> <A NAME="IXT-10-337303"></A>Again, all times here are on
+the server machine. This may be a little confusing because there are
+four windows involved. In English, the test proceeds as follows:
+</P>
+
+<span style="font-weight:bold"><OL class="docList" TYPE="1">
+<LI><span style="font-weight:normal"><P class="docList">The server starts running remotely.</P></span></LI>
+<LI><span style="font-weight:normal"><P class="docList">All three clients are started and connect to the server at roughly
+the same time.
+</P></span></LI>
+<LI><span style="font-weight:normal"><P class="docList">On the server, the client requests trigger three forked child
+processes, which all immediately go to sleep for five seconds (to
+simulate being busy doing something useful).
+</P></span></LI>
+<LI><span style="font-weight:normal"><P class="docList">Each client waits until the server replies, which eventually happens
+five seconds after their initial requests.
+</P></span></LI>
+</OL></span>
+<P class="docText">In other words, all three clients are serviced at the same time, by
+forked processes, while the main parent process continues listening
+for new client requests. If clients were not handled in parallel like
+this, no client could connect until the currently connected
+client's five-second delay expired.
+</P>
+
+<P class="docText">In a more realistic application, that delay could be fatal if many
+clients were trying to connect at once -- the server would be
+stuck in the action we're simulating with
+<TT>time.sleep</TT>, and not get back to the main loop to
+<TT>accept</TT> new client requests. With process forks per
+request, all clients can be serviced in parallel.
+</P>
+
+<P class="docText">Notice that we're using the same client script here
+(<I>echo-client.py</I>), just a different server;
+clients simply send and receive data to a machine and port, and
+don't care how their requests are handled on the server. Also
+note that the server is running remotely on a Linux machine. (As we
+learned in <A class="docLink" HREF="0596000855_python2-CHP-3.html#python2-CHP-3">Chapter 3</A>, the <TT>fork</TT>
+call is not supported on Windows in Python at the time this book was
+written.) We can also run this test on a Linux server entirely, with
+two Telnet windows. It works about the same as when clients are
+started locally, in a DOS console window, but here
+"local" means a remote machine you're telneting to
+locally:
+</P>
+
+<PRE><I> [one telnet window]</I>
+[lutz@starship uploads]$ <B>python fork-server.py &amp; </B>
+[1] 3379
+Server connected by ('127.0.0.1', 2928) at Sun Jun 18 22:44:50 2000
+Server connected by ('127.0.0.1', 2929) at Sun Jun 18 22:45:08 2000
+Server connected by ('208.185.174.112', 2930) at Sun Jun 18 22:45:50 2000
+
+<I> [another telnet window, same machine]</I>
+[lutz@starship uploads]$ <B>python echo-client.py </B>
+Client received: 'Echo=&gt;Hello network world at Sun Jun 18 22:44:55 2000'
+
+[lutz@starship uploads]$ <B>python echo-client.py localhost niNiNI </B>
+Client received: 'Echo=&gt;niNiNI at Sun Jun 18 22:45:13 2000'
+
+[lutz@starship uploads]$ <B>python echo-client.py starship.python.net Say no More! </B>
+Client received: 'Echo=&gt;Say at Sun Jun 18 22:45:55 2000'
+Client received: 'Echo=&gt;no at Sun Jun 18 22:45:55 2000'
+Client received: 'Echo=&gt;More! at Sun Jun 18 22:45:55 2000'</PRE>
+
+<P class="docText">Now let's move on to the tricky bits. This server script is
+fairly straightforward as forking code goes, but a few comments about
+some of the library tools it employs are in order.
+</P>
+
+
+
+<A NAME="python2-CHP-10-SECT-4.1.2"></A>
+<H5 class="docSection3Title">10.4.1.2 Forking processes</H5>
+
+<P class="docText">We met <TT>os.fork</TT> in <A class="docLink" HREF="0596000855_python2-CHP-3.html#python2-CHP-3">Chapter 3</A>,
+but recall that forked processes are essentially a copy of the
+process that forks them, and so they inherit file and socket
+descriptors from their parent process. Because of that, the new child
+process that runs the <TT>handleClient</TT> function has
+access to the connection socket created in the parent process.
+Programs know they are in a forked child process if the fork call
+returns 0; otherwise, the original parent process gets back the new
+child's
+ID.<A NAME="IXT-10-337304"></A>
+<A NAME="IXTR3-164"></A>
+</P>
+
+
+
+<A NAME="python2-CHP-10-SECT-4.1.3"></A>
+<H5 class="docSection3Title">10.4.1.3 Exiting from children</H5>
+
+<P class="docText"><A NAME="IXT-10-337305"></A>
+<A NAME="IXT-10-337306"></A>
+<A NAME="IXT-10-337307"></A>In earlier fork examples, child processes
+usually call one of the <TT>exec</TT> variants to start a
+new program in the child process. Here, instead, the child process
+simply calls a function in the same program and exits with
+<TT>os._exit</TT>. It's imperative to call
+<TT>os._exit</TT> here -- if we did not, each child
+would live on after <TT>handleClient</TT> returns, and
+compete for accepting new client requests.
+<A NAME="IXT-10-337308"></A>
+</P>
+
+<P class="docText">In fact, without the exit call, we'd wind up with as many
+perpetual server processes as requests served -- remove the exit
+call and do a <I>ps</I> shell command after running a few
+clients, and you'll see what I mean. With the call, only the
+single parent process listens for new requests.
+<TT>os._exit</TT> is like <TT>sys.exit</TT>, but
+it exits the calling process immediately without cleanup actions.
+It's normally only used in child processes, and
+<TT>sys.exit</TT> is used everywhere
+else.<A NAME="IXT-10-337309"></A>
+</P>
+
+
+
+<A NAME="python2-CHP-10-SECT-4.1.4"></A>
+<H5 class="docSection3Title">10.4.1.4 Killing the zombies</H5>
+
+<P class="docText"><A NAME="IXT-10-337310"></A>
+<A NAME="IXT-10-337311"></A>
+<A NAME="IXT-10-337312"></A>
+<A NAME="IXT-10-337313"></A>Note, however, that it's not
+quite enough to make sure that child processes exit and die. On
+systems like Linux, parents must also be sure to issue a
+<TT>wait</TT> system call to remove the entries for dead
+child processes from the system's process table. If we
+don't, the child processes will no longer run, but they will
+consume an entry in the system process table. For long-running
+servers, these bogus entries may become problematic.
+</P>
+
+<P class="docText">It's common to call such dead-but-listed child processes
+"zombies": they continue to use system resources even
+though they've already passed over to the great operating
+system beyond. To clean up after child processes are gone, this
+server keeps a list, <TT>activeChildren</TT>, of the
+process IDs of all child processes it spawns. Whenever a new incoming
+client request is received, the server runs its <TT>reapChildren</TT>
+to issue a <TT>wait</TT> for any dead children by
+issuing the standard Python
+<TT>os.waitpid(0,os.WNOHANG)</TT> call.
+</P>
+
+<P class="docText"><A NAME="IXT-10-337314"></A>The <TT>os.waitpid</TT> call
+attempts to wait for a child process to exit and returns its process
+ID and exit status. With a
+for its first argument, it waits for any child process. With the
+<TT>WNOHANG</TT> parameter for its second, it does nothing
+if no child process has exited (i.e., it does not block or pause the
+caller). The net effect is that this call simply asks the operating
+system for the process ID of any child that has exited. If any have,
+the process ID returned is removed both from the system process table
+and from this script's <TT>activeChildren</TT>
+list.<A NAME="IXT-10-337315"></A>
+</P>
+
+<P class="docText">To see why all this complexity is needed, comment out the
+<TT>reapChildren</TT> call in this script, run it on a
+server, and then run a few clients. On my Linux server, a <TT>ps
+-f</TT> full process listing command shows that all the dead
+child processes stay in the system process table (show as
+<TT>&lt;defunct&gt;</TT>):
+</P>
+
+<PRE>[lutz@starship uploads]$ <B>ps -f</B>
+UID        PID  PPID  C STIME TTY          TIME CMD
+lutz      3270  3264  0 22:33 pts/1    00:00:00 -bash
+lutz      3311  3270  0 22:37 pts/1    00:00:00 python fork-server.py
+lutz      3312  3311  0 22:37 pts/1    00:00:00 [python &lt;defunct&gt;]
+lutz      3313  3311  0 22:37 pts/1    00:00:00 [python &lt;defunct&gt;]
+lutz      3314  3311  0 22:37 pts/1    00:00:00 [python &lt;defunct&gt;]
+lutz      3316  3311  0 22:37 pts/1    00:00:00 [python &lt;defunct&gt;]
+lutz      3317  3311  0 22:37 pts/1    00:00:00 [python &lt;defunct&gt;]
+lutz      3318  3311  0 22:37 pts/1    00:00:00 [python &lt;defunct&gt;]
+lutz      3322  3270  0 22:38 pts/1    00:00:00 ps -f</PRE>
+
+<P class="docText">When the <TT>reapChildren</TT> command is reactivated, dead
+child zombie entries are cleaned up each time the server gets a new
+client connection request, by calling the Python
+<TT>os.waitpid</TT> function. A few zombies may accumulate
+if the server is heavily loaded, but will remain only until the next
+client connection is received:
+</P>
+
+<PRE>[lutz@starship uploads]$ <B>ps -f</B>
+UID        PID  PPID  C STIME TTY          TIME CMD
+lutz      3270  3264  0 22:33 pts/1    00:00:00 -bash
+lutz      3340  3270  0 22:41 pts/1    00:00:00 python fork-server.py
+lutz      3341  3340  0 22:41 pts/1    00:00:00 [python &lt;defunct&gt;]
+lutz      3342  3340  0 22:41 pts/1    00:00:00 [python &lt;defunct&gt;]
+lutz      3343  3340  0 22:41 pts/1    00:00:00 [python &lt;defunct&gt;]
+lutz      3344  3270  6 22:41 pts/1    00:00:00 ps -f
+[lutz@starship uploads]$ 
+Server connected by ('38.28.131.174', 1170) at Sun Jun 18 22:41:43 2000
+
+[lutz@starship uploads]$ <B>ps -f</B>
+UID        PID  PPID  C STIME TTY          TIME CMD
+lutz      3270  3264  0 22:33 pts/1    00:00:00 -bash
+lutz      3340  3270  0 22:41 pts/1    00:00:00 python fork-server.py
+lutz      3345  3340  0 22:41 pts/1    00:00:00 [python &lt;defunct&gt;]
+lutz      3346  3270  0 22:41 pts/1    00:00:00 ps -f</PRE>
+
+<P class="docText">If you type fast enough, you can actually see a child process morph
+from a real running program into a zombie. Here, for example, a child
+spawned to handle a new request (process ID 11785) changes to
+<TT>&lt;defunct&gt;</TT> on exit. Its process entry will be
+removed completely when the next request is received:
+</P>
+
+<PRE>[lutz@starship uploads]$ 
+Server connected by ('38.28.57.160', 1106) at Mon Jun 19 22:34:39 2000
+[lutz@starship uploads]$ <B>ps -f</B>
+UID        PID  PPID  C STIME TTY          TIME CMD
+lutz     11089 11088  0 21:13 pts/2    00:00:00 -bash
+lutz     11780 11089  0 22:34 pts/2    00:00:00 python fork-server.py
+lutz     11785 11780  0 22:34 pts/2    00:00:00 python fork-server.py
+lutz     11786 11089  0 22:34 pts/2    00:00:00 ps -f
+
+[lutz@starship uploads]$ <B>ps -f</B>
+UID        PID  PPID  C STIME TTY          TIME CMD
+lutz     11089 11088  0 21:13 pts/2    00:00:00 -bash
+lutz     11780 11089  0 22:34 pts/2    00:00:00 python fork-server.py
+lutz     11785 11780  0 22:34 pts/2    00:00:00 [python &lt;defunct&gt;]
+lutz     11787 11089  0 22:34 pts/2    00:00:00 ps -f</PRE>
+
+
+
+<A NAME="python2-CHP-10-SECT-4.1.5"></A>
+<H5 class="docSection3Title">10.4.1.5 Preventing zombies with signal handlers</H5>
+
+<P class="docText"><A NAME="python2-IDXTERM-680"></A>
+<A NAME="python2-IDXTERM-681"></A>
+<A NAME="python2-IDXTERM-682"></A>
+<A NAME="python2-IDXTERM-683"></A> <A NAME="python2-IDXTERM-684"></A>On some systems, it's also
+possible to clean up zombie child processes by resetting the signal
+handler for the <TT>SIGCHLD</TT> signal raised by the
+operating system when a child process exits. If a Python script
+assigns the <TT>SIG_IGN</TT> (ignore) action as the
+<TT>SIGCHLD</TT> signal handler, zombies will be removed
+automatically and immediately as child processes exit; the parent
+need not issue wait calls to clean up after them. Because of that,
+this scheme is a simpler alternative to manually reaping zombies (on
+platforms where it is supported).
+</P>
+
+<P class="docText">If you've already read <A class="docLink" HREF="0596000855_python2-CHP-3.html#python2-CHP-3">Chapter 3</A>, you know
+that Python's standard <TT>signal</TT> module lets
+scripts install handlers for signals -- software-generated events.
+If you haven't read that chapter, here is a brief bit of
+background to show how this pans out for zombies. The program in
+<A class="docLink" HREF="#python2-CHP-10-EX-5">Example 10-5</A> installs a Python-coded signal handler
+function to respond to whatever signal number you type on the command
+line.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-10-EX-5"></A>Example 10-5. PP2E\Internet\Sockets\signal-demo.py </H5>
+<PRE>##########################################################
+# Demo Python's signal module; pass signal number as a
+# command-line arg, use a "kill -N pid" shell command
+# to send this process a signal; e.g., on my linux 
+# machine, SIGUSR1=10, SIGUSR2=12, SIGCHLD=17, and 
+# SIGCHLD handler stays in effect even if not restored:
+# all other handlers restored by Python after caught,
+# but SIGCHLD is left to the platform's implementation;
+# signal works on Windows but defines only a few signal
+# types; signals are not very portable in general;
+##########################################################
+
+import sys, signal, time
+
+def now():
+    return time.ctime(time.time())
+
+def onSignal(signum, stackframe):                # python signal handler
+    print 'Got signal', signum, 'at', now()      # most handlers stay in effect
+    if signum == signal.SIGCHLD:                 # but sigchld handler is not 
+        print 'sigchld caught'
+        #signal.signal(signal.SIGCHLD, onSignal)
+
+signum = int(sys.argv[1])
+signal.signal(signum, onSignal)                  # install signal handler
+while 1: signal.pause()                          # sleep waiting for signals</PRE>
+
+
+<P class="docText">To run this script, simply put it in the background and send it
+signals by typing the <TT>kill</TT>
+<TT>-signal-number</TT> <TT>process-id</TT> shell
+command line. Process IDs are listed in the PID column of
+<I>ps</I> command results. Here is this script in action
+catching signal numbers 10 (reserved for general use) and 9 (the
+unavoidable terminate signal):
+</P>
+
+<PRE>[lutz@starship uploads]$ <B>python signal-demo.py 10 &amp;</B>
+[1] 11297
+[lutz@starship uploads]$ <B>ps -f</B>
+UID        PID  PPID  C STIME TTY          TIME CMD
+lutz     11089 11088  0 21:13 pts/2    00:00:00 -bash
+lutz     11297 11089  0 21:49 pts/2    00:00:00 python signal-demo.py 10
+lutz     11298 11089  0 21:49 pts/2    00:00:00 ps -f
+
+[lutz@starship uploads]$ <B>kill -10 11297</B>
+Got signal 10 at Mon Jun 19 21:49:27 2000
+
+[lutz@starship uploads]$ <B>kill -10 11297</B>
+Got signal 10 at Mon Jun 19 21:49:29 2000
+
+[lutz@starship uploads]$ <B>kill -10 11297</B>
+Got signal 10 at Mon Jun 19 21:49:32 2000
+
+[lutz@starship uploads]$ <B>kill -9 11297</B>
+[1]+  Killed                  python signal-demo.py 10</PRE>
+
+<P class="docText">And here the script catches signal 17, which happens to be
+<TT>SIGCHLD</TT> on my Linux server. Signal numbers vary
+from machine to machine, so you should normally use their names, not
+their numbers. <TT>SIGCHLD</TT> behavior may vary per
+platform as well (see the signal module's library manual entry
+for more details):
+</P>
+
+<PRE>[lutz@starship uploads]$ <B>python signal-demo.py 17 &amp;</B>
+[1] 11320
+[lutz@starship uploads]$ <B>ps -f</B>
+UID        PID  PPID  C STIME TTY          TIME CMD
+lutz     11089 11088  0 21:13 pts/2    00:00:00 -bash
+lutz     11320 11089  0 21:52 pts/2    00:00:00 python signal-demo.py 17
+lutz     11321 11089  0 21:52 pts/2    00:00:00 ps -f
+
+[lutz@starship uploads]$ <B>kill -17 11320</B>
+Got signal 17 at Mon Jun 19 21:52:24 2000
+[lutz@starship uploads] sigchld caught
+
+[lutz@starship uploads]$ <B>kill -17 11320</B>
+Got signal 17 at Mon Jun 19 21:52:27 2000
+[lutz@starship uploads]$ sigchld caught</PRE>
+
+<P class="docText">Now, to apply all this to kill zombies, simply set the
+<TT>SIGCHLD</TT> signal handler to the
+<TT>SIG_IGN</TT> ignore handler action; on systems where
+this assignment is supported, child processes will be cleaned up when
+they exit. The forking server variant shown in <A class="docLink" HREF="#python2-CHP-10-EX-6">Example 10-6</A> uses this trick to manage its children.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-10-EX-6"></A>Example 10-6. PP2E\Internet\Sockets\fork-server-signal.py </H5>
+<PRE>#########################################################
+# Same as fork-server.py, but use the Python signal
+# module to avoid keeping child zombie processes after
+# they terminate, not an explicit loop before each new 
+# connection; SIG_IGN means ignore, and may not work with
+# SIG_CHLD child exit signal on all platforms; on Linux,
+# socket.accept cannot be interrupted with a signal;
+#########################################################
+
+import os, time, sys, signal, signal
+from socket import *                      # get socket constructor and constants
+myHost = ''                               # server machine, '' means local host
+myPort = 50007                            # listen on a non-reserved port number
+
+sockobj = socket(AF_INET, SOCK_STREAM)           # make a TCP socket object
+sockobj.bind((myHost, myPort))                   # bind it to server port number
+sockobj.listen(5)                                # up to 5 pending connects
+<B>signal.signal(signal.SIGCHLD, signal.SIG_IGN)  </B>  # avoid child zombie processes
+
+def now():                                       # time on server machine
+    return time.ctime(time.time())
+
+def handleClient(connection):                    # child process replies, exits
+    time.sleep(5)                                # simulate a blocking activity
+    while 1:                                     # read, write a client socket
+        data = connection.recv(1024)
+        if not data: break  
+        connection.send('Echo=&gt;%s at %s' % (data, now()))
+    connection.close() 
+    os._exit(0)
+
+def dispatcher():                                # listen until process killed
+    while 1:                                     # wait for next connection,
+        connection, address = sockobj.accept()   # pass to process for service
+        print 'Server connected by', address,
+        print 'at', now()
+        childPid = os.fork()                     # copy this process
+        if childPid == 0:                        # if in child process: handle
+            handleClient(connection)             # else: go accept next connect
+
+dispatcher()</PRE>
+
+
+<P class="docText">Where applicable, this technique is:</P>
+
+<UL>
+<LI><P class="docList">Much simpler -- we don't need to manually track or reap
+child processes.
+</P></LI>
+<LI><P class="docList">More accurate -- it leaves no zombies temporarily between client
+requests.
+</P></LI>
+</UL>
+<P class="docText"><A NAME="IXT-10-337316"></A>
+<A NAME="IXT-10-337317"></A>In fact, there is really only one line
+dedicated to handling zombies here: the
+<TT>signal.signal</TT> call near the top, to set the
+handler. Unfortunately, this version is also even less portable than
+using <TT>os.fork</TT> in the first place, because signals
+may work slightly different from platform to platform. For instance,
+some platforms may not allow <TT>SIG_IGN</TT> to be used as
+the <TT>SIGCHLD</TT> action at all. On Linux systems,
+though, this simpler forking server variant works like a charm:
+</P>
+
+<PRE>[lutz@starship uploads]$ 
+Server connected by ('38.28.57.160', 1166) at Mon Jun 19 22:38:29 2000
+
+[lutz@starship uploads]$ <B>ps -f</B>
+UID        PID  PPID  C STIME TTY          TIME CMD
+lutz     11089 11088  0 21:13 pts/2    00:00:00 -bash
+lutz     11827 11089  0 22:37 pts/2    00:00:00 python fork-server-signal.py
+lutz     11835 11827  0 22:38 pts/2    00:00:00 python fork-server-signal.py
+lutz     11836 11089  0 22:38 pts/2    00:00:00 ps -f
+
+[lutz@starship uploads]$ <B>ps -f</B>
+UID        PID  PPID  C STIME TTY          TIME CMD
+lutz     11089 11088  0 21:13 pts/2    00:00:00 -bash
+lutz     11827 11089  0 22:37 pts/2    00:00:00 python fork-server-signal.py
+lutz     11837 11089  0 22:38 pts/2    00:00:00 ps -f</PRE>
+
+<P class="docText">Notice that in this version, the child process's entry goes
+away as soon as it exits, even before a new client request is
+received; no "defunct" zombie ever appears. More
+dramatically, if we now start up the script we wrote earlier that
+spawns eight clients in parallel (<I>testecho.py</I>)
+to talk to this server, all appear on the server while running, but
+are removed immediately as they exit:
+</P>
+
+<A NAME="IXTR3-165"></A><A NAME="IXTR3-166"></A><A NAME="IXTR3-167"></A><A NAME="IXTR3-168"></A><A NAME="IXTR3-169"></A><A NAME="IXTR3-170"></A><A NAME="IXTR3-171"></A><A NAME="IXTR3-172"></A>
+
+<PRE>[lutz@starship uploads]$ <B>ps -f</B>
+UID        PID  PPID  C STIME TTY          TIME CMD
+lutz     11089 11088  0 21:13 pts/2    00:00:00 -bash
+lutz     11827 11089  0 22:37 pts/2    00:00:00 python fork-server-signal.py
+lutz     11839 11827  0 22:39 pts/2    00:00:00 python fork-server-signal.py
+lutz     11840 11827  0 22:39 pts/2    00:00:00 python fork-server-signal.py
+lutz     11841 11827  0 22:39 pts/2    00:00:00 python fork-server-signal.py
+lutz     11842 11827  0 22:39 pts/2    00:00:00 python fork-server-signal.py
+lutz     11843 11827  0 22:39 pts/2    00:00:00 python fork-server-signal.py
+lutz     11844 11827  0 22:39 pts/2    00:00:00 python fork-server-signal.py
+lutz     11845 11827  0 22:39 pts/2    00:00:00 python fork-server-signal.py
+lutz     11846 11827  0 22:39 pts/2    00:00:00 python fork-server-signal.py
+lutz     11848 11089  0 22:39 pts/2    00:00:00 ps -f
+
+[lutz@starship uploads]$ <B>ps -f</B>
+UID        PID  PPID  C STIME TTY          TIME CMD
+lutz     11089 11088  0 21:13 pts/2    00:00:00 -bash
+lutz     11827 11089  0 22:37 pts/2    00:00:00 python fork-server-signal.py
+lutz     11849 11089  0 22:39 pts/2    00:00:00 ps -f
+</PRE>
+
+
+
+<A NAME="python2-CHP-10-SECT-4.2"></A>
+<H4 class="docSection2Title">10.4.2 Threading Servers</H4>
+
+<P class="docText"><span class="docEmphasis">But don't do that</span><A NAME="python2-IDXTERM-687"></A> <A NAME="python2-IDXTERM-688"></A>
+<A NAME="python2-IDXTERM-689"></A>. The forking model just described
+works well on some platforms in general, but suffers from some
+potentially big
+limitations:<A NAME="IXT-10-337318"></A>
+<A NAME="IXT-10-337319"></A>
+</P>
+
+<DL class="docList">
+<DT><I><span class="docPubcolor">Performance</span></I></DT>
+<DD>
+<P class="docList">On some machines, starting a new process can be fairly expensive in
+terms of time and space resources.
+</P>
+</DD><DT><I><span class="docPubcolor">Portability</span></I></DT>
+<DD>
+<P class="docList">Forking processes is a Unix device; as we just noted, the fork call
+currently doesn't work on non-Unix platforms such as Windows.
+</P>
+</DD><DT><I><span class="docPubcolor">Complexity</span></I></DT>
+<DD>
+<P class="docList">If you think that forking servers can be complicated, you're
+right. As we just saw, forking also brings with it all the
+shenanigans of managing zombies -- cleaning up after child
+processes that live shorter lives than their parents.
+</P>
+</DD>
+</DL>
+
+<P class="docText">If you read <A class="docLink" HREF="0596000855_python2-CHP-3.html#python2-CHP-3">Chapter 3</A>, you know that the solution
+to all of these dilemmas is usually to use threads instead of
+processes. Threads run in parallel and share global (i.e., module and
+interpreter) memory, but they are usually less expensive to start,
+and work both on Unix-like machines and Microsoft Windows today.
+Furthermore, threads are simpler to program -- child threads die
+silently on exit, without leaving behind zombies to haunt the server.
+</P>
+
+<P class="docText"><A class="docLink" HREF="#python2-CHP-10-EX-7">Example 10-7</A> is another mutation of the echo server
+that handles client request in parallel by running them in threads,
+rather than processes.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-10-EX-7"></A>Example 10-7. PP2E\Internet\Sockets\thread-server.py </H5>
+<PRE>#########################################################
+# Server side: open a socket on a port, listen for
+# a message from a client, and send an echo reply; 
+# echos lines until eof when client closes socket;
+# spawns a thread to handle each client connection;
+# threads share global memory space with main thread;
+# this is more portable than fork--not yet on Windows;
+#########################################################
+
+import thread, time
+from socket import *                     # get socket constructor and constants
+myHost = ''                              # server machine, '' means local host
+myPort = 50007                           # listen on a non-reserved port number
+
+sockobj = socket(AF_INET, SOCK_STREAM)           # make a TCP socket object
+sockobj.bind((myHost, myPort))                   # bind it to server port number
+sockobj.listen(5)                                # allow up to 5 pending connects
+
+def now(): 
+    return time.ctime(time.time())               # current time on the server
+
+def handleClient(connection):                    # in spawned thread: reply
+    time.sleep(5)                                # simulate a blocking activity
+    while 1:                                     # read, write a client socket
+        data = connection.recv(1024)
+        if not data: break
+        connection.send('Echo=&gt;%s at %s' % (data, now()))
+    connection.close() 
+
+def dispatcher():                                # listen until process killd
+    while 1:                                     # wait for next connection,
+        connection, address = sockobj.accept()   # pass to thread for service
+        print 'Server connected by', address,
+        print 'at', now() 
+        thread.start_new(handleClient, (connection,))
+
+dispatcher()</PRE>
+
+
+<P class="docText">This <TT>dispatcher</TT> delegates each incoming client
+connection request to a newly spawned thread running the
+<TT>handleClient</TT> function. Because of that, this
+server can process multiple clients at once, and the main dispatcher
+loop can get quickly back to the top to check for newly arrived
+requests. The net effect is that new clients won't be denied
+service due to a busy
+server.<A NAME="IXT-10-337320"></A>
+</P>
+
+<P class="docText">Functionally, this version is similar to the <TT>fork</TT>
+solution (clients are handled in parallel), but it will work on any
+machine that supports threads, including Windows and Linux.
+Let's test it on both. First, start the server on a Linux
+machine and run clients on both Linux and
+Windows:<A NAME="IXT-10-337321"></A>
+</P>
+
+<PRE><I> [window 1: thread-based server process, server keeps accepting </I>
+<I> client connections while threads are servicing prior requests]</I>
+[lutz@starship uploads]$ <B>/usr/bin/python thread-server.py </B>
+Server connected by ('127.0.0.1', 2934) at Sun Jun 18 22:52:52 2000
+Server connected by ('38.28.131.174', 1179) at Sun Jun 18 22:53:31 2000
+Server connected by ('38.28.131.174', 1182) at Sun Jun 18 22:53:35 2000
+Server connected by ('38.28.131.174', 1185) at Sun Jun 18 22:53:37 2000
+
+<I> [window 2: client, but on same server machine]</I>
+[lutz@starship uploads]$ <B>python echo-client.py </B>
+Client received: 'Echo=&gt;Hello network world at Sun Jun 18 22:52:57 2000'
+
+<I> [window 3: remote client, PC]</I></PRE>
+
+<PRE>C:\...\PP2E\Internet\Sockets&gt;python echo-client.py starship.python.net
+Client received: 'Echo=&gt;Hello network world at Sun Jun 18 22:53:36 2000'
+
+<I> [window 4: client PC]</I>
+C:\...\PP2E\Internet\Sockets&gt;<B>python echo-client.py starship.python.net Bruce </B>
+Client received: 'Echo=&gt;Bruce at Sun Jun 18 22:53:40 2000'
+
+<I> [window 5: client PC]</I>
+C:\...\PP2E\Internet\Sockets&gt;<B>python echo-client.py starship.python.net The
+Meaning of Life </B>
+Client received: 'Echo=&gt;The at Sun Jun 18 22:53:42 2000'
+Client received: 'Echo=&gt;Meaning at Sun Jun 18 22:53:42 2000'
+Client received: 'Echo=&gt;of at Sun Jun 18 22:53:42 2000'
+Client received: 'Echo=&gt;Life at Sun Jun 18 22:53:42 2000'</PRE>
+
+<P class="docText">Because this server uses threads instead of forked processes, we can
+run it portably on both Linux and a Windows PC. Here it is at work
+again, running on the same local Windows PC as its clients; again,
+the main point to notice is that new clients are accepted while prior
+clients are being processed in parallel with other clients and the
+main thread (in the five-second sleep delay):
+</P>
+
+<PRE><I> [window 1: server, on local PC]</I>
+C:\...\PP2E\Internet\Sockets&gt;<B>python thread-server.py </B>
+Server connected by ('127.0.0.1', 1186) at Sun Jun 18 23:46:31 2000
+Server connected by ('127.0.0.1', 1187) at Sun Jun 18 23:46:33 2000
+Server connected by ('127.0.0.1', 1188) at Sun Jun 18 23:46:34 2000
+
+<I> [window 2: client, on local
+PC]</I>
+C:\...\PP2E\Internet\Sockets&gt;<B>python echo-client.py </B>
+Client received: 'Echo=&gt;Hello network world at Sun Jun 18 23:46:36 2000'
+
+<I> [window 3: client]</I>
+C:\...\PP2E\Internet\Sockets&gt;<B>python echo-client.py localhost Brian </B>
+Client received: 'Echo=&gt;Brian at Sun Jun 18 23:46:38 2000'
+
+<I> [window 4: client]</I>
+C:\...\PP2E\Internet\Sockets&gt;<B>python echo-client.py localhost Bright side of Life </B>
+Client received: 'Echo=&gt;Bright at Sun Jun 18 23:46:39 2000'
+Client received: 'Echo=&gt;side at Sun Jun 18 23:46:39 2000'
+Client received: 'Echo=&gt;of at Sun Jun 18 23:46:39 2000'
+Client received: 'Echo=&gt;Life at Sun Jun 18 23:46:39 2000'</PRE>
+
+<P class="docText">Recall that a thread silently exits when the function it is running
+returns; unlike the process <TT>fork</TT> version, we
+don't call anything like <TT>os._exit</TT> in the
+client handler function (and we shouldn't -- it may kill all
+threads in the process!). Because of this, the thread version is not
+only more portable, but is also simpler.<A NAME="IXTR3-173"></A> <A NAME="IXTR3-174"></A> <A NAME="IXTR3-175"></A>
+</P>
+
+
+<A NAME="python2-CHP-10-SECT-4.3"></A>
+<H4 class="docSection2Title">10.4.3 Doing It with Classes: Server Frameworks</H4>
+
+<P class="docText"><A NAME="python2-IDXTERM-697"></A> <A NAME="python2-IDXTERM-698"></A> <A NAME="python2-IDXTERM-699"></A>Now that I've
+shown you how to write forking and threading servers to process
+clients without blocking incoming requests, I should also tell you
+that there are standard tools in the Python library to make this
+process easier. In particular, the <TT>SocketServer</TT>
+module defines classes that implement all flavors of forking and
+threading servers that you are likely to be interested in. Simply
+create the desired kind of imported server object, passing in a
+handler object with a callback method of your own, as shown in <A class="docLink" HREF="#python2-CHP-10-EX-8">Example 10-8</A>.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-10-EX-8"></A>Example 10-8. PP2E\Internet\Sockets\class-server.py </H5>
+<PRE>#########################################################
+# Server side: open a socket on a port, listen for
+# a message from a client, and send an echo reply; 
+# this version uses the standard library module 
+# SocketServer to do its work; SocketServer allows
+# us to make a simple TCPServer, a ThreadingTCPServer,
+# a ForkingTCPServer, and more, and routes each client
+# connect request to a new instance of a passed-in 
+# request handler object's handle method; also supports
+# UDP and Unix domain sockets; see the library manual.
+#########################################################
+
+import SocketServer, time               # get socket server, handler objects
+myHost = ''                             # server machine, '' means local host
+myPort = 50007                          # listen on a non-reserved port number
+def now(): 
+    return time.ctime(time.time())
+
+class MyClientHandler(SocketServer.BaseRequestHandler):
+    def handle(self):                           # on each client connect
+        print self.client_address, now()        # show this client's address
+        time.sleep(5)                           # simulate a blocking activity
+        while 1:                                # self.request is client socket
+            data = self.request.recv(1024)      # read, write a client socket
+            if not data: break
+            self.request.send('Echo=&gt;%s at %s' % (data, now()))
+        self.request.close() 
+
+# make a threaded server, listen/handle clients forever
+myaddr = (myHost, myPort)
+server = SocketServer.ThreadingTCPServer(myaddr, MyClientHandler)
+server.serve_forever()   </PRE>
+
+
+<P class="docText">This server works the same as the threading server we wrote by hand
+in the previous section, but instead focuses on service
+implementation (the customized <TT>handle</TT> method), not
+on threading details. It's run the same way, too -- here it
+is processing three clients started by hand, plus eight spawned by
+the <TT>testecho</TT> script shown in <A class="docLink" HREF="0596000855_python2-CHP-10-SECT-3.html#python2-CHP-10-EX-3">Example 10-3</A>:
+</P>
+
+<PRE><I> [window1: server, serverHost='localhost' in echo-client.py]</I>
+C:\...\PP2E\Internet\Sockets&gt;<B>python class-server.py </B>
+('127.0.0.1', 1189) Sun Jun 18 23:49:18 2000
+('127.0.0.1', 1190) Sun Jun 18 23:49:20 2000
+('127.0.0.1', 1191) Sun Jun 18 23:49:22 2000
+('127.0.0.1', 1192) Sun Jun 18 23:49:50 2000
+('127.0.0.1', 1193) Sun Jun 18 23:49:50 2000
+('127.0.0.1', 1194) Sun Jun 18 23:49:50 2000
+('127.0.0.1', 1195) Sun Jun 18 23:49:50 2000
+('127.0.0.1', 1196) Sun Jun 18 23:49:50 2000
+('127.0.0.1', 1197) Sun Jun 18 23:49:50 2000
+('127.0.0.1', 1198) Sun Jun 18 23:49:50 2000
+('127.0.0.1', 1199) Sun Jun 18 23:49:50 2000
+
+<I> [window2: client]</I>
+C:\...\PP2E\Internet\Sockets&gt;<B>python echo-client.py </B>
+Client received: 'Echo=&gt;Hello network world at Sun Jun 18 23:49:23 2000'
+
+<I> [window3: client]</I>
+C:\...\PP2E\Internet\Sockets&gt;<B>python echo-client.py localhost Robin </B>
+Client received: 'Echo=&gt;Robin at Sun Jun 18 23:49:25 2000'
+
+<I> [window4: client]</I>
+C:\...\PP2E\Internet\Sockets&gt;<B>python echo-client.py localhost Brave Sir Robin </B>
+Client received: 'Echo=&gt;Brave at Sun Jun 18 23:49:27 2000'
+Client received: 'Echo=&gt;Sir at Sun Jun 18 23:49:27 2000'
+Client received: 'Echo=&gt;Robin at Sun Jun 18 23:49:27 2000'
+
+C:\...\PP2E\Internet\Sockets&gt;<B>python testecho.py </B>
+
+<I> [window4: contact remote server instead -- times skewed]</I>
+C:\...\PP2E\Internet\Sockets&gt;<B>python echo-client.py starship.python.net Brave
+Sir Robin </B>
+Client received: 'Echo=&gt;Brave at Sun Jun 18 23:03:28 2000'
+Client received: 'Echo=&gt;Sir at Sun Jun 18 23:03:28 2000'
+Client received: 'Echo=&gt;Robin at Sun Jun 18 23:03:29 2000'</PRE>
+
+<P class="docText">To build a forking server instead, just use class name
+<TT>ForkingTCPServer</TT> when creating the server object.
+The <TT>SocketServer</TT> module is more powerful than
+shown by this example; it also supports synchronous (nonparallel)
+servers, UDP and Unix sockets, and so on. See Python's library
+manual for more details. Also see the end of <A class="docLink" HREF="0596000855_python2-CHP-15.html#python2-CHP-15">Chapter 15</A> for more on Python server implementation
+tools.<sup class="docFootnote"><A class="docLink" HREF="#">[6]</A></sup><A NAME="IXTR3-176"></A> <A NAME="IXTR3-177"></A> <A NAME="IXTR3-178"></A>
+</P>
+<blockquote><p class="docFootnote"><sup><A NAME="">[6]</A></sup> Incidentally, Python also comes with library
+tools that allow you to implement a full-blown HTTP (web) server that
+knows how to run server-side CGI scripts, in a few lines of Python
+code. We'll explore those tools in <A class="docLink" HREF="0596000855_python2-CHP-15.html#python2-CHP-15">Chapter 15</A>.</p></blockquote>
+
+
+<A NAME="python2-CHP-10-SECT-4.4"></A>
+<H4 class="docSection2Title">10.4.4 Multiplexing Servers with select</H4>
+
+<P class="docText"><A NAME="python2-IDXTERM-703"></A>
+<A NAME="python2-IDXTERM-704"></A> <A NAME="python2-IDXTERM-705"></A><A NAME="python2-IDXTERM-706"></A>So far we've seen
+how to handle multiple clients at once with both forked processes and
+spawned threads, and we've looked at a library class that
+encapsulates both schemes. Under both approaches, all client handlers
+seem to run in parallel with each other and with the main dispatch
+loop that continues watching for new incoming requests. Because all
+these tasks run in parallel (i.e., at the same time), the server
+doesn't get blocked when accepting new requests or when
+processing a long-running client handler.
+</P>
+
+<P class="docText">Technically, though, threads and processes don't really run in
+parallel, unless you're lucky enough to have a machine with
+arbitrarily many CPUs. Instead, your operating system performs a
+juggling act -- it divides the computer's processing power
+among all active tasks. It runs part of one, then part of another,
+and so on. All the tasks appear to run in parallel, but only because
+the operating system switches focus between tasks so fast that you
+don't usually notice. This process of switching between tasks
+is sometimes called time-slicing when done by an operating system; it
+is more generally known as multiplexing.
+<A NAME="IXT-10-337322"></A>
+</P>
+
+<P class="docText">When we spawn threads and processes, we rely on the operating system
+to juggle the active tasks, but there's no reason that a Python
+script can't do so as well. For instance, a script might divide
+tasks into multiple steps -- do a step of one task, then one of
+another, and so on, until all are completed. The script need only
+know how to divide its attention among the multiple active tasks to
+multiplex on its own.
+</P>
+
+<P class="docText">Servers can apply this technique to yield yet another way to handle
+multiple clients at once, a way that requires neither threads nor
+forks. By multiplexing client connections and the main dispatcher
+with the <TT>select</TT> system call, a single event loop
+can process clients and accept new ones in parallel (or at least
+close enough to avoid stalling). Such servers are sometimes call
+asynchronous, because they service clients in spurts, as each becomes
+ready to communicate. In asynchronous servers, a single main loop run
+in a single process and thread decides which clients should get a bit
+of attention each time through. Client requests and the main
+dispatcher are each given a small slice of the server's
+attention if they are ready to
+converse.<A NAME="IXT-10-337323"></A>
+</P>
+
+<P class="docText">Most of the magic behind this server structure is the operating
+system <TT>select</TT> call, available in Python's
+standard <TT>select</TT> module. Roughly,
+<TT>select</TT> is asked to monitor a list of input
+sources, output sources, and exceptional condition sources, and tells
+us which sources are ready for processing. It can be made to simply
+poll all the sources to see which are ready, wait for a maximum time
+period for sources to become ready, or wait indefinitely until one or
+more sources are ready for processing.<A NAME="IXT-10-337324"></A>
+</P>
+
+<P class="docText"><A NAME="IXT-10-337325"></A>However used, <TT>select</TT>
+lets us direct attention to sockets ready to communicate, so as to
+avoid blocking on calls to ones that are not. That is, when the
+sources passed to <TT>select</TT> are sockets, we can be
+sure that socket calls like <TT>accept</TT>,
+<TT>recv</TT>, and <TT>send</TT> will not block
+(pause) the server when applied to objects returned by
+<TT>select</TT>. Because of that, a single-loop server that
+uses <TT>select</TT> need not get stuck communicating with
+one client or waiting for new ones, while other clients are starved
+for the server's attention.
+</P>
+
+<A NAME="python2-CHP-10-SECT-4.4.1"></A>
+<H5 class="docSection3Title">10.4.4.1 A select-based echo server</H5>
+
+<P class="docText">Let's see how all this translates into code. The script in
+<A class="docLink" HREF="#python2-CHP-10-EX-9">Example 10-9</A> implements another
+<TT>echo</TT> server, one that can handle multiple clients
+without ever starting new processes or threads.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-10-EX-9"></A>Example 10-9. PP2E\Internet\Sockets\select-server.py </H5>
+<PRE>#################################################################
+# Server: handle multiple clients in parallel with select.
+# use the select module to multiplex among a set of sockets:
+# main sockets which accept new client connections, and 
+# input sockets connected to accepted clients; select can
+# take an optional 4th arg--0 to poll, n.m to wait n.m secs, 
+# ommitted to wait till any socket is ready for processing.
+#################################################################
+
+import sys, time
+from select import select
+from socket import socket, AF_INET, SOCK_STREAM
+def now(): return time.ctime(time.time())
+
+myHost = ''                             # server machine, '' means local host
+myPort = 50007                          # listen on a non-reserved port number
+if len(sys.argv) == 3:                  # allow host/port as cmdline args too
+    myHost, myPort = sys.argv[1:]
+numPortSocks = 2                        # number of ports for client connects
+
+# make main sockets for accepting new client requests
+mainsocks, readsocks, writesocks = [], [], []
+for i in range(numPortSocks):
+    portsock = socket(AF_INET, SOCK_STREAM)   # make a TCP/IP spocket object
+    portsock.bind((myHost, myPort))           # bind it to server port number
+    portsock.listen(5)                        # listen, allow 5 pending connects
+    mainsocks.append(portsock)                # add to main list to identify
+    readsocks.append(portsock)                # add to select inputs list 
+    myPort = myPort + 1                       # bind on consecutive ports 
+
+# event loop: listen and multiplex until server process killed
+print 'select-server loop starting'
+while 1:
+    #print readsocks
+    readables, writeables, exceptions = select(readsocks, writesocks, [])
+    for sockobj in readables:
+        if sockobj in mainsocks:                     # for ready input sockets
+            # port socket: accept new client
+            newsock, address = sockobj.accept()      # accept should not block
+            print 'Connect:', address, id(newsock)   # newsock is a new socket
+            readsocks.append(newsock)                # add to select list, wait
+        else:
+            # client socket: read next line
+            data = sockobj.recv(1024)                # recv should not block
+            print '\tgot', data, 'on', id(sockobj)
+            if not data:                             # if closed by the clients 
+                sockobj.close()                      # close here and remv from
+                readsocks.remove(sockobj)            # del list else reselected 
+            else:
+                # this may block: should really select for writes too
+                sockobj.send('Echo=&gt;%s at %s' % (data, now()))</PRE>
+
+
+<P class="docText">The bulk of this script is the big <TT>while</TT> event
+loop at the end that calls <TT>select</TT> to find out
+which sockets are ready for processing (these include main port
+sockets on which clients can connect, and open client connections).
+It then loops over all such ready sockets, accepting connections on
+main port sockets, and reading and echoing input on any client
+sockets ready for input. Both the <TT>accept</TT> and
+<TT>recv</TT> calls in this code are guaranteed to not
+block the server process after <TT>select</TT> returns;
+because of that, this server can get quickly back to the top of the
+loop to process newly arrived client requests and already-connected
+clients' inputs. The net effect is that all new requests and
+clients are serviced in pseudo-parallel fashion.
+</P>
+
+<P class="docText">To make this process work, the server appends the connected socket
+for each client to the <TT>readables</TT> list passed to
+<TT>select</TT>, and simply waits for the socket to show up
+in the selected inputs list. For illustration purposes, this server
+also listens for new clients on more than one port -- on ports
+50007 and 50008 in our examples. Because these main port sockets are
+also interrogated with <TT>select</TT>, connection requests
+on either port can be accepted without blocking either
+already-connected clients or new connection requests appearing on the
+other port. The <TT>select</TT> call returns whatever
+sockets in list <TT>readables</TT> are ready for
+processing -- both main port sockets and sockets connected to
+clients currently being processed.
+</P>
+
+
+
+<A NAME="python2-CHP-10-SECT-4.4.2"></A>
+<H5 class="docSection3Title">10.4.4.2 Running the select server</H5>
+
+<P class="docText">Let's run this script locally to see how it does its stuff (the
+client and server can also be run on different machines, as in prior
+socket examples). First of all, we'll assume we've
+already started this server script in one window, and run a few
+clients to talk to it. The following code is the interaction in two
+such client windows running on Windows (MS-DOS consoles). The first
+client simply runs the <TT>echo-client</TT> script twice to
+contact the server, and the second also kicks off the
+<TT>testecho</TT> script to spawn eight
+<TT>echo-client</TT> programs running in parallel. As
+before, the server simply echoes back whatever text that clients
+send. Notice that the second client window really runs a script
+called <TT>echo-client-50008</TT> so as to connect to the
+second port socket in the server; it's the same as
+<TT>echo-client</TT>, with a different port number (alas,
+the original script wasn't designed to input a port):
+</P>
+
+<PRE><I> [client window 1]</I>
+C:\...\PP2E\Internet\Sockets&gt;<B>python echo-client.py </B>
+Client received: 'Echo=&gt;Hello network world at Sun Aug 13 22:52:01 2000'
+
+C:\...\PP2E\Internet\Sockets&gt;<B>python echo-client.py </B>
+Client received: 'Echo=&gt;Hello network world at Sun Aug 13 22:52:03 2000'
+
+<I> [client window 2]</I>
+C:\...\PP2E\Internet\Sockets&gt;<B>python echo-client-50008.py localhost Sir Lancelot </B>
+Client received: 'Echo=&gt;Sir at Sun Aug 13 22:52:57 2000'
+Client received: 'Echo=&gt;Lancelot at Sun Aug 13 22:52:57 2000'
+
+C:\...\PP2E\Internet\Sockets&gt;<B>python testecho.py </B></PRE>
+
+<P class="docText">Now, in the next code section is the sort of interaction and output
+that shows up in the window where the server has been started. The
+first three connections come from <TT>echo-client</TT>
+runs; the rest is the result of the eight programs spawned by
+<TT>testecho</TT> in the second client window. Notice that
+for <TT>testecho</TT>, new client connections and client
+inputs are all multiplexed together. If you study the output closely,
+you'll see that they overlap in time, because all activity is
+dispatched by the single event loop in the server.<sup class="docFootnote"><A class="docLink" HREF="#">[7]</A></sup> Also note that the sever gets an empty
+string when the client has closed its socket. We take care to close
+and delete these sockets at the server right away, or else they would
+be needlessly reselected again and again, each time through the main
+loop:
+</P>
+<blockquote><p class="docFootnote"><sup><A NAME="">[7]</A></sup> And the trace output on the server will probably look a bit
+different every time it runs. Clients and new connections are
+interleaved almost at random due to timing differences on the host
+machines.</p></blockquote>
+
+<PRE><I> [server window]</I>
+C:\...\PP2E\Internet\Sockets&gt;<B>python select-server.py </B>
+select-server loop starting
+Connect: ('127.0.0.1', 1175) 7965520
+        got Hello network world on 7965520
+        got  on 7965520
+Connect: ('127.0.0.1', 1176) 7964288
+        got Hello network world on 7964288
+        got  on 7964288
+Connect: ('127.0.0.1', 1177) 7963920
+        got Sir on 7963920
+        got Lancelot on 7963920
+        got  on 7963920
+
+<I> [testecho results]</I>
+Connect: ('127.0.0.1', 1178) 7965216
+        got Hello network world on 7965216
+        got  on 7965216
+Connect: ('127.0.0.1', 1179) 7963968
+Connect: ('127.0.0.1', 1180) 7965424
+        got Hello network world on 7963968
+Connect: ('127.0.0.1', 1181) 7962976
+        got Hello network world on 7965424
+        got  on 7963968
+        got Hello network world on 7962976
+        got  on 7965424
+        got  on 7962976
+Connect: ('127.0.0.1', 1182) 7963648
+        got Hello network world on 7963648
+        got  on 7963648
+Connect: ('127.0.0.1', 1183) 7966640
+        got Hello network world on 7966640
+        got  on 7966640
+Connect: ('127.0.0.1', 1184) 7966496
+        got Hello network world on 7966496
+        got  on 7966496
+Connect: ('127.0.0.1', 1185) 7965888
+        got Hello network world on 7965888
+        got  on 7965888</PRE>
+
+<P class="docText"><A NAME="IXT-10-337326"></A>A subtle but crucial point: a
+<TT>time.sleep</TT> call to simulate a long-running task
+doesn't make sense in the server here -- because all clients
+are handled by the same single loop, sleeping would pause everything
+(and defeat the whole point of a multiplexing server). Here are a few
+additional notes before we move on:
+</P>
+
+<A NAME="IXT-10-337327"></A><A NAME="IXT-10-337328"></A><A NAME="IXT-10-337329"></A><A NAME="IXT-10-337330"></A><A NAME="IXT-10-337331"></A><A NAME="IXT-10-337332"></A><A NAME="IXTR3-179"></A><A NAME="IXTR3-180"></A><A NAME="IXTR3-181"></A><A NAME="IXTR3-182"></A><DL class="docList">
+<DT><I><span class="docPubcolor">Select call details</span></I></DT>
+<DD>
+<P class="docList">Formally, <TT>select</TT> is called with three lists of
+selectable objects (input sources, output sources, and exceptional
+condition sources), plus an optional timeout. The timeout argument
+may be a real wait expiration value in seconds (use floating-point
+numbers to express fractions of a second), a zero value to mean
+simply poll and return immediately, or be omitted to mean wait until
+at least one object is ready (as done in our server script earlier).
+The call returns a triple of ready objects -- subsets of the first
+three arguments -- any or all of which may be empty if the timeout
+expired before sources became ready.
+</P>
+</DD><DT><I><span class="docPubcolor">Select portability</span></I></DT>
+<DD>
+<P class="docList"><A NAME="IXT-10-337327"></A>The <TT>select</TT> call works
+only for sockets on Windows, but also works for things like files and
+pipes on Unix and Macintosh. For servers running over the Internet,
+of course, sockets are the primary devices we are interested in.
+</P>
+</DD><DT><I><span class="docPubcolor">Nonblocking sockets</span></I></DT>
+<DD>
+<P class="docList"><TT>select</TT><A NAME="IXT-10-337328"></A> lets us be sure that socket calls like
+<TT>accept</TT> and <TT>recv</TT> won't
+block (pause) the caller, but it's also possible to make Python
+sockets nonblocking in general. Call the
+<TT>setblocking</TT> method of socket objects to set the
+socket to blocking or nonblocking mode. For example, given a call
+like <TT>sock.setblocking(flag)</TT>, the socket
+<TT>sock</TT> is set to nonblocking mode if the flag is
+zero, and set to blocking mode otherwise. All sockets start out in
+blocking mode initially, so socket calls may always make the caller
+wait.<A NAME="IXT-10-337329"></A>
+<A NAME="IXT-10-337330"></A>
+<A NAME="IXT-10-337331"></A>
+</P>
+
+<P class="docList">But when in nonblocking mode, a <TT>socket.error</TT>
+exception is raised if a <TT>recv</TT> socket call
+doesn't find any data, or if a <TT>send</TT> call
+can't immediately transfer data. A script can catch this
+exception to determine if the socket is ready for processing. In
+blocking mode, these calls always block until they can proceed. Of
+course, there may be much more to processing client requests than
+data transfers (requests may also require long-running computations),
+so nonblocking sockets don't guarantee that servers won't
+stall in general. They are simply another way to code multiplexing
+servers. Like <TT>select</TT>, they are better suited when
+client requests can be serviced quickly.
+</P>
+</DD><DT><I><span class="docPubcolor">The asyncore module framework</span></I></DT>
+<DD>
+<P class="docList"><A NAME="IXT-10-337332"></A>If
+you're interested in using <TT>select</TT>, you will
+probably also be interested in checking out the
+<I>asyncore.py</I> module in the standard Python
+library. It implements a class-based callback model, where input and
+output callbacks are dispatched to class methods by a precoded
+<TT>select</TT> event loop. As such, it allows servers to
+be constructed without threads or forks. We'll learn more about
+this tool at the end of <A class="docLink" HREF="0596000855_python2-CHP-15.html#python2-CHP-15">Chapter 15</A>.<A NAME="IXTR3-179"></A><A NAME="IXTR3-180"></A> <A NAME="IXTR3-181"></A> <A NAME="IXTR3-182"></A>
+</P>
+</DD>
+</DL>
+
+
+
+<A NAME="python2-CHP-10-SECT-4.5"></A>
+<H4 class="docSection2Title">10.4.5 Choosing a Server Scheme</H4>
+
+<P class="docText">So when should you use <TT>select</TT> to build a server
+instead of threads or forks? Needs vary per application, of course,
+but servers based on the <TT>select</TT> call are generally
+considered to perform very well when client transactions are
+relatively short. If they are not short, threads or forks may be a
+better way to split processing among multiple clients. Threads and
+forks are especially useful if clients require long-running
+processing above and beyond socket calls.
+</P>
+
+<P class="docText">It's important to remember that schemes based on
+<TT>select</TT> (and nonblocking sockets) are not
+completely immune to blocking. In the example earlier, for instance,
+the <TT>send</TT> call that echoes text back to a client
+might block, too, and hence stall the entire server. We could work
+around that blocking potential by using <TT>select</TT> to
+make sure that the output operation is ready before we attempt it
+(e.g., use the <TT>writesocks</TT> list and add another
+loop to send replies to ready output sockets), albeit at a noticeable
+cost in program clarity.
+</P>
+
+<P class="docText">In general, though, if we cannot split up the processing of a
+client's request in such a way that it can be multiplexed with
+other requests and not block the server's loop,
+<TT>select</TT> may not be the best way to construct the
+server. Moreover, <TT>select</TT> also seems more complex
+than spawning either processes or threads, because we need to
+manually transfer control among all tasks (for instance, compare the
+threaded and <TT>select</TT> versions of this server, even
+without write selects). As usual, though, the degree of that
+complexity may vary per application.<A NAME="IXTR3-183"></A> <A NAME="IXTR3-184"></A>
+</P>
+
+
+
+<ul></ul>
+</td>
+</tr>
+</table>
+<td></td>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+          <a href="0596000855_python2-CHP-10-SECT-3.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+          <a href="0596000855_python2-CHP-10-SECT-5.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+</body></html>

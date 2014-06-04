@@ -1,0 +1,316 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
+<title>14.1 Handles that copy their objects</title>
+<link rel="stylesheet" type="text/css" href="./acc.css" />
+</head>
+
+<body>
+<div class="prevnext">
+<a href="88.htm"><img src="images/Prev1.gif" /></a>&nbsp;&nbsp;<a href="90.htm"><img src="images/Next1.gif" /></a>
+</div>
+<h3>14.1 Handles that copy their objects</h3>
+<p>Let's think again about the grading problem that we solved in Chapter 13. In solving that 
+problem, we needed to store and process a collection of objects representing different 
+types of students. These objects were of one of two types related by inheritance, with the 
+possibility of more types being added later. Our first solution, in &sect;13.3.1/239, used pointers 
+to let us store a mixed collection of objects. Each of these pointers might point to a 
+<code>Core</code> object, or to an object of a type derived from <code>Core</code>. User code was responsible for 
+allocating the objects dynamically, and for remembering to free them. The program was 
+cluttered with details related to managing the pointers, and was generally tricky.</p>
+<p>The problem is that a pointer is a primitive, low-level data structure. Programming 
+with pointers is notoriously error prone. Many of the problems with pointers arise 
+because pointers are independent of the objects to which they point, leading to pitfalls:</p>
+<ul>
+<li>Copying a pointer does not copy the corresponding object, leading to surprises if two 
+pointers inadvertently point to the same object.</li>
+<li>Destroying a pointer does not destroy its object, leading to memory leaks.</li>
+<li>Deleting an object without destroying a pointer to it leads to a dangling pointer, which 
+causes undefined behavior if the program uses the pointer.</li>
+<li>Creating a pointer without initializing it leaves the pointer unbound, which also 
+causes undefined behavior if the program uses it.</li>
+</ul>
+<p>In &sect;13.5/247, we solved the grading problem again, this time using the <code>Student_info</code> 
+handle class. Because this class managed the pointers, our users' code dealt with 
+<code>Student_info</code> objects, rather than with pointers. However, the <code>Student_info</code> class 
+was intimately tied to the <code>Core</code> hierarchy: It contained operations that mirrored those in 
+the public interface of the <code>Core</code> classes.</p>
+<p>What we want to do now is to separate these abstractions. We'll still use 
+<code>Student_info</code> to provide the interface, but it will rely on another class to manage the 
+&quot;handle.&quot; That is, this other class will manage the pointers to the implementation objects. 
+The behavior of this new type can and will be independent of the type of the objects to 
+which the handle can be attached.</p>
+<h4>14.1.1 A generic handle class</h4>
+<p>Because we want our class to be independent of the type of object that it manages, we 
+already know that our class must be a template. Because we want it to encapsulate the 
+handle behavior, we will call it <code>Handle</code>. The properties that our class will provide are:</p>
+<ul>
+<li>A <code>Handle</code> is a value that refers to an object.</li>
+<li>We can copy a <code>Handle</code> object.</li>
+<li>We can test a <code>Handle</code> object to determine whether it is bound to another object.</li>
+<li>We can use a <code>Handle</code> to trigger polymorphic behavior when it points to an object of a 
+class that belongs to an inheritance hierarchy. That is, if we call a <code>virtual</code> function 
+through our class, we want the implementation to choose the function to run dynamically, 
+just as if we'd called the function through a real pointer.</li>
+</ul>
+<p>Our <code>Handle</code> will have a restricted interface: Once you attach a <code>Handle</code> to an object, the 
+<code>Handle</code> class will take over memory management for that object. Users should attach 
+only one <code>Handle</code> to any object, after which they should not access the object directly 
+through a pointer; all access should be through the <code>Handle</code>. These restrictions will allow 
+<code>Handle</code>s to avoid the problems inherent in built-in pointers. When we copy a <code>Handle</code> 
+object, we'll make a new copy of the object, so that each <code>Handle</code> points to its own copy. 
+When we destroy a <code>Handle</code>, it will destroy the associated object, and doing so will be the 
+only straightforward way to free the object. We'll allow users to create unbound <code>
+Handles</code>, but we will throw an exception if the user attempts to access the object to which 
+an unbound <code>Handle</code> refers (or, more accurately, doesn't refer). Users who want to avoid 
+the exception can test to see whether the <code>Handle</code> is bound.</p>
+<p>These properties are like the ones that we implemented in the <code>Student_info</code> class. 
+The <code>Student_info</code> copy constructor and assignment operator called <code>clone</code> to copy the 
+associated <code>Core</code> object. The <code>Student_info</code> destructor destroyed the <code>Core</code> object as 
+well. The operations that used the underlying object checked before doing so to ensure 
+that the <code>Student_info</code> was bound to a real object. What we want is a class that encapsulates 
+this behavior, but that we can use to manage an object of any type:</p>
+<div class="prebox"><pre>
+template &lt;class T&gt; class Handle {
+public:
+    Handle(): p(0) { }
+    Handle(const Handle&amp; s): p(0) { if (s.p) p = s.p-&gt;clone(); }
+    Handle&amp; operator=(const Handle&amp;);
+    ~Handle() { delete p; }
+
+    Handle(T* t): p(t) { }
+
+    operator bool() const { return p; }
+    T&amp; operator*() const;
+    T* operator-&gt;() const;
+
+private:
+    T* p;
+};
+</pre></div>
+<p>The <code>Handle</code> class is a template class, so that we can create <code>Handles</code> that refer to any type. 
+Each <code>Handle&lt;T&gt;</code> object holds a pointer to an object; the other operations manage this 
+pointer. Aside from variable-name changes, the first four functions are identical to their 
+versions in <code>Student_info</code>. The default constructor sets the pointer to zero to indicate 
+that the <code>Handle</code> is unbound. The copy constructor (conditionally) calls the associated 
+object's <code>clone</code> function to create a new copy of the object. The <code>Handle</code> destructor frees 
+the object. The assignment <code>operator</code>, like the copy constructor, (conditionally) calls <code>clone</code> 
+to create a new copy of the object:</p>
+<div class="prebox"><pre>
+template&lt;class T&gt;
+Handle&lt;T&gt;&amp; Handle&lt;T&gt;::operator=(const Handle&amp; rhs)
+{
+    if (&amp;rhs != this) {
+        delete p;
+        p = rhs.p ? rhs.p-&gt;clone() : 0;
+    }
+    return *this;
+}
+</pre></div>
+
+<p>The assignment <code>operator</code>, as usual, starts by checking for self-assignment, doing nothing if 
+the test succeeds. If the test fails, we continue by freeing the object that we had been managing, 
+and then making a copy of the right-hand object. The statement that does the copy 
+uses the conditional operator (&sect;3.2.2/45) to decide whether it's safe to call <code>clone</code>. 
+If <code>rhs.p</code> is set, we call <code>rhs.p-&gt;clone</code> and assign the resulting pointer to <code>p</code>. Otherwise, 
+we set <code>p</code> to 0.</p>
+<p>Because <code>Handle</code> models pointer behavior, we need a way to bind the pointer to an 
+actual object, which we do in the constructor that takes a <code>T*</code>. That constructor remembers 
+the pointer that it was given, thus binding the <code>Handle</code> to the object to which <code>t</code> points. For 
+example, if we define</p>
+<div class="prebox"><pre>
+Handle&lt;Core&gt; student(new Grad);
+</pre></div>
+<p>we construct a <code>Handle</code> object named student that contains a <code>Core*</code> pointer, which we 
+initialize to point to the object of type <code>Grad</code> that we just created:</p>
+<center>
+<img src="images/256.jpg" />
+</center>
+<p>Finally, we define three <code>operator</code> functions. The first of these, <code>operator bool()</code> lets 
+users test the value of a <code>Handle</code> in a condition. The operation returns <code>true</code> if the <code>Handle</code> 
+is bound to an object, and <code>false</code> otherwise. The other two define <code>operator*</code> and 
+<code>operator-&gt;</code>, which give access to the object bound to the <code>Handle</code>:</p>
+<div class="prebox"><pre>
+template &lt;class T&gt;
+T&amp; Handle&lt;T&gt;::operator*() const
+{
+    if (p)
+        return *p;
+    throw runtime_error(&quot;unbound Handle&quot;);
+}
+
+template &lt;class T&gt;
+T* Handle&lt;T&gt;::operator-&gt;() const
+{
+    if (p)
+        return p;
+    throw runtime_error(&quot;unbound Handle&quot;);
+}
+</pre></div>
+<p>Applying the built-in unary <code>*</code> operator to a pointer yields the object to which the pointer 
+points. Here we define our own <code>*</code>, so that <code>*</code> of a <code>Handle</code> object yields the value that 
+results from applying the built-in <code>*</code> operator to the pointer member of that <code>Handle</code> object. 
+Given our <code>student</code> object, <code>*student</code> will yield the result of applying <code>*</code> to <code>student.p</code> 
+(assuming we could access the <code>p</code> member). In other words, the result of <code>*student</code> will be 
+a reference to the <code>Grad</code> object that we created when we initialized <code>student</code>.</p>
+<p>The <code>-&gt;</code> operator is a bit more complicated. Superficially, <code>-&gt;</code> looks like a binary operator, 
+but in fact it behaves differently from ordinary binary operators. Like the scope or 
+dot operators, the <code>-&gt;</code> operator is used to access a member whose name appears in its right 
+operand from an object named by its left operand. Because names are not expressions, we 
+have no direct access to the name that our user requested. Instead, the language requires 
+that we define <code>-&gt;</code> to return a value that can be treated as a pointer. When we define 
+<code>operator-&gt;</code>, we are saying that if <code>x</code> is a value of type that defines <code>operator-&gt;</code> then</p>
+<div class="prebox"><pre>
+x-&gt;y
+</pre></div>
+<p>is equivalent to</p>
+<div class="prebox"><pre>
+(x.operator-&gt;())-&gt;y
+</pre></div>
+<p> In this case, <code>operator-&gt;</code> returns the pointer that its object holds. So for <code>student</code>,</p>
+<div class="prebox"><pre>
+student-&gt;y
+</pre></div>
+<p>is equivalent to</p>
+<div class="prebox"><pre>
+(student.operator-&gt;())-&gt;y
+</pre></div>
+<p> which, because of the way we defined <code>operator-&gt;</code>, is equivalent to</p>
+<div class="prebox"><pre>
+student.p-&gt;y
+</pre></div>
+<p>(ignoring the fact that protection would not ordinarily allow us to access <code>student.p</code> 
+directly). Thus, the <code>-&gt;</code> operator has the effect of forwarding calls made through a <code>Handle</code> 
+object to the underlying pointer that is a member of the <code>Handle</code> object.</p>
+<p>One of our objectives was for <code>Handle</code> to preserve the polymorphic behavior associated 
+with built-in pointers. Having seen the definitions of <code>operator*</code> and <code>operator-&gt;</code>, 
+we can see that we have reached our goal. These operations yield either a reference or a 
+pointer, through which we obtain dynamic binding. For example, if we execute <code>student-&gt;grade()</code> , 
+we're calling <code>grade</code> through the <code>p</code> pointer inside <code>student</code>. The 
+particular version of <code>grade</code> that is run depends on the type of the object to which <code>p</code> 
+points. Assuming that <code>student</code> still points to the <code>Grad</code> object with which it was initialized, 
+this call would be to <code>Grad::grade</code>. Similarly, because <code>operator*</code> yields a reference, 
+if we evaluate <code>(*student).grade()</code>, then we are calling <code>grade</code> through a reference, 
+and so the implementation will decide which particular function to call at run time.</p>
+<h4>14.1.2 Using a generic handle</h4>
+<p>We could use <code>Handle</code>s to rewrite the pointer-based grading program from &sect;13.3.1/241:</p>
+<div class="prebox"><pre>
+int main()
+{
+    vector&lt; Handle&lt;Core&gt; &gt; students;      // <i>changed type</i>
+    Handle&lt;Core&gt; record;                  // <i>changed type</i>
+    char ch;
+    string::size_type maxlen = 0;
+
+    // read and store the data
+    while (cin &gt;&gt; ch) {
+        if (ch == 'U')
+            record = new Core;      //  <i>allocate a </i>Core <i>object</i>
+        else
+            record = new Grad;      // <i>allocate a </i>Grad <i>object</i>
+        record-&gt;read(cin);  // Handle&lt;T&gt;::-&gt;, <i>then </i>virtual <i>call to </i>read
+        maxlen = max(maxlen, record-&gt;name().size()); // Handle&lt;T&gt;::-&gt;
+        students.push_back(record);
+    }
+
+    // compare <i>must be rewritten to work on </i>const Handle&lt;Core&gt;&amp;
+    sort(students.begin(), students.end(), compare_Core_handles);
+
+    // <i>write the names and grades</i>
+    for (vector&lt; Handle&lt;Core&gt; &gt;::size_type i = 0;
+         i != students.size(); ++i) {
+        // students[i] <i>is a </i>Handle, <i>which we dereference to call the functions </i>
+        cout  &lt;&lt;  students[i]-&gt;name()
+              &lt;&lt;  string(maxlen + 1 - students[i]-&gt;name.size(), ' ');
+        try {
+            double final_grade = students[i]-&gt;grade();
+            streamsize prec = cout.precision();
+            cout &lt;&lt; setprecision(3) &lt;&lt; final_grade
+                 &lt;&lt; setprecision(prec) &lt;&lt; endl;
+        } catch (domain_error e) {
+            cout &lt;&lt; e.what() &lt;&lt; endl;
+        }
+       //  <i>no </i>delete <i>statement</i>
+    }
+    return 0;
+}
+</pre></div>
+
+<p>This program stores <code>Handle&lt;Core&gt;</code> objects instead of <code>Core*</code> objects and so, as we did in 
+&sect;13.3.1/240, we'll need to write a non-overloaded comparison operation that operates on 
+<code>const Handle&lt;Core&gt;&amp;</code> that we can pass to <code>sort</code>. We leave the implementation as an 
+exercise, but assume that it is named <code>compare_Core_handles</code>.</p>
+<p>The only other differences are in the output loop. Dereferencing <code>students[i]</code> yields 
+a <code>Handle</code>, which has an <code>operator-&gt;</code> that we use to access the <code>name</code> and <code>grade</code> functions 
+through the underlying <code>Core*</code>. For example, <code>students[i]-&gt;grade()</code> uses the 
+overloaded <code>-&gt;</code>, so it effectively calls <code>students[i].p-&gt;grade()</code>. Because <code>grade</code> is 
+<code>virtual</code>, we'll run the version that is appropriate to the type of the object to which 
+<code>students[i].p</code> points. Moreover, because <code>Handle</code> takes care of memory management 
+for us, we no longer need to <code>delete</code> the objects to which the elements of <code>students</code> refer.</p>
+<p>More important, we can also reimplement <code>Student_info</code>, which can now become a 
+pure interface class, delegating the work of managing pointers to <code>Handle</code>:</p>
+<div class="prebox"><pre>
+class Student_info {
+public:
+    Student_info() { }
+    Student_info(std::istream&amp; is) { read(is); }
+    // <i>no copy, assign, or destructor: they're no longer needed</i>
+
+    std::istream&amp; read(std::istream&amp;);
+
+    std::string name() const {
+        if (cp)
+            return cp-&gt;name();
+        else throw runtime_error(&quot;uninitialized Student&quot;);
+    }
+
+    double grade() const {
+        if (cp) return cp-&gt;grade();
+        else throw runtime_error(&quot;uninitialized Student&quot;);
+    }
+    static bool compare(const Student_info&amp; s1,
+                        const Student_info&amp; s2) {
+        return s1.name() &lt; s2.name();
+    }
+private:
+    Handle&lt;Core&gt; cp;
+};
+</pre></div>
+<p>In this version of <code>Student_info</code>, <code>cp</code> is a <code>Handle&lt;Core&gt;</code> rather than a <code>Core*</code>. Therefore, 
+we no longer need to implement the copy-control functions, because the <code>Handle</code> 
+manages the underlying object. The other constructors operate as before. The <code>name</code> and 
+<code>grade</code> functions look the same, but their execution relies on the conversion to <code>bool</code>, 
+which is invoked in the test on <code>cp</code> and in the overloaded <code>operator-&gt;</code> from the <code>Handle</code> 
+class, which is used to get at the functions on the underlying objects.</p>
+<p>To complete our reimplementation, we need to write the <code>read</code> function:</p>
+<div class="prebox"><pre>
+istream&amp; Student_info::read(istream&amp; is)
+{
+    char ch;
+    is &gt;&gt; ch;   // <i>get record type</i>
+    
+    // <i>allocate new object of the appropriate type</i>
+    //<i> use</i> Handle&lt;T&gt;(T*) <i>to build a </i>Handle&lt;Core&gt; <i>from the pointer to that object</i>
+    // </i>call Handle&lt;T&gt;::operator= <i>to assign the </i>Handle&lt;Core&gt; <i>to the left-hand side </i>
+    if (ch == U')
+        cp = new Core(is);
+    else
+        cp = new Grad(is);
+    return is;
+}
+</pre></div>
+<p>This code looks like the earlier <code>Student_info::read</code> function, but its execution is quite 
+different. Most obviously, the <code>delete</code> statement is gone, because the assignment to <code>cp</code> 
+will free the object if appropriate. To understand this code, we need to trace through it 
+carefully. For example, when we execute new <code>Core(is)</code>, we get a <code>Core*</code> object, which 
+we implicitly convert to a <code>Handle&lt;Core&gt;</code> using the <code>Handle(T*)</code> constructor. That 
+<code>Handle</code> value is then assigned to <code>cp</code> using the <code>Handle</code> assignment operator, which automatically 
+<code>delete</code>s the object, if any, to which the <code>Handle</code> previously referred. This 
+assignment constructs and destroys an extra copy of the <code>Core</code> object that we created, a 
+copy that we will now see how to avoid.</p>
+<div class="prevnext">
+<a href="88.htm"><img src="images/Prev1.gif" /></a>&nbsp;&nbsp;<a href="90.htm"><img src="images/Next1.gif" /></a>
+</div>
+</body>
+</html>

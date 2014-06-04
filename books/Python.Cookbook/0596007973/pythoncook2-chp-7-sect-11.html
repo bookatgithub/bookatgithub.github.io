@@ -1,0 +1,126 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;7.11.&nbsp;Storing a BLOB in a PostgreSQL Database</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-7-sect-10.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-7-sect-12.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-7-SECT-11"></a>
+<h3 class="docSection1Title" id="409771-826">Recipe 7.11. Storing a BLOB in a PostgreSQL Database</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Luther Blissett</span><a name="pythoncook2-CHP-7-ITERM-2361"></a>
+<a name="pythoncook2-CHP-7-ITERM-2362"></a> <a name="pythoncook2-CHP-7-ITERM-2363"></a></p>
+
+<a name="pythoncook2-CHP-7-SECT-11.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText">You need to store a BLOB in a PostgreSQL database.</P>
+
+
+<a name="pythoncook2-CHP-7-SECT-11.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">PostgreSQL 7.2 and later supports large objects, and the
+<tt>psycopg</tt> module supplies a
+<tt>Binary</tt> escaping function:</p>
+
+<pre>import psycopg, cPickle
+# Connect to a DB, e.g., the test DB on your localhost, and get a cursor
+connection = psycopg.connect("dbname=test")
+cursor = connection.cursor( )
+# Make a new table for experimentation
+cursor.execute("CREATE TABLE justatest (name TEXT, ablob BYTEA)")
+try:
+    # Prepare some BLOBs to insert in the table
+    names = 'aramis', 'athos', 'porthos'
+    data = {  }
+    for name in names:
+        datum = list(name)
+        datum.sort( )
+        data[name] = cPickle.dumps(datum, 2)
+    # Perform the insertions
+    sql = "INSERT INTO justatest VALUES(%s, %s)"
+    for name in names:
+        cursor.execute(sql, (name, psycopg.Binary(data[name])) )
+    # Recover the data so you can check back
+    sql = "SELECT name, ablob FROM justatest ORDER BY name"
+    cursor.execute(sql)
+    for name, blob in cursor.fetchall( ):
+        print name, cPickle.loads(blob), cPickle.loads(data[name])
+finally:
+    # Done. Remove the table and close the connection.
+    cursor.execute("DROP TABLE justatest")
+    connection.close( )</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-7-SECT-11.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">PostgreSQL supports binary data (<tt>BYTEA</tt> and
+variations thereof), but you should be careful when communicating
+such data via SQL. Specifically, when you use a normal
+<tt>INSERT</tt> SQL statement and need to have binary
+strings among the <tt>VALUES</tt> you're
+inserting, you have to escape some characters in the binary string
+according to PostgreSQL's own rules. Fortunately,
+you don't have to figure out those rules for
+yourself: PostgreSQL supplies functions that do all the needed
+escaping, and <tt>psycopg</tt> exposes such a function to
+your Python programs as the <tt>Binary</tt> function. This
+recipe shows a typical case: the <tt>BYTEA</tt>s
+you're inserting come from
+<tt>cPickle.dumps</tt>, so they may represent almost
+arbitrary Python objects (although, in this case,
+we're just using them for a few lists of
+characters). The recipe is purely demonstrative and works by creating
+a table and dropping it at the end (using a
+<tt>TRy/finally</tt> statement to ensure finalization is
+performed even if the program should terminate because of an uncaught
+exception).</p>
+
+<p class="docText">Earlier PostgreSQL releases limited to a few kilobytes the amount of
+data you could store in a normal field of the database. To store
+really large objects, you had to use roundabout techniques to load
+the data into the database (such as PostgreSQL's
+nonstandard SQL function <tt>LO_IMPORT</tt> to load a data
+file as an object, which requires superuser privileges and data files
+that reside on the machine running the Postgre-SQL Server) and store
+a field of type <tt>OID</tt> in the table to be used later
+for indirect recovery of the data. Fortunately, none of these
+techniques are necessary anymore: since Release 7.1 (the current
+release at the time of writing is 8.0), PostgreSQL embodies the
+results of project TOAST, which removed the limitations on
+field-storage size and therefore the need for peculiar indirection.
+Module <tt>psycopg</tt> supplies the handy
+<tt>Binary</tt> function to let you escape any binary
+string of bytes into a form acceptable for placeholder substitution
+in <tt>INSERT</tt> and <tt>UPDATE</tt> SQL
+statements.</P>
+
+
+<a name="pythoncook2-CHP-7-SECT-11.4"></a>
+<H4 class="docSection2Title">See Also</h4>
+
+<p class="docText"><a class="docLink" href="pythoncook2-CHP-7-SECT-10.html#pythoncook2-CHP-7-SECT-10">Recipe 7.10</a> and <a class="docLink" href="pythoncook2-CHP-7-SECT-12.html#pythoncook2-CHP-7-SECT-12">Recipe 7.12</a> for MySQL-oriented and
+SQLite-oriented solutions to the same problem;
+PostgresSQL's home page (<a class="docLink" target="_blank" href="http://www.postgresql.org/">http://www.postgresql.org/</a>); the
+Python/PostgreSQL module (<a class="docLink" target="_blank" href="http://initd.org/software/psycopg">http://initd.org/software/psycopg</a>).</p>
+
+
+
+<ul></ul></TD></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-7-sect-10.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-7-sect-12.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

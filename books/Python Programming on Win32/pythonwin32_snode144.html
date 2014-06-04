@@ -1,0 +1,238 @@
+<HTML><HEAD><META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=iso-8859-1">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="18.6 Sample Service Written in Python"-->
+<LINK REL="stylesheet" href="FILES/sbolM.css">
+</HEAD>
+<BODY link="#354278" vlink="#000066" alink="#000080" topmargin="0">
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right"><a href="pythonwin32_snode143.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a> <a href="pythonwin32_snode145.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a></td></table>
+<FONT>
+<h3>18.6
+Sample Service Written in Python</h3>
+
+
+<p>
+<a NAME="idx1817"></a>Before we move to some of the advanced
+topics, we will develop the basis for a real Python service that
+actually does something useful!</p>
+
+
+
+<p>The first version of our service starts by accepting connections over
+a <a NAME="idx1818"></a>named pipe and
+comes complete with a client that connects to the service. You then
+enhance the service by writing to the Event Log and by providing
+Performance Monitor data.</p>
+
+
+
+<p>The first cut looks very much like the
+<tT CLAss="monofont">SmallestPythonService</tt>, except it has more meat in
+the <tt class="monofont">SvcDoRun()</tt>
+<a name="idx1819"></a> method. The main thread creates a named
+pipe and waits for either a client to connect or a service control
+request.</p>
+
+
+
+<p>More information on named pipes can be found in <A href="pythonwin32_cnode130.html">Chapter 17</A>.This example also shows a number of concepts
+important when using named pipes. It shows how to use overlapped I/O,
+and how to create a special security object useful for named-pipe
+services:</p>
+
+
+
+<PRe CLaSS="monofont"># PipeService1.py
+#
+# A sample demonstrating a service which uses a 
+# named-pipe to accept client connections.
+
+import win32serviceutil
+import win32service
+import win32event
+import win32pipe
+import win32file
+import pywintypes
+import winerror
+
+class PipeService(win32serviceutil.ServiceFramework):
+    _svc_name_ = "PythonPipeService"
+    _svc_display_name_ = "A sample Python service using named pipes"
+    def __init__(self, args):
+        win32serviceutil.ServiceFramework.__init__(self, args)
+        # Create an event which we will use to wait on.
+        # The "service stop" request will set this event.
+        self.hWaitStop = win32event.CreateEvent(None, 0, 0, None)
+        # We need to use overlapped IO for this, so we don't block when
+        # waiting for a client to connect.  This is the only effective way
+        # to handle either a client connection, or a service stop request.
+        self.overlapped = pywintypes.OVERLAPPED()
+        # And create an event to be used in the OVERLAPPED object.
+        self.overlapped.hEvent = win32event.CreateEvent(None,0,0,None)
+
+    def SvcStop(self):
+        # Before we do anything, tell the SCM we are starting the stop process.
+        self.ReportServiceStatus(win32service.SERVICE_STOP_PENDING)
+        # And set my event.
+        win32event.SetEvent(self.hWaitStop)
+
+    def SvcDoRun(self):
+        # We create our named pipe.
+        pipeName = "\\\\.\\pipe\\PyPipeService"
+        openMode = win32pipe.PIPE_ACCESS_DUPLEX | win32file.FILE_FLAG_OVERLAPPED
+        pipeMode = win32pipe.PIPE_TYPE_MESSAGE
+        
+        # When running as a service, we must use special security for the pipe
+        sa = pywintypes.SECURITY_ATTRIBUTES()
+        # Say we do have a DACL, and it is empty
+        # (ie, allow full access!)
+        sa.SetSecurityDescriptorDacl ( 1, None, 0 )
+
+        pipeHandle = win32pipe.CreateNamedPipe(pipeName,
+            openMode,
+            pipeMode,
+            win32pipe.PIPE_UNLIMITED_INSTANCES,
+            0, 0, 6000, # default buffers, and 6 second timeout.
+            sa)
+
+        # Loop accepting and processing connections
+        while 1:            
+            try:
+                hr = win32pipe.ConnectNamedPipe(pipeHandle, self.overlapped)
+            except error, details:
+                print "Error connecting pipe!", details
+                pipeHandle.Close()
+                break
+                   
+            if hr==winerror.ERROR_PIPE_CONNECTED:
+                # Client is fast, and already connected - signal event
+                win32event.SetEvent(self.overlapped.hEvent)
+            # Wait for either a connection, or a service stop request.
+            timeout = win32event.INFINITE
+            waitHandles = self.hWaitStop, self.overlapped.hEvent
+            rc = win32event.WaitForMultipleObjects(waitHandles, 0, timeout)
+            if rc==win32event.WAIT_OBJECT_0:
+                # Stop event
+                break
+            else:
+                # Pipe event - read the data, and write it back.
+                # (We only handle a max of 255 characters for this sample)
+                try:
+                    hr, data = win32file.ReadFile(pipeHandle, 256)
+                    win32file.WriteFile(pipeHandle, "You sent me:" + data)
+                    # And disconnect from the client.
+                    win32pipe.DisconnectNamedPipe(pipeHandle)
+                except win32file.error:
+                    # Client disconnected without sending data
+                    # or before reading the response.
+                    # Thats OK - just get the next connection
+                    continue
+                    
+if __name__=='__main__':
+    win32serviceutil.HandleCommandLine(PipeService)</PRE>
+
+
+<P>This technique for working with named pipes doesn't scale well;
+our version accepts only a single client connection at a time.
+Another alternative is to use a new thread to process each connection
+as it comes in, as demonstrated in
+<i>pipeTestService.py,</i> which comes with the
+Window's extensions. Even this solution doesn't scale
+when the number of connections starts to become large, and other
+techniques, such as thread pooling or NT Completion Ports should be
+used.</p>
+
+
+
+<p>Now let's write a client program to use this service. The
+client program is quite simple, because the Win32 API function
+<TT CLass="monofont">CallNamedPipe()</tT> encapsulates all of the code most
+clients ever need. <TT Class="monofont">CallNamedPipe()</TT> is available in
+the <TT class="monofont">win32pipe</tt> module.</p>
+
+
+
+<p>The client sends all the command-line parameters to the server, then
+prints the server's response:</p>
+
+
+
+<pre class="monofont"># PipeServiceClient.py
+#
+# A client for testing the PipeService.
+#
+# Usage:
+#
+#   PipeServiceClient.py message
+
+import win32pipe
+import sys
+import string
+
+if __name__=='__main__':
+    message = string.join(sys.argv[1:])
+    pipeName = "\\\\.\\pipe\\PyPipeService"
+    data = win32pipe.CallNamedPipe(pipeName, message, 512, 0)
+    print "The service sent back:"
+    print data</pre>
+
+
+<P>Now let's test the service. The first step is to register the
+service:</P>
+
+
+
+<PRE ClASs="monofont">C:\Scripts&gt; PipeService1 install
+Installing service PythonPipeService to Python class 
+   C:\Scripts\PipeService1.PipeService
+Service installed
+C:\Scripts&gt;</PRe>
+
+
+<P>Now start the service:</P>
+
+
+
+<PRE Class="monofont">C:\Scripts&gt; PipeService1.py start
+Starting service PythonPipeService
+C:\Scripts&gt;</PRE>
+
+
+<P>And use the client to send the service some data:</p>
+
+
+
+<pre CLASs="monofont">C:\Scripts&gt; PipeServiceClient.py Hi there, how are you
+The service sent back:
+You sent me:Hi there, how are you
+C:&gt;Scripts&gt;</pre>
+
+
+<P>Our service seems to be working as expected!</P>
+
+
+
+<P>You're now finished; you can stop the service:</P>
+
+
+
+<pre class="monofont">C:\Scripts&gt; PipeService1.py stop
+Stopping service PythonPipeService
+C:&gt;Scripts&gt;</pre>
+
+
+<p>And remove it from the Service database:</p>
+
+
+
+<pre class="monofont">C:\Scripts&gt; PipeService1.py remove
+Removing service PythonPipeService
+Service removed
+C:\Scripts&gt;</PRE>
+<A NAmE="idx1820"></A>
+</fONt>
+ 
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right"><a href="pythonwin32_snode143.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a> <a href="pythonwin32_snode145.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a></td></table>
+</BODY></HTML>

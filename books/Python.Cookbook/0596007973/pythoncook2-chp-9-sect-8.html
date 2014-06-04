@@ -1,0 +1,142 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;9.8.&nbsp;Multitasking Cooperatively Without Threads</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-9-sect-7.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-9-sect-9.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-9-SECT-8"></a>
+<h3 class="docSection1Title">Recipe 9.8. Multitasking Cooperatively Without Threads</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Brian Bush, Troy Melhase, David Beach, Martin
+Miller</span></p>
+
+<a name="pythoncook2-CHP-9-SECT-8.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-9-ITERM-2561"></a>
+<a name="pythoncook2-CHP-9-ITERM-2562"></a>You have a task that seems suited to
+multithreading, but you don't want to incur the
+overhead that real thread-switching would impose.</P>
+
+
+<a name="pythoncook2-CHP-9-SECT-8.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">Generators were designed to simplify iteration, but
+they're also quite suitable as a basis for
+cooperative multitasking, also known as
+<i>microthreading</I>:</p>
+
+<pre>import signal
+# credit: original idea was based on an article by David Mertz
+# http://gnosis.cx/publish/programming/charming_python_b7.txt
+# some example 'microthread' generators
+def empty(name):
+    """ This is an empty task for demonstration purposes. """
+    while True:
+        print "&lt;empty process&gt;", name
+        yield None
+def terminating(name, maxn):
+    """ This is a counting task for demonstration purposes. """
+    for i in xrange(maxn):
+        print "Here %s, %s out of %s" % (name, i, maxn)
+        yield None
+    print "Done with %s, bailing out after %s times" % (name, maxn)
+def delay(duration=0.8):
+    """ Do nothing at all for 'duration' seconds. """
+    import time
+    while True:
+        print "&lt;sleep %d&gt;" % duration
+        time.sleep(duration)
+        yield None
+class GenericScheduler(object):
+    def _ _init_ _(self, threads, stop_asap=False):
+        signal.signal(signal.SIGINT, self.shutdownHandler)
+        self.shutdownRequest = False
+        self.threads = threads
+        self.stop_asap = stop_asap
+    def shutdownHandler(self, n, frame):
+        """ Initiate a request to shutdown cleanly on SIGINT."""
+        print "Request to shut down."
+        self.shutdownRequest = True
+    def schedule(self):
+        def noop( ):
+            while True: yield None
+        n = len(self.threads)
+        while True:
+            for i, thread in enumerate(self.threads):
+                try: thread.next( )
+                except StopIteration:
+                    if self.stop_asap: return
+                    n -= 1
+                    if n==0: return
+                    self.threads[i] = noop( )
+                if self.shutdownRequest:
+                    return
+if _ _name_ _== "_ _main_ _":
+    s = GenericScheduler([ empty('boo'), delay( ), empty('foo'),
+                           terminating('fie', 5), delay(0.5),
+                        ], stop_asap=True)
+    s.schedule( )
+    s = GenericScheduler([ empty('boo'), delay( ), empty('foo'),
+                           terminating('fie', 5), delay(0.5),
+                        ], stop_asap=False)
+    s.schedule( )</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-9-SECT-8.3"></a>
+<H4 class="docSection2Title">Discussion</h4>
+
+<p class="docText">Microthreading (or cooperative multitasking) is an important
+technique. If you want to pursue it in earnest for complex uses, you
+should definitely look up the possibilities of Christian
+Tismer's <span class="docEmphasis">Stackless</span>, a Python
+version specialized for microthreading, at <a class="docLink" target="_blank" href="http://www.stackless.com/">http://www.stackless.com/</a>. However, you can
+get a taste of cooperative multitasking without straying from
+Python's core, by making creative use of generators,
+as shown in this recipe.</P>
+
+<p class="docText">A simple approach to cooperative multitasking, such as the one
+presented in this recipe, is <span class="docEmphasis">not</span> suitable when
+your tasks must perform long-running work, particularly I/O tasks
+that may involve blocking system calls. For such applications, look
+into real threading, or, as a strong alternative, look into the
+event-driven approach offered by module <tt>asyncore</tt>
+in the Python Standard Library (on a simple scale) and by package
+Twisted at <a class="docLink" target="_blank" href="http://twistedmatrix.com/products/twisted">http://twistedmatrix.com/products/twisted</a> (on
+a grandiose scale). But if your application has modest I/O needs, and
+you can slice up any computation your tasks perform into short
+chunks, each of which you can end with a <tt>yield</tt>,
+this recipe may be just what you're looking for.</P>
+
+
+<a name="pythoncook2-CHP-9-SECT-8.4"></a>
+<h4 class="docSection2Title">See Also</h4>
+
+<p class="docText">David Mertz's site, chock-full of idiosyncratic,
+fascinating ideas, is at <a class="docLink" target="_blank" href="http://gnosis.cx/">http://gnosis.cx/</a>; Christian
+Tismer's <span class="docEmphasis">Stackless Python</span>, the
+best way to do cooperative multitasking in Python (and much else
+besides), is at <a class="docLink" target="_blank" href="http://www.stackless.com/">http://www.stackless.com/</a>; Twisted Matrix,
+the best way to do event-driven (asynchronous) programming, is at
+<a class="docLink" target="_blank" href="http://twistedmatrix.com/">http://twistedmatrix.com/</a>.</p>
+
+
+
+<a href="5991535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><ul></UL></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-9-sect-7.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-9-sect-9.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

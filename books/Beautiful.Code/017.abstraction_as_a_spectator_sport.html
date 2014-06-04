@@ -1,0 +1,65 @@
+<html><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<link href="styles/globalstyle.css" type="text/css" rel="stylesheet"/>
+<link title="medium" href="styles/two.css" type="text/css" rel="stylesheet"/>
+<script src="scripts/main.js" type="text/javascript" language="javascript"></script>
+<title>Section 2.5. Abstraction As a Spectator Sport</title>
+</head><body>
+<DIV class=h3 style="MARGIN-TOP: 0px; PADDING-BOTTOM: 1em; WIDTH: 100%; PADDING-TOP: 0px"><SPAN>Subversion's Delta Editor: Interface As Ontology</SPAN><SPAN> &gt; Abstraction As a Spectator Sport</SPAN></DIV>
+<DIV></DIV>
+<DIV>
+<DIV><A name=abstraction_as_a_spectator_sport></A>
+<H3 class=docSection1Title id=-100000>2.5. Abstraction As a Spectator Sport</H3>
+<P class=docText><A name="Our next"></A>Our next indication of the delta editor's flexibility came when we needed to do two or more distinct things in the same tree edit. One of the earliest such situations was the need to handle <A name=idx-CHP-2-0090></A><A name="interrupted an"></A>cancellations. When the user interrupted an update, a signal handler trapped the request and set a flag; then at various points during the operation, we checked the flag and exited cleanly if it was set. It turned out that in most cases, the safest place to exit the operation was simply the next entry or exit boundary of an editor function call. This was trivially true for operations that performed no I/O on the client side (such as change summarizations and diffs), but it was also true of many operations that did touch files. After all, most of the work in an update is simply writing out the data, and even if the user interrupts the overall update, it usually still makes sense to either finish writing or cleanly cancel whatever file was in progress when the interrupt was detected.</P>
+<P class=docText><A name="implement the"></A>But where to implement the flag checks? We could hardcode them into the delta editor, the one returned (by reference) from <TT>Get_Update_Editor()</TT><A name="a poor"></A>. But that's obviously a poor choice: the delta editor is a library function that might be called from code that wants a totally different style of cancellation checking, or none at all.</P>
+<P class=docText><A name="solution would"></A>A slightly better solution would be to pass a cancellation-checking callback function and associated baton to <TT>Get_Update_Editor()</TT><A name="baton and"></A>. The returned editor would periodically invoke the callback on the baton and, depending on the return value, either continue as normal or return early (if the callback is null, it is never invoked). But that arrangement isn't ideal either. Checking cancellation is really a parasitic goal: you might want to do it when updating, or you might not, but in any case it has no effect on the way the update process itself works. Ideally, the two shouldn't be tangled together in the code, especially as we had concluded that, for the most part, operations didn't need fine-grained control over cancellation checking, anyway—the editor call boundaries would do just fine.</P>
+<P class=docText><A name="just one"></A>Cancellation is just one example of an auxiliary task associated with tree <A name=idx-CHP-2-0091></A><A name="we faced"></A>delta edits. We faced, or thought we faced, similar problems in keeping track of committed targets while transmitting changes from the client to the server, in reporting update or commit progress to the user, and in various other situations. Naturally, we looked for a way to abstract out these adjunct behaviors, so the core code wouldn't be cluttered with them. In fact, we looked so hard that we initially <SPAN class=docEmphasis>over</SPAN>-abstracted:</P><PRE>	/** Compose <B>editor_1</B> and its baton with <B>editor_2</B> and its baton. 
+	 *
+	 * Return a new editor in <B>new_editor</B> (allocated in <B>pool</B>), in which
+	 * each function <B>fun</B> calls <B>editor_1-&gt;fun</B> and then <B>editor_2-&gt;fun</B>,
+	 * with the corresponding batons. 
+	 *
+	 * If <B>editor_1-&gt;fun</B> returns error, that error is returned from
+	 * <B>new_editor-&gt;fun</B> and <B>editor_2-&gt;fun</B> is never called; otherwise
+	 * <B>new_editor-&gt;fun</B>'s return value is the same as <B>editor_2-&gt;fun</B>'s.
+	 *
+	 * If an editor function is null, it is simply never called, and this
+	 * is not an error.
+	 */
+	void
+	svn_delta_compose_editors(const svn_delta_editor_t **new_editor,
+	                          void **new_edit_baton,
+	                          const svn_delta_editor_t *editor_1,
+	                          void *edit_baton_1,
+	                          const svn_delta_editor_t *editor_2,
+	                          void *edit_baton_2,
+	                          apr_pool_t *pool);
+</PRE><BR>
+<P class=docText><A name="go a"></A>Although this turned out to go a bit too far—we'll look at why in a moment—I still find it a testament to the beauty of the editor interface. The composed editors behaved predictably, they kept the code clean (because no individual editor function had to worry about the details of some parallel editor invoked before or after it), and they passed the associativity test: you could take an editor that was itself the result of a composition and compose it with other editors, and everything would <SPAN class=docEmphasis><A name="just work"></A>just work</SPAN><A name="the editors"></A>. It worked because the editors all agreed on the basic shape of the operation they were performing, even though they might do totally different things with the data.</P>
+<P class=docText><A name="I still"></A>As you can tell, I still miss editor composition for its sheer elegance. But in the end it was more abstraction than we needed. Much of the functionality that we initially implemented using composed editors, we later rewrote to use custom callbacks passed to the editor-creation routines. Although the adjunct behaviors did usually line up with editor call boundaries, they often weren't appropriate at <SPAN class=docEmphasis>all</SPAN><A name="even at"></A> call boundaries, or even at most of them. The result was an overly high infrastructure-to-work ratio: by setting up an entire parallel editor, we were misleadingly implying to readers of the code that the adjunct behaviors would be invoked more often than they actually were.</P>
+<P class=docText><A name="far as"></A>Having gone as far as we could with editor composition and then retreated, we were still free to implement it by hand when we really wanted it, however. Today in <A name=idx-CHP-2-0092></A><A name="operation editor"></A>Subversion, cancellation is done with manual composition. The cancellation-checking editor's constructor takes another editor—the core operation editor—as a parameter:</P>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedWidth>	/** Set <B>*editor</B> and <B>*edit_baton</B> to a cancellation editor that
+	 * wraps <B>wrapped_editor</B> and <B>wrapped_baton</B>.
+	 *
+	 * The <B>editor</B> will call <B>cancel_func</B> with <B>cancel_baton</B> when each <A name=idx-CHP-2-0093></A>of
+	 * its functions is called, continuing on to call the corresponding wrapped
+	 * function if <B>cancel_func</B> returns <B>SVN_NO_ERROR.</B>
+	 *
+	 * If <B>cancel_func</B> is <B>NULL</B>, set <B>*editor</B> to <B>wrapped_editor</B> and
+	 * <B>*edit_baton</B> to <B>wrapped_baton.</B>
+	 */
+	svn_error_t *
+	svn_delta_get_cancellation_editor(svn_cancel_func_t cancel_func,
+	                                  void *cancel_baton,
+	                                  const svn_delta_editor_t *wrapped_editor,
+	                                  void *wrapped_baton,
+	                                  const svn_delta_editor_t **editor,
+	                                  void **edit_baton,
+	                                  apr_pool_t *pool);
+
+
+					    </PRE><BR>
+<P class=docText><A name="implement some"></A>We also implement some conditional debugging traces using a similar process of manual composition. The other adjunct behaviors—primarily progress reporting, event notification, and target counting—are implemented via callbacks that are passed to the editor constructors and (if nonnull) invoked by the editor at the few places where they are needed.</P>
+<P class=docText><A name="to provide"></A>The editor interface continues to provide a strong unifying force across Subversion's code. It may seem strange to praise an API that first tempted its users into over-abstraction, but that temptation was mainly a side effect of suiting the problem of streamy tree delta transmission exceptionally well—it made the problem look so tractable that we wanted other problems to become that problem! When they didn't fit, we backed off, but the editor constructors still provided a canonical place to inject callbacks, and the editor's internal operation boundaries helped guide our thinking about when to invoke those callbacks.</P></DIV></DIV>
+<p>&nbsp;</p><p>&nbsp;</p><!-- 仁·义 -->
+</body></html>

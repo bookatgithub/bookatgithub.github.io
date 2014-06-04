@@ -1,0 +1,225 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
+<title>13.4 A simple handle class</title>
+<link rel="stylesheet" type="text/css" href="./acc.css" />
+</head>
+
+<body>
+<div class="prevnext">
+<a href="83.htm"><img src="images/Prev1.gif" /></a>&nbsp;&nbsp;<a href="85.htm"><img src="images/Next1.gif" /></a>
+</div>
+<h3>13.4 A simple handle class</h3>
+<p>Although the approach that we have just seen is straightforward, it has problems: The 
+program has acquired a lot of extra complexity related to managing the pointers, and has 
+added several pitfalls that could lead to bugs. Our users have to remember to allocate 
+space for the records as they read them, and to remember to free that space when they no 
+longer need the data. The code is constantly dereferencing the pointers to get at the 
+underlying objects. Nevertheless, we have solved the problem of writing a program that 
+can read a file that contains both kinds of records intermixed.</p>
+<p>What we'd like to do is find a way to preserve the good properties of our simpler programs 
+that dealt with either <code>Core</code> objects or <code>Grad</code> objects, and eliminate the problems 
+inherent in our new solution, which can process both kinds of records. It turns out that 
+there is a common programming technique, known as a <i><b>handle class</b>, </i>that will let us do so.</p>
+<p>Our code became cluttered when we realized that we needed to be able to deal with 
+objects whose type we could not know until run time. We knew that each object would be 
+either a <code>Core</code>, or something derived from <code>Core</code>. Our solution used pointers, because we 
+could allocate a pointer to <code>Core</code> and then make that pointer point to either a <code>Core</code> or a 
+<code>Grad</code> object. The trouble with our solution is that it imposed error-prone bookkeeping on 
+our users. We can't eliminate that bookkeeping, but we can hide it from our users by 
+writing a new class that will encapsulate the pointer to <code>Core</code>:</p>
+<div class="prebox"><pre>
+class Student_info {
+public:
+    // constructors and copy control
+    Student_info(): cp(0) { }
+    Student_info(std::istream&amp; is): cp(0) { read(is); }
+    Student_info(const Student_info&amp;);
+    Student_info&amp; operator=(const Student_info&amp;);
+    ~Student_info() { delete cp; }
+
+    // operations
+    std::istream&amp; read(std::istream&amp;);
+
+    std::string name() const {
+        if (cp) return cp-&gt;name();
+        else throw std::runtime_error(&quot;uninitialized Student&quot;);
+	 }
+    double grade() const {
+        if (cp) return cp-&gt;grade();
+        else throw std::runtime_error(&quot;uninitialized Student&quot;);
+    }
+    static bool compare(const Student_info&amp; s1,
+                        const Student_info&amp; s2) {
+        return s1.name() &lt; s2.name(); }
+
+private:
+    Core* cp;
+};
+</pre></div>
+<p>The idea here is that a <code>Student_info</code> object can represent either a <code>Core</code> or a <code>Grad</code>. In 
+that sense, it will act like a pointer. However, users of <code>Student_info</code> do not have to 
+worry about allocating the underlying object to which the <code>Student_info</code> is bound. The 
+class will take care of these tedious and error-prone aspects of our programs.</p>
+<p>Each <code>Student_info</code> object will hold a pointer, called <code>cp</code>, that points to an object that 
+has either type <code>Core</code> or a type derived from <code>Core</code>. As we'll see in &sect;13.4.1/245, in the 
+<code>read</code> function we'll allocate the object to which <code>cp</code> points. Therefore, both constructors 
+initialize <code>cp</code> to 0, indicating that the <code>Student_info</code> object is as yet unbound. In the constructor 
+that takes an <code>istream</code>, we call the <code>Student_info::read</code> function. That function 
+will allocate a new object of the appropriate type, and will give that object the value 
+that it reads from the indicated <code>istream</code>.</p>
+<p>We know from the rule of three (&sect;11.3.6/201) that we will need a copy constructor, 
+assignment operator, and destructor to manage the pointer. The work that the destructor 
+must do is easy: It just has to destroy the object that the constructors allocated. Because 
+we gave <code>Core</code> a virtual destructor in &sect;13.3.2/242, the destructor for <code>Student_info</code> 
+will operate correctly whether the object being destroyed is a <code>Grad</code> object or a <code>Core</code> 
+object. We'll define the copy constructor and assignment operator in &sect;13.4.2/246.</p>
+<p>Because users will write programs in terms of <code>Student_info</code> objects rather than 
+<code>Core</code> or <code>Grad</code> objects, the <code>Student_info</code> class must provide the same interface as the 
+<code>Core</code> class. For both <code>name</code> and <code>grade</code>, there is nothing special for <code>Student_info</code> to do, 
+and so these functions forward their work to the underlying <code>Core</code> or <code>Grad</code> object to 
+which <code>cp</code> points.</p>
+<p>However, <code>cp</code> could be 0. It will be 0 if a user creates a <code>Student_info</code> object using 
+the default constructor, and then does not read into it. If <code>cp</code> is 0, we can't just forward the 
+calls to the underlying object. Instead, we'll throw a <code>runtime_error</code> to indicate that a problem has occurred.</p>
+<p>It is important to remember that the <code>Core::grade</code> function is virtual, which means 
+that when we call it through <code>cp</code>, the version that is called at run time will depend on the 
+type of object to which <code>cp</code> points. For example, if <code>cp</code> points to a <code>Grad</code> object, then we'll 
+run the <code>Grad</code>::grade operation.</p>
+<p>The only other function in the interface is the <code>compare</code> operation, which turns out to 
+have a couple of interesting properties. First, recall that for the <code>Core</code> classes, <code>compare</code> 
+was a global, nonmember function, whereas here, we implement it as a <i><b>static member function</b>. </i>
+Static member functions differ from ordinary member functions in that they do 
+not operate on an object of the class type. Unlike other member functions, they are associated 
+with the class, not with a particular object.   As such, they cannot access the 
+non<code>static</code> data members of objects of the class: There is no object associated with the 
+function, so there are no members to use.</p>
+<p>For our purposes, <code>static</code> member functions have one significant advantage: Their 
+names are within the scope of their class. So, when we say that <code>compare</code> is a <code>static</code> member 
+we are defining a function named <code>Student_info::compare</code>. Because the function 
+has a qualified name, it does not overload the <code>compare</code> that we used to compare <code>Core</code> 
+objects. Thus, our users will be able to call <code>sort</code>, passing <code>Student_info::compare</code>, 
+and the compiler can know which function they want.</p>
+<p>The other interesting thing about this function is its implementation. The function 
+uses the <code>Student_info::name</code> function to get at the names stored in the records. It is 
+worth thinking about what is happening here. The call to <code>Student_info::name</code> will 
+call <code>Core::name</code> if <code>cp</code> is set. If <code>cp</code> is 0, then name will <code>throw</code> an exception, which propagates 
+out to <code>compare</code>'s caller. Because <code>compare</code> uses the <code>public</code> interface to 
+<code>Student_info</code>, that function doesn't need to check <code>cp</code> directly. As with other user-level 
+code, it passes that problem along to the <code>Student_info</code> class.</p>
+<h4>13.4.1 Reading the handle</h4>
+<p>The <code>read</code> function has three responsibilities: It must free the object, if any, to which this 
+handle is bound. It must then decide what kind of object we are about to <code>read</code>, and it 
+must allocate the right kind of object, which it can initialize from the stream it was given:</p>
+<div class="prebox"><pre>
+istream&amp; Student_info::read(istream&amp; is) {
+    delete cp;      // <i>delete previous object, if any</i>
+
+    char ch;
+    is &gt;&gt; ch;       // <i>get record type</i>
+
+    if (ch == 'U') {
+        cp = new Core(is);
+    } else {
+        cp = new Grad(is);
+    }
+
+    return is;
+}
+</pre></div>
+<p>The <code>read</code> function starts by freeing the existing object (if any) to which the handle object 
+was previously bound. We do not need to check whether <code>cp</code> is 0 before calling <code>delete</code>, 
+because the language guarantees that it is harmless to <code>delete</code> a pointer with value 0. 
+Having freed the old value, we are ready to read the new one. We start by reading and 
+testing the first character on the line. Based on that character, we create an object of the 
+appropriate type, initializing that object by running the appropriate constructor that takes 
+an <code>istream</code>. These constructors call their own <code>read</code> functions to read values from the 
+input stream into the newly created object. After the object is constructed, we store the 
+pointer to it in <code>cp</code>. To finish up, we return the stream that we were given.</p>
+<h4>13.4.2 Copying handle objects</h4>
+<p>The copy constructor and assignment operator are necessary to manage the <code>Core</code> pointer. 
+The constructor allocates this pointer as a side effect of calling <code>read</code>. When we copy a 
+<code>Student_info</code>, we will want to allocate a new object and initialize it with the values 
+from the object from which we are copying. However, there is a snag: What kind of object 
+are we copying? There is no obvious way to know whether the <code>Student_info</code> object 
+that we're copying points to a <code>Core</code> object or an object of a type derived from <code>Core</code>.</p>
+<p>The way we solve this problem is to give <code>Core</code> and its derived classes a new <code>virtual</code> 
+function. That function creates a new object that holds copies of the values in the original:</p>
+<div class="prebox"><pre>
+class Core {
+    friend class Student_info;
+protected:
+    virtual Core* clone() const { return new Core(*this); }
+    // <i>as before </i>
+};
+</pre></div>
+<p>The <code>clone</code> function does exactly what we described, in a surprisingly succinct fashion. 
+We allocate a new <code>Core</code> object and use <code>Core</code>'s copy constructor to give that new object 
+the appropriate values. Remember that the <code>Core</code> class did not explicitly define a copy 
+constructor. Nonetheless, we know from &sect;11.3.5/201 that one exists: The compiler synthesized 
+a default copy constructor, which copies each member from the existing 
+<code>Core</code> object into the newly created one.</p>
+<p>Because we created the <code>clone</code> function as an artifact of our implementation, we did 
+not add it to the public interface of <code>Core</code>. The fact that <code>clone</code> is <code>protected</code> means 
+that we must nominate <code>Student_info</code> as a <code>friend</code> of <code>Core</code>, so that <code>Student_info</code> 
+objects can access the <code>clone</code> function. Class friendship is similar to the <code>friend</code> functions 
+that we saw in &sect;12.3.2/216. There, we learned that <code>friend</code> functions have access to the 
+<code>private</code> and <code>protected</code> members of the class. Naming a class as a <code>friend</code> has the 
+same effect as making all of the members of that class friends. That is, by adding</p>
+<div class="prebox"><pre>
+friend class Student_info;
+</pre></div>
+<p>to the definition of <code>Core</code>, we are saying that all the member functions in <code>Student_info</code> 
+may access all the <code>private</code> and <code>protected</code> members of class <code>Core</code>.</p>
+<p>Having added the <code>virtual</code> function <code>clone</code> to the base class, we have to remember to 
+redefine the function in the derived class, so that when we <code>clone</code> a derived object, we 
+will allocate a new <code>Grad</code> object:</p>
+<div class="prebox"><pre>
+class Grad {
+protected:
+    Grad* clone() const { return new Grad(*this); }
+    // <i>as before </i>
+};
+</pre></div>
+<p>As with <code>Core::clone</code>, we allocate a new object as a copy of <code>*this</code>, but here we return a 
+<code>Grad*</code> rather than a <code>Core*</code>. Ordinarily, when a derived class redefines a function from 
+the base class, it does so exactly: the parameter list and the return type are identical.</p>
+<p>However, if the base-class function returns a pointer (or reference) to a base class, then the 
+derived-class function can return a pointer (or reference) to a corresponding derived class.</p>
+<p>We do not need to nominate <code>Student_info</code> as a <code>friend</code> of <code>Grad</code>, even though 
+friendship is not inherited, because our <code>Student_info</code> class never refers to 
+<code>Grad::clone</code> directly; it does so only through <code>virtual</code> calls to <code>Core::clone</code>, which it 
+can access by virtue of its <code>friend</code>ship with <code>Core</code>.</p>
+<p>With these changes in place, we can now implement copying and assignment:</p>
+<div class="prebox"><pre>
+Student_info::Student_info(const Student_info&amp; s) : cp(0)
+{
+    if (s.cp) cp = s.cp-&gt;clone();
+}
+Student_info&amp; Student_info::operator=(const Student_info&amp; s)
+{
+    if (&amp;s != this) {
+        delete cp;
+        if (s.cp)
+            cp = s.cp-&gt;clone();
+        else
+            cp = 0;
+    }
+    return *this;
+}
+</pre></div>
+<p>In the copy constructor, we initialize the pointer <code>cp</code> to 0, and conditionally call <code>clone</code> if 
+there is something there to <code>clone</code>. If not, <code>cp</code> will remain equal to 0, indicating that the 
+handle is unbound. Similarly, the assignment operator calls <code>clone</code> conditionally. Of 
+course, we have other work to do in the assignment operator before calling <code>clone</code>. First 
+we must guard against self-assignment, by testing whether the addresses of our two 
+operands are the same. If we are assigning different objects, then we must free the object 
+to which <code>cp</code> currently points before making <code>cp</code> point to the newly created object.</p>
+<p>Neither the copy constructor nor the assignment operator does anything special if <code>cp</code> 
+is 0, because it is perfectly legitimate to copy or assign an unbound handle.</p>
+<div class="prevnext">
+<a href="83.htm"><img src="images/Prev1.gif" /></a>&nbsp;&nbsp;<a href="85.htm"><img src="images/Next1.gif" /></a>
+</div>
+</body>
+</html>

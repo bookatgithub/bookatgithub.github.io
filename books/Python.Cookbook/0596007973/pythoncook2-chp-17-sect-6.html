@@ -1,0 +1,252 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;17.6.&nbsp;Translating a Python Sequence into a C Array with the PySequence_Fast Protocol</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-17-sect-5.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-17-sect-7.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-17-SECT-6"></a>
+<h3 class="docSection1Title" id="409771-863">Recipe 17.6. Translating a Python Sequence into a C Array with the PySequence_Fast Protocol</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Luther Blissett</span></p>
+
+<a name="pythoncook2-CHP-17-SECT-6.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-17-ITERM-3070"></a> <a name="pythoncook2-CHP-17-ITERM-3071"></a>You have an existing C function
+that takes as an argument a C array of C-level values (e.g.,
+<tt>double</tt>s), and you want to wrap it into a
+Python-callable C extension that takes as an argument a Python
+sequence or iterator.</P>
+
+
+<a name="pythoncook2-CHP-17-SECT-6.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">The easiest way to accept an arbitrary Python sequence (or any other
+iterable object) in the Python C API is with the
+<tt>PySequence_Fast</tt> function. It builds and returns a
+tuple when needed but returns only its argument (with the reference
+count incremented) when the argument is already a list or tuple:</p>
+
+<pre>#include &lt;Python.h&gt;
+/* a preexisting C-level function you want to expose, e.g: */
+static double total(double* data, int len)
+{
+    double total = 0.0;
+    int i;
+    for(i=0; i&lt;len; ++i)
+        total += data[i];
+    return total;
+}
+/* here is how you expose it to Python code: */
+static PyObject *totalDoubles(PyObject *self, PyObject *args)
+{
+    PyObject* seq;
+    double *dbar;
+    double result;
+    int seqlen;
+    int i;
+    /* get one argument as a sequence */
+    if(!PyArg_ParseTuple(args, "O", &amp;seq))
+        return 0;
+    <span class="docEmphBold">seq = PySequence_Fast(seq, "argument must be iterable");</span>
+    if(!seq)
+        return 0;
+    /* prepare data as an array of doubles */
+    seqlen = PySequence_Fast_GET_SIZE(seq);
+    dbar = malloc(seqlen*sizeof(double));
+    if(!dbar) {
+        Py_DECREF(seq);
+        return PyErr_NoMemory( );
+    }
+    for(i=0; i &lt; seqlen; i++) {
+        PyObject *fitem;
+        PyObject *item = PySequence_Fast_GET_ITEM(seq, i);
+        if(!item) {
+            Py_DECREF(seq);
+            free(dbar);
+            return 0;
+        }
+        fitem = PyNumber_Float(item);
+        if(!fitem) {
+            Py_DECREF(seq);
+            free(dbar);
+            PyErr_SetString(PyExc_TypeError, "all items must be numbers");
+            return 0;
+        }
+        dbar[i] = PyFloat_AS_DOUBLE(fitem);
+        Py_DECREF(fitem);
+    }
+    /* clean up, compute, and return result */
+    Py_DECREF(seq);
+    result = total(dbar, seqlen);
+    free(dbar);
+    return Py_BuildValue("d", result);
+}
+static PyMethodDef totalMethods[  ] = {
+    {"total", totalDoubles, METH_VARARGS, "Sum a sequence of numbers."},
+    {0} /* sentinel */
+};
+void
+inittotal(void)
+{
+    (void) Py_InitModule("total", totalMethods);
+}</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-17-SECT-6.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">The two best ways for your C-coded, Python-callable extension
+functions to accept generic Python sequences as arguments are
+<tt>PySequence_Fast</tt> and
+<tt>PyObject_GetIter</tt>. The latter, which I cover in the
+next recipe, can often save some memory, but it is appropriate only
+when it's OK for the rest of your C code to get the
+items one at a time, without knowing beforehand how many items there
+will be in total. You often have preexisting C functions from an
+existing library that you want to expose to Python code, and such
+functions may require C arrays as their input arguments. Thus, this
+recipe shows how to build a C array (in this case, an array of
+<tt>double</tt>) from a generic Python sequence (or other
+iterable) argument, so that you can pass the array (and the integer
+that gives the array's length) to your existing C
+function (represented here, purely as an example, by the
+<I>total</i> function at the start of the recipe). (In the
+real world, you would use Python's built-in function
+<tt>sum</tt> for this specific functionality, rather than
+exposing any existing C function (but this <span class="docEmphasis">is</span>
+meant to be just an example!)</P>
+
+<p class="docText"><tt>PySequence_Fast</tt> takes two arguments: a Python
+iterable object to be presented as a sequence, and a string to use as
+the error message in case the Python object cannot be presented as a
+sequence, in which case <tt>PySequence_Fast</tt> returns
+<tt>0</tt> (the C null pointer, <tt>NULL</tt>, an
+error indicator). If the Python object is already a list or tuple,
+<tt>PySequence_Fast</tt> returns the same object with the
+reference count increased by one. If the Python object is any other
+kind of sequence (or any iterator, or other iterable),
+<tt>PySequence_Fast</tt> builds and returns a new tuple
+with all items already in place. In any case,
+<tt>PySequence_Fast</tt> returns an object on which you can
+call <tt>PySequence_Fast_GET_SIZE</tt> to obtain the
+sequence length (as we do in the recipe, in order to
+<tt>malloc</tt> the appropriate amount of storage for the C
+array) and <tt>PySequence_Fast_GET_ITEM</tt> to get an item
+given a valid index (an <tt>int</tt> between 0, included,
+and the sequence length, excluded).</P>
+
+<p class="docText">The recipe requires quite a bit of care (as is typical of all C-coded
+Python extensions, and more generally of any C code) to deal properly
+with memory issues and error conditions. For C-coded Python
+extensions, in particular, it's imperative that you
+know which Python C API functions return <span class="docEmphasis">new</span>
+references (which you must <tt>Py_DECREF</tt> when you are
+done with them) and which ones return <span class="docEmphasis">borrowed</span>
+references (which you must not <tt>Py_DECREF</tt> when
+you're done with them; on the contrary, you must
+<tt>Py_INCREF</tt> such a reference if you want to keep a
+copy for a longer time). In this specific case, you have to know the
+following (by reading the Python documentation):</p>
+
+<ul><li><p class="docList"><tt>PyArg_ParseTuple</tt> produces borrowed references.</p></LI><li><p class="docList"><tt>PySequence_Fast</tt> returns a new reference.</p></LI><li><p class="docList"><tt>PySequence_Fast_GET_ITEM</tt> returns a borrowed
+reference.</P></li><LI><p class="docList"><tt>PyNumber_Float</tt> returns a new reference.</P></li></ul>
+<p class="docText">There is method to this madness, even though, as you start your
+career as a coder of C API Python extensions, you'll
+no doubt have to double-check each case carefully.
+Python's C API strives to return borrowed references
+(for the sake of the modest performance increase that they afford, by
+avoiding needless incrementing and decrementing of reference counts),
+when it <span class="docEmphasis">knows</span> it can always do so safely (i.e.,
+it knows that the reference it is returning necessarily refers to an
+already existing object). However, Python's C API
+has to return a new reference when it's possible (or
+certain) that a new object may have to be created.</p>
+
+<p class="docText">For example, in the preceding list, <tt>PyNumber_Float</tt>
+and <tt>PySequence_Fast</tt> may be able to return the same
+object they were given as an argument, but it's also
+quite possible that they may have to create a new object for this
+purpose, to ensure that the returned object has the correct type.
+Therefore, these two functions are specified as always returning new
+references. <tt>PyArg_ParseTuple</tt> and
+<tt>PySequence_Fast_GET_ITEM</tt>, on the other hand,
+always return references to objects that already exist elsewhere (as
+items in the arguments' tuple, or as items in the
+fast-sequence container, respectively). Therefore, these two
+functions can afford to return borrowed references and are thus
+specified as doing so.</p>
+
+<p class="docText">One last note: in this recipe, as soon as we obtain an item from the
+fast-sequence container, we immediately try to transform it into a
+Python <tt>float</tt> object, and thus we have to deal with
+the possibility that the transformation will fail (e.g., if
+we're passed a sequence containing a string, a
+complex number, etc.). It is most often futile to first attempt a
+check (with <tt>PyNumber_Check</tt>) because the check
+might succeed, and the later transformation attempt might fail anyway
+(e.g., with a complex-number item). Therefore, it's
+better to attempt the transformation and deal with the resulting
+error, if any. This approach is yet another case of the common
+situation in which it's easier to get forgiveness
+than permission!</p>
+
+<p class="docText">As usual, the best way to build this extension (assuming e.g., that
+you've saved the extension's source
+code as a file named <i>total.c</i>) is with the
+<tt>distutils</tt> package. Place a file named
+<i>setup.py</i> in the same directory as the C source:</p>
+
+<pre>from distutils.core import setup, Extension
+setup(name="total", maintainer="Luther Blissett", maintainer_email=
+    "situ@tioni.st", ext_modules=[Extension('total', sources=['total.c'])]
+)</pre><br>
+
+
+<p class="docText">then build and install by running:</p>
+
+<pre>$ python setup.py install</pre><br>
+
+
+<p class="docText">An appealing aspect of this approach is that it works on any
+platform, assuming that you have access to the same C compiler used
+to build your version of Python, and permission to write on the
+<I>site-packages</I> directory where the resulting
+dynamically loaded library gets installed.</p>
+
+
+<a name="pythoncook2-CHP-17-SECT-6.4"></a>
+<h4 class="docSection2Title">See Also</H4>
+
+<p class="docText">The <span class="docEmphasis">Extending and Embedding</span> manual is
+available as part of the standard Python documentation set at
+<a class="docLink" target="_blank" href="http://www.python.org/doc/current/ext/ext.html">http://www.python.org/doc/current/ext/ext.html</a>;
+documentation on the Python C API is at <a class="docLink" target="_blank" href="http://www.python.org/doc/current/api/api.html">http://www.python.org/doc/current/api/api.html</a>;
+the section "Distributing Python
+Modules" in the standard Python documentation set is
+still incomplete, but it's a good source of
+information on the <tt>distutils</tt> package;
+<span class="docEmphasis">Python in a Nutshell</span> covers the essentials of
+extending and embedding, of the Python C API, and of the
+<tt>distutils</tt> package. <a name="pythoncook2-CHP-17-ITERM-3072"></a></p>
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-17-sect-5.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-17-sect-7.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

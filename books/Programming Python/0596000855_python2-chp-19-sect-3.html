@@ -1,0 +1,911 @@
+<html><head>
+<META http-equiv="Content-Type" content="text/html">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="19.3 A Simple C Extension Module"-->
+<link rel="STYLESHEET" type="text/css" href="FILES/style.css">
+<link rel="STYLESHEET" type="text/css" href="FILES/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+	<a href="0596000855_python2-CHP-19-SECT-2.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+	<a href="0596000855_python2-CHP-19-SECT-4.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr>
+<td valign="top"><A NAME="python2-CHP-19-SECT-3"></A>
+<H3 class="docSection1Title">19.3 A Simple C Extension Module</H3>
+
+<P class="docText"><A NAME="python2-IDXTERM-2206"></A>At least that's the short
+story; we need to turn to some code to make this more concrete. C
+types generally export a C module with a constructor function.
+Because of that (and because they are simpler), let's start off
+by studying the basics of C <span class="docEmphasis">module</span> coding with a
+quick example.
+</P>
+
+<P class="docText"><A NAME="IXT-19-338152"></A>
+<A NAME="IXT-19-338153"></A>
+<A NAME="IXT-19-338154"></A>When you add new or existing C
+components to Python, you need to code an interface (or
+"glue") logic layer in C that handles cross-language
+dispatching and data translation. The C source file in <A class="docLink" HREF="#python2-CHP-19-EX-1">Example 19-1</A> shows how to code one by hand. It implements a
+simple C extension module named <TT>hello</TT> for use in
+Python scripts, with a function named <TT>message</TT> that
+simply returns its input string argument with extra text prepended.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-19-EX-1"></A>Example 19-1. PP2E\Integrate\Extend\Hello\hello.c </H5>
+<PRE>/******************************************************************** 
+ * A simple C extension module for Python, called "hello"; compile
+ * this into a ".so" on python path, import and call hello.message;
+ ********************************************************************/
+
+#include &lt;Python.h&gt;
+#include &lt;string.h&gt;
+
+/* module functions */
+static PyObject *                                 /* returns object */
+message(PyObject *self, PyObject *args)           /* self unused in modules */
+{                                                 /* args from python call */
+    char *fromPython, result[64];
+    if (! PyArg_Parse(args, "(s)", &amp;fromPython))  /* convert Python -&gt; C */
+        return NULL;                              /* null=raise exception */
+    else {
+        strcpy(result, "Hello, ");                /* build up C string */
+        strcat(result, fromPython);               /* add passed Python string */
+        return Py_BuildValue("s", result);        /* convert C -&gt; Python */
+    }
+}
+
+/* registration table  */
+static struct PyMethodDef hello_methods[] = {
+    {"message", message, 1},       /* method name, C func ptr, always-tuple */
+    {NULL, NULL}                   /* end of table marker */
+};
+,
+/* module initializer */
+void inithello(  )                       /* called on first import */
+{                                      /* name matters if loaded dynamically */
+    (void) Py_InitModule("hello", hello_methods);   /* mod name, table ptr */
+}</PRE>
+
+
+<P class="docText"><A NAME="IXT-19-338155"></A>Ultimately,
+Python code will call this C file's <TT>message</TT>
+function with a string object and get a new string object back.
+First, though, it has to be somehow linked into the Python
+interpreter. To use this C file in a Python script, compile it into a
+dynamically loadable object file (e.g., <I>hello.so</I>
+on Linux) with a makefile like the one listed in <A class="docLink" HREF="#python2-CHP-19-EX-2">Example 19-2</A>, and drop the resulting object file into a
+directory listed on your PYTHONPATH module search path setting
+exactly as though it were a .<I>py</I> or
+.<I>pyc</I> file.<sup class="docFootnote"><A class="docLink" HREF="#">[2]</A></sup><A NAME="IXT-19-338156"></A>
+</P>
+<blockquote><p class="docFootnote"><sup><A NAME="">[2]</A></sup> Because Python always
+searches the current working directory on imports, this
+chapter's examples will run from the directory you compile them
+in (".") without any file copies or moves. Being on
+PYTHONPATHmatters more in larger programs and
+installs.</p></blockquote>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-19-EX-2"></A>Example 19-2. PP2E\Integrate\Extend\Hello\makefile.hello </H5>
+<PRE>#############################################################
+# Compile hello.c into a shareable object file on Linux,
+# to be loaded dynamically when first imported by Python.
+# MYPY is the directory where your Python header files live.
+#############################################################
+
+PY = $(MYPY)
+
+hello.so: hello.c
+	gcc hello.c -g -I$(PY)/Include -I$(PY) -fpic -shared -o hello.so
+
+clean:
+	rm -f hello.so core</PRE>
+
+
+<P class="docText"><A NAME="IXT-19-338157"></A>This is a Linux makefile (other
+platforms will vary); to use it to build the extension module, simply
+type <TT>make</TT> <TT>-f</TT>
+<TT>makefile.hello</TT> at your shell. Be sure to include
+the path to Python's install directory with
+<TT>-I</TT> flags to access Python include (a.k.a.
+"header") files. When compiled this way, Python
+automatically loads and links the C module when it is first imported
+by a Python script.
+</P>
+
+<P class="docText">Finally, to call the C function from a Python program, simply import
+module <TT>hello</TT> and call its
+<TT>hello.message</TT> function with a string:
+</P>
+
+<PRE>[mark@toy ~/.../PP2E/Integrate/Extend/Hello]$ <B>make -f makefile.hello</B>
+
+[mark@toy ~/.../PP2E/Integrate/Extend/Hello]$ <B>python</B>
+&gt;&gt;&gt; <B>import hello                                   </B># import a C module
+&gt;&gt;&gt; <B>hello.message('world')</B>                         # call a C function
+'Hello, world'
+&gt;&gt;&gt; <B>hello.message('extending')</B>
+'Hello, extending'</PRE>
+
+<P class="docText"><A NAME="IXT-19-338158"></A>And
+that's it -- you've just called an integrated C
+module's function from Python. The most important thing to
+notice here is that the C function looks exactly as if it were coded
+in Python. Python callers send and receive normal string objects from
+the call; the Python interpreter handles routing calls to the C
+function, and the C function itself handles Python/C data conversion
+chores.
+</P>
+
+<P class="docText">In fact, there is little to distinguish <TT>hello</TT> as a
+C extension module at all, apart from its filename. Python code
+imports the module and fetches its attributes as if it had been
+written in Python. C extension modules even respond to
+<TT>dir</TT> calls as usual, and have the standard module
+and filename attributes (though the filename doesn't end in a
+<I>.py</I> or <I>.pyc</I> this time
+around):
+</P>
+
+<PRE>&gt;&gt;&gt; <B>dir(hello)</B>                                     # C module attributes
+['__doc__', '__file__', '__name__', 'message']
+
+&gt;&gt;&gt; <B>hello.__name__, hello.__file__</B>
+('hello', './hello.so')
+
+&gt;&gt;&gt; <B>hello.message</B>                                  # a C function object
+&lt;built-in function message&gt;
+&gt;&gt;&gt; <B>hello                     </B>                     # a C module object
+&lt;module 'hello' from './hello.so'&gt;</PRE>
+
+<P class="docText">Like any module in Python, you can also access the C extension from a
+script file. The Python file in <A class="docLink" HREF="#python2-CHP-19-EX-3">Example 19-3</A>, for
+instance, imports and uses the C extension module.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-19-EX-3"></A>Example 19-3. PP2E\Integrate\Extend\Hello\hellouse.py </H5>
+<PRE>import hello
+
+print hello.message('C')
+print hello.message('module ' + hello.__file__)
+
+for i in range(3):
+    print hello.message(str(i))</PRE>
+
+
+<P class="docText">Run this script as any other -- when the script first imports
+module <TT>hello</TT>, Python automatically finds the C
+module's .<I>so</I> object file in a directory on
+PYTHONPATH and links it into the process dynamically. All of this
+script's output represents strings returned from the C function
+in file <I>hello.c </I>:
+</P>
+
+<PRE>[mark@toy ~/.../PP2E/Integrate/Extend/Hello]$ <B>python hellouse.py</B>
+Hello, C
+Hello, module ./hello.so
+Hello, 0
+Hello, 1
+Hello, 2</PRE>
+
+<A NAME="python2-CHP-19-SECT-3.1"></A>
+<H4 class="docSection2Title">19.3.1 Compilation and Linking</H4>
+
+<P class="docText"><A NAME="IXT-19-338159"></A>
+<A NAME="IXT-19-338160"></A>
+<A NAME="IXT-19-338161"></A>
+<A NAME="IXT-19-338162"></A>Now that I've shown you the somewhat
+longer story, let's fill in the rest of the details. You always
+must compile and somehow link C extension files like the
+<I>hello.c</I> example with the Python interpreter to
+make them accessible to Python scripts, but there is some flexibility
+on how you go about doing so. For example, the following rule could
+be used to compile this C file on Linux
+too:<A NAME="IXT-19-338163"></A>
+</P>
+
+<PRE>hello.so: hello.c
+    gcc hello.c -c -g -fpic -I$(PY)/Include -I$(PY) -o hello.o
+    gcc -shared hello.o -o hello.so
+    rm -f hello.o</PRE>
+
+<P class="docText">To compile the C file into a shareable object file on Solaris, you
+might instead say something like this:
+</P>
+
+<PRE>hello.so: hello.c
+    cc hello.c -c -KPIC -o hello.o
+    ld -G hello.o -o hello.so
+    rm hello.o</PRE>
+
+<P class="docText">On other platforms, it's more different still. Because compiler
+options vary widely, you'll have to consult your C or C++
+compiler's documentation or Python's extension manuals
+for platform- and compiler-specific details. The point is to
+determine how to compile a C source file into your platform's
+notion of a shareable or dynamically loaded object file. Once you
+have, the rest is easy; Python supports dynamic loading of C
+extensions on all major platforms today.
+</P>
+
+<A NAME="python2-CHP-19-SECT-3.1.1"></A>
+<H5 class="docSection3Title">19.3.1.1 Dynamic binding</H5>
+
+<P class="docText"><A NAME="IXT-19-338164"></A>
+<A NAME="IXT-19-338165"></A>Technically, what I've been
+showing you so far is called "dynamic binding," and
+represents one of two ways to link compiled C extensions with the
+Python interpreter. Since the alternative, "static
+binding," is more complex, dynamic binding is almost always the
+way to go. To bind dynamically, simply:
+</P>
+
+<span style="font-weight:bold"><OL class="docList" TYPE="1">
+<LI><span style="font-weight:normal"><P class="docList">Compile <I>hello.c</I> into a shareable object file</P></span></LI>
+<LI><span style="font-weight:normal"><P class="docList">Put the object file in a directory on Python's module search
+path
+</P></span></LI>
+</OL></span>
+<P class="docText">That is, once you've compiled the source code file into a
+shareable object file, simply copy or move the object file to a
+directory listed in PYTHONPATH. It will be automatically loaded and
+linked by the Python interpreter at runtime when the module is first
+imported anywhere in the Python process (e.g., from the interactive
+prompt, a standalone or embedded Python program, or a C API call).
+</P>
+
+<P class="docText">Notice that the only non-<TT>static</TT> name in the
+<I>hello.c</I> example C file is the initialization
+function. Python calls this function by name after loading the object
+file, so its name must be a C global and should generally be of the
+form "initX", where "X" is both the name of
+the module in Python import statements and the name passed to
+<TT>Py_InitModule</TT>. All other names in C extension
+files are arbitrary, because they are accessed by C pointer, not by
+name (more on this later). The name of the C source file is arbitrary
+too -- at import time, Python cares only about the compiled object
+file.
+</P>
+
+
+
+<A NAME="python2-CHP-19-SECT-3.1.2"></A>
+<H5 class="docSection3Title">19.3.1.2 Static binding</H5>
+
+<P class="docText"><A NAME="IXT-19-338166"></A>Under static
+binding, extensions are added to the Python interpreter permanently.
+This is more complex, though, because you must rebuild Python itself,
+and hence need access to the Python source distribution (an
+interpreter executable won't do). To link this example
+statically, add a line like:
+</P>
+
+<PRE>hello ~/PP2E/Integrate/Extend/Hello/hello.c</PRE>
+
+<P class="docText">to the <TT>Modules/Setup</TT> configuration file in the
+Python source code tree. Alternatively, you can copy your C file to
+the <TT>Modules</TT> directory (or add a link to it there
+with an <I>ln</I> command) and add a line to
+<TT>Setup</TT> like <TT>hello hello.c</TT>.
+</P>
+
+<P class="docText">Then, rebuild Python itself by running a <I>make</I>
+command at the top level of the Python source tree. Python
+reconstructs its own makefiles to include the module you added to
+<TT>Setup</TT>, such that your code becomes part of the
+interpreter and its libraries. In fact, there's really no
+distinction between C extensions written by Python users and services
+that are a standard part of the language; Python is built with this
+same interface. The full format of module declaration lines looks
+like this (but see the <TT>Modules/Setup</TT> configuration
+file for more details):
+</P>
+
+<PRE>&lt;module&gt; ... [&lt;sourceOrObjectFile&gt; ...] [&lt;cpparg&gt; ...] [&lt;library&gt; ...]</PRE>
+
+<P class="docText">Under this scheme, the name of the module's initialization
+function must match the name used in the <TT>Setup</TT>
+file, or you'll get linking errors when you rebuild Python. The
+name of the source or object file doesn't have to match the
+module name; the leftmost name is the resulting Python module's
+name.
+</P>
+
+
+
+<A NAME="python2-CHP-19-SECT-3.1.3"></A>
+<H5 class="docSection3Title">19.3.1.3 Static versus dynamic binding</H5>
+
+<P class="docText"><A NAME="IXT-19-338167"></A>Static binding works on any platform
+and requires no extra makefile to compile extensions. It can be
+useful if you don't want to ship extensions as separate files,
+or if you're on a platform without dynamic linking support. Its
+downsides are that you need to update the Python
+<TT>Setup</TT> configuration file and rebuild the Python
+interpreter itself, so you must therefore have the full source
+distribution of Python to use static linking at all. Moreover, all
+statically linked extensions are always added to your interpreter,
+whether or not they are used by a particular program. This can
+needlessly increase the memory needed to run all Python programs.
+</P>
+
+<P class="docText">With dynamic binding, you still need Python include files, but can
+add C extensions even if all you have is a binary Python interpreter
+executable. Because extensions are separate object files, there is no
+need to rebuild Python itself or to access the full source
+distribution. And because object files are only loaded on demand in
+this mode, it generally makes for smaller executables
+too -- Python loads into memory only the extensions actually
+imported by each program run. In other words, if you can use dynamic
+linking on your platform, you probably should.
+</P>
+
+
+
+<A NAME="python2-CHP-19-SECT-3.2"></A>
+<H4 class="docSection2Title">19.3.2 Anatomy of a C Extension Module</H4>
+
+<P class="docText"><A NAME="IXT-19-338168"></A>Though simple, the
+<I>hello.c</I> example illustrates the structure common
+to all C modules. This structure can vary somewhat, but this file
+consists of fairly typical boilerplate code:
+</P>
+
+<A NAME="IXT-19-338169"></A><A NAME="IXT-19-338170"></A><A NAME="IXT-19-338171"></A><A NAME="IXT-19-338172"></A><A NAME="IXT-19-338173"></A><A NAME="IXT-19-338174"></A><A NAME="IXT-19-338175"></A><A NAME="IXT-19-338176"></A><A NAME="IXT-19-338177"></A><A NAME="IXT-19-338178"></A><DL class="docList">
+<DT><I><span class="docPubcolor">Python header files</span></I></DT>
+<DD>
+<P class="docList"><A NAME="IXT-19-338169"></A>
+<A NAME="IXT-19-338170"></A>
+<A NAME="IXT-19-338171"></A>The C file first includes the standard
+<I>Python.h</I> header file (from the installed Python
+<TT>Include</TT> directory). This file defines almost every
+name exported by the Python API to C, and serves as a starting point
+for exploring the API itself.
+</P>
+</DD><DT><I><span class="docPubcolor">Method functions</span></I></DT>
+<DD>
+<P class="docList"><A NAME="IXT-19-338172"></A>
+<A NAME="IXT-19-338173"></A>The
+file then defines a function to be called from the Python interpreter
+in response to calls in Python programs. C functions receive two
+Python objects as input, and send either a Python object back to the
+interpreter as the result, or a <TT>NULL</TT> to trigger an
+exception in the script (more on this later). In C, a
+<TT>PyObject*</TT> represents a generic Python object
+pointer; you can use more specific type names, but don't always
+have to. C module functions can all be declared C
+"static" (local to the file), because Python calls them
+by pointer, not name.
+</P>
+</DD><DT><I><span class="docPubcolor">Registration table</span></I></DT>
+<DD>
+<P class="docList"><A NAME="IXT-19-338174"></A>
+<A NAME="IXT-19-338175"></A>Near
+the end, the file provides an initialized table (array) that maps
+function <span class="docEmphasis">names</span> to function
+<span class="docEmphasis">pointers</span> (addresses). Names in this table become
+module attribute names that Python code uses to call the C functions.
+Pointers in this table are used by the interpreter to dispatch C
+function calls. In effect, the table "registers"
+attributes of the module. A <TT>NULL</TT> entry terminates
+the table.
+</P>
+</DD><DT><I><span class="docPubcolor">Initialization function</span></I></DT>
+<DD>
+<P class="docList"><A NAME="IXT-19-338176"></A>
+<A NAME="IXT-19-338177"></A>Finally,
+the C file provides an initialization function, which Python calls
+the first time this module is imported into a Python program. This
+function calls the API function <TT>Py_InitModule</TT> to
+build up the new module's attribute dictionary from the entries
+in the registration table and create an entry for the C module on the
+<TT>sys.modules</TT> table (described in <A class="docLink" HREF="0596000855_python2-CHP-12.html#python2-CHP-12">Chapter 12</A>). Once so initialized, calls from
+Python are routed directly to the C function through the registration
+table's function pointers. <A NAME="IXT-19-338178"></A>
+</P>
+</DD>
+</DL>
+
+
+<A NAME="python2-CHP-19-SECT-3.3"></A>
+<H4 class="docSection2Title">19.3.3 Data conversions</H4>
+
+<P class="docText"><A NAME="python2-IDXTERM-2234"></A> <A NAME="python2-IDXTERM-2235"></A><A NAME="python2-IDXTERM-2236"></A> <A NAME="python2-IDXTERM-2237"></A> <A NAME="python2-IDXTERM-2238"></A>C
+module functions are responsible for converting Python objects to and
+from C datatypes. In <A class="docLink" HREF="#python2-CHP-19-EX-1">Example 19-1</A>,
+<TT>message</TT> gets two Python input objects passed from
+the Python interpreter: <TT>args</TT> is a Python tuple
+holding the arguments passed from the Python caller (the values
+listed in parentheses in a Python program), and
+<TT>self</TT> is ignored; it is useful only for extension
+<span class="docEmphasis">types</span> (discussed later in this chapter).
+</P>
+
+<P class="docText">After finishing its business, the C function can return any of the
+following to the Python interpreter: a Python object (known in C as
+<TT>PyObject*</TT>), for an actual result; a Python
+<TT>None</TT>, (known in C as <TT>Py_None</TT>),
+if the function returns no real result; or a C
+<TT>NULL</TT> pointer, to flag an error and raise a Python
+exception.
+</P>
+
+<P class="docText">There are distinct API tools for handling input conversions (Python
+to C) and output conversions (C to Python). It's up to C
+functions to implement their call signatures (argument lists and
+types) by using these tools properly.
+</P>
+
+<A NAME="python2-CHP-19-SECT-3.3.1"></A>
+<H5 class="docSection3Title">19.3.3.1 Python to C: Using Python argument lists</H5>
+
+<P class="docText"><A NAME="IXT-19-338179"></A>When the C
+function is run, the arguments passed from a Python script are
+available in the <TT>args</TT> Python tuple object. The API
+function <TT>PyArg_Parse</TT>(and
+<TT>PyArg_ParseTuple</TT>, its cousin that assumes it is
+converting a tuple object) is probably the easiest way to extract and
+convert passed arguments to C
+form.<A NAME="IXT-19-338180"></A>
+</P>
+
+<P class="docText"><TT>PyArg_Parse</TT> takes a Python object, a format
+string, and a variable-length list of C target addresses. It converts
+the items in the tuple to C datatype values according to the format
+string, and stores the results in the C variables whose addresses are
+passed in. The effect is much like C's <TT>scanf</TT>
+string function. For example, the <TT>hello</TT> module
+converts a passed-in Python string argument to a C
+<TT>char*</TT> using the <TT>s</TT> convert code:
+</P>
+
+<PRE>PyArg_Parse(args, "(s)", &amp;fromPython)      # or PyArg_ParseTuple(args, "s",...</PRE>
+
+<P class="docText">To handle multiple arguments, simply string format codes together and
+include corresponding C targets for each code in the string. For
+instance, to convert an argument list holding a string, an integer,
+and another string to C, say this:
+</P>
+
+<PRE>PyArg_Parse(args, "(sis)", &amp;s1, &amp;i, &amp;s2)   # or PyArg_ParseTuple(args, "sis",...</PRE>
+
+<P class="docText"><A NAME="IXT-19-338181"></A>To verify
+that no arguments were passed, use an empty format string like this:
+<TT>PyArg_Parse(args,</TT> <TT>"( )")</TT>. This
+API call checks that the number and types of the arguments passed
+from Python matches the format string in the call. If there is a
+mismatch, it sets an exception and returns zero to C (more on errors
+below).
+</P>
+
+
+
+<A NAME="python2-CHP-19-SECT-3.3.2"></A>
+<H5 class="docSection3Title">19.3.3.2 Python to C: Using Python return values</H5>
+
+<P class="docText"><A NAME="IXT-19-338182"></A>
+<A NAME="IXT-19-338183"></A>As we'll see in <A class="docLink" HREF="0596000855_python2-CHP-20.html#python2-CHP-20">Chapter 20</A>,
+<span class="docEmphasis">Embedding Python</span>, API functions may also return
+Python objects to C as results when Python is being run as an
+embedded language. Converting Python return values in this mode is
+almost the same as converting Python arguments passed to C extension
+functions, except that Python return values are not always tuples. To
+convert returned Python objects to C form, simply use
+<TT>PyArg_Parse</TT>. Unlike
+<TT>PyArg_ParseTuple</TT>, this call takes the same kinds
+of arguments but doesn't expect the Python object to be a
+tuple.
+</P>
+
+
+
+<A NAME="python2-CHP-19-SECT-3.3.3"></A>
+<H5 class="docSection3Title">19.3.3.3 C to Python: Returning values to Python</H5>
+
+<P class="docText"><A NAME="IXT-19-338184"></A>There are
+two ways to convert C data to Python objects: by using type-specific
+API functions, or the general object-builder function
+<TT>Py_BuildValue</TT>. The latter is more general, and is
+essentially the inverse of <TT>PyArg_Parse</TT>, in that
+<TT>Py_BuildValue</TT> converts C data to Python objects
+according to a format string. For instance, to make a Python string
+object from a C <TT>char*</TT>, the
+<TT>hello</TT> module uses an <TT>s</TT> convert
+code:
+</P>
+
+<PRE>return Py_BuildValue("s", result)            # "result" is a C char []/*</PRE>
+
+<P class="docText">More specific object constructors can be used instead:</P>
+
+<PRE>return PyString_FromString(result)           # same effect</PRE>
+
+<P class="docText">Both calls make a Python string object from a C character array
+pointer. See the now-standard Python extension and runtime API
+manuals for an exhaustive list of such calls available. Besides being
+easier to remember, though, <TT>Py_BuildValue</TT> has
+syntax that allows you to build lists in a single step, described
+next.
+</P>
+
+
+
+<A NAME="python2-CHP-19-SECT-3.3.4"></A>
+<H5 class="docSection3Title">19.3.3.4 Common conversion codes</H5>
+
+<P class="docText"><A NAME="IXT-19-338185"></A><A NAME="IXT-19-338186"></A><A NAME="IXT-19-338187"></A>With a
+few exceptions, <TT>PyArg_Parse(Tuple)</TT> and
+<TT>Py_BuildValue</TT> use the same conversion codes in
+format strings. A list of all supported conversion codes appears in
+Python's extension manuals. The most commonly used are shown in
+<A class="docLink" HREF="#python2-CHP-19-TABLE-1">Table 19-1</A>; the tuple, list, and dictionary formats
+can be nested.
+</P>
+
+<A NAME="python2-CHP-19-TABLE-1"></A><P><TABLE BORDER="1" CELLSPACING="0" CELLPADDING="1" WIDTH="100%">
+<CAPTION><h5 class="docTableTitle">Table 19-1. Common Python/C Data Conversion Codes </h5></CAPTION><COLGROUP span="3">
+<TR>
+<TH class="docTableHeader">
+<P class="docText">Format-String Code</P>
+</TH>
+<TH class="docTableHeader">
+<P class="docText">C Datatype</P>
+</TH>
+<TH class="docTableHeader">
+<P class="docText">Python Object Type</P>
+</TH>
+</TR>
+<TR>
+<TD class="docTableCell">
+<P class="docText"><TT>s</TT></P>
+</TD>
+<TD class="docTableCell">
+<P class="docText"><TT>char*</TT></P>
+</TD>
+<TD class="docTableCell">
+<P class="docText">String</P>
+</TD>
+</TR>
+<TR>
+<TD class="docTableCell">
+<P class="docText"><TT>s#</TT></P>
+</TD>
+<TD class="docTableCell">
+<P class="docText"><TT>char*, int</TT></P>
+</TD>
+<TD class="docTableCell">
+<P class="docText">String, length</P>
+</TD>
+</TR>
+<TR>
+<TD class="docTableCell">
+<P class="docText"><TT>i</TT></P>
+</TD>
+<TD class="docTableCell">
+<P class="docText"><TT>int</TT></P>
+</TD>
+<TD class="docTableCell">
+<P class="docText">Integer</P>
+</TD>
+</TR>
+<TR>
+<TD class="docTableCell">
+<P class="docText"><TT>l</TT></P>
+</TD>
+<TD class="docTableCell">
+<P class="docText"><TT>long int</TT></P>
+</TD>
+<TD class="docTableCell">
+<P class="docText">Integer</P>
+</TD>
+</TR>
+<TR>
+<TD class="docTableCell">
+<P class="docText"><TT>c</TT></P>
+</TD>
+<TD class="docTableCell">
+<P class="docText"><TT>char</TT></P>
+</TD>
+<TD class="docTableCell">
+<P class="docText">String</P>
+</TD>
+</TR>
+<TR>
+<TD class="docTableCell">
+<P class="docText"><TT>f</TT></P>
+</TD>
+<TD class="docTableCell">
+<P class="docText"><TT>float</TT></P>
+</TD>
+<TD class="docTableCell">
+<P class="docText">Floating-point</P>
+</TD>
+</TR>
+<TR>
+<TD class="docTableCell">
+<P class="docText"><TT>d</TT></P>
+</TD>
+<TD class="docTableCell">
+<P class="docText"><TT>double</TT></P>
+</TD>
+<TD class="docTableCell">
+<P class="docText">Floating-point</P>
+</TD>
+</TR>
+<TR>
+<TD class="docTableCell">
+<P class="docText"><TT>O</TT></P>
+</TD>
+<TD class="docTableCell">
+<P class="docText"><TT>PyObject*</TT></P>
+</TD>
+<TD class="docTableCell">
+<P class="docText">Raw (unconverted) object</P>
+</TD>
+</TR>
+<TR>
+<TD class="docTableCell">
+<P class="docText"><TT>O&amp;</TT></P>
+</TD>
+<TD class="docTableCell">
+<P class="docText"><TT>&amp;converter</TT>, <TT>void*</TT></P>
+</TD>
+<TD class="docTableCell">
+<P class="docText">Converted object (calls converter)</P>
+</TD>
+</TR>
+<TR>
+<TD class="docTableCell">
+<P class="docText"><TT>(</TT><span class="docEmphasis">items</span><TT>)</TT></P>
+</TD>
+<TD class="docTableCell">
+<P class="docText">Targets or values</P>
+</TD>
+<TD class="docTableCell">
+<P class="docText">Nested tuple</P>
+</TD>
+</TR>
+<TR>
+<TD class="docTableCell">
+<P class="docText"><TT>[</TT><span class="docEmphasis">items</span><TT>]</TT></P>
+</TD>
+<TD class="docTableCell">
+<P class="docText">Series of arguments/values</P>
+</TD>
+<TD class="docTableCell">
+<P class="docText">List</P>
+</TD>
+</TR>
+<TR>
+<TD class="docTableCell">
+<P class="docText"><TT>{</TT><span class="docEmphasis">items</span><TT>}</TT></P>
+</TD>
+<TD class="docTableCell">
+<P class="docText">Series of <TT>key,value</TT> arguments</P>
+</TD>
+<TD class="docTableCell">
+<P class="docText">Dictionary</P>
+</TD>
+</TR>
+</COLGROUP>
+</TABLE></P>
+
+<P class="docText">These codes are mostly what you'd expect (e.g.,
+<TT>i</TT> maps between a C <TT>int</TT> and a
+Python integer object), but here are a few usage notes on this
+table's entries:
+</P>
+
+<UL>
+<LI><P class="docList">Pass in the address of a <TT>char*</TT> for
+<TT>s</TT> codes when converting <span class="docEmphasis">to</span> C,
+not the address of a <TT>char</TT> array: Python copies out
+the address of an existing C string (and you must copy it to save it
+indefinitely on the C side: use <TT>strdup</TT>).
+</P></LI>
+<LI><P class="docList">The <TT>O</TT> code is useful to pass raw Python objects
+between languages; once you have a raw object pointer, you can use
+lower-level API tools to access object attributes by name, index and
+slice sequences, and so on.
+</P></LI>
+<LI><P class="docList">The <TT>O&amp;</TT> code lets you pass in C converter
+functions for custom conversions. This comes in handy for special
+processing to map an object to a C datatype not directly supported by
+conversion codes (for instance, when mapping to or from an entire C
+struct or C++ class-instance). See the extensions manual for more
+details.
+</P></LI>
+<LI><P class="docList">The last two entries, <TT>[...]</TT> and
+<TT>{...}</TT>, are currently supported only by
+<TT>Py_BuildValue</TT>: you can construct lists and
+dictionaries with format strings, but can't unpack them.
+Instead, the API includes type-specific routines for accessing
+sequence and mapping components given a raw object pointer.
+</P></LI>
+</UL>
+<P class="docText"><TT>PyArg_Parse</TT>supports some
+extra codes, which must not be nested in tuple formats
+(<TT>(...)</TT>):
+</P>
+
+<DL class="docList">
+<DT><span class="docPubcolor"><span class="docPubcolor"><span class="docMonofont">|</span></span></span></DT>
+<DD>
+<P class="docList">The remaining arguments are all optional
+(<span class="docEmphasis">varargs</span>). The C targets are unchanged if
+arguments are missing in the Python tuple. For instance,
+<TT>si|sd</TT> requires two arguments but allows up to
+four.
+</P>
+</DD><DT><span class="docPubcolor"><span class="docPubcolor"><span class="docMonofont">:</span></span></span></DT>
+<DD>
+<P class="docList">The function name follows, for use in error messages set by the call
+(argument mismatches). Normally Python sets the error message to a
+generic string.
+</P>
+</DD><DT><span class="docPubcolor"><span class="docPubcolor"><span class="docMonofont">;</span></span></span></DT>
+<DD>
+<P class="docList">A full error message follows, running to the end of the format string.</P>
+</DD>
+</DL>
+
+<P class="docText">This format code list isn't exhaustive, and the set of convert
+codes may expand over time; refer to Python's extension manual
+for further details.<A NAME="IXTR3-517"></A> <A NAME="IXTR3-518"></A> <A NAME="IXTR3-519"></A><A NAME="IXTR3-520"></A> <A NAME="IXTR3-521"></A>
+</P>
+
+
+
+<A NAME="python2-CHP-19-SECT-3.4"></A>
+<H4 class="docSection2Title">19.3.4 Error Handling</H4>
+
+<P class="docText">When you write C extensions, you need to be aware that errors can
+occur on either side of the languages fence. The following sections
+address both possibilities.
+</P>
+
+<A NAME="python2-CHP-19-SECT-3.4.1"></A>
+<H5 class="docSection3Title">19.3.4.1 Raising Python exceptions in C</H5>
+
+<P class="docText"><A NAME="IXT-19-338188"></A>
+<A NAME="IXT-19-338189"></A>C extension module functions return a C
+<TT>NULL</TT> value for the result object to flag an error.
+When control returns to Python, the <TT>NULL</TT> result
+triggers a normal Python exception in the Python code that called the
+C function. To name an exception, C code can also set the type and
+extra data of the exceptions it triggers. For instance, the
+<TT>PyErr_SetString</TT> API function sets the exception
+object to a Python object and sets the exception's extra data
+to a character string:
+<A NAME="IXT-19-338190"></A>
+</P>
+
+<PRE>PyErr_SetString(ErrorObject, message)</PRE>
+
+<P class="docText">We will use this in the next example to be more specific about
+exceptions raised when C detects an error. C modules may also set a
+built-in Python exception; for instance, returning
+<TT>NULL</TT> after saying this:
+</P>
+
+<PRE>PyErr_SetString(PyExc_IndexError, "index out-of-bounds")</PRE>
+
+<P class="docText">raises a standard Python <TT>IndexError</TT> exception with
+the message string data. When an error is raised inside a Python API
+function, both the exception object and its associated "extra
+data" are automatically set by Python; there is no need to set
+it again in the calling C function. For instance, when an
+argument-passing error is detected in the
+<TT>PyArg_Parse</TT>function, the
+<TT>hello</TT> stack module just returns
+<TT>NULL</TT> to propagate the exception to the enclosing
+Python layer, instead of setting its own
+message.<A NAME="IXT-19-338191"></A>
+</P>
+
+
+
+<A NAME="python2-CHP-19-SECT-3.4.2"></A>
+<H5 class="docSection3Title">19.3.4.2 Detecting errors that occur in Python</H5>
+
+<P class="docText">Python API functions may be called from C extension functions, or
+from an enclosing C layer when Python is embedded. In either case, C
+callers simply check the return value to detect errors raised in
+Python API functions. For pointer result functions, Python returns
+<TT>NULL</TT> pointers on errors. For integer result
+functions, Python generally returns a status code of -1 to flag an
+error and a
+or positive value on success. (<TT>PyArg_Parse</TT> is an
+exception to this rule: it returns
+when it detects an error.) To make your programs robust, you should
+check return codes for error indicators after most Python API calls;
+some calls can fail for reasons you may not have expected (e.g.,
+memory overflow).
+</P>
+
+
+
+<A NAME="python2-CHP-19-SECT-3.5"></A>
+<H4 class="docSection2Title">19.3.5 Reference Counts</H4>
+
+<P class="docText"><A NAME="IXT-19-338192"></A><A NAME="IXT-19-338193"></A>The Python interpreter uses a
+reference-count scheme to implement garbage collection. Each Python
+object carries a count of the number of places it is referenced; when
+that count reaches zero, Python reclaims the object's memory
+space automatically. Normally, Python manages the reference counts
+for objects behind the scenes; Python programs simply make and use
+objects without concern for managing storage space.
+</P>
+
+<P class="docText">When extending or embedding Python, though, integrated C code is
+responsible for managing the reference counts of the Python objects
+it uses. How important this becomes depends on how many raw Python
+objects a C module processes and which Python API functions it calls.
+In simple programs, reference counts are of minor, if any, concern;
+the <TT>hello</TT> module, for instance, makes no
+reference-count management calls at all.
+</P>
+
+<P class="docText">When the API is used extensively, however, this task can become
+significant. In later examples, we'll see calls of these forms
+show up:
+</P>
+
+<UL>
+<LI><P class="docList"><A NAME="IXT-19-338194"></A><TT>Py_INCREF(obj)</TT>
+increments an object's reference count.
+</P></LI>
+<LI><P class="docList"><TT>Py_DECREF(obj)</TT> decrements an object's
+reference count (reclaim if zero).
+<A NAME="IXT-19-338195"></A>
+</P></LI>
+<LI><P class="docList"><TT>Py_XINCREF(obj)</TT> is similar to
+<TT>Py_INCREF(obj)</TT>, but ignores a
+<TT>NULL</TT> object pointer.
+</P></LI>
+<LI><P class="docList"><TT>Py_XDECREF(obj)</TT> is similar to
+<TT>py_DECREF(obj)</TT>, but ignores a
+<TT>NULL</TT> object pointer.
+<A NAME="IXT-19-338196"></A>
+</P></LI>
+</UL>
+<P class="docText">C module functions are expected to return either an object with an
+incremented reference count, or <TT>NULL</TT> to signal an
+error. As a general rule, API functions that create new objects
+increment their reference counts before returning them to C; unless a
+new object is to be passed back to Python, the C program that creates
+it should eventually decrement the object's counts. In the
+extending scenario, things are relatively simple; argument object
+reference counts need not be decremented, and new result objects are
+passed back to Python with their reference counts intact.
+</P>
+
+<P class="docText">The upside of reference counts is that Python will never reclaim a
+Python object held by C as long as C increments the object's
+reference count (or doesn't decrement the count on an object it
+owns). Although it requires counter management calls, Python's
+garbage collector scheme is fairly well-suited to C
+integration.<A NAME="IXTR3-522"></A> <A NAME="IXTR3-523"></A><A NAME="IXTR3-524"></A>
+</P>
+
+
+
+<a href="0596000855_"><img src="FILES/pixel.gif" width="1" height="1" border="0"></a><ul></ul>
+</td>
+</tr>
+</table>
+<td></td>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+          <a href="0596000855_python2-CHP-19-SECT-2.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+          <a href="0596000855_python2-CHP-19-SECT-4.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+</body></html>

@@ -1,0 +1,151 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;10.10.&nbsp;Blocking Duplicate Mails</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-10-sect-9.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-10-sect-11.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-10-SECT-10"></a>
+<h3 class="docSection1Title" id="409771-829">Recipe 10.10. Blocking Duplicate Mails</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Marina Pianu, Peter Cogolo</span></p>
+
+<a name="pythoncook2-CHP-10-SECT-10.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-10-ITERM-2635"></a>
+<a name="pythoncook2-CHP-10-ITERM-2636"></a>Many of the mails you receive are
+duplicates. You need to block the duplicates with a fast, simple
+filter before they reach a more time-consuming step, such as an
+anti-spam filter, in your email pipeline.</P>
+
+
+<a name="pythoncook2-CHP-10-SECT-10.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText"><a name="pythoncook2-CHP-10-ITERM-2637"></a> <a name="pythoncook2-CHP-10-ITERM-2638"></a>Many mail systems, such
+as the popular procmail, and KDE's KMail, enable you
+to control your mail-reception pipeline. Specifically, you can insert
+in the pipeline your filter programs, which get messages on standard
+input, may modify them, and emit them again on standard output. Here
+is one such filter, with the specific purpose of performing the task
+described in the Problemblocking messages that are duplicates
+of other messages that you have received recently:</p>
+
+<pre>#!/usr/bin/python
+import time, sys, os, email
+now = time.time( )
+# get archive of previously-seen message-ids and times
+kde_dir = os.expanduser('~/.kde')
+if not os.path.isdir(kde_dir):
+    os.mkdir(kde_dir)
+arfile = os.path.join(kde_dir, 'duplicate_mails')
+duplicates = {  }
+try:
+    archive = open(arfile)
+except IOError:
+    pass
+else:
+    for line in archive:
+        when, msgid = line[:-1].split(' ', 1)
+        duplicates[msgid] = float(when)
+    archive.close( )
+redo_archive = False
+# suck message in from stdin and study it
+msg = email.message_from_file(sys.stdin)
+msgid = msg['Message-ID']
+if msgid:
+    if msgid in duplicates:
+        # duplicate message: alter its subject
+        subject = msg['Subject']
+        if subject is None:
+            msg['Subject'] = '**** DUP **** ' + msgid
+        else:
+            del msg['Subject']
+            msg['Subject'] = '**** DUP **** ' + subject
+    else:
+        # non-duplicate message: redo the archive file
+        redo_archive = True
+        duplicates[msgid] = now
+else:
+    # invalid (missing message-id) message: alter its subject
+    subject = msg['Subject']
+    if subject is None:
+        msg['Subject'] = '**** NID **** '
+    else:
+        del msg['Subject']
+        msg['Subject'] = '**** NID **** ' + subject
+# emit message back to stdout
+print msg
+if redo_archive:
+    # redo archive file, keep only msgs from the last two hours
+    keep_last = now - 2*60*60.0
+    archive = file(arfile, 'w')
+    for msgid, when in duplicates.iteritems( ):
+        if when &gt; keep_last:
+            archive.write('%9.2f %s\n' % (when, what))
+    archive.close( )</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-10-SECT-10.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">Whether it is because of spammers' malice or
+incompetence, or because of hiccups at my Internet ISP (Internet
+service provider), at times I get huge amounts of duplicate messages
+that can overload my mail-reception pipeline, particularly antispam
+filters. Fortunately, like many other mail systems,
+KDE's KMail, the one I use, lets me insert my own
+filters in the mail reception pipeline. In particular, I can diagnose
+duplicate messages, alter their headers (I use
+"Subject" for clarity), and tell
+later stages in the filters' pipeline to throw away
+messages with such subjects or to shunt them aside into a dedicated
+mailbox for later perusal, without passing them on to the antispam
+and other filters.</P>
+
+<p class="docText"><a name="pythoncook2-CHP-10-ITERM-2639"></a>The
+<tt>email</tt> module from the Python Standard Library
+performs all the required parsing of the message and lets me access
+headers with dictionary-like indexing syntax. I need some
+"memory" of recently seen messages.
+Fortunately, I have noticed all duplicates happen within a few
+minutes of each other, so I don't have to keep that
+memory for longtwo hours are plenty. Therefore, I keep that
+memory in a simple text file, which records the time when a message
+was received and the message ID. I thought I might have to find a
+more advanced way to keep this kind of FIFO (first-in, first-out)
+archive, but I tried a simple approach firsta simple text file
+that is entirely rewritten whenever a new nonduplicate message
+arrives. This approach appears to perform quite adequately for my
+needs (at most a couple hundred messages an hour), even on my
+somewhat dated PC. "Do the simplest thing that could
+possibly work" strikes again!</p>
+
+
+<a name="pythoncook2-CHP-10-SECT-10.4"></a>
+<H4 class="docSection2Title">See Also</H4>
+
+<p class="docText">Documentation about package <tt>email</tt> and modules
+<tt>time</tt>, <tt>sys</tt> and
+<tt>os</tt> in the <span class="docEmphasis">Library Reference</span>
+and <span class="docEmphasis">Python in a Nutshell</span>.</p>
+
+
+
+<ul></ul></td></TR></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-10-sect-9.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-10-sect-11.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

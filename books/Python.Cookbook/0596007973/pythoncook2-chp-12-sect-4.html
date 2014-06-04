@@ -1,0 +1,162 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;12.4.&nbsp;Autodetecting XML Encoding</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-12-sect-3.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-12-sect-5.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-12-SECT-4"></a>
+<h3 class="docSection1Title">Recipe 12.4. Autodetecting XML Encoding</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Paul Prescod</span></p>
+
+<a name="pythoncook2-CHP-12-SECT-4.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-12-ITERM-2774"></a> <a name="pythoncook2-CHP-12-ITERM-2775"></a>You have XML documents that may
+use a large variety of Unicode encodings, and you need to find out
+which encoding each document is using.</P>
+
+
+<a name="pythoncook2-CHP-12-SECT-4.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">This task is one that we need to code ourselves, rather than getting
+an existing package to perform it, if we want complete generality:</p>
+
+<pre>import codecs, encodings
+""" Caller will hand this library a buffer string, and ask us to convert
+    the buffer, or autodetect what codec the buffer probably uses. """
+# 'None' stands for a potentially variable byte ("##" in the XML spec...)
+autodetect_dict={ # bytepattern          : ("name",
+                (0x00, 0x00, 0xFE, 0xFF) : ("ucs4_be"),
+                (0xFF, 0xFE, 0x00, 0x00) : ("ucs4_le"),
+                (0xFE, 0xFF, None, None) : ("utf_16_be"),
+                (0xFF, 0xFE, None, None) : ("utf_16_le"),
+                (0x00, 0x3C, 0x00, 0x3F) : ("utf_16_be"),
+                (0x3C, 0x00, 0x3F, 0x00) : ("utf_16_le"),
+                (0x3C, 0x3F, 0x78, 0x6D) : ("utf_8"),
+                (0x4C, 0x6F, 0xA7, 0x94) : ("EBCDIC"),
+                }
+def autoDetectXMLEncoding(buffer):
+    """ buffer -&gt; encoding_name
+        The buffer string should be at least four bytes long.
+        Returns None if encoding cannot be detected.
+        Note that encoding_name might not have an installed
+        decoder (e.g., EBCDIC)
+    """
+    # A more efficient implementation would not decode the whole
+    # buffer at once, but then we'd have to decode a character at
+    # a time looking for the quote character, and that's a pain
+    encoding = "utf_8" # According to the XML spec, this is the default
+                       # This code successively tries to refine the default:
+                       # Whenever it fails to refine, it falls back to
+                       # the last place encoding was set
+    <span class="docEmphBold">bytes = byte1, byte2, byte3, byte4 = map(ord, buffer[0:4])</span>
+    <span class="docEmphBold">enc_info = autodetect_dict.get(bytes, None)</span>
+    if not enc_info: # Try autodetection again, removing potentially
+                     # variable bytes
+        bytes = byte1, byte2, None, None
+        enc_info = autodetect_dict.get(bytes)
+    if enc_info:
+        encoding = enc_info # We have a guess...these are
+                            # the new defaults
+        # Try to find a more precise encoding using XML declaration
+        secret_decoder_ring = codecs.lookup(encoding)[1]
+        decoded, length = secret_decoder_ring(buffer)
+        first_line = decoded.split("\n", 1)[0]
+        if first_line and first_line.startswith(u"&lt;?xml"):
+            encoding_pos = first_line.find(u"encoding")
+            if encoding_pos!=-1:
+                # Look for double quotes
+                quote_pos = first_line.find('"', encoding_pos)
+                if quote_pos==-1:                 # Look for single quote
+                    quote_pos = first_line.find("'", encoding_pos)
+                if quote_pos&gt;-1:
+                    quote_char = first_line[quote_pos]
+                    rest = first_line[quote_pos+1:]
+                    encoding = rest[:rest.find(quote_char)]
+    return encoding</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-12-SECT-4.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">The XML specification describes the outline of an algorithm for
+detecting the Unicode encoding that an XML document uses. This recipe
+implements that algorithm and helps your XML-processing programs
+determine which encoding is being used by a specific document.</P>
+
+<p class="docText">The default encoding (unless we can determine another one
+specifically) must be UTF-8, as it is part of the specifications that
+define XML. Certain byte patterns in the first four, or sometimes
+even just the first two, bytes of the text can identify a different
+encoding. For example, if the text starts with the two bytes
+<tt>0xFF, 0xFE</tt> we can be certain that these bytes are
+a byte-order mark that identifies the encoding type as little-endian
+(low byte before high byte in each character) and the encoding itself
+as UTF-16 (or the 32-bits-per-character UCS-4, if the next two bytes
+in the text are <tt>0, 0</tt>).</p>
+
+<p class="docText">If we get as far as this, we must also examine the first line of the
+text. For this purpose, we decode the text from a bytestring into
+Unicode, with the encoding determined so far and detect the first
+line-end '<tt>\n</tt>' character. If the first line begins
+with <tt>u'&lt;?xml</tt>', it's an XML
+declaration and may explicitly specify an encoding by using the
+keyword <tt>encoding</tt> as an attribute. The nested
+<tt>if</tt> statements in the recipe check for that case,
+and, if they find an encoding thus specified, the recipe returns the
+encoding thus found as the encoding the recipe has determined. This
+step is absolutely crucial, since any text starting with the
+single-byte ASCII-like representation of the XML declaration,
+<tt>&lt;?xml</tt>, would be otherwise erroneously
+identified as encoded in UTF-8, while its explicit encoding attribute
+may specify it as being, for example, one of the ISO-8859 standard
+encodings.</P>
+
+<p class="docText">This recipe makes the assumption that, as the XML specs require, the
+XML declaration, if any, is terminated by an end-of-line character.
+If you need to deal with almost-XML documents that are malformed in
+this very specific way (i.e., an incorrect XML declaration that is
+not terminated by an end-of-line character), you may need to apply
+some heuristic adjustments, for example, through regular expressions.
+However, it's impossible to offer precise
+suggestions, since malformedness may come in such a wide variety of
+errant forms.</P>
+
+<p class="docText">This code detects a variety of encodings, including some that are not
+yet supported by Python's Unicode decoders. So, the
+fact that you can decipher the encoding does not guarantee that you
+can then decipher the document itself!</p>
+
+
+<a name="pythoncook2-CHP-12-SECT-4.4"></a>
+<h4 class="docSection2Title">See Also</h4>
+
+<p class="docText">Unicode is a huge topic, but a recommended book is
+<span class="docEmphasis">Unicode: A Primer</span>, by Tony Graham (Hungry
+Minds, Inc.)details are available at <a class="docLink" target="_blank" href="http://www.menteith.com/unicode/primer/">http://www.menteith.com/unicode/primer/</a>;
+<span class="docEmphasis">Library Reference</span> and <span class="docEmphasis">Python in a
+Nutshell</span> document the built-in <tt>str</tt> and
+<tt>unicode</tt> types, and modules
+<tt>unidata</tt> and <tt>codecs</tt>; <a class="docLink" href="pythoncook2-CHP-1-SECT-21.html#pythoncook2-CHP-1-SECT-21">Recipe 1.21</a> and <a class="docLink" href="pythoncook2-CHP-1-SECT-22.html#pythoncook2-CHP-1-SECT-22">Recipe 1.22</a>.<a name="pythoncook2-CHP-12-ITERM-2776"></a> <a name="pythoncook2-CHP-12-ITERM-2777"></a></p>
+
+
+
+<a href="5991535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><UL></ul></td></TR></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-12-sect-3.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-12-sect-5.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

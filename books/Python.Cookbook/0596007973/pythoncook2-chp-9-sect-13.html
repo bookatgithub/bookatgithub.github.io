@@ -1,0 +1,171 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;9.13.&nbsp;Forking a Daemon Process on Unix</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-9-sect-12.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-10.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-9-SECT-13"></a>
+<h3 class="docSection1Title" id="409771-934">Recipe 9.13. Forking a Daemon Process on Unix</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: J&uuml;rgen Hermann, Andy Gimblett, Josh
+Hoyt, Noah Spurrier, Jonathan Bartlett, Greg Stein</span></p>
+
+<a name="pythoncook2-CHP-9-SECT-13.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-9-ITERM-2588"></a> <a name="pythoncook2-CHP-9-ITERM-2589"></a>
+<a name="pythoncook2-CHP-9-ITERM-2590"></a>You need to fork a daemon process on a Unix
+or Unix-like system, which, in turn, requires a certain precise
+sequence of system calls.</P>
+
+
+<a name="pythoncook2-CHP-9-SECT-13.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">Unix daemon processes must detach from their controlling terminal and
+process group. Doing so is not hard, but it does require some care,
+so it's worth writing a
+<i>daemonize.py</I> module once and for all:</p>
+
+<pre>import sys, os
+''' Module to fork the current process as a daemon.
+    NOTE: don't do any of this if your daemon gets started by inetd!  inetd
+    does all you need, including redirecting standard file descriptors;
+    the chdir( ) and umask( ) steps are the only ones you may still want.
+'''
+def daemonize (stdin='/dev/null', stdout='/dev/null', stderr='/dev/null'):
+    ''' Fork the current process as a daemon, redirecting standard file
+        descriptors (by default, redirects them to /dev/null).
+    '''
+    # Perform first fork.
+    try:
+        pid = os.fork( )
+        if pid &gt; 0:
+            sys.exit(0) # Exit first parent.
+    except OSError, e:
+        sys.stderr.write("fork #1 failed: (%d) %s\n" % (e.errno, e.strerror))
+        sys.exit(1)
+    # Decouple from parent environment.
+    os.chdir("/")
+    os.umask(0)
+    os.setsid( )
+    # Perform second fork.
+    try:
+        pid = os.fork( )
+        if pid &gt; 0:
+            sys.exit(0) # Exit second parent.
+    except OSError, e:
+        sys.stderr.write("fork #2 failed: (%d) %s\n" % (e.errno, e.strerror))
+        sys.exit(1)
+    # The process is now daemonized, redirect standard file descriptors.
+    for f in sys.stdout, sys.stderr: f.flush( )
+    si = file(stdin, 'r')
+    so = file(stdout, 'a+')
+    se = file(stderr, 'a+', 0)
+    os.dup2(si.fileno( ), sys.stdin.fileno( ))
+    os.dup2(so.fileno( ), sys.stdout.fileno( ))
+    os.dup2(se.fileno( ), sys.stderr.fileno( ))
+def _example_main ( ):
+    ''' Example main function: print a count &amp; timestamp each second '''
+    import time
+    sys.stdout.write('Daemon started with pid %d\n' % os.getpid( ) )
+    sys.stdout.write('Daemon stdout output\n')
+    sys.stderr.write('Daemon stderr output\n')
+    c = 0
+    while True:
+        sys.stdout.write('%d: %s\n' % (c, time.ctime( )))
+        sys.stdout.flush( )
+        c = c + 1
+        time.sleep(1)
+if _ _name_ _ == "_ _main_ _":
+    daemonize('/dev/null','/tmp/daemon.log','/tmp/daemon.log')
+    _example_main( )</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-9-SECT-13.3"></a>
+<H4 class="docSection2Title">Discussion</h4>
+
+<p class="docText">Forking a daemon on Unix requires a certain specific sequence of
+system calls, which is explained in W. Richard
+Stevens' seminal book, <span class="docEmphasis">Advanced
+Programming in the Unix Environment</span> (Addison-Wesley). We
+need to <tt>fork</tt> twice, terminating each parent
+process and letting only the grandchild of the original process run
+the daemon's code. This allows us to decouple the
+daemon process from the calling terminal, so that the daemon process
+can keep running (typically as a server process without further user
+interaction, like a web server) even after the calling terminal is
+closed. The only visible effect of doing so is that when your script
+runs this module's <I>daemonize</I>
+function, you get your shell prompt back immediately.</p>
+
+<p class="docText">For all of the details about how and why this works in Unix and
+Unix-like systems, see Stevens' wonderful book.
+Another important source of information on both practical and
+theoretical issues about "daemon
+forking" can be found as part of the Unix
+Programming FAQ, at <a class="docLink" target="_blank" href="http://www.erlenstar.demon.co.uk/unix/faq_2.html#SEC16">http://www.erlenstar.demon.co.uk/unix/faq_2.html#SEC16</a>.</p>
+
+<p class="docText">To summarize: the first <tt>fork</tt> lets the shell
+return, and also lets you do a <tt>setsid</tt> (to remove
+you from your controlling terminal, so you can't
+accidentally be sent a signal). However, <tt>setsid</tt>
+makes this process a "session
+leader", which means that if the process ever opens
+any terminal, it will become the process'
+controlling terminal. We do not want a daemon to have
+<span class="docEmphasis">any</span> controlling terminal, which is why we fork
+again. After the second <tt>fork</tt>, the process is no
+longer a "session leader", so it
+can open any file (including a terminal) without thereby accidentally
+reacquiring a controlling terminal.</p>
+
+<p class="docText">Both Stevens and the Unix Programming FAQ provide examples in the C
+programming language, but since the Python Standard Library exposes a
+full POSIX interface, you can also do it all in Python. Typical C
+code for a daemon fork translates almost literally to Python; the
+only difference you have to care abouta minor detailis
+that Python's <tt>os.fork</tt> does not
+return -1 on errors, but rather throws an <tt>OSError</tt>
+exception. Therefore, rather than testing for a less-than-zero return
+code from <tt>fork</tt>, as we would in C, we run the
+<tt>fork</tt> in the <tt>try</tt> clause of a
+<tt>TRy</tt>/<tt>except</tt> statement, so that
+we can catch the exception, should it happen, and print appropriate
+diagnostics to standard
+error.<a name="pythoncook2-CHP-9-ITERM-2591"></a></p>
+
+
+<a name="pythoncook2-CHP-9-SECT-13.4"></a>
+<h4 class="docSection2Title">See Also</H4>
+
+<p class="docText"><a name="pythoncook2-CHP-9-ITERM-2592"></a>
+<a name="pythoncook2-CHP-9-ITERM-2593"></a>
+<a name="pythoncook2-CHP-9-ITERM-2594"></a>Documentation of the standard library
+module <tt>os</tt> in the <span class="docEmphasis">Library
+Reference</span> and <span class="docEmphasis">Python in a
+Nutshell</span>; Unix manpages for the <tt>fork</tt>,
+<tt>umask</tt>, and <tt>setsid</tt> system calls;
+W.Richard Stevens, <span class="docEmphasis">Advanced Programming in the Unix
+Environment</span> (Addison-Wesley); also, the Unix Programming
+FAQ on daemon forking, at <a class="docLink" target="_blank" href="http://www.erlenstar.demon.co.uk/unix/faq_2.html#SEC16">http://www.erlenstar.demon.co.uk/unix/faq_2.html#SEC16</a>.<a name="pythoncook2-CHP-9-ITERM-2595"></a></p>
+
+
+
+<UL></ul></TD></TR></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-9-sect-12.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-10.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

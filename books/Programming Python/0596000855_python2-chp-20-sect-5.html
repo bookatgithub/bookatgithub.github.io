@@ -1,0 +1,209 @@
+<html><head>
+<META http-equiv="Content-Type" content="text/html">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="20.5 Using Python Classes in C"-->
+<link rel="STYLESHEET" type="text/css" href="FILES/style.css">
+<link rel="STYLESHEET" type="text/css" href="FILES/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+	<a href="0596000855_python2-CHP-20-SECT-4.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+	<a href="0596000855_python2-CHP-20-SECT-6.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr>
+<td valign="top"><A NAME="python2-CHP-20-SECT-5"></A>
+<H3 class="docSection1Title">20.5 Using Python Classes in C</H3>
+
+<P class="docText"><A NAME="python2-IDXTERM-2376"></A> <A NAME="python2-IDXTERM-2377"></A> <A NAME="python2-IDXTERM-2378"></A>In the previous chapter, we saw
+how to use C++ classes in Python by wrapping them with SWIG. But what
+about going the other way -- using Python classes from other
+languages? It turns out that this is really just a matter of applying
+interfaces already shown.
+</P>
+
+<P class="docText">Recall that Python scripts generate class instance objects by
+<span class="docEmphasis">calling</span> class objects as though they were
+functions. To do it from C (or C++), you simply follow the same
+steps: import a class from a module (or elsewhere), build an
+arguments tuple, and call it to generate an instance using the same C
+API tools you use to call Python functions. Once you've got an
+instance, you can fetch attributes and methods with the same tools
+you use to fetch globals out of a module.
+</P>
+
+<P class="docText">To illustrate how this works in practice, <A class="docLink" HREF="#python2-CHP-20-EX-12">Example 20-12</A> defines a simple Python class in a module that
+we can utilize from C.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-20-EX-12"></A>Example 20-12. PP2E\Integrate\Embed\ApiClients\module.py </H5>
+<PRE># call this class from C to make objects
+
+class klass:
+    def method(self, x, y):
+        return "brave %s %s" % (x, y)   # run me from C</PRE>
+
+
+<P class="docText">This is nearly as simple as it gets, but it's enough to
+illustrate the basics. As usual, make sure that this module is on
+your Python search path (e.g., in the current directory, or one
+listed on your PYTHONPATH setting), or else the import call to access
+it from C will fail, just as it would in a Python script. Now, here
+is how you might make use of this Python class from a Python program:
+</P>
+
+<PRE>C:\...\PP2E\Integrate\Embed\ApiClients&gt;<B>python</B>
+&gt;&gt;&gt; <B>import module</B>                                 # import the file
+&gt;&gt;&gt; <B>object = module.klass(  )</B>                       # make class instance
+&gt;&gt;&gt; <B>result = object.method('sir', 'robin')</B>        # call class method
+&gt;&gt;&gt; <B>print result</B>
+brave sir robin</PRE>
+
+<P class="docText">This is fairly easy stuff in Python. You can do all these operations
+in C too, but it takes a bit more code. The C file in <A class="docLink" HREF="#python2-CHP-20-EX-13">Example 20-13</A> implements these steps by arranging calls to
+the appropriate Python API tools.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-20-EX-13"></A>Example 20-13. PP2E\Integrate\Embed\ApiClients\objects-low.c </H5>
+<PRE>#include &lt;Python.h&gt;
+#include &lt;stdio.h&gt;
+
+main(  ) {
+  /* run objects with low-level calls */
+  char *arg1="sir", *arg2="robin", *cstr;
+  PyObject *pmod, *pclass, *pargs, *pinst, *pmeth, *pres;
+
+  /* instance = module.klass(  ) */
+  Py_Initialize(  );
+  pmod   = PyImport_ImportModule("module");         /* fetch module */
+  pclass = PyObject_GetAttrString(pmod, "klass");   /* fetch module.class */
+  Py_DECREF(pmod);
+
+  pargs  = Py_BuildValue("(  )");
+  pinst  = PyEval_CallObject(pclass, pargs);        /* call class(  ) */
+  Py_DECREF(pclass);
+  Py_DECREF(pargs);
+
+  /* result = instance.method(x,y) */
+  pmeth  = PyObject_GetAttrString(pinst, "method"); /* fetch bound method */
+  Py_DECREF(pinst);
+  pargs  = Py_BuildValue("(ss)", arg1, arg2);       /* convert to Python */
+  pres   = PyEval_CallObject(pmeth, pargs);         /* call method(x,y) */
+  Py_DECREF(pmeth);
+  Py_DECREF(pargs);
+
+  PyArg_Parse(pres, "s", &amp;cstr);                    /* convert to C */
+  printf("%s\n", cstr);
+  Py_DECREF(pres);
+}</PRE>
+
+
+<P class="docText">Step through this source file for more details; it's merely a
+matter of figuring out how you would accomplish the task in Python,
+and then calling equivalent C functions in the Python API. To build
+this source into a C executable program, run the makefile in the
+file's directory (it's analogous to makefiles we've
+already seen). After compiling, run it as you would any other C
+program:
+</P>
+
+<PRE>[mark@toy ~/.../PP2E/Integrate/Embed/ApiClients]$ <B>objects-low</B>
+brave sir robin</PRE>
+
+<P class="docText">This output might seem anticlimactic, but it actually reflects the
+return values sent back to C by the class method in file
+<I>module.py</I>. C did a lot of work to get this
+little string: it imported the module, fetched the class, made an
+instance, and fetched and called the instance method, performing data
+conversions and reference count management every step of the way. In
+return for all the work, C gets to use the techniques shown in this
+file to reuse <span class="docEmphasis">any</span> Python class.
+</P>
+
+<P class="docText">Of course, this example would be more complex in practice. As
+mentioned earlier, you generally need to check the return value of
+every Python API call to make sure it didn't fail. The module
+import call in this C code, for instance, can fail easily if the
+module isn't on the search path; if you don't trap the
+<TT>NULL</TT> pointer result, your program will almost
+certainly crash when it tries to use the pointer (at least
+eventually). <A class="docLink" HREF="#python2-CHP-20-EX-14">Example 20-14</A> is a recoding of <A class="docLink" HREF="#python2-CHP-20-EX-13">Example 20-13</A> with full error-checking; it's big, but
+it's robust.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-20-EX-14"></A>Example 20-14. PP2E\Integrate\Embed\ApiClients\objects-err-low.c </H5>
+<A NAME="IXTR3-558"></A><A NAME="IXTR3-559"></A><A NAME="IXTR3-560"></A><PRE>#include &lt;Python.h&gt;
+#include &lt;stdio.h&gt;
+#define error(msg) do { printf("%s\n", msg); exit(1); } while (1)
+
+main(  ) {
+  /* run objects with low-level calls and full error checking */
+  char *arg1="sir", *arg2="robin", *cstr;
+  PyObject *pmod, *pclass, *pargs, *pinst, *pmeth, *pres;
+
+  /* instance = module.klass(  ) */
+  Py_Initialize(  );
+  pmod = PyImport_ImportModule("module");           /* fetch module */
+  if (pmod == NULL)
+      error("Can't load module");
+
+  pclass = PyObject_GetAttrString(pmod, "klass");   /* fetch module.class */
+  Py_DECREF(pmod);
+  if (pclass == NULL)
+      error("Can't get module.klass");
+
+  pargs = Py_BuildValue("(  )");
+  if (pargs == NULL) {
+      Py_DECREF(pclass);
+      error("Can't build arguments list");
+  }
+  pinst = PyEval_CallObject(pclass, pargs);         /* call class(  ) */
+  Py_DECREF(pclass);
+  Py_DECREF(pargs);
+  if (pinst == NULL)
+      error("Error calling module.klass(  )");
+
+  /* result = instance.method(x,y) */
+  pmeth  = PyObject_GetAttrString(pinst, "method"); /* fetch bound method */
+  Py_DECREF(pinst);
+  if (pmeth == NULL)
+      error("Can't fetch klass.method");
+
+  pargs = Py_BuildValue("(ss)", arg1, arg2);        /* convert to Python */
+  if (pargs == NULL) {
+      Py_DECREF(pmeth);
+      error("Can't build arguments list");
+  }
+  pres = PyEval_CallObject(pmeth, pargs);           /* call method(x,y) */
+  Py_DECREF(pmeth);
+  Py_DECREF(pargs);
+  if (pres == NULL)
+      error("Error calling klass.method");
+
+  if (!PyArg_Parse(pres, "s", &amp;cstr))               /* convert to C */
+     error("Can't convert klass.method result");
+  printf("%s\n", cstr);
+  Py_DECREF(pres);
+}
+
+</PRE>
+
+
+
+<a href="0596000855_"><img src="FILES/pixel.gif" width="1" height="1" border="0"></a><ul></ul>
+</td>
+</tr>
+</table>
+<td></td>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+          <a href="0596000855_python2-CHP-20-SECT-4.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+          <a href="0596000855_python2-CHP-20-SECT-6.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+</body></html>

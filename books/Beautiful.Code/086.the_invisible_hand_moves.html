@@ -1,0 +1,57 @@
+<html><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<link href="styles/globalstyle.css" type="text/css" rel="stylesheet"/>
+<link title="medium" href="styles/two.css" type="text/css" rel="stylesheet"/>
+<script src="scripts/main.js" type="text/javascript" language="javascript"></script>
+<title>Section 11.9. The Invisible Hand Moves</title>
+</head><body>
+<DIV class=h3 style="MARGIN-TOP: 0px; PADDING-BOTTOM: 1em; WIDTH: 100%; PADDING-TOP: 0px"><SPAN>Secure Communication: The Technology Of Freedom</SPAN><SPAN> &gt; The Invisible Hand Moves</SPAN></DIV>
+<DIV></DIV>
+<DIV>
+<DIV><A name=the_invisible_hand_moves></A>
+<H3 class=docSection1Title id=-100000>11.9. The Invisible Hand Moves</H3>
+<P class=docText><A name="By mid"></A>By mid-2004, Neomailbox was a year old and had attracted quite a few paying customers. <A name=idx-CHP-11-0832></A><A name="put on"></A>Cryptonite development was put on hold for a bit while I worked on developing various aspects of the Neomailbox service as well as on a few other projects I just couldn't wait to get started on.</P>
+<P class=docText><A name="in the"></A>But being out in the market was great, as it brought market forces, from competition to user feedback, to bear on the development process, and helped sharpen and clarify priorities. Customer requests and queries helped keep me intimately connected to what the users and the market wanted. Meeting the market's demands is how application code becomes beautiful in a commercial sense, after all, so interaction with the market became an integral and critical component of the development process.</P>
+<P class=docText><A name="designed to"></A>Cryptonite was designed to be easy to maintain and modify, precisely because I knew that at some point it would have to start to evolve in new ways, both in response to and in <A name=idx-CHP-11-0833></A><A name="the customer"></A>anticipation of what the customer wanted. Being in the market enabled me to see that emerging demand: it was clear that IMAP was the future of remote mailbox access.</P>
+<P class=docText><A name="a very"></A>IMAP has a lot of attractive features that make it a very powerful and practical mail access protocol. One of the most important of these is the ability to access the same mailbox using multiple clients, which becomes increasingly important with the proliferation of computing devices. The typical user now has a desktop, a laptop, a PDA, and a cellphone, all capable of accessing her mailbox.</P>
+<P class=docText><A name="a slight"></A>This posed a slight problem, as I'd already implemented a full <A name=idx-CHP-11-0834></A><A name="it was"></A>mail store for Cryptonite, and it was not IMAP-based. There were two ways forward: either implement a full IMAP server based on the <A name=idx-CHP-11-0835></A><A name="modify Cryptonite"></A>Cryptonite mail store (a big job), or modify Cryptonite to enable it to use an IMAP mail store as a backend. In fact, the second would have to be done either way.<A name=I_indexterm11_tt246></A><A name=I_indexterm11_tt247></A></P>
+<P class=docText><A name="opting to"></A>Again, opting to reduce complexity of the system, and focusing on its primary purpose, I decided not to develop the <A name=idx-CHP-11-0836></A><A name="into a"></A>Cryptonite mail store into a full-blown IMAP server. Instead, I modified it into a caching mechanism, which caches MIME skeletons (just the structure information, without the content) of multipart MIME messages listed by the user, and also entire messages read by the user, so that the next time a user opens a message she's read before, <A name=idx-CHP-11-0837></A><A name="go back"></A>Cryptonite doesn't need to go back to the IMAP server to fetch it again.</P>
+<P class=docText><A name="me the"></A>This gave me the best of both worlds. Cryptonite could reflect the contents of an IMAP mailbox, while simultaneously posessing full information of each message's exact <A name=idx-CHP-11-0838></A><A name="as being"></A>MIME structure, as well as being able to keep decrypted messages available in the shadow folders the <A name=idx-CHP-11-0839></A>Cryptonite mail store supported.</P>
+<P class=docText><A name="to read"></A>The modifications to the code were straightforward. Whenever the user clicks to read a message that isn't in the cache, Cryptonite caches it in the corresponding Mail::Folder:: Shadow folder:</P><PRE>	my $folder = $session-&gt;folder;             # The folder name
+	my $mbox = _opencache($username, $folder); # The M::F::Shadow cache
+
+	unless ($msgnum and grep { $_ == $msgnum } $mbox-&gt;message_list) {
+
+	  # Message is not in cache. Fetch from IMAP server and cache it.
+
+	  my $imap = $self-&gt;_open_imapconn($username, $user-&gt;password)
+	    or sleep(int(rand(3))+2), return $self-&gt;cluebat (EBADLOGIN);
+
+	  $imap-&gt;select($folder) or return $self-&gt;cluebat (ENOFOLDER, $folder);
+
+	  $imap-&gt;Uid(1);
+
+	  my ($tmpfh, $tmpnam) =
+	    tempfile( $self-&gt;tmpfiles, DIR =&gt; "$HOME/tmp",
+	              SUFFIX =&gt; $self-&gt;tmpsuffix, UNLINK =&gt; 1);
+	  $imap-&gt;message_to_file($tmpfh, $msgnum);
+
+	  $imap-&gt;logout;
+
+	  my $parser = new MIME::Parser; $parser-&gt;output_dir("$HOME/tmp/");
+
+	  $parser-&gt;filer-&gt;ignore_filename(1); # Do NOT use suggested filename
+
+	  seek ($tmpfh,0,0);
+	  my $mail = $parser-&gt;parse($tmpfh);
+
+	  return $self-&gt;cluebat (ENOSUCHMSG, 0 + $msgnum) unless $mail;
+	  $mbox-&gt;update_message($msgnum,$mail);
+	}
+</PRE><BR>
+<P class=docText><A name="similar manner"></A>In a similar manner, MIME skeletons are cached for all messages listed by the user through the message list view. The rest of the code continues to work as before, by operating on the cache for all read operations. Now we have IMAP compatibility, without compromising the features afforded by my mail store or modifying the main code much.</P>
+<P class=docText>Mail store <A name=idx-CHP-11-0840></A><A name="be worked"></A>replication would need to be worked in again because the switch from Mail:: Folder::SQL to an IMAP server for the mail store meant <A name=idx-CHP-11-0841></A><A name="any case"></A>Replication::Recall couldn't be used for replication. But in any case, Replication::Recall wasn't the most elegant or easy to implement replication system, and the Recall library had been rewritten in Python, making my Perl interface to the earlier C++ implementation obsolete anyway.</P>
+<P class=docText><A name="In hindsight"></A>In hindsight, I spent a lot of time on the replication functionality, which had to be scrapped, and I probably would have been better off not bothering with replication at that stage. On the other hand, it did teach me a lot that will come in handy when I get down to implementing replication again.</P>
+<P class=docText><A name="changing standards"></A>Market forces and changing standards mean that application software is always evolving, and much of the beauty of such code from the programmer's point of view is certainly in how easy it is to adapt the code to ever-changing requirements. <A name=idx-CHP-11-0842></A><A name="possible to"></A>Cryptonite's object-oriented architecture makes it possible to implement major revisions with ease.</P></DIV></DIV>
+<p>&nbsp;</p><p>&nbsp;</p><!-- 仁·义 -->
+</body></html>

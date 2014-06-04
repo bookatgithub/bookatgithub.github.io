@@ -1,0 +1,183 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;18.7.&nbsp;Caching Objects with a FIFO Pruning Strategy</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-18-sect-6.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-18-sect-8.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-18-SECT-7"></a>
+<h3 class="docSection1Title">Recipe 18.7. Caching Objects with a FIFO Pruning Strategy</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: David M. Wilson, Raymond Hettinger</span></p>
+
+<a name="pythoncook2-CHP-18-SECT-7.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-18-ITERM-3091"></a> <a name="pythoncook2-CHP-18-ITERM-3092"></a>You need to build a mapping to be used as
+a cache, holding up to a fixed number of previous entries and
+automatically discarding older entries.</P>
+
+
+<a name="pythoncook2-CHP-18-SECT-7.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">A mapping can implement a relatively small number of core methods and
+rely on <tt>UserDict.DictMixin</tt> to provide all the
+other methods that make up the full official mapping interface. Here
+is a mapping class for FIFO caching, implemented with this
+"let <tt>DictMixin</tt> do
+it" strategy:</p>
+
+<pre>import UserDict
+class FifoCache(object, UserDict.DictMixin):
+    ''' A mapping that remembers the last `num_entries' items that were set '''
+    def _ _init_ _(self, num_entries, dct=( )):
+        self.num_entries = num_entries
+        self.dct = dict(dct)
+        self.lst = [  ]
+    def _ _repr_ _(self):
+        return '%r(%r,%r)' % (
+            self._ _class_ _._ _name_ _, self.num_entries, self.dct)
+    def copy(self):
+        return self._ _class_ _(self.num_entries, self.dct)
+    def keys(self):
+        return list(self.lst)
+    def _ _getitem_ _(self, key):
+        return self.dct[key]
+    def _ _setitem_ _(self, key, value):
+        dct = self.dct
+        lst = self.lst
+        if key in dct:
+            lst.remove(key)
+        dct[key] = value
+        lst.append(key)
+        if len(lst) &gt; self.num_entries:
+            del dct[lst.pop(0)]
+    def _ _delitem_ _(self, key):
+        self.dct.pop(key)
+        self.lst.remove(key)
+    # a method explicitly defined only as an optimization
+    def _ _contains_ _(self, item):
+        return item in self.dct
+    has_key = _ _contains_ _</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-18-SECT-7.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">Here is a typical example of usage for this
+<I>FifoCache</i> class:</P>
+
+<pre>if _ _name_ _ == '_ _main_ _':
+    f = FifoCache(num_entries=3)
+    f["fly"] = "foo"
+    f["moo"] = "two"
+    f["bar"] = "baz"
+    f["dave"] = "wilson"
+    f["age"] = 20
+    print f.keys( )
+    # emits<B> ['bar', 'dave', 'age']</b></pre><br>
+
+
+<p class="docText">For any case where you might use a dictionary object to cache
+expensive lookups, the <i>FifoCache</i> class shown in this
+recipe might be a safer alternative for use in long-running
+applications, whose caches might otherwise consume all system memory
+if left unchecked.</p>
+
+<p class="docText">Thanks to <tt>UserDict.DictMixin</tt>, class
+<I>FifoCache</i> exhibits a full dictionary (i.e., mapping)
+interface: you can substitute an instance of
+<i>FifoCache</I> wherever you're using a
+dictionary (as long as you <span class="docEmphasis">do</span> want entries that
+were set "a long time ago" to drop
+out automatically to make space for newer ones).</p>
+
+<p class="docText">In Python 2.4, you can get a faster version of
+<I>FifoCache</i> by setting <I>self.lst</I> to be
+an instance of <tt>collections.deque</tt> rather than a
+<tt>list</tt>, and using <tt>self.lst.popleft()</tt> where this recipe's solution uses
+<tt>self.lst.pop(0)</tt>. Since the
+<tt>deque</tt> type does not have a
+<tt>remove</tt> method, you have to implement that with a
+little auxiliary function:</p>
+
+<pre>def remove_from_deque(d, x):
+    for i, v in enumerate(d):
+        if v == x:
+            del d[i]
+        return
+    raise ValueError, '%r not in %r' % (x, d)</pre><br>
+
+
+<p class="docText">and use <tt>remove_from_deque(self.lst, key)</tt> where
+this recipe's Solution uses
+<tt>self.list.remove(key)</tt>. While, as always, you
+should measure how useful this optimization is in the context of your
+specific application, it's likely to be helpful when
+<i>num_entries</i> is high, since
+<tt>self.lst.pop(</tt><tt><i>0</i></tt><tt>)</tt>
+on a list <i>self.lst</i> is
+<tt><i>O</i></tt><tt>(</tt><tt><i>n</i></tt><tt>)</tt>,
+while <tt>self.list.popleft( )</tt> on a deque
+<i>self.lst</I> is
+<tt><I>O</i></tt><tt>(</tt><tt><i>1</I></tt><tt>)</tt>.
+(<i>remove_from_deque</i>, like
+<tt>list.remove</tt>, is unfortunately and unavoidably
+<tt><i>O</i></tt><tt>(</tt><tt><i>n</i></tt><tt>)</tt>).</P>
+
+<p class="docText">FIFO is not the ideal policy for a cache's decision
+about what should "fall off"; a
+better one would be LRU (Least Recently Used). You can tweak this
+class' policy into LRU by subclassing and
+overriding:</p>
+
+<pre>class LRUCache(FifoCache):
+    def _ _getitem_ _(self, key):
+        if key in self.dct:
+            self.lst.remove(key)
+        else:
+            raise KeyError
+        self.lst.append(key)
+        return self.dct[key]</pre><BR>
+
+
+<p class="docText">This variant does ensure the use of the LRU policy without much extra
+code. Unfortunately, it makes every read access quite costly
+<tt><i>O</I></tt><tt>(</tt><tt><i>n</I></tt><tt>)</tt>,
+where <tt><I>n</i></tt> is the number of entries in the
+cache at that time), due to the need for the
+<I>self.lst.remove</I> call. Therefore, this
+recipe's official
+"Solution" uses the simpler
+implementation, even though FIFO is notoriously suboptimal as a cache
+replacement strategy.<a name="pythoncook2-CHP-18-ITERM-3093"></a> <a name="pythoncook2-CHP-18-ITERM-3094"></a></p>
+
+
+<a name="pythoncook2-CHP-18-SECT-7.4"></a>
+<h4 class="docSection2Title">See Also</h4>
+
+<p class="docText"><span class="docEmphasis">Library Reference</span> and <span class="docEmphasis">Python in a
+Nutshell</span> docs for module <tt>UserDict</tt>;
+<a class="docLink" href="pythoncook2-CHP-5-SECT-14.html#pythoncook2-CHP-5-SECT-14">Recipe 5.14</a> also uses
+<tt>UserDict.DictMixin</tt> to round up a mapping interface
+while coding a minimum of boilerplate.</p>
+
+
+
+<a href="5991535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><UL></ul></td></TR></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-18-sect-6.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-18-sect-8.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

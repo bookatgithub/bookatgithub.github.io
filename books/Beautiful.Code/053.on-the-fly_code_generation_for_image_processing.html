@@ -1,0 +1,574 @@
+<html><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<link href="styles/globalstyle.css" type="text/css" rel="stylesheet"/>
+<link title="medium" href="styles/two.css" type="text/css" rel="stylesheet"/>
+<script src="scripts/main.js" type="text/javascript" language="javascript"></script>
+<title>Chapter 8. On-the-Fly Code Generation for Image Processing</title>
+</head><body>
+<DIV></DIV>
+<DIV>
+<DIV><A name=on-the-fly_code_generation_for_image_processing></A>
+<H2 class=docChapterTitle id=title-ID0E12CK>8. On-the-Fly Code Generation for Image Processing</H2>
+<P class=docText><SPAN class=docEmphasis><A name="Charles Petzold"></A>Charles Petzold</SPAN> <A name=idx-CHP-8-0386></A><A name=idx-CHP-8-0387></A><A name=idx-CHP-8-0388></A></P>
+<P class=docText><SPAN class=docEmphSmaller><A name="of wisdom"></A>Among the pearls of wisdom and wackiness chronicled</SPAN><A name=history></A> in Steven Levy's classic history <SPAN class=docEmphasis><A name="the Computer"></A>Hackers: Heroes of the Computer Revolution</SPAN><A name="this one"></A> (Doubleday), my favorite is this one by Bill Gosper, who once said, "Data is just a dumb kind of programming." The corollary, of course, is that code is just a smart kind of data—data designed to trigger processors into performing certain useful or amusing acts.</P>
+<P class=docText>The potential interplay of <A name=idx-CHP-8-0389></A><A name="programming instruction"></A>code and data tends to be discouraged in most conventional programming instruction. Code and data are usually severely segregated; even in object-oriented programming, code and data have their own special roles to play. Any intermingling of the two—such as data being executed as if it were machine code—is considered to be a violation of natural law.</P>
+<P class=docText><A name="is this"></A>Only occasionally is this barrier between code and data breached. Compiler authors write programs that read source code and generate machine code, but compilers do not really violate the separation of code and data. Where the input and output are code to the human programmers, they are just data to the compilers. Other odd jobs, such as those performed by disassemblers or simulators, also read machine code as if it were data.</P>
+<P class=docText><A name="if not"></A>As we all accept rationally, if not emotionally, code and data are ultimately just bytes, and there are only 256 of them in the entire universe. It's not the bytes themselves but their ordering that gives them meaning and purpose.</P>
+<P class=docText><A name="be advantageous"></A>In some special cases, it can be advantageous for <A name=idx-CHP-8-0390></A><A name="programs that"></A>programs that are not compilers to generate code while they're running. This <SPAN class=docEmphasis>on-the-fly code generation</SPAN><A name="usually restricted"></A> is not easy, so it's usually restricted to very particular circumstances.<A name=idx-CHP-8-0391></A></P>
+<P class=docText><A name="will use"></A>Throughout this chapter, we will use an example that embodies the most common reason for using on-the-fly code generation. In this example, a time-critical subroutine must perform many repetitive operations. A number of generalized parameters come into play during the execution of these repetitive operations, and the subroutine could run a lot faster if we replaced those generalized parameters with specific values. We can't replace those parameters while we're writing the subroutine because the parameters aren't known until runtime, and they can change from one invocation to the next. However, the subroutine itself could do the code generation while it's running. In other words, the subroutine can examine its own parameters at runtime, generate more efficient code, and then execute the resulting code.</P>
+<P class=docText><A name="stumbled upon"></A>I first stumbled upon this technique while writing assembly language. I had a subroutine that performed many repetitive operations. At a crucial point, the subroutine would execute either a bitwise AND operation or a bitwise OR operation, depending on some other value that remained constant during these operations. The actual testing of this value to perform the AND or OR operation was inside the loop and was itself taking too much time. I considered splitting the routine into two entirely separate routines, one with the AND operation and one with the OR operation, until I realized that the subroutine could begin by examining the value, then insert the actual AND or OR machine code instruction right into the execution stream.</P>
+<P class=docText><A name="code generation"></A>The technique of on-the-fly code generation was implemented in a much larger way in the first release of <A name=idx-CHP-8-0392></A><A name="come to"></A>Microsoft Windows (version 1.0), which came out in November 1985 and has since come to have some moderate success in the personal computer marketplace. From a programmer's perspective, the first version of Windows offered roughly 200 functions for creating graphical user interfaces and for displaying vector and raster graphics on both the screen and printer in a fairly device-independent manner.</P>
+<P class=docText>Among the <A name=idx-CHP-8-0393></A><A name="in Windows"></A>graphics functions in Windows 1.0 was one called <SPAN class=docEmphasis>BitBlt</SPAN><A name="an instruction"></A>, which was named after an instruction on the seminal Xerox Alto and stood for <SPAN class=docEmphasis>bit block transfer</SPAN><A name="rendered bitmaps"></A>. In its most basic use, BitBlt rendered bitmaps on the screen and printer, but it was also used internally in Windows for displaying many user interface objects. More generally, BitBlt transferred rectangular arrays of pixels from a source to a destination. A related function called <SPAN class=docEmphasis>StretchBlt</SPAN><A name="could stretch"></A> could stretch or compress the source pixels into a larger or smaller destination rectangle during this process.<A name=idx-CHP-8-0394></A><A name=idx-CHP-8-0395></A></P>
+<P class=docText><A name="source is"></A>If the BitBlt source is a bitmap, and if the destination is the video display, BitBlt copies the pixels from the bitmap to the display, essentially rendering the bitmap on the screen. If the source is the display and the destination is a bitmap, BitBlt copies pixels from the screen to the bitmap. The bitmap <A name=idx-CHP-8-0396></A><A name="a captured"></A>image is then a captured screen image.</P>
+<P class=docText><A name="a routine"></A>However, if you're writing a routine like BitBlt, you might imagine incorporating some extra value and utility that go beyond the mere transfer of bits. Suppose you want an option that will invert the pixels as they're transferred from the source to the destination; black pixels become white, light gray becomes dark gray, and green becomes magenta.</P>
+<P class=docText><A name="then discover"></A>And suppose you then discover that a colleague would be overjoyed if BitBlt could examine the destination as it's transferring pixels, and transfer pixels from the source to the destination only if the destination pixels at each particular point are black. This feature would allow the display of nonrectangular images. For example, a black-filled circle could be drawn on the screen, and then BitBlt would display a bitmap only within that circle. And then somebody else requests an option that combines the ones just mentioned, in which BitBlt inverts its source pixels when the destination is black.</P>
+<P class=docText><A name="a way"></A>As you start investigating these types of options, you might discover a way to generalize them all. Consider a monochrome <A name=idx-CHP-8-0397></A><A name="pixel is"></A>graphics system; every pixel is just one bit, where 0 means black and 1 means white. In such a system, a source bitmap is an array of 1-bit pixels, and the screen is an array of 1-bit pixels. The destination's color at a particular pixel location depends on the value of the source pixel (0 or 1) and the value of the destination pixel (0 or 1).</P>
+<P class=docText><A name="destination for"></A>The result at the destination for any particular combination of source and destination pixels is called a <SPAN class=docEmphasis>raster operation</SPAN> or <SPAN class=docEmphasis>raster op</SPAN>, and there are 16 of them, as <A class=docLink href="javascript:moveTo('basic_raster_ops');">Table 8-1</A> illustrates.<A name=idx-CHP-8-0398></A></P><A name=basic_raster_ops></A>
+<P>
+<TABLE cellSpacing=0 width="100%" border=1>
+<CAPTION>
+<H5 class=docTableTitle>Table 8-1. Basic raster ops</H5></CAPTION>
+<COLGROUP span=3>
+<COL>
+<COL>
+<COL></COLGROUP>
+<THEAD>
+<TR>
+<TH class="docTableCell thead" scope=col colSpan=3><SPAN class=docEmphStrong>Possible combinations</SPAN> </TH></TR></THEAD>
+<TBODY>
+<TR>
+<TD class=docTableCell><SPAN class=docEmphStrong>Input parameter</SPAN> </TD>
+<TD class=docTableCell><SPAN class=docEmphStrong>Input value</SPAN> </TD>
+<TD class=docTableCell>&nbsp;</TD></TR>
+<TR>
+<TD class=docTableCell>Source (S): </TD>
+<TD class=docTableCell>1 1 0 0 </TD>
+<TD class=docTableCell>&nbsp;</TD></TR>
+<TR>
+<TD class=docTableCell>Destination (D): </TD>
+<TD class=docTableCell>1 0 1 0 </TD>
+<TD class=docTableCell>&nbsp;</TD></TR>
+<TR>
+<TD class=docTableCell><SPAN class=docEmphStrong>Operation</SPAN> </TD>
+<TD class=docTableCell><SPAN class=docEmphStrong>Output</SPAN> </TD>
+<TD class=docTableCell><SPAN class=docEmphStrong>Logical representation</SPAN> </TD></TR>
+<TR>
+<TD class=docTableCell>Raster operation 0: </TD>
+<TD class=docTableCell>0 0 0 0 </TD>
+<TD class=docTableCell>0 </TD></TR>
+<TR>
+<TD class=docTableCell>Raster operation 1: </TD>
+<TD class=docTableCell>0 0 0 1 </TD>
+<TD class=docTableCell>~(S | D) </TD></TR>
+<TR>
+<TD class=docTableCell>Raster operation 2: </TD>
+<TD class=docTableCell>0 0 1 0 </TD>
+<TD class=docTableCell>~S &amp; D </TD></TR>
+<TR>
+<TD class=docTableCell>Raster operation 3: </TD>
+<TD class=docTableCell>0 0 1 1 </TD>
+<TD class=docTableCell>~S </TD></TR>
+<TR>
+<TD class=docTableCell>Raster operation 4: </TD>
+<TD class=docTableCell>0 1 0 0 </TD>
+<TD class=docTableCell>S &amp; ~D </TD></TR>
+<TR>
+<TD class=docTableCell>Raster operation 5: </TD>
+<TD class=docTableCell>0 1 0 1 </TD>
+<TD class=docTableCell>~D </TD></TR>
+<TR>
+<TD class=docTableCell>Raster operation 6: </TD>
+<TD class=docTableCell>0 1 1 0 </TD>
+<TD class=docTableCell>S ^ D </TD></TR>
+<TR>
+<TD class=docTableCell>Raster operation 7: </TD>
+<TD class=docTableCell>0 1 1 1 </TD>
+<TD class=docTableCell>~(S &amp; D) </TD></TR>
+<TR>
+<TD class=docTableCell>Raster operation 8: </TD>
+<TD class=docTableCell>1 0 0 0 </TD>
+<TD class=docTableCell>S &amp; D </TD></TR>
+<TR>
+<TD class=docTableCell>Raster operation 9: </TD>
+<TD class=docTableCell>1 0 0 1 </TD>
+<TD class=docTableCell>~(S ^ D) </TD></TR>
+<TR>
+<TD class=docTableCell>Raster operation 10: </TD>
+<TD class=docTableCell>1 0 1 0 </TD>
+<TD class=docTableCell>D </TD></TR>
+<TR>
+<TD class=docTableCell>Raster operation 11: </TD>
+<TD class=docTableCell>1 0 1 1 </TD>
+<TD class=docTableCell>~S | D </TD></TR>
+<TR>
+<TD class=docTableCell>Raster operation 12: </TD>
+<TD class=docTableCell>1 1 0 0 </TD>
+<TD class=docTableCell>S </TD></TR>
+<TR>
+<TD class=docTableCell>Raster operation 13: </TD>
+<TD class=docTableCell>1 1 0 1 </TD>
+<TD class=docTableCell>S |~D </TD></TR>
+<TR>
+<TD class=docTableCell>Raster operation 14: </TD>
+<TD class=docTableCell>1 1 1 0 </TD>
+<TD class=docTableCell>S | D </TD></TR>
+<TR>
+<TD class=docTableCell>Raster operation 15: </TD>
+<TD class=docTableCell>1 1 1 1 </TD>
+<TD class=docTableCell>1 </TD></TR></TBODY></TABLE></P><BR>
+<P class=docText><A name="of source"></A>There are four possible combinations of source and destination pixels, and each raster operation does something different for those four combinations, so the total number is 2<SUP>4</SUP><A name="or "></A>, or 16. Each of the 16 possible <A name=idx-CHP-8-0399></A><A name="identified by"></A>raster operations is identified by a number that corresponds to the <A name=idx-CHP-8-0400></A><A name="pixels shown"></A>pattern of resultant pixels shown in the table. The "Logical representation" column shows (in C syntax) the actual Boolean operation occurring between the source and destination pixels.</P>
+<P class=docText>For example, in <SPAN class=docEmphasis>raster operation 12</SPAN><A name="source is"></A> (the most common), the source is simply transferred to the destination and in <SPAN class=docEmphasis>raster operation 14</SPAN><A name="transferred to"></A>, the source is transferred to the destination only when the destination is black. <SPAN class=docEmphasis>Raster operation 10</SPAN> leaves the destination the same regardless of the source. <SPAN class=docEmphasis>Raster operations 0</SPAN> and <SPAN class=docEmphasis>15</SPAN> simply color the destination black and white, respectively, again independent of the source.<A name=idx-CHP-8-0401></A></P>
+<P class=docText>In a color <A name=idx-CHP-8-0402></A><A name="and blue"></A>graphics system, each pixel is generally 24-bits wide, with 8 bits each for the red, green, and blue primaries. If all bits are 0, the color is black; if all bits are 1, the color is white. The <A name=idx-CHP-8-0403></A><A name="are applied"></A>raster operations are applied to corresponding bits of the source and destination. With raster operation 14, for example, the source is displayed in destination areas that were initially colored black. Destination areas initially colored white will remain white. However, if a destination area is red and the source is blue, the result will be a combination of red and blue, or magenta. This is different from the monochrome example, but still entirely predictable.</P>
+<P class=docText>In <A name=idx-CHP-8-0404></A>Windows, the raster operations for <A name=idx-CHP-8-0405></A><A name="complicated even"></A>BitBlt and StretchBlt were complicated even further. Windows supported a graphical object called a <SPAN class=docEmphasis>pattern</SPAN> or <SPAN class=docEmphasis>brush</SPAN><A name="filling enclosed"></A>, which was commonly used for filling enclosed areas. This pattern could be a solid color or a repetitive <A name=idx-CHP-8-0406></A><A name="such as"></A>image, such as hash marks or bricks. To carry out this type of operation, BitBlt and StretchBlt performed a raster operation between the source, the destination, and a particular pattern. This pattern allowed the program to alter pixel bits of the source (perhaps inverting them or masking them) without regard to the destination.</P>
+<P class=docText><A name="operation implemented"></A>Because the raster operation implemented by BitBlt and StretchBlt involved three objects—a source, destination, and pattern—it was called a <SPAN class=docEmphasis>ternary</SPAN><A name=possible></A> raster operation. There are 256 possible <A name=idx-CHP-8-0407></A><A name="and BitBlt"></A>ternary raster operations, and BitBlt and StretchBlt supported every single one.</P>
+<P class=docText><A name="earlier discussion"></A>As in our earlier discussion, these 256 ternary <A name=idx-CHP-8-0408></A><A name="considering a"></A>raster operations are easier to comprehend if you begin by considering a monochrome <A name=idx-CHP-8-0409></A><A name="addition to"></A>graphics system. In addition to the source and destination, the pattern is also an array of 1-bit pixels; visualize the pattern overlaying a destination surface. <A class=docLink href="javascript:moveTo('ternary_raster_ops');">Table 8-2</A><A name="ways in"></A> shows selections from the 256 ways in which the 0 and 1 pixels of the pattern, source, and destination can be combined.</P><A name=ternary_raster_ops></A>
+<P>
+<TABLE cellSpacing=0 width="100%" border=1>
+<CAPTION>
+<H5 class=docTableTitle>Table 8-2. Ternary raster ops</H5></CAPTION>
+<COLGROUP span=2>
+<COL>
+<COL></COLGROUP>
+<THEAD>
+<TR>
+<TH class="docTableCell thead" scope=col colSpan=2><SPAN class=docEmphStrong>Possible Combination</SPAN> </TH></TR></THEAD>
+<TBODY>
+<TR>
+<TD class=docTableCell><SPAN class=docEmphStrong>Input parameter</SPAN> </TD>
+<TD class=docTableCell><SPAN class=docEmphStrong>Input value</SPAN> </TD></TR>
+<TR>
+<TD class=docTableCell>Pattern (P): </TD>
+<TD class=docTableCell>1 1 1 1 0 0 0 0 </TD></TR>
+<TR>
+<TD class=docTableCell>Source (S): </TD>
+<TD class=docTableCell>1 1 0 0 1 1 0 0 </TD></TR>
+<TR>
+<TD class=docTableCell><SPAN class=docEmphStrong>Operation</SPAN> </TD>
+<TD class=docTableCell><SPAN class=docEmphStrong>Output</SPAN> </TD></TR>
+<TR>
+<TD class=docTableCell>Raster operation 0x00: </TD>
+<TD class=docTableCell>0 0 0 0 0 0 0 0 </TD></TR>
+<TR>
+<TD class=docTableCell>Raster operation 0x01: </TD>
+<TD class=docTableCell>0 0 0 0 0 0 0 1 </TD></TR>
+<TR>
+<TD class=docTableCell>Raster operation 0x02: </TD>
+<TD class=docTableCell>0 0 0 0 0 0 1 0 </TD></TR>
+<TR>
+<TD class=docTableCell>… </TD>
+<TD class=docTableCell>… </TD></TR>
+<TR>
+<TD class=docTableCell>Raster operation 0x60: </TD>
+<TD class=docTableCell>0 1 1 0 0 0 0 0 </TD></TR>
+<TR>
+<TD class=docTableCell>… </TD>
+<TD class=docTableCell>… </TD></TR>
+<TR>
+<TD class=docTableCell>Raster operation 0xFD: </TD>
+<TD class=docTableCell>1 1 1 1 1 1 0 1 </TD></TR>
+<TR>
+<TD class=docTableCell>Raster operation 0xFE: </TD>
+<TD class=docTableCell>1 1 1 1 1 1 1 0 </TD></TR>
+<TR>
+<TD class=docTableCell>Raster operation 0xFF: </TD>
+<TD class=docTableCell>1 1 1 1 1 1 1 1 </TD></TR></TBODY></TABLE></P><BR>
+<P class=docText><A name="followed by"></A>This table shows sample inputs followed by the resulting destinations for 7 of the 256 possible ternary raster operations. Each of these raster operations can be identified by a one-byte hexadecimal number corresponding to the pattern of resultant destination bits shown in the table. For example, for <SPAN class=docEmphasis><A name="raster operation"></A>raster operation 0x60</SPAN><A name="pixel is"></A>, if the pattern pixel is 1 (white), the source pixel is 0 (black), and the destination pixel is 1, the destination will be 1 (white).</P>
+<P class=docText><A name="versions of"></A>In the early versions of Windows, 15 of the total 256 raster operations were identified with names in both the documentation and the Windows header file that C programmers used. The first—where the destination is colored with all 0s regardless of the pattern, source, and destination—was known as BLACKNESS; the last was called WHITENESS.</P>
+<P class=docText><A name="programming reference"></A>The Windows programming reference identified all 256 raster operations by the bitwise Boolean operation they performed, expressed in reverse Polish notation. For example, raster operation 0x60 corresponds to the Boolean operation <SPAN class=docEmphasis>PDSxa</SPAN>.</P>
+<P class=docText><A name="an Exclusive"></A>This means that an Exclusive-OR (x) operation is performed between the destination (D) and the source (S), and the result is combined with the pattern (P) in a bitwise AND operation (a). In color systems, the same Boolean operation is performed among the color bits of the source, destination, and pattern. As of this writing, these raster operations are documented online at <A name=idx-CHP-8-0410></A><A class=docLink href="http://msdn.microsoft.com/library/en-us/gdi/pantdraw_6n77.asp" target=_blank>http://msdn.microsoft.com/library/en-us/gdi/pantdraw_6n77.asp</A>.</P>
+<P class=docText>Some of these <A name=idx-CHP-8-0411></A><A name="want to"></A>raster operations are quite useful in certain circumstances. For example, you might want to invert the destination pixels that correspond to areas where a brush is black, but display a source bitmap in areas where the brush is white. That's <SPAN class=docEmphasis>raster operation 0xC5</SPAN><A name="of the"></A>. Of course, many of the 256 possibilities have little practical use, and I suspect that most of them have never been used outside of demonstration or exploratory <A name=idx-CHP-8-0412></A><A name="and versatility"></A>code. Still, the sense of completeness and versatility is quite satisfying.</P>
+<P class=docText><A name="versatile BitBlt"></A>If we were implementing this versatile BitBlt function ourselves, how would we do it? Assume that it's 1985 and we're using the C programming language. For illustrative purposes, let's also assume that we're dealing with a one-byte-per-pixel gray shade <A name=idx-CHP-8-0413></A><A name="graphics system"></A>graphics system, and that the source, destination, and pattern can be accessed through two-dimensional arrays named <TT>S, D</TT>, and <TT>P</TT><A name="these variables"></A>. That is, each of these variables is a pointer to a collection of byte pointers, and each byte pointer points to the beginning of a horizontal row of pixels, so that <TT><I>S[y][x]</I></TT><A name="at row"></A> accesses the byte at row <TT><I>y</I></TT> and column <TT><I>x</I></TT><A name="and height"></A>. The width and height of the area you're working with is stored in <TT><I>cx</I></TT> and <TT><I>cy</I></TT> (this is a traditional <A name=idx-CHP-8-0414></A>Windows programming variable-naming convention: the <SPAN class=docEmphasis>c</SPAN> stands for <SPAN class=docEmphasis>count</SPAN><A name="indicate a"></A>, so these variables indicate a count of x and y values, or width and height). The <TT>rop</TT> variable stores a raster operation <A name=idx-CHP-8-0415></A>code from 0 to 255.</P>
+<P class=docText>Here's some simple <A name=idx-CHP-8-0416></A>C code to implement using BitBlt. A <TT>switch</TT> statement uses <TT>rop</TT><A name="values in"></A> to determine which operation is performed to calculate the pixel values in the destination. Only 3 of the 256 raster operations are shown here, but you get the general idea:</P><PRE>	for (y = 0; y &lt; cy; y++)
+	for (x = 0; x &lt; cx; x++)
+	{
+	     switch(rop)
+	     {
+	     case 0x00:
+	          D[y][x] = 0x00;
+	          break;
+	     ...
+	     case 0x60:
+	          D[y][x] = (D[y][x] ^ S[y][x]) &amp; P[y][x];
+	          break;
+	     ...
+	     case 0xFF:
+	          D[y][x] = 0xFF;
+	          break;
+	     }
+	}
+</PRE><BR>
+<P class=docText><A name=is></A>This certainly is <SPAN class=docEmphasis>pretty</SPAN><A name="to look"></A> code, which means that it's nice to look at and certainly crystal clear in its intentions and functionality. But beautiful code it is <SPAN class=docEmphasis>not</SPAN><A name="satisfying when"></A>, because beautiful code is also satisfying when you run it.</P>
+<P class=docText><A name="This code"></A>This code is actually a <SPAN class=docEmphasis>disaster</SPAN><A name="with bitmaps"></A> because it deals with bitmaps, and bitmaps can be <SPAN class=docEmphasis>huge</SPAN><A name="come out"></A>. These days, bitmaps that come out of inexpensive digital cameras can have <SPAN class=docEmphasis>millions</SPAN><A name="you really"></A> of pixels. Do you really want that <TT>switch</TT><A name="inside the"></A> statement to be inside the row and column loops?</P>
+<P class=docText>Should the <TT>switch</TT><A name="loops inside"></A> logic be executed for each and every pixel? Probably not. Moving the loops inside each <TT>case</TT><A name="up the"></A> certainly clutters up the <A name=idx-CHP-8-0417></A><A name="it has"></A>code, but now at least it has a fighting chance of reasonable performance:</P><PRE>	switch(rop)
+	{
+	case 0x00:
+	     for (y = 0; y &lt; cy; y++)
+	     for (x = 0; x &lt; cx; x++)
+	          D[y][x] = 0x00;
+	     break;
+	...
+	case 0x60:
+	     for (y = 0; y &lt; cy; y++)
+	     for (x = 0; x &lt; cx; x++)
+	          D[y][x] = (D[y][x] ^ S[y][x]) &amp; P[y][x];
+	     break;
+	...
+	case 0xFF:
+	     for (y = 0; y &lt; cy; y++)
+	     for (x = 0; x &lt; cx; x++)
+	          D[y][x] = 0xFF;
+	     break;
+	}
+</PRE><BR>
+<P class=docText><A name="and you"></A>Of course, if it really were 1985 and you were writing Windows, you wouldn't even be doing it in C. <A name=idx-CHP-8-0418></A><A name="Early Windows"></A>Early Windows <SPAN class=docEmphasis>applications</SPAN><A name="in C"></A> were mostly written in C, but Windows itself was written in <A name=idx-CHP-8-0419></A>8086 assembly language.</P>
+<P class=docText><A name="important to"></A>For something as important to Windows as BitBlt, an even more radical solution was required—something even faster than assembly language, as incredible as that may seem. The <A name=idx-CHP-8-0420></A><A name="who implemented"></A>Microsoft programmers who implemented BitBlt were quite proud of what they had done, and those of us learning Windows programming in the mid-1980s were equally impressed when they bragged of their achievement.</P>
+<P class=docText><A name="actually contained"></A>The BitBlt function actually contained a mini compiler of sorts. Based on the raster operation (as well as the <A name=idx-CHP-8-0421></A><A name="the area"></A>graphics format, the number of bits per pixel, and the size of the area), the BitBlt function assembled <A name=idx-CHP-8-0422></A><A name="instructions on"></A>8086 machine code instructions on the stack in the form of a subroutine and then executed it. This makeshift machine code routine looped through all the pixels and performed the requested raster operation.</P>
+<P class=docText><A name="solution to"></A>It was the perfect solution to implementing BitBlt and its 256 <A name=idx-CHP-8-0423></A><A name="required a"></A>raster operations. Although this mini compiler required a bit of overhead to put the machine code together on the stack, the per-pixel <A name=idx-CHP-8-0424></A><A name="processing was"></A>processing was as fast as possible, and that's what is most important when working with bitmaps. Moreover, the BitBlt code in Windows was probably much shorter than it would have been had it contained explicit code for all 256 raster operations.</P>
+<P class=docText><A name="possible to"></A>It was even possible to get a little glimpse into the workings of this BitBlt mini compiler by examining the documentation of the ternary <A name=idx-CHP-8-0425></A><A name="raster operation"></A>raster operations. For example, the raster operation identified by the number 0x60 implements a Boolean operation of <TT>PDSxa</TT><A name="you actually"></A>. When calling BitBlt, you actually supply a 32-bit raster operation code, which is documented as <TT>0x00600365</TT><A name=the></A> for this operation. Notice the <TT>0x60</TT><A name="bottom two"></A> byte embedded in that number, but also take note that the bottom two bytes form the number 0x0365.</P>
+<P class=docText><A name="operation with"></A>The raster operation with the result of 11110110 or 0xF6 has the Boolean operation <TT>PDSxo</TT><A name=to></A>, which is very similar to <TT>PDSxa</TT><A name="OR operation"></A> except that it performs an OR operation rather than AND. The complete 32-bit raster operation code passed to the BitBlt function is <TT>0x00F70265</TT><A name="The bottom"></A>. The bottom two bytes form the number 0x0265, which is very close to the 0x0365 of <TT>PDSxa</TT><A name="more of"></A>. If you examine more of these 32-bit raster operation codes, it becomes very obvious that the raster operation code itself serves as a template of sorts for the BitBlt mini compiler to assemble the proper machine code. That technique saves BitBlt both the memory and time required to use a lookup table.</P>
+<P class=docText><A name="created over"></A>Of course, Windows 1.0 was created over 20 years ago. We have all moved on, and so has Windows itself. These days my preferred programming language is neither assembly language nor C, but <A name=idx-CHP-8-0426></A><A name="write what"></A>C#. I usually write what's called <SPAN class=docEmphasis>managed code</SPAN><A name=the></A> that runs under the <A name=idx-CHP-8-0427></A>Microsoft .NET Framework. The C# compiler turns my source code into processor-independent <SPAN class=docEmphasis>Intermediate Language</SPAN><A name="is run"></A> (often referred to as Microsoft Intermediate Language, or MSIL). Only later, when the program is run, does the <A name=idx-CHP-8-0428></A><A name="use a"></A>.NET Common Language Run-time use a just-in-time compiler to convert that Intermediate Language into machine code appropriate for the runtime processor.<A name=idx-CHP-8-0429></A><A name=idx-CHP-8-0430></A></P>
+<P class=docText>And yet digital <A name=idx-CHP-8-0431></A><A name="sorts still"></A>image processing of all sorts still cries out for unusual approaches to coding. When working with millions of pixels, the per-pixel processing has to be fast, fast, fast. For commercial products, you will probably want to hire an assembly language programmer or someone who knows how to target the <A name=idx-CHP-8-0432></A><A name="video boards"></A>Graphics Processing Unit (GPU) found on video boards. Even for casual or noncommercial software, you will probably want something faster than the normal high-level language loop.</P>
+<P class=docText><A name="I was"></A>I was recently reminded of the on-the-fly <A name=idx-CHP-8-0433></A><A name="the original"></A>code generation of the original Windows BitBlt function while experimenting with some C# <A name=idx-CHP-8-0434></A>code to implement <A name=idx-CHP-8-0435></A><A name=called></A>digital image filters, also called <SPAN class=docEmphasis>image filters</SPAN> or <SPAN class=docEmphasis>digital filters</SPAN><A name="such as"></A>. Raster operations such as those implemented in the Windows BitBlt and StretchBlt functions apply only to corresponding pixels of a source, destination, and pattern. <A name=idx-CHP-8-0436></A>Digital filters take <SPAN class=docEmphasis>surrounding</SPAN><A name="apply a"></A> pixels into account. You apply a particular digital filter to a bitmap to change it in some way, perhaps to sharpen the edges or even blur the overall image. A blur filter, for example, averages a group of surrounding pixels to calculate a destination pixel.<A name=idx-CHP-8-0437></A><A name=idx-CHP-8-0438></A></P>
+<P class=docText><A name="of numbers"></A>Simple digital image filters are often implemented as small arrays of numbers. These arrays are usually square and have an odd number of rows and columns. <A class=docLink href="javascript:moveTo('simple_digital_image_filter');">Figure 8-1</A><A name="simple example"></A> shows a simple example.<A name=I_indexterm8_tt96></A><A name=I_indexterm8_tt97></A></P><A name=simple_digital_image_filter></A>
+<P>
+<CENTER>
+<H5 class=docFigureTitle>Figure 8-1. Simple digital image filter</H5><IMG id="" height=237 alt="" src="images/on-the-fly_code_generation_for_image_processing.0.png" width=351 border=0> </CENTER>
+<P></P><BR>
+<P class=docText><A class=docLink href="javascript:moveTo('simple_digital_image_filter');">Figure 8-1</A><A name="you can"></A> is a 3 x 3 filter, and you can think of it as transforming a source bitmap into a destination bitmap. For each pixel of the source bitmap, align this filter so its center is over the desired pixel and the other eight cells are aligned with the surrounding pixels. Multiply the nine values in the filter by the nine source pixels, and add up the results. That's the corresponding pixel for the destination bitmap. If the pixels <A name=idx-CHP-8-0439></A><A name="apply the"></A>encode color or transparency, you'll want to apply the filter to each color channel separately. Some filters have different arrays for the different color channels or are implemented with algorithms, but we'll stick to the really simple ones for this exercise.<A name=idx-CHP-8-0440></A><A name=idx-CHP-8-0441></A></P>
+<P class=docText><A name="A filter"></A>A filter with the value 1/9 in all its cells is a <A name=idx-CHP-8-0442></A><A name="in the"></A>blur filter. Each pixel in the destination bitmap is an average of nine adjacent pixels in the source bitmap. It's convenient that the numbers add up to 1 so the image doesn't get any brighter or darker, but this filter could easily contain all 1s or any other number. All that would be necessary to compensate would be to divide the sum of the products by the sum of the filter cells (as will become apparent, I actually prefer that method).</P>
+<P class=docText><A class=docLink href="javascript:moveTo('sharpness_filter');">Figure 8-2</A> shows a <A name=idx-CHP-8-0443></A><A name="tends to"></A>sharpness filter. This filter tends to highlight areas of high contrast.</P><A name=sharpness_filter></A>
+<P>
+<CENTER>
+<H5 class=docFigureTitle>Figure 8-2. Sharpness filter</H5><IMG id="" height=206 alt="" src="images/on-the-fly_code_generation_for_image_processing.1.png" width=213 border=0> </CENTER>
+<P></P><BR>
+<P class=docText><A name="with gray"></A>Let's suppose we're dealing with gray-shaded bitmaps with one byte per pixel. The pixels of the source bitmap are stored in a two-dimensional array named <TT>S</TT><A name="to calculate"></A>. Our job is to calculate the pixels of the destination array named <TT>D</TT><A name="in the"></A>. The horizontal and vertical sizes of both arrays are stored in the variables <TT>cxBitmap</TT> and <TT>cyBitmap</TT>. The <TT>Filter</TT><A name="array named"></A> is a two-dimensional array named <TT>F</TT> with dimensions <TT>cxFilter</TT> and <TT>cyFilter</TT>. <A class=docLink href="javascript:moveTo('naiumlve_c_code_to_apply_a_digital_filter');">Example 8-1</A> shows some simple C <A name=idx-CHP-8-0444></A>code for applying the filter.<A name=idx-CHP-8-0445></A></P><A name=naiumlve_c_code_to_apply_a_digital_filter></A>
+<H5 class=docExampleTitle id=title-ID0EYFEK>Example 8-1. Naïve C code to apply a digital filter</H5>
+<P>
+<TABLE cellSpacing=0 cellPadding=5 width=* border=1>
+<TBODY>
+<TR>
+<TD>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedHeight>for (yDestination = 0; yDestination &lt; cyBitmap; yDestination++)
+for (xDestination = 0; xDestination &lt; cxBitmap; xDestination++)
+{
+     double pixelsAccum = 0;
+     double filterAccum = 0;
+
+     for (yFilter = 0; yFilter &lt; cyFilter; yFilter++)
+     for (xFilter = 0; xFilter &lt; cxFilter; xFilter++)
+     {
+          int ySource = yDestination + yFilter - cyFilter / 2;
+          int xSource = xDestination + xFilter - cxFilter / 2;
+
+          (if ySource &gt;= 0 &amp;&amp; ySource &lt; cyBitmap &amp;&amp;
+              xSource &gt;= 0 &amp;&amp; xSource &lt; cxBitmap)
+          {
+               pixelsAccum += F[y][x] * S[y][x];
+               filterAccum += F[y][x];
+          }
+     }
+     if (filterAccum != 0)
+          pixelsAccum /= filterAccum;
+
+     if (pixelsAccum &lt; 0)
+          D[y][x] = 0;
+
+     else if (pixelsAccum &gt; 255)
+          D[y][x] = 255;
+
+     else
+          D[y][x] = (unsigned char) pixelsAccum;
+}
+
+
+					    </PRE><BR></TD></TR></TBODY></TABLE></P>
+<P class=docText><A name="the filter"></A>Notice that looping through the filter cells results in accumulating two totals. The <TT>pixelsAccum</TT><A name="the products"></A> variable is a sum of the products of the source bitmap values and the filter cells, while <TT>filterAccum</TT><A name="is a"></A> is a sum of the filter cells only. For destination pixels around the edges of the bitmap, some cells of the filter correspond to pixels outside the extent of the source bitmap. I prefer to ignore those cells by adding nothing to <TT>pixelsAccum</TT> and <TT>filterAccum</TT><A name=divide></A>, but to later divide <TT>pixelsAccum</TT> by <TT>filterAccum</TT><A name="destination pixel"></A> so that the destination pixel is approximately correct. That's why <TT>filterAccum</TT><A name="the loop"></A> isn't calculated outside the loop and why the filter cells don't have to be normalized to add up to one. Also notice toward the end of this code that the ratio of <TT>pixelsAccum</TT> to <TT>filterAccum</TT><A name="clamped between"></A> has to be clamped between 0 and 255 so no strange effects result.<A name=idx-CHP-8-0446></A></P>
+<P class=docText><A name="and the"></A>For every pixel of the destination bitmap, both the source bitmap and the filter must be accessed nine times. Moreover, as the resolution of bitmaps gets higher, filters must often get larger as well to have a noticeable effect on the image.</P>
+<P class=docText><A name="of processing"></A>It's a lot of processing for a high-level language, but I was curious to discover how C# and .NET would fare in handling the pressure. For my experimentation with C# <A name=idx-CHP-8-0447></A><A name=some></A>image processing, I began with some <A name=idx-CHP-8-0448></A><A name=book></A>Windows Forms code from my book <SPAN class=docEmphasis><A name="Programming Windows"></A>Programming Windows with</SPAN> <SPAN class=docEmphasis>C</SPAN># (Microsoft Press). The <TT>ImageClip</TT> progam in <A class=docLink href="174.beautiful_concurrency.html#beautiful_concurrency">Chapter 24</A><A name=incorporates></A> of that book incorporates <A name=idx-CHP-8-0449></A><A name="and save"></A>code that will load, view, print, and save bitmaps of various popular formats, including JPEG, GIF, and PNG. That <A name=idx-CHP-8-0450></A><A name="the code"></A>code, along with the code I wrote for this exercise, is available for downloading and contributes to a <A name=idx-CHP-8-0451></A>program named <TT>ImageFilterTest</TT><A name="requires Visual"></A>. The project file requires Visual Studio 2005 for compilation; the executable should run under the .NET Framework 2.0 and later. Perform the following steps to use the program:<A name=idx-CHP-8-0452></A><A name=idx-CHP-8-0453></A><A name=idx-CHP-8-0454></A></P>
+<DIV style="FONT-WEIGHT: bold">
+<OL class=docList type=1>
+<LI>
+<DIV style="FONT-WEIGHT: normal">
+<P class=docList><A name="code in"></A>In the File menu, select Open and load in a full-color bitmap. The filter-related code in the program only works with 24-bit-per-pixel or 32-bit-per-pixel bitmaps; it doesn't work with bitmaps that use color palette tables, including those where the palette table contains gray shades.</P></DIV></LI>
+<LI>
+<DIV style="FONT-WEIGHT: normal">
+<P class=docList><A name="of the"></A>Select one of the filters in the Filter menu. The filter will be applied to the bitmap and the elapsed time will be reported. The first item in the Filter menu ("Use method that generates Intermediate Language") lets you select the method used to apply the filter. By default, the program uses a method called <TT>FilterMethodCS</TT><A name="you enable"></A> (short for "Filter Method using C#"). If you enable this menu item, the program uses <TT>FilterMethodIL</TT><A name="these methods"></A> ("Filter Method with Intermediate Language"). Both of these methods will be described later in this chapter.</P></DIV></LI></OL></DIV>
+<P class=docText><A name="Whenever you"></A>Whenever you attempt to write C# code for best performance, one of the more interesting exercises is to examine the compiled file using a little utility included with the .NET Software Development Kit called <SPAN class=docEmphasis>IL Disassembler</SPAN><A name="shows you"></A>. The IL Disassembler shows you the Intermediate Language <A name=idx-CHP-8-0455></A><A name="Although the"></A>generated by the C# compiler. Although the program doesn't show you the final step—the conversion of the Intermediate Language into machine code by the just-in-time compiler—you can usually use it to locate some problem areas.<A name=idx-CHP-8-0456></A></P>
+<P class=docText><A name="I gave"></A>Very early on, I gave up on the idea of storing <A name=idx-CHP-8-0457></A><A name="supports multidimensional"></A>bitmap pixels in two-dimensional arrays. C# supports multidimensional arrays, but on the Intermediate Language level, getting elements in and out of multidimensional arrays requires method calls. Intermediate Language instructions do, however, support access to one-dimensional arrays. Furthermore, the standard (and fast) code for transferring pixels from a Bitmap object into an array and back into a Bitmap object involves a one-dimensional array. The code I wrote to transfer everything into a two-dimensional array involved a considerable amount of time just by itself.</P>
+<P class=docText><A name="filters to"></A>To encapsulate image filters and the methods that apply these filters to bitmaps, I created a class named <TT>ImageFilter</TT><A name="three private"></A> that contains three private fields and a constructor that sets the fields. The private field <TT>filter</TT><A name="contains a"></A> is a one-dimensional array that contains a two-dimensional filter, so the <TT>cxFilter</TT> and <TT>cyFilter</TT><A name="the implicit"></A> fields are necessary to indicate the implicit number of columns and rows:</P><PRE>	class ImageFilter
+	{
+	    double[] filter;
+	    int cxFilter;
+	    int cyFilter;
+	    public ImageFilter(int cxFilter, double[] filter)
+	    {
+	        this.<A name=idx-CHP-8-0458></A>filter = filter;
+	        this.cxFilter = cxFilter;
+	        this.cyFilter = filter.Length / cxFilter;
+	    }
+	    ...
+	}
+</PRE><BR>
+<P class=docText><A name="If only"></A>If only square filters were allowed, the <TT>cxFilter</TT><A name="constructor wouldn"></A> parameter to the constructor wouldn't be necessary, and the number of rows and columns could simply be calculated as the square root of the size of the <TT>filter</TT><A name=as></A> array, which is available as <TT>filter.Length</TT>. The <TT>cxFilter</TT><A name="for rectangular"></A> parameter allows for rectangular filter arrays rather than just square ones. If <TT>cxFilter</TT><A name="of columns"></A> indicates the number of columns in the filter, the number of rows is <TT>filter.Length/cxFilter</TT>, which my <A name=idx-CHP-8-0459></A>code implicitly assumes is an integer.</P>
+<P class=docText>The <TT>Filter</TT> class includes a method named <TT>ApplyFilter</TT>, which has a parameter of type <TT>Bitmap</TT>. I won't show you the <TT>ApplyFilter</TT><A name="access the"></A> method here because it simply contains standard code to first access the pixels of the <TT>Bitmap</TT><A name="method named"></A> object (using a method named <TT>LockBits</TT><A name="the pixels"></A>), and then to transfer the pixels into a <A name=idx-CHP-8-0460></A>one-dimensional array. A second parameter of <TT>ApplyFilter</TT> is a Boolean named <TT>willGenerateCode</TT>. If <SPAN class=docEmphasis>false</SPAN>, the <TT>ApplyFilter</TT> method calls <TT>FilterMethodCS</TT>.<A name=idx-CHP-8-0461></A></P>
+<P class=docText><TT>FilterMethodCS</TT>, shown in <A class=docLink href="javascript:moveTo('a_digital_filter_algorithm_in_csharp');">Example 8-2</A><A name="of the"></A>, is a fairly straightforward implementation of the filtering algorithm from <A class=docLink href="javascript:moveTo('naiumlve_c_code_to_apply_a_digital_filter');">Example 8-1</A><A name="but it"></A>, but it has been translated to C# and uses one-dimensional arrays.<A name=idx-CHP-8-0462></A></P><A name=a_digital_filter_algorithm_in_csharp></A>
+<H5 class=docExampleTitle id=title-ID0ELNEK>Example 8-2. A digital filter algorithm in C#</H5>
+<P>
+<TABLE cellSpacing=0 cellPadding=5 width=* border=1>
+<TBODY>
+<TR>
+<TD>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedHeight>1  void <A name=idx-CHP-8-0463></A>FilterMethodCS(byte[] src, byte[] dst, int stride, int bytesPerPixel)
+2  {
+3      int cBytes = src.Length;
+4      int cFilter = filter.Length;
+5
+6      for (int iDst = 0; iDst &lt; cBytes; iDst++)
+7      {
+8          double pixelsAccum = 0;
+9          double filterAccum = 0;
+10
+11         for (int iFilter = 0; iFilter &lt; cFilter; iFilter++)
+12         {
+13             int yFilter = iFilter / cyFilter;
+14             int xFilter = iFilter % cxFilter;
+15
+16             int iSrc = iDst + stride * (yFilter - cyFilter / 2) +
+17                                 bytesPerPixel * (xFilter - cxFilter / 2);
+18
+19             if (iSrc &gt;= 0 &amp;&amp; iSrc &lt; cBytes)
+20             {
+21                 pixelsAccum += filter[iFilter] * src[iSrc];
+22                 filterAccum += filter[iFilter];
+23             }
+24         }
+25         if (filterAccum != 0)
+26             pixelsAccum /= filterAccum;
+27
+28         dst[iDst] = pixelsAccum &lt; 0 ? (byte)0 : (pixelsAccum &gt; 255 ?
+29                                           (byte)255 : (byte)pixelsAccum);
+30     }
+31  }
+
+
+					    </PRE><BR></TD></TR></TBODY></TABLE></P>
+<P class=docText><A name="parameters are"></A>The first two parameters are the source and destination arrays <TT>src</TT> and <TT>dst</TT><A name=is></A>. The third parameter is <TT>stride</TT><A name="the number"></A>, which is the number of bytes in each row of the source and destination bitmaps. This <TT>stride</TT><A name="equal to"></A> value is generally equal to the pixel width of the bitmap times the number of bytes per pixel, but for performance reasons it might be rounded up to a four-byte boundary. (Because the program only works with full-color bitmaps, the number of bytes per pixel will always be three or four.) It's not necessary to calculate the <TT>stride</TT> value because it's provided with the information returned by the <TT>LockBits</TT><A name="begins by"></A> method when you get access to the bitmap bits. The method begins by saving the number of bytes in both the <TT>src</TT> and <TT>filter</TT><A name="avoid frequent"></A> arrays to avoid frequent accesses of the <TT>Length</TT><A name="with the"></A> property. The variables that begin with the letter <TT><I>i</I></TT><A name="arrays used"></A> are indexes to the three arrays used in the method.<A name=idx-CHP-8-0464></A></P>
+<P class=docText><A name="If the"></A>If the goal here is to write a <SPAN class=docEmphasis>fast</SPAN> digital filter algorithm, then <TT>FilterMethodCS</TT><A name="a "></A> is a failure. With a 24-bit-per-pixel 300,000-pixel bitmap and a 5 x 5 filter, this method requires about two seconds on my 1.5 GHz Pentium 4. Two seconds might not seem too bad, but a 5 x 5 filter applied to a 32-bit-per-pixel 4.3 megapixel bitmap requires about half a minute, and that is <SPAN class=docEmphasis>very</SPAN><A name="any way"></A> long. Yet I can't see any way to improve the C# <A name=idx-CHP-8-0465></A><A name="make it"></A>code to make it more efficient.<A name=idx-CHP-8-0466></A></P>
+<P class=docText>Traditionally, if a <A name=idx-CHP-8-0467></A><A name="enough and"></A>function isn't working fast enough and you don't feel you can optimize it any further, you start considering assembly language. In this era of platform independence and managed code, you might instead consider the vaguely equivalent approach of writing the routine directly in <A name=idx-CHP-8-0468></A><A name="be considered"></A>.NET Intermediate Language. This is certainly an entirely plausible solution, and might even be considered fun (to the right type of mentality). However, even coding in Intermediate Language might not be sufficient. Use the IL Disassembler to look at the Intermediate Language generated by the C# compiler for <TT>FilterMethodCS</TT><A name="really think"></A>. Do you really think you can improve greatly on that?<A name=idx-CHP-8-0469></A></P>
+<P class=docText>The real problem with <TT>FilterMethodCS</TT><A name="bitmaps of"></A> is that it's generalized for bitmaps of any dimension and for filters of any dimension. Much of the code in <TT>FilterMethodCS</TT><A name="and indexing"></A> is just "busy work" involved with looping and indexing. This method could be improved dramatically if it didn't have to be so generalized. Suppose you were always dealing with 32-bit-per-pixel bitmaps of the same size, which I'll symbolize as <SPAN class=docEmphasis>CX</SPAN><A name=and></A> and <SPAN class=docEmphasis>CY</SPAN><A name="letters as"></A> (think of these uppercase letters as <TT>#defines</TT><A name=or></A> in C or C++, or <TT>const</TT><A name="And suppose"></A> values in C#). And suppose you always used the same filter— a 3 x 3 filter with fixed elements whose fields are symbolized like the ones in <A class=docLink href="javascript:moveTo('array_layout_of_a_3x3_filter');">Figure 8-3</A>.</P><A name=array_layout_of_a_3x3_filter></A>
+<P>
+<CENTER>
+<H5 class=docFigureTitle><A name="of a"></A>Figure 8-3. Array layout of a 3x3 filter</H5><IMG id="" height=122 alt="" src="images/on-the-fly_code_generation_for_image_processing.2.png" width=193 border=0> </CENTER>
+<P></P><BR>
+<P class=docText><A name="to dispense"></A>How would you write the filter method then? You might decide to dispense with the <TT>iFilter</TT><A name=just></A> loop and just <A name=idx-CHP-8-0470></A><A name="the nine"></A>hardcode the logic for the nine filter elements:</P>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedHeight>	// Filter cell F11
+	int iSrc = iDst - 4 * CX - 4;
+
+	if (iSrc &gt;= 0 &amp;&amp; iSrc &lt; 4 * CX * CY)
+	{
+	     pixelsAccum += src[iSrc] * F11;
+	     filterAccum += F11;
+	}
+
+	// Filter cell F12
+	iSrc = iDst - 4 * CX;
+
+	if (iSrc &gt;= 0 &amp;&amp; iSrc &lt; 4 * CX * CY)
+	{
+	     pixelsAccum += src[iSrc] * F12;
+	     filterAccum += F12;
+	}
+
+	// Filter cells F13 through F32
+	...
+
+	// Filter cell F33
+	iSrc = iDst + 4 * CX + 4;
+
+	if (iSrc &gt;= 0 &amp;&amp; iSrc &lt; 4 * CX * CY)
+	{
+	     pixelsAccum += src[iSrc] * F33;
+	     filterAccum += F33;
+	}
+
+
+					    </PRE><BR>
+<P class=docText><A name="the looping"></A>This approach gets rid of the looping logic, simplifies the calculation of <TT>iSrc</TT><A name="and eliminates"></A>, and eliminates the access of the <TT>filter</TT><A name="is definitely"></A> array. Although the code is definitely bulkier, it is guaranteed to be faster. In fact, because you know the values of all the filter elements, you can reduce the code somewhat by eliminating those cases where the filter element is 0, and simplifying those cases where the filter element is 1 or –1.</P>
+<P class=docText><A name="logic isn"></A>Of course, hardcoding this logic isn't practical because you really want the ability to deal with many differently sized bitmaps and many types of filters. These properties are not known until it's time to actually apply the filter.</P>
+<P class=docText><A name="hardcoding the"></A>Rather than hardcoding the filter logic, a much better approach would be to generate custom code on the fly based on the size and pixel depth of the bitmap, and the size and elements of the filter. In olden days, you might do as the Windows developers did with BitBlt, which was to generate machine code in memory, and then execute it. Translated to modern times, with our concern for portability, the solution might be to generate .NET <A name=idx-CHP-8-0471></A><A name="and then"></A>Intermediate Language using C#, and then execute it.<A name=I_indexterm8_tt103></A><A name=I_indexterm8_tt104></A></P>
+<P class=docText><A name="create a"></A>This is actually a workable solution. In a C# program you can create a static method in memory that consists of instructions in Intermediate Language, and then execute that method, at which point the .NET just-in-time compiler enters the picture to convert your Intermediate Language to machine <A name=idx-CHP-8-0472></A><A name="time during"></A>code. At no time during this entire process do you stop writing managed code.</P>
+<P class=docText>The facility to <A name=idx-CHP-8-0473></A><A name="was introduced"></A>dynamically generate Intermediate Language was introduced in .NET 2.0 and involves classes in the <TT>System.Reflection.Emit</TT><A name="and even"></A> namespace. You can generate whole classes and even entire assemblies, but for smaller applications (such as the one we're developing), you can simply generate a static method and then call it. This is what I've done in <TT>FilterMethodIL</TT><A name="in the"></A> in the <TT>ImageFilter</TT> class.<A name=idx-CHP-8-0474></A><A name=idx-CHP-8-0475></A></P>
+<P class=docText><A name="you all"></A>I'm going to show you all of <TT>FilterMethodIL</TT><A name="of the"></A> here (but eliminating many of the comments you'll find in the <SPAN class=docEmphasis>ImageFilter.cs</SPAN><A name="because it"></A> source code file) because it involves some interesting interplay between the C# code and the generated Intermediate Language. Keep in mind throughout this exercise that <TT>FilterMethodIL</TT><A name="Language whenever"></A> generates this Intermediate Language whenever a specific filter is applied to a specific bitmap, so all aspects of the filter can be hard-coded into the Intermediate Language, as well as the size and pixel depth of the bitmap. Obviously, some overhead is required to generate this code, but that cost is dwarfed by the number of operations required by large bitmaps, which might easily have over a million pixels.<A name=idx-CHP-8-0476></A><A name=idx-CHP-8-0477></A></P>
+<P class=docText>All the code in <TT>FilterMethodIL</TT><A name="on and"></A> is shown below in sequence, with explanations throughout to describe what's going on and introduce new concepts. <TT>FilterMethodIL</TT><A name="same parameters"></A> has the same parameters as <TT>FilterMethodCS</TT><A name="the total"></A> and begins by obtaining the total byte size of the bitmap:</P><PRE>	void FilterMethodIL(byte[] src, byte[] dst, int stride, int bytesPerPixel)
+	{
+	    int cBytes = src.Length;
+</PRE><BR>
+<P class=docText><A name="in code"></A>To create a static method in code, you create a new object of type <TT>DynamicMethod</TT><A name="The second"></A>. The second argument to the constructor indicates the method's return type, and the third argument is an array of the method's parameter types. The fourth argument is the class that's creating this method, and is available from the <TT>GetType</TT> method:<A name=idx-CHP-8-0478></A></P><PRE>	DynamicMethod dynameth = new DynamicMethod("Go", typeof(void),
+	    new Type[] { typeof(byte[]), typeof(byte[]) }, GetType());
+</PRE><BR>
+<P class=docText><A name="see by"></A>As you can see by the third argument to the constructor, the two parameters in this dynamic method are both <TT>byte</TT><A name="be the"></A> arrays, and these will be the <TT>src</TT> and <TT>dst</TT> arrays from <A class=docLink href="javascript:moveTo('a_digital_filter_algorithm_in_csharp');">Example 8-2</A><A name="Intermediate Language"></A>. Throughout the Intermediate Language, these two arguments are referred to with indexes 0 and 1.</P>
+<P class=docText><A name="Intermediate Language"></A>To generate the Intermediate Language that comprises the body of this method, you obtain an object of type <TT>ILGenerator</TT>:<A name=idx-CHP-8-0479></A></P><PRE>	ILGenerator generator = dynameth.GetILGenerator();
+</PRE><BR>
+<P class=docText>Most of what follows will use this <TT>generator</TT><A name="determined that"></A> object. You can begin by defining local variables of the method. I determined that it would be convenient to have three local variables corresponding to three of the local variables in the <TT>FilterMethodCS</TT>:</P><PRE>	generator.DeclareLocal(typeof(int));       // Index 0 = iDst
+	generator.DeclareLocal(typeof(double));    // Index 1 = pixelsAccum
+	generator.DeclareLocal(typeof(double));    // Index 2 = filterAccum
+</PRE><BR>
+<P class=docText><A name="comments indicate"></A>As the comments indicate, these local variables will be referred to by indexes. We are now ready to begin defining a loop based around <TT>iDst</TT><A name="the pixels"></A> that will access all the pixels of the destination array. These three statements correspond to the declarations of these variables in lines 3, 4, and 6 of <A class=docLink href="javascript:moveTo('a_digital_filter_algorithm_in_csharp');">Example 8-2</A>.</P>
+<P class=docText><A name="this exercise"></A>Much of the remainder of this exercise requires generating Intermediate Language operation <A name=idx-CHP-8-0480></A><A name="which are"></A>codes, which are similar to machine language op codes. Intermediate Language consists of one-byte op codes, sometimes with arguments. However, you don't need to get your hands dirty with the actual bits and bytes. To generate these op codes, call one of the overloads of the <TT>Emit</TT><A name=the></A> method defined by the <TT>IlGenerator</TT><A name=to></A> class. The first argument to <TT>Emit</TT><A name="an object"></A> is always an object of type <TT>OpCode</TT><A name="available op"></A>, and all the available op codes are predefined as static read-only fields of the <TT>OpCodes</TT> class (notice the plural). As of this writing, the <TT>OpCodes</TT> class is documented online at <A class=docLink href="http://msdn2.microsoft.com/library/system.reflection.emit.opcodes.aspx" target=_blank>http://msdn2.microsoft.com/library/system.reflection.emit.opcodes.aspx</A>.<A name=idx-CHP-8-0481></A><A name=idx-CHP-8-0482></A></P>
+<P class=docText>Most of the <A name=idx-CHP-8-0483></A><A name=a></A>assignment and operational logic in Intermediate Language is based on a <A name=idx-CHP-8-0484></A>virtual <SPAN class=docEmphasis>evaluation stack</SPAN><A name="because the"></A>. (I say it's virtual because the actual code that will eventually be executed by your computer processor is machine code generated by the just-in-time compiler, and this code might or might not mimic the evaluation stack of the Intermediate Language.) A <TT>load</TT><A name="onto the"></A> instruction pushes a value onto the stack. This can be either a specific number or a value from a local variable, or something else. A <TT>store</TT><A name="the stack"></A> instruction retrieves the value from the stack and stores it in a local variable or someplace else. Arithmetic and logical operations are also performed on the stack. <TT>Add</TT><A name="for example"></A>, for example, pops two values from the stack, adds them, and pushes the result onto the stack.<A name=idx-CHP-8-0485></A></P>
+<P class=docText>Setting the local <TT>iDst</TT> variable to <TT>0</TT><A name="requires a"></A> in Intermediate Language requires a load instruction and a store instruction. The <TT>Ldc_I4_0</TT><A name="integer value"></A> instruction places a four-byte integer value of 0 on the stack, and the <TT>Stloc_0</TT><A name="that value"></A> instruction stores that value in the local variable with index 0, which is the local variable corresponding to <TT>iDst</TT>:</P><PRE>	generator.Emit(OpCodes.Ldc_I4_0);
+	generator.Emit(OpCodes.Stloc_0);
+</PRE><BR>
+<P class=docText><A name="languages include"></A>Although many high-level programming languages include a <TT>goto</TT><A name="Intermediate Language"></A> (or equivalent) instruction, modern programmers are discouraged from using it. However, in assembly language and Intermediate Language, the <TT>goto</TT><A name=a></A>—generally known as a <SPAN class=docEmphasis>jump</SPAN> or <SPAN class=docEmphasis>ranch</SPAN><A name="flow control"></A> instruction—is the only form of flow control available. All <TT>for</TT> and <TT>if</TT> statements must be mimicked with <A name=idx-CHP-8-0486></A>branching.<A name=idx-CHP-8-0487></A><A name=idx-CHP-8-0488></A></P>
+<P class=docText><A name="unconditional branch"></A>The .NET Intermediate Language supports an unconditional branch statement and several conditional branch statements. These conditional branches depend on the results of a specified prior comparison. For example a <SPAN class=docEmphasis><A name="branch if"></A>branch if less than</SPAN><A name="branch if"></A> instruction performs a branch if, in a previous comparison, one value was less than another. Mimicking an <TT>if</TT> and <TT>else</TT> construction <A name=idx-CHP-8-0489></A><A name="requires two"></A>in Intermediate Language requires two <A name=idx-CHP-8-0490></A><A name="to the"></A>labels, one corresponding to the beginning of the <TT>else</TT><A name="pointing after"></A> block, and the other pointing after the <TT>else</TT> block. If the <TT>if</TT><A name=the></A> condition is not true, a conditional branch goes to the first label; otherwise, the <TT>if</TT><A name="At the"></A> block is executed. At the end of the <TT>if</TT><A name="to the"></A> block, an unconditional branch goes to the label following the <TT>else</TT><A name=by></A> block. The two possibilities are illustrated by <A class=docLink href="javascript:moveTo('intermediate_language_branches_to_implement_ifelse');">Figure 8-4</A>.</P><A name=intermediate_language_branches_to_implement_ifelse></A>
+<P>
+<CENTER>
+<H5 class=docFigureTitle><A name="Figure "></A>Figure 8-4. Intermediate Language branches to implement if/else</H5><IMG id="" height=241 alt="" src="images/on-the-fly_code_generation_for_image_processing.3.png" width=371 border=0> </CENTER>
+<P></P><BR>
+<P class=docText><A name=instruction></A>The actual branch instruction <A name=idx-CHP-8-0491></A><A name="Language contains"></A>code in Intermediate Language contains a numeric value indicating the address of the destination instruction as an offset to the address of the current instruction. Figuring out these offsets would be too painful for programmers, so a labeling system is provided to make things easier. All that is required is that you define where labels should be inserted in the instruction stream, so that when you indicate a branch to that label, the code generator can calculate the proper numeric offset.</P>
+<P class=docText><A name="calls are"></A>Two method calls are required for using a label. The <TT>DefineLabel</TT><A name="label that"></A> call defines a label that you can then refer to in branching instructions. The <TT>MarkLabel</TT><A name="This two"></A> call actually inserts the label into the Intermediate Language instruction stream. This two-step process allows you to define a label and then emit an op code that branches to that label, even though the label won't actually appear until later in the instruction stream. The following lines call both <TT>DefineLabel</TT> and <TT>MarkLabel</TT><A name=a></A> to put a <TT>Label</TT> object named <TT>labelTop</TT><A name=the></A> at the top of the <TT><I>iDst</I></TT> loop:</P><PRE>	Label labelTop = generator.DefineLabel();
+	generator.MarkLabel(labelTop);
+</PRE><BR>
+<P class=docText><A name="the location"></A>This label is equivalent to the location of the <TT>for</TT><A name="statement in"></A> statement in line 6 of the C# code listing in <A class=docLink href="javascript:moveTo('a_digital_filter_algorithm_in_csharp');">Example 8-2</A><A name="required here"></A>. A label is required here because code at the end of the loop has to branch to the top of the loop.</P>
+<P class=docText><A name="within the"></A>We're now generating code within the <TT>iDst</TT><A name="the per"></A> loop. This is the per-pixel processing. The first step is to initialize <TT>pixelsAccum</TT> and <TT>filterAccum</TT> to 0. The first <TT>Emit</TT><A name="the following"></A> call shown in the following code snippet has an op code of <TT>Ldc_R8</TT>, which will load an 8-bit <TT>real</TT> (that is, a floating-point number) on the stack. The second argument of <TT>Emit</TT><A name="the type"></A> is the actual number. The type of this number must match the type implied by the op <A name=idx-CHP-8-0492></A><A name="just use"></A>code. If you just use a <TT>0</TT><A name="compiler will"></A> with no decimal point, the C# compiler will interpret it as an integer, and you won't know you blundered until a runtime exception indicates an invalid program:</P><PRE>	generator.Emit(OpCodes.Ldc_R8, 0.0);
+	generator.Emit(OpCodes.Dup);
+	generator.Emit(OpCodes.Stloc_1);
+	generator.Emit(OpCodes.Stloc_2);
+</PRE><BR>
+<P class=docText>The <TT>Dup</TT> instruction duplicates the <TT>0</TT> value on the stack, and the <TT>Stloc_1</TT> and <TT>Stloc_2</TT><A name="in the"></A> op codes store the value in the local variables representing <TT>pixelsAccum</TT><A name=and></A> and <TT>filterAccum</TT><A name="sure that"></A>. Again, you must make sure that all the types agree here; otherwise, a runtime exception will be raised indicating that the just-in-time compiler detected an invalid program.</P>
+<P class=docText><A name="to generate"></A>At this point, we're ready to generate <A name=idx-CHP-8-0493></A><A name="each of"></A>code for each of the elements in the <TT>filter</TT><A name="Intermediate Language"></A> array. However, we don't want the Intermediate Language to loop through the <TT>filter</TT><A name="to be"></A> array and access each element. Instead, we want all the filter elements to be hardcoded in Intermediate Language. If the filter has nine elements, we want nine similar sections of Intermediate Language. For that reason, we use a C# <TT>for</TT><A name="loop through"></A> statement to loop through the filter elements:</P><PRE>	for (int iFilter = 0; iFilter &lt; filter.Length; iFilter++)
+	{
+</PRE><BR>
+<P class=docText><A name="of the"></A>If a particular element of the filter is <TT>0</TT><A name="Intermediate Language"></A>, that element can be entirely ignored—no Intermediate Language code has to be generated, so we can just skip to the next element of the <TT>filter</TT> array:</P><PRE>	if (filter[iFilter] == 0)
+	    continue;
+</PRE><BR>
+<P class=docText><A name="For each"></A>For each filter element, the index of the <TT>src</TT><A name="a particular"></A> array will be a particular offset from the <TT>iDst</TT><A name="calculates that"></A> index. The following C# code calculates that offset. The <TT>offset</TT><A name="be calculated"></A> value can be calculated in C# code because it only has to be represented as a constant in Intermediate Language:</P><PRE>	int xFilter = iFilter % cxFilter;
+	int yFilter = iFilter / cxFilter;
+	int offset = stride * (yFilter - cyFilter / 2) +
+	            bytesPerPixel * (xFilter - cxFilter / 2);
+</PRE><BR>
+<P class=docText><A name="an element"></A>Accessing or setting an element of an array is a three-step process. First, you need to put a reference to the array on the stack. Then you need to put an index of the array on the stack. Finally, if you're accessing that element, you need a load instruction, and if you're setting the array element, you need a store instruction. The <TT>src</TT><A name="filter array"></A> array must be accessed for each nonzero element of the filter array, so now is a convenient time to put a reference to that array on the evaluation stack:</P><PRE>	generator.Emit(OpCodes.Ldarg_0);
+</PRE><BR>
+<P class=docText>The <TT>Ldarg</TT><A name="to the"></A> instruction refers to the arguments to the generated method, and the <TT>src</TT><A name="first argument"></A> array will be the first argument associated with an index of <TT>0</TT>.</P>
+<P class=docText><A name="that these"></A>Next, we will specify several labels. Notice that these three labels are defined so that Intermediate Language instructions can refer to them, but they're not marked yet because they will be inserted at a later point in the Intermediate Language instruction stream:</P><PRE>	Label labelLessThanZero = generator.DefineLabel();
+	Label labelGreaterThan = generator.DefineLabel();
+	Label labelLoopBottom = generator.DefineLabel();
+</PRE><BR>
+<P class=docText><A name="For each"></A>For each element of the filter, the <TT>src</TT><A name="accessed with"></A> array must be accessed with the <TT>iDst</TT> index plus an <TT>offset</TT><A name="already been"></A> value that has already been calculated by C# <A name=idx-CHP-8-0494></A><A name="code puts"></A>code. The following code puts <TT>iDst</TT><A name="by the"></A> on the stack, followed by the actual <TT>offset</TT><A name="the stack"></A> value, adds the two together (which effectively pops the two operands from the stack and pushes the sum on the stack), and makes two duplicates of the sum:</P><PRE>	generator.Emit(OpCodes.Ldloc_0);        // dst index on stack
+	generator.Emit(OpCodes.Ldc_I4, offset); // offset on stack
+	generator.Emit(OpCodes.Add);            // Add the two
+	generator.Emit(OpCodes.Dup);            // Duplicate twice
+	generator.Emit(OpCodes.Dup);
+</PRE><BR>
+<P class=docText><A name="index "></A>The resultant index (which was called <TT>iSrc</TT> in <TT>FilterMethodCS</TT><A name="bounds of"></A>) might be outside the bounds of the array. The following code loads an integer <TT>0</TT><A name=if></A> on the stack and branches if <TT>iSrc</TT><A name="is less"></A> is less than <TT>0</TT><A name="operands from"></A>, effectively popping both operands from the stack. This is a partial equivalent of the <TT>if</TT><A name="line "></A> statement conditional in line 19 of <A class=docLink href="javascript:moveTo('a_digital_filter_algorithm_in_csharp');">Example 8-2</A>:</P><PRE>	generator.Emit(OpCodes.Ldc_I4_0);
+	generator.Emit(OpCodes.<A name=idx-CHP-8-0495></A>Blt_S, labelLessThanZero);
+</PRE><BR>
+<P class=docText><TT>Blt</TT> stands for <SPAN class=docEmphasis><A name="less than"></A>branch if less than</SPAN> and <TT>S</TT> indicates a <SPAN class=docEmphasis>short</SPAN><A name="the target"></A> branch (one in which the target is fewer than 256 op code bytes away).</P>
+<P class=docText>A second check determines whether <TT>iSrc</TT><A name="the literal"></A> is greater than the byte size of the bitmap. Notice that the literal <TT>cBytes</TT><A name="pushed on"></A> value is pushed on the stack for this comparison. This is the remainder of the <TT>if</TT> conditional in line 19 of <A class=docLink href="javascript:moveTo('a_digital_filter_algorithm_in_csharp');">Example 8-2</A>:</P><PRE>	generator.Emit(OpCodes.Ldc_I4, cBytes);
+	generator.Emit(OpCodes.Bge_S, labelGreaterThan);
+</PRE><BR>
+<P class=docText>If <TT>iSrc</TT><A name="can be"></A> is good, the source array can be accessed. The <TT>Ldelem</TT><A name="array itself"></A> op code assumes that the array itself and an index to the array are already on the stack. Those two values are effectively popped and replaced with the array element at that index. The <TT>U1</TT><A name="part of"></A> part of this op code specifies that the array element is an unsigned one-byte value:</P><PRE>	generator.Emit(OpCodes.Ldelem_U1);
+	generator.Emit(OpCodes.Conv_R8);
+</PRE><BR>
+<P class=docText>The <TT>Conv_R8</TT><A name="the value"></A> op code converts the value on the stack to an eight-byte floating-point value and replaces it on the stack.</P>
+<P class=docText><A name="byte at"></A>At this point, the byte at <TT>iSrc</TT><A name="the stack"></A> is on the stack and has been converted to a floating point. It is ready to be multiplied by a filter element. Because the value of the filter element is known at the time the method is being generated, C# <A name=idx-CHP-8-0496></A><A name="multiplication if"></A>code skips the multiplication if the filter element is 1 (no multiplication is required if the filter element is 1):</P><PRE>	if (filter[iFilter] == 1)
+	{
+	    // src element is on stack, so do nothing
+	}
+</PRE><BR>
+<P class=docText><A name="be negated"></A>If the filter element is –1, the source byte can simply be negated, perhaps saving a little <A name=idx-CHP-8-0497></A><A name="over the"></A>processing time over the multiplication:</P><PRE>	else if (filter[iFilter] == -1)
+	{
+	    generator.Emit(OpCodes.Neg);
+	}
+</PRE><BR>
+<P class=docText><A name="by the"></A>Otherwise, the byte is multiplied by the filter element:</P><PRE>	else
+	{
+	    generator.Emit(OpCodes.Ldc_R8, filter[iFilter]);
+	    generator.Emit(OpCodes.Mul);
+	}
+</PRE><BR>
+<P class=docText>You might recall that <TT>pixelsAccum</TT><A name="variable with"></A> was defined as a local variable with an index of <TT>1</TT><A name="The following"></A>. The following code puts <TT>pixelsAccum</TT><A name="to it"></A> on the stack, adds to it the source byte value multiplied by the filter element, and stores the result back in <TT>pixelsAccum</TT>:</P><PRE>	generator.Emit(OpCodes.Ldloc_1);
+	generator.Emit(OpCodes.Add);
+	generator.Emit(OpCodes.Stloc_1);
+</PRE><BR>
+<P class=docText>Similarly, <TT>filterAccum</TT><A name="variable index"></A> (which has a local variable index of <TT>2</TT><A name="the values"></A>) must accumulate the values of the filter elements:</P><PRE>	generator.Emit(OpCodes.Ldc_R8, filter[iFilter]);
+	generator.Emit(OpCodes.Ldloc_2);
+	generator.Emit(OpCodes.Add);
+	generator.Emit(OpCodes.Stloc_2);
+	generator.Emit(OpCodes.Br, labelLoopBottom);
+</PRE><BR>
+<P class=docText><A name="the bottom"></A>At this point, we're at the bottom of the inner <TT>for</TT> loop, equivalent to line 24 of <A class=docLink href="javascript:moveTo('a_digital_filter_algorithm_in_csharp');">Example 8-2</A><A name="except that"></A>. We are essentially finished with the processing for each filter element, except that the stack has to be cleaned up for cases where the calculated <TT>iSrc</TT><A name="outside the"></A> index is outside the bounds of the bitmap. This section of the generated code (at the bottom of the C# <TT>for</TT> loop for <TT>iFilter</TT><A name="and performs"></A>) marks the three labels and performs cleanup by popping unused items from the stack:</P><PRE>	   generator.MarkLabel(labelLessThanZero);
+	   generator.Emit(OpCodes.Pop);
+	   generator.MarkLabel(labelGreaterThan);
+	   generator.Emit(OpCodes.Pop);
+	   generator.Emit(OpCodes.Pop);
+	   generator.MarkLabel(labelLoopBottom);
+	}
+</PRE><BR>
+<P class=docText>So far, all the <A name=idx-CHP-8-0498></A><A name=calculate></A>code has been generated to calculate <TT>pixelsAccum</TT><A name=and></A> and <TT>filterAccum</TT><A name="destination pixel"></A> for a particular destination pixel. The result is almost ready to be transferred into the <TT>dst</TT><A name="has a"></A> array. The array reference (which has a method argument index of <TT>1</TT>) and the <TT>iDst</TT><A name="a local"></A> index (which has a local variable index of <TT>0</TT><A name="on the"></A>) are both loaded on the stack:</P><PRE>	generator.Emit(OpCodes.Ldarg_1);     // dst array
+	generator.Emit(OpCodes.Ldloc_0);     // iDst index
+</PRE><BR>
+<P class=docText>There will be some branching involved, so the following labels are defined:</P><PRE>	Label labelSkipDivide = generator.DefineLabel();
+	Label labelCopyQuotient = generator.DefineLabel();
+	Label labelBlack = generator.DefineLabel();
+	Label labelWhite = generator.DefineLabel();
+	Label labelDone = generator.DefineLabel();
+</PRE><BR>
+<P class=docText>The following code loads both the <TT>pixelsAccum</TT> and <TT>filterAccum</TT><A name="task is"></A> local variables on the stack in preparation for division. The first task is to check for a potential zero-divide by comparing <TT>filterAccum</TT> with <TT>0</TT><A name="is equivalent"></A>. This code is equivalent to line 25 in <A class=docLink href="javascript:moveTo('a_digital_filter_algorithm_in_csharp');">Example 8-2</A>:</P><PRE>	generator.Emit(OpCodes.Ldloc_1);        // pixelsAccum
+	generator.Emit(OpCodes.Ldloc_2);        // filterAccum
+	generator.Emit(OpCodes.Dup);            // Make a copy
+	generator.Emit(OpCodes.Ldc_R8, 0.0);    // Put 0 on stack
+	generator.Emit(OpCodes.Beq_S, labelSkipDivide);
+</PRE><BR>
+<P class=docText><A name=not></A>If the denominator is not <TT>0</TT><A name="the quotient"></A>, the division is executed and the quotient remains on the stack:</P><PRE>	generator.Emit(OpCodes.Div);
+	generator.Emit(OpCodes.Br_S, labelCopyQuotient);
+</PRE><BR>
+<P class=docText><A name=If></A>If <TT>filterAccum</TT> is <TT>0</TT><A name="is executed"></A>, the following code is executed and the original instance of <TT>filterAccum</TT><A name="the stack"></A> is popped from the stack:</P><PRE>	generator.MarkLabel(labelSkipDivide);
+	generator.Emit(OpCodes.Pop);             // Pop filterAccum
+</PRE><BR>
+<P class=docText><A name="what remains"></A>In either case, what remains on the stack is <TT>pixelsAccum</TT>, either divided by <TT>filterAccum</TT><A name="of that"></A> or not. Two copies of that quotient are made:</P><PRE>	generator.MarkLabel(labelCopyQuotient);
+	generator.Emit(OpCodes.Dup);            // Make a copy of quotient
+	generator.Emit(OpCodes.Dup);            // And another
+</PRE><BR>
+<P class=docText><A name="the statement"></A>Most of what follows is the Intermediate Language equivalent of the statement in lines 28 and 29 of <A class=docLink href="javascript:moveTo('a_digital_filter_algorithm_in_csharp');">Example 8-2</A><A name="quotient is"></A>. If the quotient is less than zero, the code branches to a label where the destination pixel will be set to <TT>0</TT>:</P><PRE>	generator.Emit(OpCodes.Ldc_R8, 0.0);
+	generator.Emit(OpCodes.Blt_S, labelBlack);
+</PRE><BR>
+<P class=docText><A name="greater than"></A>If the quotient is greater than 255, the following code branches to a label where the destination pixel will be set to <TT>255</TT>:</P><PRE>	generator.Emit(OpCodes.Ldc_R8, 255.0);
+	generator.Emit(OpCodes.Bgt_S, labelWhite);
+</PRE><BR>
+<P class=docText><A name="is converted"></A>Otherwise, the value on the stack is converted to an unsigned one-byte value:</P><PRE>	generator.Emit(OpCodes.Conv_U1);<A name=idx-CHP-8-0499></A>
+	generator.Emit(OpCodes.Br_S, labelDone);
+</PRE><BR>
+<P class=docText><A name="The following"></A>The following code is for the case where a <A name=idx-CHP-8-0500></A><A name="be stored"></A>zero byte must be stored in the destination array. The <TT>Ldc_I4_S</TT><A name="value on"></A> instruction puts a one-byte value on the stack, but it goes onto the stack as a four-<A name=idx-CHP-8-0501></A><A name="because the"></A>byte integer because the slot widths on the stack are in increments of four bytes:</P><PRE>	generator.MarkLabel(labelBlack);
+	generator.Emit(OpCodes.Pop);
+	generator.Emit(OpCodes.Pop);
+	generator.Emit(OpCodes.Ldc_I4_S, 0);
+	generator.Emit(OpCodes.Br_S, labelDone);
+</PRE><BR>
+<P class=docText><A name="the code"></A>This part of the code is similar to the part in which <TT>255</TT> must be stored in the destination array:</P><PRE>	generator.MarkLabel(labelWhite);
+	generator.Emit(OpCodes.Pop);
+	generator.Emit(OpCodes.Ldc_I4_S, 255);
+</PRE><BR>
+<P class=docText><A name="destination array"></A>And now we're finally ready to store the byte in the destination array. The <TT>dst</TT><A name="already on"></A> array is already on the stack, the <TT>iDst</TT><A name="the stack"></A> index is already on the stack, and the value to be stored in the array is on the stack. The <TT>Stelem_I1</TT><A name="the array"></A> instruction stores a one-byte value into the array:</P><PRE>	generator.MarkLabel(labelDone);
+	generator.Emit(OpCodes.Stelem_I1);
+</PRE><BR>
+<P class=docText><A name="now at"></A>We're now at the bottom of the <TT>iDst</TT><A name=of></A> loop, equivalent to line 30 of <A class=docLink href="javascript:moveTo('a_digital_filter_algorithm_in_csharp');">Example 8-2</A>. The <TT>iDst</TT><A name="now be"></A> local variable must now be incremented and compared to the number of bytes in the array. If it's less, the code branches to the top of the loop:</P><PRE>	generator.Emit(OpCodes.Ldloc_0);    // Put iDst on stack
+	generator.Emit(OpCodes.Ldc_I4_1);   // Put 1 on stack
+	generator.Emit(OpCodes.Add);        // Add 1 to iDst
+	generator.Emit(OpCodes.Dup);        // Duplicate
+	generator.Emit(OpCodes.Stloc_0);    // Store result in iDst
+	generator.Emit(OpCodes.Ldc_I4, cBytes);  // Put cBytes value on stack
+	generator.Emit(OpCodes.Blt, labelTop);   // Go to top if iDst &lt; cBytes
+</PRE><BR>
+<P class=docText><A name="loop is"></A>After the loop is finished, the generated method concludes with a return instruction:</P><PRE>	generator.Emit(OpCodes.Ret);
+</PRE><BR>
+<P class=docText><A name="Language code"></A>All the Intermediate Language code has now been generated. The <TT>DynamicMethod</TT> instance created at the beginning of <TT>FilterMethodIL</TT> is complete and ready to be executed, or <SPAN class=docEmphasis>invoked</SPAN>, as the following method name implies. The second argument to <TT>Invoke</TT> specifies the two arguments to the generated method as the <TT>src</TT> and <TT>dst</TT> arrays:<A name=idx-CHP-8-0502></A><A name=idx-CHP-8-0503></A></P><PRE>	   dynameth.Invoke(this, new object[] { src, dst });
+	}
+</PRE><BR>
+<P class=docText>And that concludes <TT>FilterMethodIL</TT>. The <TT>DynamicMethod</TT> object and the <TT>ILGenerator</TT><A name="can be"></A> object are now out of scope, and the memory they occupied can be reclaimed by the .NET garbage collector.</P>
+<P class=docText><A name="in low"></A>Algorithms written in low-level languages are usually faster than those written in high-level languages, and custom algorithms are almost always faster than generalized algorithms. By customizing an algorithm in Intermediate Language on the fly right before it's used, we seem to have the best of both worlds. The algorithm is generalized until it has to be customized, and then it's customized with efficient code.</P>
+<P class=docText><A name="you need"></A>The downside is that you need to become a compiler writer of sorts, and breach that barrier between code and data, thus entering a strange netherworld where code and data become mirror images of each other.</P>
+<P class=docText><TT>FilterMethodIL</TT><A name="but how"></A> was surely a lot of work, but how well does it perform? Generally, <TT>FilterMethodIL</TT><A name="which generates"></A>, which generates Intermediate Language instructions on the fly, runs in about one-quarter of the time hogged by the straight C# version, <TT>FilterMethodCS</TT>, and sometimes better.</P>
+<P class=docText>Now, you might regard <TT>FilterMethodIL</TT><A name="willing to"></A> as ugly, and I'd be willing to concede that it sure isn't the prettiest code I've ever seen. But when an algorithm clocks in at a quarter of the execution time of some earlier code, then the only word that I find appropriate is <SPAN class=docEmphasis>beautiful</SPAN>.<A name=I_indexterm8_tt143></A><A name=I_indexterm8_tt144></A><A name=I_indexterm8_tt145></A></P></DIV></DIV>
+<p>&nbsp;</p><p>&nbsp;</p><!-- 仁·义 -->
+</body></html>

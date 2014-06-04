@@ -1,0 +1,230 @@
+<html><head>
+<META http-equiv="Content-Type" content="text/html">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="14.5 Threaded Program Architecture"-->
+<link rel="STYLESHEET" type="text/css" href="FILES/style.css">
+<link rel="STYLESHEET" type="text/css" href="FILES/docsafari.css">
+<style type="text/css">	.tt1    {font-size: 10pt;}</style>
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<td class="tt1"><a href="NFO/lib.html">[ Team LiB ]</a></td><td valign="top" class="tt1" align="right">
+	<a href="0596001886_pythonian-chp-14-sect-4.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+	<a href="0596001886_pythonian-chp-14-sect-6.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr>
+<td valign="top"><A NAME="pythonian-CHP-14-SECT-5"></A>
+<H3 class="docSection1Title">14.5 Threaded Program Architecture</H3>
+
+<P class="docText"><A NAME="pythonian-CHP-14-ITERM-6868"></A>A threaded program should always
+arrange for a <span class="docEmphasis">single</span> thread to deal with any
+given object or subsystem that is external to the program (such as a
+file, a database, a GUI, or a network connection). Having multiple
+threads that deal with the same external object can often cause
+unpredictable
+problems.<A NAME="pythonian-CHP-14-ITERM-6869"></A></P>
+
+<P class="docText"><A NAME="pythonian-CHP-14-ITERM-6870"></A>Whenever your threaded program
+must deal with some external object, devote a thread to such
+dealings, using a <TT>Queue</TT> object from which the
+external-interfacing thread gets work requests that other threads
+post. The external-interfacing thread can return results by putting
+them on one or more other <TT>Queue</TT> objects. The
+following example shows how to package this architecture into a
+general, reusable class, assuming that each unit of work on the
+external subsystem can be represented by a callable object:</P>
+
+<PRE>import Threading, Queue
+class ExternalInterfacing(Threading.Thread):
+    def _ _init_ _(self, externalCallable, **kwds):
+        Threading.Thread._ _init_ _(self, **kwds)
+        self.setDaemon(1)
+        self.externalCallable = externalCallable
+        self.workRequestQueue = Queue.Queue(  )
+        self.resultQueue = Queue.Queue(  )
+        self.start(  )
+    def request(self, *args, **kwds):
+        "called by other threads as externalCallable would be"
+        self.workRequestQueue.put((args,kwds))
+        return self.resultQueue.get(  )
+    def run(self):
+        while 1:
+            args, kwds = self.workRequestQueue.get(  )
+            self.resultQueue.put(self.externalCallable(*args, **kwds))</PRE>
+
+<P class="docText">Once some <TT>ExternalInterfacing</TT> object
+<TT><I>ei</I></TT> is instantiated, all other threads may
+now call <TT><I>ei</I></TT><TT>.request</TT>
+just like they would call
+<TT><I>someExternalCallable</I></TT> without such a
+mechanism (with or without arguments as appropriate). The advantage
+of the <TT>ExternalInterfacing</TT> mechanism is that all
+calls upon <TT><I>someExternalCallable</I></TT> are now
+serialized. This means they are performed by just one thread (the
+thread object bound to <TT><I>ei</I></TT>) in some defined
+sequential order, without overlap, race conditions (hard-to-debug
+errors that depend on which thread happens to get there first), or
+other anomalies that might otherwise
+result.<A NAME="pythonian-CHP-14-ITERM-6871"></A></P>
+
+<P class="docText">If several callables need to be serialized together, you can pass the
+callable as part of the work request, rather than passing it at the
+initialization of class <TT>ExternalInterfacing</TT>, for
+greater generality. The following example shows this more general
+approach:</P>
+
+<PRE>import Threading, Queue
+class Serializer(Threading.Thread):
+    def _ _init_ _(self, **kwds):
+        Threading.Thread._ _init_ _(self, **kwds)
+        self.setDaemon(1)
+        self.workRequestQueue = Queue.Queue(  )
+        self.resultQueue = Queue.Queue(  )
+        self.start(  )
+    def apply(self, callable, *args, **kwds):
+        "called by other threads as callable would be"
+        self.workRequestQueue.put((callable, args,kwds))
+        return self.resultQueue.get(  )
+    def run(self):
+        while 1:
+            callable, args, kwds = self.workRequestQueue.get(  )
+            self.resultQueue.put(callable(*args, **kwds))</PRE>
+
+<P class="docText">Once a <TT>Serializer</TT> object
+<TT><I>ser</I></TT> has been instantiated, other threads
+may call
+<TT><I>ser</I></TT><TT>.apply(</TT><TT><I>someExternalCallable</I></TT><TT>)</TT>
+just like they would call
+<TT><I>someExternalCallable</I></TT> without such a
+mechanism (with or without further arguments as appropriate). The
+<TT>Serializer</TT> mechanism has the same advantages as
+<TT>ExternalInterfacing</TT>, except that all calls to the
+same or different callables wrapped by a single
+<TT><I>ser</I></TT> instance are now serialized.</P>
+
+<P class="docText"><A NAME="pythonian-CHP-14-ITERM-6872"></A>The user interface of the whole program
+is an external subsystem and thus should be dealt with by a single
+thread, specifically the main thread of the program (this is
+mandatory for some user interface toolkits and advisable even when
+not mandatory). A <TT>Serializer</TT> thread is therefore
+inappropriate. Rather, the program's main thread
+should deal only with user interface issues, and farm out actual work
+to worker threads that accept work requests on a
+<TT>Queue</TT> object and return results on another. A set
+of worker threads is also known as a <I>thread
+pool</I>. As shown in the following example, all worker
+threads should share a single queue of requests and a single queue of
+results, since the main thread will be the only one posting work
+requests and harvesting results:</P>
+
+<PRE>import Threading
+class Worker(Threading.Thread):
+    requestID = 0
+    def _ _init_ _(self, requestsQueue, resultsQueue, **kwds):
+        Threading.Thread._ _init_ _(self, **kwds)
+        self.setDaemon(1)
+        self.workRequestQueue = requestsQueue
+        self.resultQueue = resultsQueue
+        self.start(  )
+    def performWork(self, callable, *args, **kwds):
+        "called by the main thread as callable would be, but w/o return"
+        Worker.requestID += 1
+        self.workRequestQueue.put((Worker.requestID, callable, args,kwds))
+        return Worker.requestID
+    def run(self):
+        while 1:
+            requestID, callable, args, kwds = self.workRequestQueue.get(  )
+            self.resultQueue.put((requestID, callable(*args, **kwds)))</PRE>
+
+<P class="docText">The main thread creates the two queues, then instantiates worker
+threads as follows:</P>
+
+<PRE>import Queue
+requestsQueue = Queue.Queue(  )
+resultsQueue = Queue.Queue(  )
+for i in range(numberOfWorkers):
+    worker = Worker(requestsQueue, resultsQueue)</PRE>
+
+<P class="docText">Now, whenever the main thread needs to farm out work (execute some
+callable object that may take substantial time to produce results),
+the main thread calls
+<TT><I>worker</I></TT><TT>.performWork(</TT><TT><I>callable</I></TT><TT>)</TT>
+much like it would call <TT><I>callable</I></TT> without
+such a mechanism (with or without further arguments as appropriate).
+However, <TT>performWork</TT> does not return the result of
+the call. Instead of the results, the main thread gets an
+<TT><I>id</I></TT> that identifies the work request. If
+the main thread needs the results, it can keep track of that
+<TT><I>id</I></TT>, since the request's
+results will be tagged with that <TT><I>id</I></TT> when
+they appear. The advantage of the mechanism is that the main thread
+does not block waiting for the callable's lengthy
+execution to complete, but rather becomes ready again at once and can
+immediately return to its main business of dealing with the user
+interface.</P>
+
+<P class="docText">The main thread must arrange to check the
+<TT>resultsQueue</TT>, since the result of each work
+request eventually appears there, tagged with the
+request's <TT><I>id</I></TT>, when the
+worker thread that took that request from the queue finishes
+computing the result. How the main thread arranges to check for both
+user interface events and the results coming back from worker threads
+onto the results queue depends on what user interface toolkit is
+used, or, if the user interface is text-based, on the platform on
+which the program runs.</P>
+
+<P class="docText">A widely applicable general strategy is for the main thread to
+<I>poll</I> (i.e., check the state of the results
+queue periodically). On most Unix-like platforms, function
+<TT>alarm</TT> of module <TT>signal</TT> allows
+polling. The <TT>Tkinter</TT> GUI toolkit supplies method
+<TT>after</TT>, usable for polling. Some toolkits and
+platforms afford more effective strategies, letting a worker thread
+alert the main thread when it places some result on the results
+queue, but there is no generally available, cross-platform, and
+cross-toolkit way to arrange for this. Therefore, the following
+artificial example ignores user interface events, and just simulates
+work by evaluating random expressions, with random delays, on several
+worker threads, thus completing the previous
+example:<A NAME="pythonian-CHP-14-ITERM-6873"></A></P>
+
+<A NAME="pythonian-CHP-14-ITERM-6874"></A><PRE>import random, time
+def makeWork(  ):
+    return "%d %s %d"%(random.randrange(2,10),
+        random.choice(('+', '-', '*', '/', '%', '**')),
+        random.randrange(2,10))
+def slowEvaluate(expressionString):
+    time.sleep(random.randrange(1,5))
+    return eval(expressionString)
+workRequests = {  }
+def showResults(  ):
+    while 1:
+        try: id, results = resultsQueue.get_nowait(  )
+        except Queue.Empty: return
+        print 'Result %d: %s -&gt; %s' % (id, workRequests[id], results)
+        del workRequests[id]
+for i in range(10):
+    expressionString = makeWork(  )
+    id = worker.performWork(slowEvaluate, expressionString)
+    workRequests[id] = expressionString
+    print 'Submitted request %d: %s' % (id, expressionString)
+    time.sleep(1)
+    showResults(  )
+while workRequests:
+    time.sleep(1)
+    showResults(  )</PRE>
+
+
+<ul></ul>
+</td>
+</tr>
+</table>
+<td></td>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<td class="tt1"><a href="NFO/lib.html">[ Team LiB ]</a></td><td valign="top" class="tt1" align="right">
+          <a href="0596001886_pythonian-chp-14-sect-4.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+          <a href="0596001886_pythonian-chp-14-sect-6.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+</body></html>

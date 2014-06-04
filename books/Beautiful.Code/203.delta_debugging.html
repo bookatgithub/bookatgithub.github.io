@@ -1,0 +1,108 @@
+<html><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<link href="styles/globalstyle.css" type="text/css" rel="stylesheet"/>
+<link title="medium" href="styles/two.css" type="text/css" rel="stylesheet"/>
+<script src="scripts/main.js" type="text/javascript" language="javascript"></script>
+<title>Section 28.5. Delta Debugging</title>
+</head><body>
+<DIV class=h3 style="MARGIN-TOP: 0px; PADDING-BOTTOM: 1em; WIDTH: 100%; PADDING-TOP: 0px"><SPAN>Beautiful Debugging</SPAN><SPAN> &gt; Delta Debugging</SPAN></DIV>
+<DIV></DIV>
+<DIV>
+<DIV><A name=delta_debugging></A>
+<H3 class=docSection1Title id=-100000>28.5. Delta Debugging</H3>
+<P class=docText><A name="Over the"></A>Over the next several months, I refined and optimized the algorithm as well as the tool, such that eventually it would need just one hour to find the failure-inducing change. I eventually published the algorithm under the name <SPAN class=docEmphasis>delta debugging</SPAN><A name="by isolating"></A> because it "debugs" programs by isolating a delta, or difference between two versions.<A name=idx-CHP-28-2451></A><A name=idx-CHP-28-2452></A><A name=idx-CHP-28-2453></A></P>
+<P class=docText><A name="Python implementation"></A>Here I'll show my Python implementation of the delta debugging algorithm. The function <TT>dd()</TT><A name="lists of"></A> takes three arguments—two lists of changes as well as a test:</P>
+<UL>
+<LI>
+<P class=docList>The list <TT>c_pass</TT><A name="the list"></A> contains the "working" configuration—in our case, the list of changes that must be applied to make the program work. In our case (which is typical), this is the empty list.</P></LI>
+<LI>
+<P class=docList>The list <TT>c_fail</TT><A name="the program"></A> contains the "failing" configuration—in our case, the list of changes required to make the program fail. In our case, this would be a list of 8,721 changes (which we would encapsulate in, say, <TT>Change</TT> objects).</P></LI>
+<LI>
+<P class=docList>The <TT>test</TT><A name="a list"></A> function accepts a list of changes, applies them, and runs a test. It returns <TT>PASS, FAIL</TT>, or <TT>UNRESOLVED</TT><A name="whether the"></A> as the outcome, depending on whether the test was successful, failed, or had an unresolved outcome. In our case, the <TT>test</TT><A name=via></A> function would apply the changes via <SPAN class=docEmphasis>patch</SPAN><A name="and run"></A> and run the test as just described.</P></LI>
+<LI>
+<P class=docList>The <TT>dd( )</TT><A name="down the"></A> function systematically narrows down the difference between <TT>c_pass</TT> and <TT>c_fail</TT><A name="a triple"></A>, and eventually returns a triple of values. The first of these values would be the isolated <TT>delta</TT><A name=single></A>—in our case, a single <TT>Change</TT><A name="change to"></A> object containing the one-line change to the <SPAN class=docEmphasis>gdb</SPAN> source code.</P></LI></UL>
+<P class=docText>If you plan to implement <TT>dd()</TT><A name="the O"></A> yourself, you can easily use the code shown here (and included on the O'Reilly web site for this book). You also need three supporting functions:</P>
+<DL class=docList>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docPubcolor><SPAN class=docMonofont>split</SPAN></SPAN> (<TT><I>list, n</I></TT>)</SPAN></P></DT>
+<DD>
+<P class=docList><A name="list into"></A>Splits a list into <TT><I>n</I></TT><A name="for possibly"></A> sublists of equal length (except for possibly the last). Thus:</P><PRE>	split([1, 2, 3, 4, 5], 3)
+</PRE><BR>
+<P class=docList>yields:</P><PRE>	[[1, 2], [3, 4], [5]]
+</PRE><BR></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docPubcolor><SPAN class=docMonofont>listminus() and listunion( )</SPAN></SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList><A name="of two"></A>Return the difference or union of two sets represented as lists, respectively. Thus:</P><PRE>	listminus([1, 2, 3], [1, 2])
+</PRE><BR>
+<P class=docList>yields:</P><PRE>	[3]
+</PRE><BR>
+<P class=docList>whereas:</P><PRE>	listunion([1, 2, 3], [3, 4])
+</PRE><BR>
+<P class=docList>yields:</P><PRE>	[1, 2, 3, 4]
+</PRE><BR></DD></DL>
+<P class=docText><A name="The Python"></A>The Python code is shown in <A class=docLink href="javascript:moveTo('an_implementation_of_the_delta_debugging_algorithm');">Example 28-1</A>.<A name=idx-CHP-28-2454></A><A name=idx-CHP-28-2455></A></P><A name=an_implementation_of_the_delta_debugging_algorithm></A>
+<H5 class=docExampleTitle id=title-ID0ENMEK>Example 28-1. An implementation of the delta debugging algorithm</H5>
+<P>
+<TABLE cellSpacing=0 cellPadding=5 width=* border=1>
+<TBODY>
+<TR>
+<TD>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedHeight>def dd(c_pass, c_fail, test):
+    """Return a triple (DELTA, C_PASS', C_FAIL') such that
+       - C_PASS subseteq C_PASS' subset C_FAIL' subseteq C_FAIL holds
+       - DELTA = C_FAIL' - C_PASS' is a minimal difference
+         between C_PASS' and C_FAIL' that is relevant with respect
+         to TEST."""
+
+    n = 2 # Number of subsets
+
+    while 1:
+        assert test(c_pass) == PASS # Invariant
+        assert test(c_fail) == FAIL # Invariant
+        assert n &gt;= 2
+
+        delta = listminus(c_fail, c_pass)
+
+        if n &gt; len(delta):
+            # No further minimizing
+            return (delta, c_pass, c_fail)
+
+        deltas = split(delta, n)
+        assert len(deltas) == n
+
+        offset = 0
+        j = 0
+        while j &lt; n:
+            i = (j + offset) % n
+            next_c_pass = listunion(c_pass, deltas[i])
+            next_c_fail = listminus(c_fail, deltas[i])
+
+            if test(next_c_fail) == FAIL and n == 2:
+                c_fail = next_c_fail
+                n = 2; offset = 0; break
+            elif test(next_c_fail) == PASS:
+                c_pass = next_c_fail
+                n = 2; offset = 0; break
+            elif test(next_c_pass) == FAIL:
+                c_fail = next_c_pass
+                n = 2; offset = 0; break
+            elif test(next_c_fail) == FAIL:
+                c_fail = next_c_fail
+                n = max(n - 1, 2); offset = i; break
+            elif test(next_c_pass) == PASS:
+                c_pass = next_c_pass
+                n = max(n - 1, 2); offset = i; break
+            else:
+                j = j + 1
+
+        if j &gt;= n:
+            if n &gt;= len(delta):
+                return (delta, c_pass, c_fail)
+            else:
+                n = min(len(delta), n * 2)
+
+
+					    </PRE><BR></TD></TR></TBODY></TABLE></P></DIV></DIV>
+<p>&nbsp;</p><p>&nbsp;</p><!-- 仁·义 -->
+</body></html>

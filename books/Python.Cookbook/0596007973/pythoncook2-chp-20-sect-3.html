@@ -1,0 +1,191 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;20.3.&nbsp;Aliasing Attribute Values</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-20-sect-2.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-20-sect-4.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-20-SECT-3"></a>
+<h3 class="docSection1Title">Recipe 20.3. Aliasing Attribute Values</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Denis S. Otkidach</span></p>
+
+<a name="pythoncook2-CHP-20-SECT-3.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText">You want to use an attribute name as an alias for another one, either
+just as a default value (when the attribute was not explicitly set),
+or with full setting and deleting abilities too.</P>
+
+
+<a name="pythoncook2-CHP-20-SECT-3.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">Custom descriptors are the right tools for this task:</p>
+
+<pre>class DefaultAlias(object):
+    ''' unless explicitly assigned, this attribute aliases to another. '''
+    def _ _init_ _(self, name):
+        self.name = name
+    def _ _get_ _(self, inst, cls):
+        if inst is None:
+            # attribute accessed on class, return `self' descriptor
+            return self
+        return getattr(inst, self.name)
+class Alias(DefaultAlias):
+    ''' this attribute unconditionally aliases to another. '''
+    def _ _set_ _(self, inst, value):
+        setattr(inst, self.name, value)
+    def _ _delete_ _(self, inst):
+        delattr(inst, self.name)</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-20-SECT-3.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">Your class instances sometimes have attributes whose default value
+must be the same as the current value of other attributes but may be
+set and deleted independently. For such requirements, custom
+descriptor <I>DefaultAlias</i>, as presented in this
+recipe's Solution, is just the ticket. Here is a toy
+example:</P>
+
+<pre>class Book(object):
+    def _ _init_ _(self, title, shortTitle=None):
+        self.title = title
+        if shortTitle is not None:
+            self.shortTitle = shortTitle
+    shortTitle = DefaultAlias('title')
+b = Book('The Life and Opinions of Tristram Shandy, Gent.')
+print b.shortTitle
+# emits: <B>The Life and Opinions of Tristram Shandy, Gent.</b>
+b.shortTitle = "Tristram Shandy"
+print b.shortTitle
+# emits: <b>Tristram Shandy</b>
+del b.shortTitle
+print b.shortTitle
+# emits: <b>The Life and Opinions of Tristram Shandy, Gent.</b></pre><br>
+
+
+<p class="docText"><i>DefaultAlias</I> is <span class="docEmphasis">not</span> what is
+technically known as a <span class="docEmphasis">data descriptor</span> class
+because it has no <tt>_ _set_ _</tt> method. In practice,
+this means that, when we assign a value to an instance attribute
+whose name is defined in the class as a
+<i>DefaultAlias</i>, the instance records the attribute
+normally, and the instance attribute <span class="docEmphasis">shadows</span> the
+class attribute. This is exactly what's happening in
+this snippet after we explicitly assign to
+<I>b.shortTitle</i>when we <tt>del
+b.shortTitle</tt>, we remove the
+<span class="docEmphasis">per-instance</span> attribute, uncovering the per-class
+one again.</P>
+
+<p class="docText">Custom descriptor class <i>Alias</I> is a simple variant of
+class <I>DefaultAlias</i>, easily obtained by inheritance.
+<i>Alias</i> aliases one attribute to another, not just
+upon accesses to the attribute's value (as
+<i>DefaultAlias</i> would do), but also upon all operations
+of value setting and deletion. It easily achieves this by being a
+"data descriptor" class, which
+means that it does have a <tt>_ _set_ _</tt> method.
+Therefore, any assignment to an instance attribute whose name is
+defined in the class as an <i>Alias</i> gets intercepted by
+<i>Alias'</i> <tt>_ _set_ _</tt>
+method. (<i>Alias</i> also defines a <tt>_ _delete_
+_</tt> method, to obtain exactly the same effect upon attribute
+deletion.)</p>
+
+<p class="docText"><i>Alias</I> can be quite useful when you want to evolve a
+class, which you made publicly available in a previous version, to
+use more appropriate names for methods and other attributes, while
+still keeping the old names available for backwards compatibility.
+For this specific use, you may even want a version that emits a
+warning when the old name is used:</P>
+
+<pre>import warnings
+class OldAlias(Alias):
+    def _warn(self):
+        warnings.warn('use %r, not %r' % (self.name, self.oldname),
+                      DeprecationWarning, stacklevel=3)
+    def _ _init_ _(self, name, oldname):
+        super(OldAlias, self)._ _init_ _(name)
+        self.oldname = oldname
+    def _ _get_ _(self, inst, cls):
+        self._warn( )
+        return super(OldAlias, self)._ _get_ _(inst, cls)
+    def _ _set_ _(self, inst, value):
+        self._warn( )
+        return super(OldAlias, self)._ _set_ _(inst, value)
+    def _ _delete_ _(self, inst):
+        self._warn( )
+        return super(OldAlias, self)._ _delete_ _(inst)</pre><br>
+
+
+<p class="docText">Here is a toy example of using <i>OldAlias</I>:</p>
+
+<pre>class NiceClass(object):
+    def _ _init_ _(self, name):
+        self.nice_new_name = name
+    bad_old_name = OldAlias('nice_new_name', 'bad_old_name')</pre><br>
+
+
+<p class="docText">Old code using this class may still refer to the instance attribute
+as <i>bad_old_name</i>, preserving backwards compatibility;
+when that happens, though, a warning message is presented about the
+deprecation, encouraging the old code's author to
+upgrade the code to use <i>nice_new_name</i> instead. The
+normal mechanisms of the <tt>warnings</tt> module of the
+Python Standard Library ensure that, by default, such warnings are
+output only once per occurrence and per run of a program, not
+repeatedly. For example, the snippet:</P>
+
+<pre>x = NiceClass(23)
+for y in range(4):
+    print x.bad_old_name
+    x.bad_old_name += 100</pre><br>
+
+
+<p class="docText">emits:</P>
+
+<pre>xxx.py:64: DeprecationWarning: use 'nice_new_name', not 'bad_old_name'
+  print x.bad_old_name
+23
+xxx.py:65: DeprecationWarning: use 'nice_new_name', not 'bad_old_name'
+  x.bad_old_name += 100
+123
+223
+323</pre><br>
+
+
+<p class="docText">The warning is printed once per line using the bad old name, not
+repeated again and again as the <tt>for</tt> loop iterates.</P>
+
+
+<a name="pythoncook2-CHP-20-SECT-3.4"></a>
+<h4 class="docSection2Title">See Also</H4>
+
+<p class="docText">Custom descriptors are best documented on Raymond
+Hettinger's web page: <a class="docLink" target="_blank" href="http://users.rcn.com/python/download/Descriptor.htm">http://users.rcn.com/python/download/Descriptor.htm</a>;
+<span class="docEmphasis">Library Reference</span> and <span class="docEmphasis">Python in a
+Nutshell</span> docs about the <tt>warnings</tt>
+module.</P>
+
+
+
+<a href="5991535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><ul></UL></TD></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-20-sect-2.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-20-sect-4.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

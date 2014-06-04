@@ -1,0 +1,104 @@
+<html><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<link href="styles/globalstyle.css" type="text/css" rel="stylesheet"/>
+<link title="medium" href="styles/two.css" type="text/css" rel="stylesheet"/>
+<script src="scripts/main.js" type="text/javascript" language="javascript"></script>
+<title>Section 26.3. Implementing Sequential Logging Servers</title>
+</head><body>
+<DIV class=h3 style="MARGIN-TOP: 0px; PADDING-BOTTOM: 1em; WIDTH: 100%; PADDING-TOP: 0px"><SPAN>Labor-Saving Architecture: An Object-Oriented Framework for Networked Software</SPAN><SPAN> &gt; Implementing Sequential Logging Servers</SPAN></DIV>
+<DIV></DIV>
+<DIV>
+<DIV><A name=implementing_sequential_logging_servers></A>
+<H3 class=docSection1Title id=-100000>26.3. Implementing Sequential Logging Servers</H3>
+<P class=docText><A name="This section"></A>This section demonstrates the implementation of logging servers that feature <A name=idx-CHP-26-2327></A><A name="processing is"></A>sequential concurrency models—i.e., all processing is performed in a single thread. We cover both iterative and reactive implementations of <A name=idx-CHP-26-2328></A>sequential logging servers.<A name=idx-CHP-26-2329></A><A name=idx-CHP-26-2330></A><A name=I_indexterm26_tt621></A></P><A name=an_iterative_logging_server></A>
+<H4 class=docSection2Title id=title-ID0EHEEK>26.3.1. An Iterative Logging Server</H4>
+<P class=docText><A name="all log"></A>Iterative servers process all log records from each client before handling any log records from the next client. Since there is no need to spawn or synchronize threads, we use the <TT>Null_Mutex</TT><A name="parameterize the"></A> facade to parameterize the <TT>Iterative_Logging_Server</TT> subclass template, as follows:<A name=idx-CHP-26-2331></A><A name=idx-CHP-26-2332></A><A name=idx-CHP-26-2333></A></P><PRE>	template &lt;typename ACCEPTOR&gt;
+	   class Iterative_Logging_Server :
+	  virtual Logging_Server&lt;ACCEPTOR, Null_Mutex&gt; {
+	public:
+	  typedef Logging_Server&lt;ACCEPTOR, Null_Mutex&gt;::HANDLER HANDLER;
+	  Iterative_Logging_Server (int argc, char *argv[]);
+
+	protected:
+	  virtual void open (void);
+	  virtual void wait_for_multiple_events (void) {};
+	  virtual void handle_connections (void);
+	  virtual void handle_data
+	    (typename ACCEPTOR::PEER_STREAM *stream = 0);
+	  HANDLER log_handler_;
+
+	  // One log file shared by all clients.
+	  std::ofstream logfile_;
+	};
+</PRE><BR>
+<P class=docText><A name=idx-CHP-26-2334></A><A name="of our"></A>Implementing this version of our server is straightforward. The <TT>open( )</TT> method decorates the behavior of the method from the <TT>Logging_Server</TT><A name="the parent"></A> base class by opening an output file before delegating to the parent's <TT>open( )</TT>, as follows:</P><PRE>	template &lt;typename ACCEPTOR&gt; void
+	Interative_Logging_Server&lt;ACCEPTOR&gt;::open (void) {
+	  logfile_.open (filename_.c_str ());
+	  if (!logfile_.good ()) throw std::runtime_error;
+	  // Delegate to the parent's open() method.
+	  Logging_Server&lt;ACCEPTOR, Null_Mutex&gt;::open ();
+	}
+</PRE><BR>
+<P class=docText>The <TT>wait_for_multiple_events( )</TT><A name="a no"></A> method is a no-op. It is not needed because we just handle a single connection at any one time. The <TT>handle_connections( )</TT><A name="until a"></A> method therefore simply blocks until a new connection is established, as follows:</P><PRE>	template &lt;typename ACCEPTOR&gt; void
+	Iterative_Logging_Server&lt;ACCEPTOR&gt;::handle_connections (void)
+	{ acceptor_.accept (log_handler_.peer ()); }
+</PRE><BR>
+<P class=docText>Finally, <TT>handle_data( )</TT><A name="the client"></A> simply reads log records from the client and writes them to the log-file until the client closes the connection or an error occurs:</P><PRE>	template &lt;typename ACCEPTOR&gt; void
+	Iterative_Logging_Server&lt;ACCEPTOR&gt;::handle_data (void) {
+	    while (log_handler_.log_record (logfile _))
+	      count_request ();
+	   }
+</PRE><BR>
+<P class=docText><A name="While the"></A>While the iterative server is straightforward to implement, it suffers from the drawback of being able to service only one client at a time. A second client that attempts to connect may time out while waiting for the first to finish its request.</P><A name=a_reactive_logging_server></A>
+<H4 class=docSection2Title id=title-ID0ESGEK>26.3.2. A Reactive Logging Server</H4>
+<P class=docText><A name="server alleviates"></A>The reactive logging server alleviates one of the primary drawbacks with the iterative logging server in the previous section by processing multiple client connections and log record requests via operating system <A name=idx-CHP-26-2335></A><A name="APIs provided"></A>synchronous event demultiplexing APIs provided by the OS, such as <TT>select( )</TT> and <TT>WaitForMultipleObjects( )</TT><A name="can monitor"></A>. These APIs can monitor multiple clients by waiting in a single thread of control for I/O-related events to occur on a group of I/O handles, and then interleave the processing of log records. Since a reactive logging server is still fundamentally <A name=idx-CHP-26-2336></A><A name="the iterative"></A>sequential, however, it inherits from the iterative logging server implemented earlier, as shown in <A class=docLink href="javascript:moveTo('reactive_logging_server_interface');">Figure 26-7</A>.<A name=idx-CHP-26-2337></A></P><A name=reactive_logging_server_interface></A>
+<P>
+<CENTER>
+<H5 class=docFigureTitle>Figure 26-7. Reactive logging server interface</H5><IMG id="" height=394 alt="" src="images/implementing_sequential_logging_servers.0.png" width=394 border=0> </CENTER>
+<P></P><BR>
+<P class=docText>The <TT>Reactive_Logging_Server</TT><A name="base class"></A> class overrides all four hook methods that it inherits from base class <TT>Iterative_Logging_Server</TT>. Its <TT>open( )</TT><A name="decorates the"></A> hook method decorates the behavior of the base class method to initialize the <TT>ACE_Handle_Set</TT><A name="of the"></A> member variables, which are part of the wrapper facades that simplify the use of <TT>select( )</TT>, as shown here:<A name=idx-CHP-26-2338></A></P><PRE>	template &lt;typename ACCEPTOR&gt; void
+	Reactive_Logging_Server&lt;ACCEPTOR&gt;::open () {
+	  // Delegate to base class.
+	  Iterative_Logging_Server&lt;ACCEPTOR&gt;::open ();
+
+	  // Mark the handle associated with the acceptor as active.
+	  master_set_.set_bit (acceptor_.get_handle ());
+
+	  // Set the acceptor's handle into non-blocking mode.
+	  acceptor_.enable (NONBLOCK);
+	}
+</PRE><BR>
+<P class=docText>The <TT>wait_for_multiple_events( )</TT><A name="unlike its"></A> method is needed in this implementation, unlike its counterpart in <TT>Iterative_Server</TT><A name="As shown"></A>. As shown in <A class=docLink href="javascript:moveTo('using_an_asynchronous_event_demultiplexer_in_the_reactive_lo');">Figure 26-8</A>, this method <A name=idx-CHP-26-2339></A><A name="event demultiplexer"></A>uses a synchronous event demultiplexer (in this case, the <TT>select( )</TT><A name="handles have"></A> call) to detect which I/O handles have connection or data activity pending.<A name=idx-CHP-26-2340></A></P><A name=using_an_asynchronous_event_demultiplexer_in_the_reactive_lo></A>
+<P>
+<CENTER>
+<H5 class=docFigureTitle><A name="an asynchronous"></A>Figure 26-8. Using an asynchronous event demultiplexer in the Reactive_Logging_Server program</H5><IMG id="" height=355 alt="" src="images/implementing_sequential_logging_servers.1.png" width=500 border=0> </CENTER>
+<P></P><BR>
+<P class=docText>After <TT>wait_for_multiple_events( )</TT> has executed, the <TT>Reactive_Logging_Server</TT><A name="set of"></A> has a cached set of handles with pending activity (i.e., either new connection requests or new incoming data events), which will then be handled by its other two hook methods: <TT>handle_data( )</TT> and <TT>handle_connections( )</TT>. The <TT>handle_connections( )</TT><A name="as many"></A> method checks whether the acceptors handle is active and, if so, accepts as many connections as possible and caches them in the <TT>master_handle_set_</TT>. Similarly, the <TT>handle_data( )</TT><A name="over the"></A> method iterates over the remaining active handles marked by <TT>select( )</TT><A name="by the"></A> earlier. This activity is simplified by the ACE <A name=idx-CHP-26-2341></A><A name="an instance"></A>socket wrapper facade that implements an instance of the <A name=idx-CHP-26-2342></A><A name="Iterator pattern"></A>Iterator pattern <SUP class=docFootnote><A class=docLink href="javascript:moveTo('CHP-26-FNOTE-14');">[<IMG alt=dagger src="images/U2020.GIF"><IMG alt=dagger src="images/U2020.GIF"><IMG alt=dagger src="images/U2020.GIF">]</A></SUP><A name="as shown"></A>for socket handle sets, as shown in <A class=docLink href="javascript:moveTo('reactive_server_connectiondata_event_handling');">Figure 26-9</A>.<A name=idx-CHP-26-2343></A><A name=idx-CHP-26-2344></A></P>
+<BLOCKQUOTE>
+<P class=docFootnote><SUP><A name=CHP-26-FNOTE-14>[<IMG alt=dagger src="images/U2020.GIF"><IMG alt=dagger src="images/U2020.GIF"><IMG alt=dagger src="images/U2020.GIF">]</A></SUP> Gamma et al., <SPAN class=docEmphasis>op. cit</SPAN>.</P></BLOCKQUOTE>
+<P class=docText><A name="implements a"></A>The following code implements a <TT>Reactive_Logging_Server</TT> <A name=idx-CHP-26-2345></A><A name="that uses"></A>main program that uses the socket API:</P><PRE>	int main (int argc, char *argv[]) {
+	  Reactive_Logging_Server&lt;SOCK_Acceptor&gt; server (argc, argv);
+	  server.run ();
+	  return 0;
+	}
+</PRE><BR><A name=reactive_server_connectiondata_event_handling></A>
+<P>
+<CENTER>
+<H5 class=docFigureTitle><A name="event handling"></A>Figure 26-9. Reactive server connection/data event handling</H5><IMG id="" height=278 alt="" src="images/implementing_sequential_logging_servers.2.png" width=500 border=0> </CENTER>
+<P></P><BR>
+<P class=docText>The first line of our main function parameterizes the <TT>Reactive_Logging_Server</TT> with the <TT>SOCK_Acceptor</TT><A name="reactive logging"></A> type, which will cause the C++ compiler to generate code for a reactive logging server that is able to communicate over sockets. This will, in turn, parameterize its <TT>Logging_Server</TT><A name="with both"></A> base class with both the <TT>SOCK_Acceptor</TT> and <TT>Null Mutex</TT><A name="template argument"></A>, by virtue of the hard-coded template argument provided when we inherited from it. The second line calls the <TT>run( )</TT><A name=the></A> template method, which is delegated to the <TT>Logging_Server</TT><A name="base class"></A> base class, which itself delegates to the various hook methods we implemented in this class.<A name=idx-CHP-26-2346></A><A name=idx-CHP-26-2347></A><A name=idx-CHP-26-2348></A></P><A name=evaluating_the_sequential_logging_server_solutions></A>
+<H4 class=docSection2Title id=title-ID0EQNEK>26.3.3. Evaluating the Sequential Logging Server Solutions</H4>
+<P class=docText>The <TT>Reactive_Logging_Server</TT> improves upon the <TT>Iterative_Logging_Server</TT><A name="servicing of"></A> by interleaving its servicing of multiple clients, rather than just handling one client in its entirety at a time. It does not take advantage of OS concurrency mechanisms, however, so it cannot leverage multiprocessors effectively. Nor can it overlap computation and communication by processing log records while reading new records. These limitations impede its scalability as the number of clients increases, even if the underlying hardware supports multiple simultaneous threads of execution.<A name=idx-CHP-26-2349></A><A name=idx-CHP-26-2350></A><A name=idx-CHP-26-2351></A><A name=idx-CHP-26-2352></A></P>
+<P class=docText>Although <TT>Iterative_Logging_Server</TT> and <TT>Reactive_Logging_Server</TT><A name="a single"></A> run only in a single thread of control—and are thus not scalable for most production systems—their simplicity high-lights several more beautiful aspects of our OO <A name=idx-CHP-26-2353></A>framework-based design:</P>
+<UL>
+<LI>
+<P class=docList><A name="of hook"></A>Our use of hook methods in the <TT>Logging_Server::run( )</TT><A name="application developers"></A> template method shields application developers from low-level details—e.g., how a logging server performs IPC and event demulxiplexing operations—thereby enabling the developers to focus on domain-specific application logic by leveraging the expertise of framework designers.</P></LI>
+<LI>
+<P class=docList>Our use of <A name=idx-CHP-26-2354></A><A name="mechanism to"></A>wrapper facades allows us to lock/unlock mutexes, listen on a particular IPC mechanism to accept new connections, and wait for multiple I/O events concisely, efficiently, and portably. Without these useful abstractions, we would have had to write many lines of tedious and error-prone code that would be hard to understand, debug, and evolve.</P></LI></UL>
+<P class=docText><A name="from these"></A>The benefits from these abstractions become more apparent with more complex <A name=idx-CHP-26-2355></A><A name="as well"></A>concurrent logging servers shown next, as well as with more complex <A name=idx-CHP-26-2356></A><A name="user interfaces"></A>framework use cases, such as graphical user interfaces <SUP class=docFootnote><A class=docLink href="javascript:moveTo('CHP-26-FNOTE-15');">[<IMG alt="double dagger" src="images/U2021.GIF"><IMG alt="double dagger" src="images/U2021.GIF"><IMG alt="double dagger" src="images/U2021.GIF">]</A></SUP><A name="or communication"></A>or communication middleware. <SUP class=docFootnote><A class=docLink href="javascript:moveTo('CHP-26-FNOTE-16');">[§§§]</A></SUP></P>
+<BLOCKQUOTE>
+<P class=docFootnote><SUP><A name=CHP-26-FNOTE-15>[<IMG alt="double dagger" src="images/U2021.GIF"><IMG alt="double dagger" src="images/U2021.GIF"><IMG alt="double dagger" src="images/U2021.GIF">]</A></SUP> Gamma et al., <SPAN class=docEmphasis>op. cit</SPAN>.</P></BLOCKQUOTE>
+<BLOCKQUOTE>
+<P class=docFootnote><SUP><A name=CHP-26-FNOTE-16>[§§§]</A></SUP> <A name=idx-CHP-26-2357></A>Schmidt et al., <SPAN class=docEmphasis>op. cit</SPAN>.</P></BLOCKQUOTE></DIV></DIV>
+<p>&nbsp;</p><p>&nbsp;</p><!-- 仁·义 -->
+</body></html>

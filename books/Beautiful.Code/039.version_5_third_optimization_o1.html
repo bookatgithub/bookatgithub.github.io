@@ -1,0 +1,208 @@
+<html><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<link href="styles/globalstyle.css" type="text/css" rel="stylesheet"/>
+<link title="medium" href="styles/two.css" type="text/css" rel="stylesheet"/>
+<script src="scripts/main.js" type="text/javascript" language="javascript"></script>
+<title>Section 5.7. Version 5: Third Optimization O(1)</title>
+</head><body>
+<DIV class=h3 style="MARGIN-TOP: 0px; PADDING-BOTTOM: 1em; WIDTH: 100%; PADDING-TOP: 0px"><SPAN>Correct, Beautiful, Fast (in That Order): Lessons from Designing XML Verifiers</SPAN><SPAN> &gt; Version 5: Third Optimization O(1)</SPAN></DIV>
+<DIV></DIV>
+<DIV>
+<DIV><A name=version_5_third_optimization_o1></A>
+<H3 class=docSection1Title id=-100000>5.7. Version 5: Third Optimization O(1)</H3>
+<P class=docText><A name="After I"></A>After I implemented the constructor detailed in the previous section and added some additional optimizations, XOM was fast enough for anything I needed to do. Read performance was essentially limited only by parser speed and there were very few bottlenecks left in the document-building process.<A name=idx-CHP-5-0257></A></P>
+<P class=docText><A name="different use"></A>However, other users with different use cases were encountering different problems. In particular, some users were writing custom builders that read non-<A name=idx-CHP-5-0258></A><A name="a XOM"></A>XML formats into a XOM tree. They were not using an XML parser, and therefore were not able to take the shortcut that bypassed name verification. These users were still seeing verification as a hot spot, albeit a smaller one than it had been.</P>
+<P class=docText><A name="to turn"></A>I wasn't willing to turn off verification completely, despite requests to do so. However, it was obvious that the verification process had to be sped up. The approach I took is an old optimization classic: <SPAN class=docEmphasis>table lookup</SPAN>. In a <A name=idx-CHP-5-0259></A><A name="a table"></A>table lookup, you create a table that contains all the answers for all the known inputs. When given any input, the compiler can simply look up the answer in the table, without having to perform a calculation. This is an <SPAN class=docEmphasis>O</SPAN><A name="the devil"></A>(1) operation, and its performance speed is close to the theoretical maximum. Of course, the devil is in the details.<A name=idx-CHP-5-0260></A></P>
+<P class=docText><A name="way to"></A>The simplest way to implement table <A name=idx-CHP-5-0261></A><A name="with a"></A>lookup in Java is with a <TT>switch</TT> statement. <SPAN class=docEmphasis>javac</SPAN><A name="of values"></A> com-piles this statement into a table of values stored in the byte code. Depending on the <TT>switch</TT><A name="statement cases"></A> statement cases, the compiler creates one of two byte code instructions. If the cases are contiguous (e.g., 72–189 without skipping any values in between) the compiler uses a more efficient <TT>tableswitch</TT><A name="are skipped"></A>. However, if any values are skipped, the compiler uses the more indirect and less efficient <TT>lookupswitch</TT> instruction instead.<A name=idx-CHP-5-0262></A></P><A name=note-2></A>
+<HR noShade SIZE=1>
+<SPAN class=v2><I><B>Note:</B></I> <SPAN class=docEmphStrong>This behavior isn't absolutely guaranteed, and may perhaps not even be true in more recent virtual machines (VMs), but it certainly was true in the generation of VMs I tested and inspected</SPAN>.</SPAN>
+<HR noShade SIZE=1>
+ 
+<P class=docText><A name="few hundred"></A>For small tables (a few hundred cases or less), it was possible to fill in the intermediate values with the default value. For instance, a simple test can determine whether a character is a hexadecimal digit (<A class=docLink href="javascript:moveTo('switch_statement_character_verification');">Example 5-7</A><A name="starts with"></A>). The test starts with the lowest possible true value, '<TT>0</TT><A name="the highest"></A>', and finishes with the highest possible true value, '<TT>f</TT>'. Every character between <TT>0</TT> and <TT>f</TT> must be included as a case.</P><A name=switch_statement_character_verification></A>
+<H5 class=docExampleTitle id=title-ID0EZ1CK>Example 5-7. switch statement character verification</H5>
+<P>
+<TABLE cellSpacing=0 cellPadding=5 width=* border=1>
+<TBODY>
+<TR>
+<TD>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedHeight>	private static boolean isHexDigit(char c) {
+
+	    switch(c) {
+	        case '0': return true;
+	        case '1': return true;
+	        case '2': return true;
+	        case '3': return true;
+	        case '4': return true;
+	        case '5': return true;
+	        case '6': return true;
+	        case '7': return true;
+	        case '8': return true;
+	        case '9': return true;
+	        case ':': return false;
+	        case ';': return false;
+	        case '&lt;': return false;
+	        case '=': return false;
+	        case '&gt;': return false;
+	        case '?': return false;
+	        case '@': return true;
+	        case 'A': return true;
+	        case 'B': return true;
+	        case 'C': return true;
+	        case 'D': return true;
+	        case 'E': return true;
+	        case 'F': return true;
+	        case 'G': return false;
+	        case 'H': return false;
+	        case 'I': return false;
+	        case 'J': return false;
+	        case 'K': return false;
+	        case 'L': return false;
+	        case 'M': return false;
+	        case 'N': return false;
+	        case 'O': return false;
+	        case 'P': return false;
+	        case 'Q': return false;
+	        case 'R': return false;
+	        case 'S': return false;
+	        case 'T': return false;
+	        case 'U': return false;
+	        case 'V': return false;
+	        case 'W': return false;
+	        case 'X': return false;
+	        case 'Y': return false;
+	        case 'Z': return false;
+	        case '[': return false;
+	        case '\\': return false;
+	        case ']': return false;
+	        case '^': return false;
+	        case '_': return false;
+	        case '`': return false;
+	        case 'a': return true;
+	        case 'b': return true;
+	        case 'c': return true;
+	        case 'd': return true;
+	        case 'e': return true;
+	        case 'f': return true;
+	    }
+	    return false;
+	}
+
+
+					    </PRE><BR></TD></TR></TBODY></TABLE></P>
+<P class=docText><A name="to see"></A>This is long but shallow. It is not complex. It is easy to see what's happening here, and that's good. However, although <TT>switch</TT><A name="they do"></A> statements are shallow, they do run into <A name=idx-CHP-5-0263></A><A name="of cases"></A>problems for larger groups of cases. For instance, <A name=idx-CHP-5-0264></A><A name="of thousands"></A>XML character verification checks tens of thousands of cases. I tried writing a <TT>switch</TT><A name="statement to"></A> statement to handle these larger groups and discovered that Java imposes a 64K maximum size on the byte code of a method. This situation required an alternate solution.</P>
+<P class=docText><A name="and runtime"></A>Although the compiler and runtime limited the size of the <A name=idx-CHP-5-0265></A><A name="in the"></A>lookup table stored in the byte code, there were other places I could hide it. I began by defining a simple <A name=idx-CHP-5-0266></A><A name="byte for"></A>binary format, one byte for each of the 65,536 Unicode code points in the Basic Multilingual Plane (BMP). Each byte contains eight <SPAN class=docEmphasis>bit flags</SPAN><A name="most important"></A> that identify the most important character properties. For instance, bit 1 is <SPAN class=docEmphasis>on</SPAN> if the character is legal in PCDATA content, and <SPAN class=docEmphasis>off</SPAN> if it is not legal. Bit 2 is <SPAN class=docEmphasis>on</SPAN> if the character can be used in an XML name, and <SPAN class=docEmphasis>off</SPAN> if it cannot. Bit 3 is <SPAN class=docEmphasis>on</SPAN><A name=and></A> if the character can be the start of an XML name, and <SPAN class=docEmphasis>off</SPAN> if it cannot.<A name=idx-CHP-5-0267></A></P>
+<P class=docText><A name="a simple"></A>I wrote a simple program to read the BNF grammar from the XML specification, calculate the flag values for each of the 65,536 BMP code points, and then store it in one big binary file. I saved this binary data file along with my source code, and modified my Ant compile task to copy it into the build directory (<A class=docLink href="javascript:moveTo('saving_and_copying_the_binary_lookup_table');">Example 5-8</A>).</P><A name=saving_and_copying_the_binary_lookup_table></A>
+<H5 class=docExampleTitle id=title-ID0ED4CK>Example 5-8. Saving and copying the binary lookup table</H5>
+<P>
+<TABLE cellSpacing=0 cellPadding=5 width=* border=1>
+<TBODY>
+<TR>
+<TD><PRE>&lt;target name="compile-core" depends="prepare, compile-jaxen"
+          description="Compile the source code"&gt;
+   &lt;javac srcdir="${build.src}" destdir="${build.dest}"&gt;
+      &lt;classpath refid="compile.class.path"/&gt;
+   &lt;/javac&gt;
+   <B>&lt;copy file="${build.src}/nu/xom/characters.dat"
+        tofile="${build.dest}/nu/xom/characters.dat"/&gt;</B>
+&lt;/target&gt;
+</PRE><BR></TD></TR></TBODY></TABLE></P>
+<P class=docText>From there, the <SPAN class=docEmphasis>jar</SPAN><A name="lookup table"></A> task will bundle the lookup table with the compiled .<SPAN class=docEmphasis>class</SPAN><A name="file to"></A> files, so it doesn't add an extra file to the distribution or cause any added dependencies. The <TT>Verifier</TT><A name="class can"></A> class can then use the class loader to find this file at runtime, as shown in <A class=docLink href="javascript:moveTo('loading_the_binary_lookup_table');">Example 5-9</A>.<A name=idx-CHP-5-0268></A></P><A name=loading_the_binary_lookup_table></A>
+<H5 class=docExampleTitle id=title-ID0EE5CK>Example 5-9. Loading the binary lookup table</H5>
+<P>
+<TABLE cellSpacing=0 cellPadding=5 width=* border=1>
+<TBODY>
+<TR>
+<TD>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedHeight>	private static byte[] flags = null;
+
+	static {
+	    ClassLoader loader = Verifier.class.getClassLoader();
+	    if (loader != null) loadFlags(loader);
+	    // If that didn't work, try a different ClassLoader
+	    if (flags == null) {
+	        loader = Thread.currentThread().getContextClassLoader();
+	        loadFlags(loader);
+	    }
+
+	}
+
+	private static void loadFlags(ClassLoader loader) {
+
+	    DataInputStream in = null;
+	    try {
+	        InputStream raw = loader.getResourceAsStream("nu/xom/characters.dat");
+	        if (raw == null) {
+	            throw new RuntimeException("Broken XOM installation: "
+	              + "could not load nu/xom/characters.dat");
+	        }
+	        in = new DataInputStream(raw);
+	        flags = new byte[65536];
+	        in.readFully(flags);
+	    }
+	    catch (IOException ex) {
+	        throw new RuntimeException("Broken XOM installation: "
+	          + "could not load nu/xom/characters.dat");
+	    }
+	    finally {
+	        try {
+	            if (in != null) in.close();
+	        }
+	        catch (IOException ex) {
+	            // no big deal
+	        }
+	    }
+
+	}
+
+
+					    </PRE><BR></TD></TR></TBODY></TABLE></P>
+<P class=docText><A name="up about"></A>This task takes up about 64KB of heap space. However, that's not really a problem on a desktop or server, and we only have to load this data once. The code is careful not to reload the data once it's already been loaded.</P>
+<P class=docText>Now that the <A name=idx-CHP-5-0269></A><A name="stored in"></A>lookup table is stored in memory, checking any property of any character is a simple matter of performing an array lookup followed by a couple of bitwise operations. <A name=idx-CHP-5-0270></A><A class=docLink href="javascript:moveTo('using_the_lookup_table_to_check_a_name');">Example 5-10</A><A name="new code"></A> shows the new code for checking a noncolonized name, such as an element or attribute local name. All we have to do is look up the flags in the table and compare the bit corresponding to the desired property.</P><A name=using_the_lookup_table_to_check_a_name></A>
+<H5 class=docExampleTitle id=title-ID0EE6CK>Example 5-10. Using the lookup table to check a name</H5>
+<P>
+<TABLE cellSpacing=0 cellPadding=5 width=* border=1>
+<TBODY>
+<TR>
+<TD>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedHeight>// constants for the bit flags in the characters lookup table
+private final static byte <A name=idx-CHP-5-0271></A>XML_CHARACTER        = 1;
+private final static byte NAME_CHARACTER       = 2;
+private final static byte NAME_START_CHARACTER = 4;
+private final static byte NCNAME_CHARACTER     = 8;
+
+static void checkNCName(String name) {
+
+    if (name == null) {
+        throwIllegalNameException(name, "NCNames cannot be null");
+    }
+
+    int length = name.length();
+    if (length == 0) {
+        throwIllegalNameException(name, "NCNames cannot be empty");
+    }
+
+    char first = name.charAt(0);
+    if ((flags[first] &amp; NAME_START_CHARACTER) == 0) {
+        throwIllegalNameException(name, "NCNames cannot start " +
+          "with the character " + Integer.toHexString(first));
+    }
+
+    for (int i = 1; i &lt; length; i++) {
+        char c = name.charAt(i);
+        if ((flags[c] &amp; NCNAME_CHARACTER) == 0) {
+            if (c == ':') {
+              throwIllegalNameException(name, "NCNames cannot contain colons");
+            }
+            else {
+              throwIllegalNameException(name, "0x"
+                + Integer.toHexString(c) + " is not a legal NCName character");
+            }
+        }
+    }
+}
+
+
+					    </PRE><BR></TD></TR></TBODY></TABLE></P>
+<P class=docText><A name="is now"></A>Name character verification is now an <SPAN class=docEmphasis>O</SPAN>(1) operation, and verification of a full name is <SPAN class=docEmphasis>O</SPAN>(<SPAN class=docEmphasis>n</SPAN>), where <SPAN class=docEmphasis>n</SPAN><A name="code to"></A> is the length of the name. You can fiddle with the code to improve the constant factors, as I have, but it's hard to see how this could be faster while still making the necessary checks. However, we're not done yet.<A name=idx-CHP-5-0272></A></P></DIV></DIV>
+<p>&nbsp;</p><p>&nbsp;</p><!-- 仁·义 -->
+</body></html>

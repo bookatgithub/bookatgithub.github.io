@@ -1,0 +1,222 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;20.6.&nbsp;Adding Functionality to a Class by Wrapping a Method</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-20-sect-5.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-20-sect-7.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-20-SECT-6"></a>
+<h3 class="docSection1Title">Recipe 20.6. Adding Functionality to a Class by Wrapping a Method</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Ken Seehof, Holger Krekel</span></p>
+
+<a name="pythoncook2-CHP-20-SECT-6.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText">You need to add functionality to an existing class, without changing
+the source code for that class, and inheritance is not applicable
+(since it would make a new class, rather than changing the existing
+one). Specifically, you need to enrich a method of the class, adding
+some extra functionality "around"
+that of the existing method.</P>
+
+
+<a name="pythoncook2-CHP-20-SECT-6.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">Adding completely new methods (and other attributes) to an existing
+<tt>class</tt> object is quite simple, since the built-in
+function <tt>setattr</tt> does essentially all the work. We
+need to "decorate" an existing
+method to add to its functionality. To achieve this, we can build the
+new replacement method as a closure. The best architecture is to
+define general-purpose wrapper and unwrapper functions, such as:</p>
+
+<pre>import inspect
+def wrapfunc(obj, name, processor, avoid_doublewrap=True):
+    """ patch obj.&lt;name&gt; so that calling it actually calls, instead,
+            processor(original_callable, *args, **kwargs)
+    """
+    # get the callable at obj.&lt;name&gt;
+    call = getattr(obj, name)
+    # optionally avoid multiple identical wrappings
+    if avoid_doublewrap and getattr(call, 'processor', None) is processor:
+        return
+    # get underlying function (if any), and anyway def the wrapper closure
+    original_callable = getattr(call, 'im_func', call)
+    def wrappedfunc(*args, **kwargs):
+        return processor(original_callable, *args, **kwargs)
+    # set attributes, for future unwrapping and to avoid double-wrapping
+    wrappedfunc.original = call
+    wrappedfunc.processor = processor
+    # 2.4 only: wrappedfunc._ _name_ _ = getattr(call, '_ _name_ _', name)
+    # rewrap staticmethod and classmethod specifically (iff obj is a class)
+    if inspect.isclass(obj):
+        if hasattr(call, 'im_self'):
+            if call.im_self:
+                wrappedfunc = classmethod(wrappedfunc)
+        else:
+            wrappedfunc = staticmethod(wrappedfunc)
+    # finally, install the wrapper closure as requested
+    setattr(obj, name, wrappedfunc)
+def unwrapfunc(obj, name):
+    ''' undo the effects of wrapfunc(obj, name, processor) '''
+    setattr(obj, name, getattr(obj, name).original)</pre><BR>
+
+
+<p class="docText">This approach to wrapping is carefully coded to work just as well on
+ordinary functions (when <i>obj</I> is a module) as on
+methods of all kinds (e.g., bound methods, when <I>obj</i>
+is an instance; unbound, class, and static methods, when
+<I>obj</I> is a class). This method
+doesn't work when <i>obj</i> is a built-in
+type, though, because built-ins are immutable.</p>
+
+<p class="docText">For example, suppose we want to have
+"tracing" prints of all that
+happens whenever a particular method is called. Using the
+general-purpose <i>wrapfunc</I> function just shown, we
+could code:</p>
+
+<pre>def tracing_processor(original_callable, *args, **kwargs):
+    r_name = getattr(original_callable, '_ _name_ _', '&lt;unknown&gt;')
+    r_args = map(repr, args)
+    r_args.extend(['%s=%r' % x for x in kwargs.iteritems( )])
+    print "begin call to %s(%s)" % (r_name, ", ".join(r_args))
+    try:
+        result = call(*args, **kwargs)
+    except:
+        print "EXCEPTION in call to %s" %(r_name,)
+        raise
+    else:
+        print "call to %s result: %r" %(r_name, result)
+        return result
+def add_tracing_prints_to_method(class_object, method_name):
+    wrapfunc(class_object, method_name, tracing_processor)</pre><br>
+
+
+
+<a name="pythoncook2-CHP-20-SECT-6.3"></a>
+<H4 class="docSection2Title">Discussion</h4>
+
+<p class="docText">This recipe's task occurs fairly often when
+you're trying to modify the behavior of a standard
+or third-party Python module, since editing the source of the module
+itself is undesirable. In particular, this recipe can be handy for
+debugging, since the example function
+<I>add_tracing_prints_to_method</i> presented in the
+"Solution" lets you see on standard
+output all details of calls to a method you want to watch, without
+modifying the library module, and without requiring interactive
+access to the Python session in which the calls occur.</P>
+
+<p class="docText">You can also use this recipe's approach on a larger
+scale. For example, say that a library that you imported has a long
+series of methods that return numeric error codes. You could wrap
+each of them inside an enhanced wrapper method, which raises an
+exception when the error code from the original method indicates an
+error condition. Again, a key issue is not having to modify the
+library's own code. However, methodical application
+of wrappers when building a subclass is also a way to avoid
+repetitious code (i.e., boilerplate). For example, <a class="docLink" href="pythoncook2-CHP-5-SECT-12.html#pythoncook2-CHP-5-SECT-12">Recipe 5.12</a> and <a class="docLink" href="pythoncook2-CHP-1-SECT-24.html#pythoncook2-CHP-1-SECT-24">Recipe 1.24</a> might be recoded to take
+advantage of the general <I>wrapfunc</i> presented in this
+recipe.</p>
+
+<p class="docText">Particularly when "wrapping on a large
+scale", it is important to be able to
+"unwrap" methods back to their
+normal state, which is why this recipe's Solution
+also includes an <i>unwrapfunc</i> function. It may also be
+handy to avoid accidentally wrapping the same method in the same way
+twice, which is why <i>wrapfunc</i> supports the optional
+parameter <i>avoid_doublewrap</i>, defaulting to
+<tt>true</tt>, to avoid such double wrapping.
+(Unfortunately, <tt>classmethod</tt> and
+<tt>staticmethod</tt> do not support per-instance
+attributes, so the avoidance of double wrapping, as well as the
+ability to "unwrap", cannot be
+guaranteed in all cases.)</p>
+
+<p class="docText">You can wrap the same method multiple times with different
+processors. However, unwrapping must proceed last-in, first-out; as
+coded, this recipe does not support the ability to remove a wrapper
+from "somewhere in the middle" of a
+chain of several wrappers. A related limitation of this recipe as
+coded is that double wrapping is not detected when another unrelated
+wrapping occurred in the meantime. (We don't even
+try to detect what we might call "deep double
+wrapping.")</p>
+
+<p class="docText">If you need "generalized
+unwrapping", you can extend
+<i>unwrap_func</i> to return the processor it has removed;
+then you can obtain generalized unwrapping by unwrapping all the way,
+recording a list of the processors that you removed, and then pruning
+that list of processors and rewrapping. Similarly, generalized
+detection of "deep" double wrapping
+could be implemented based on this same idea.</P>
+
+<p class="docText">Another generalization, to fully support
+<tt>staticmethod</tt> and <tt>classmethod</tt>,
+is to use a global <tt>dict</tt>, rather than per-instance
+attributes, for the <I>original</i> and
+<i>processor</I> values; functions, bound and unbound
+methods, as well as class methods and static methods, can all be used
+as keys into such a dictionary. Doing so obviates the issue with the
+inability to set per-instance attributes on class methods and static
+methods. However, each of these generalizations can be somewhat
+complicated, so we are not pursuing them further here.</p>
+
+<p class="docText">Once you have coded some processors with the signature and semantics
+required by this recipe's <i>wrapfunc</i>,
+you can also use such processors more directly (in cases where
+modifying the source is OK) with a Python 2.4 decorator, as follows:</p>
+
+<pre>def processedby(processor):
+    """ decorator to wrap the processor around a function. """
+    def processedfunc(func):
+        def wrappedfunc(*args, **kwargs):
+            return processor(func, *args, **kwargs)
+        return wrappedfunc
+    return processedfunc</pre><br>
+
+
+<p class="docText">For example, to wrap this recipe's
+<i>tracing_processor</I> around a certain method at the
+time the <tt>class</tt> statement executes, in Python 2.4,
+you can code:</p>
+
+<pre>class SomeClass(object):
+    @processedby(tracing_processor)
+    def amethod(self, s):
+        return 'Hello, ' + s</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-20-SECT-6.4"></a>
+<h4 class="docSection2Title">See Also</H4>
+
+<p class="docText"><a class="docLink" href="pythoncook2-CHP-5-SECT-12.html#pythoncook2-CHP-5-SECT-12">Recipe 5.12</a> and <a class="docLink" href="pythoncook2-CHP-1-SECT-24.html#pythoncook2-CHP-1-SECT-24">Recipe 1.24</a> provide examples of
+the methodical application of wrappers to build a subclass to avoid
+boilerplate; <span class="docEmphasis">Library Reference</span> and
+<span class="docEmphasis">Python in a Nutshell</span> docs on built-in
+functions <tt>getattr</tt> and <tt>setattr</tt>
+and module <tt>inspect</tt>.</p>
+
+
+
+<UL></UL></td></TR></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-20-sect-5.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-20-sect-7.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

@@ -1,0 +1,386 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>9.4 Operating System Tweaks</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="squid-CHP-9-SECT-3.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="squid-CHP-9-SECT-5.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="squid-CHP-9-SECT-4"></A>
+<H3 class="docSection1Title">9.4 Operating System Tweaks</H3>
+
+<P class="docText">You must enable certain networking features in your operating system
+to make interception caching work. First, you need to enable IP
+packet forwarding. This allows the operating system to receive
+packets with foreign destination addresses. Second, you must enable
+and configure <A NAME="squid-CHP-9-ITERM-1561"></A><A NAME="squid-CHP-9-ITERM-1562"></A>optional code in the kernel that redirects
+the foreign packets to Squid.</P>
+
+<A NAME="squid-CHP-9-SECT-4.1"></A>
+<H4 class="docSection2Title">9.4.1 Linux</H4>
+
+<P class="docText">The instructions in
+<A NAME="squid-CHP-9-ITERM-1563"></A><A NAME="squid-CHP-9-ITERM-1564"></A>this
+section should work for the 2.4 series of Linux kernels. I used
+RedHat Linux 7.2 (kernel 2.4.7-10). If you are using an older or
+newer version, these may not work. I recommend searching the Squid
+FAQ and other places for updated or historical information.</P>
+
+<P class="docText">In my tests with <I>iptables</I>, it
+wasn't necessary to enable IP forwarding. However,
+you may want to enable it initially and see if you can disable it
+after everything else is working. The best way to enable packet
+forwarding is to add this line to
+<I>/etc/sysctl.conf</I>:</P>
+
+<PRE>net.ipv4.ip_forward = 1</PRE>
+
+<P class="docText">Most likely you'll need to make a new kernel before
+HTTP interception will work. See
+O'Reilly's <span class="docEmphasis">Running Linux
+</span>by Matt Welsh, Matthias Kalle Dalheimer, and Lar Kaufman,
+if you don't know how to configure and create a
+Linux kernel. When you configure the kernel, make sure these options
+are enabled:</P>
+
+<PRE>o  General setup
+     Networking support (CONFIG_NET=y)
+     Sysctl support (CONFIG_SYSCTL=y)
+o  Networking options
+     Network packet filtering (CONFIG_NETFILTER=y)
+     TCP/IP networking (CONFIG_INET=y)
+     Netfilter Configuration
+       Connection tracking (CONFIG_IP_NF_CONNTRACK=y)
+       IP tables support (CONFIG_IP_NF_IPTABLES=y)
+       Full NAT (CONFIG_IP_NF_NAT=y)
+       REDIRECT target support (CONFIG_IP_NF_TARGET_REDIRECT=y)
+o  File systems
+     /proc filesystem support (CONFIG_PROC_FS=y)</PRE>
+
+<P class="docText">Additionally, make sure this option isn't enabled:</P>
+
+<PRE>o Networking options
+    Fast switching (CONFIG_NET_FASTROUTE=n)</PRE>
+
+<P class="docText">The code that redirects foreign packets to Squid is part of the
+Netfilter software. Here is a rule that sends the intercepted HTTP
+connections to Squid:</P>
+
+<PRE>iptables -t nat -A PREROUTING -i eth0 -p tcp --dport 80 -j REDIRECT --to-port 3128</PRE>
+
+<P class="docText">The Linux kernel maintains a number of different
+<I>tables</I>. The <I>-t nat</I> option
+indicates that we are modifying the Network Address Translation (NAT)
+table. In essence, we're using
+<I>iptables</I> to translate origin server TCP/IP
+addresses to Squid's local TCP/IP address.</P>
+
+<P class="docText">Each <I>iptables</I> table has a number of
+<I>chains</I>. The <I>-A PREROUTING</I>
+option indicates that we are appending a rule to the built-in chain
+named <TT>PREROUTING</TT>. The
+<TT>PREROUTING</TT> chain applies only to packets entering
+the system from the outside network.</P>
+
+<P class="docText">The next three options determine which packets match this rule. The
+<I>-i eth0</I> option restricts the rule to packets
+received on the <TT>eth0</TT> interface. The <I>-p
+tcp</I> option specifies TCP packets, and <I>—dport
+80</I> specifies packets with destination port equal to 80. If
+all three conditions are true, the packet matches the rule.</P>
+
+<P class="docText">The <I>-j REDIRECT</I> option indicates the target, or
+action to take, for packets that match the rule.
+<TT>REDIRECT</TT> is a built-in target name that causes
+<I>iptables</I> to change the packet's
+destination address to 127.0.0.1. The <I>—to-port
+3128</I> option instructs <I>iptables</I> also to
+change the destination TCP port number to 3128.</P>
+
+<P class="docText">If you are also running an HTTP server (such as Apache) on the Squid
+host, you must add another <I>iptables</I> rule. The
+additional rule is necessary to allow connections to your HTTP
+server. Otherwise, the <TT>REDIRECT</TT> rule causes
+<I>iptables</I> to send those connections to Squid on
+port 3128. You can use the <I>-I</I> option to insert a new
+rule at the top of the list:</P>
+
+<PRE>iptables -t nat -I PREROUTING -i eth0 -p tcp -d 172.16.102.66 --dport 80 -j ACCEPT</PRE>
+
+<P class="docText">Once you have all your <I>iptables</I> rules working
+correctly, be sure to save them with this command:</P>
+
+<PRE>/sbin/service iptables save</PRE>
+
+<P class="docText">This saves the current rules to
+<I>/etc/sysconfig/iptables</I> so they get
+automatically loaded when you reboot.</P>
+
+<A NAME="squid-CHP-9-SECT-4.1.1"></A>
+<H5 class="docSection3Title">9.4.1.1 Linux and WCCP</H5>
+
+<P class="docText">Version 2.4 of the Linux kernel comes <A NAME="squid-CHP-9-ITERM-1565"></A>with
+a GRE pseudo-interface. However, it doesn't work for
+decoding GRE-encapsulated packets from a WCCP session. The problem
+seems to be that the router sets the Protocol Type field to 0x883E
+for WCCP/GRE packets. Linux's GRE driver
+doesn't know what to do with these packets because
+it doesn't know about protocol type 0x883E.</P>
+
+<P class="docText">You can try patching Linux's GRE module so that it
+works with WCCP. The Squid FAQ contains a link to such a patch.
+However, you'll probably find it easier to use the
+WCCP-specific module for Linux. You can find it at <A class="docLink" target="_blank" HREF="http://www.squid-cache.org/WCCP-support/Linux/ip_wccp.c">http://www.squid-cache.org/WCCP-support/Linux/ip_wccp.c</A>.</P>
+
+<P class="docText">You need to compile the <I>ip_wccp.c</I> file as a
+loadable kernel module. This can be a little tricky because the
+specific compiler options may change depending on your kernel
+version. One thing you can do is go to your kernel source directory,
+type <I>make modules</I> and watch the compiler commands
+scroll by. Then copy one of those commands and change the last
+argument to <I>ip_wccp.c</I>. Here are the commands
+that I used with the 2.4.7-10 Linux kernel:</P>
+
+<PRE>% gcc -Wall -D_ _KERNEL_ _ -I/usr/src/linux-2.4.7-10/include  \
+  -DMODULE -DMODVERSIONS -DEXPORT_SYMBAB \
+  -include /usr/src/linux-2.4.7-10/include/linux/modversions.h \
+  -O2 -c ip_wccp.c</PRE>
+
+<P class="docText">The <I>gcc</I> command should leave you with an
+<I>ip_wccp.o</I> file in the current directory. The
+next step is to load that file into the kernel with the
+<I>insmod</I> command:</P>
+
+<PRE># insmod ip_wccp.o</PRE>
+
+<P class="docText">Note that the <span class="docEmphasis">ip_wccp</span> module accepts GRE/WCCP
+packets from any source address. In other words, a malicious person
+might be able to send traffic to your Squid cache. If you use this
+module, you should also install an <I>iptables</I> rule
+to deny foreign GRE packets. For example:</P>
+
+<PRE># iptables -A INPUT -p gre -s 172.16.102.65 -j ACCEPT
+# iptables -A INPUT -p gre -j DROP</PRE>
+
+<P class="docText">Again, don't forget to save your working rules with
+the <I>/sbin/service iptables save</I> command.</P>
+
+
+
+<A NAME="squid-CHP-9-SECT-4.2"></A>
+<H4 class="docSection2Title">9.4.2 FreeBSD</H4>
+
+<P class="docText">The examples in this section
+<A NAME="squid-CHP-9-ITERM-1566"></A><A NAME="squid-CHP-9-ITERM-1567"></A>are
+based on FreeBSD-4.8 and should work for any later version of
+FreeBSD-4 and FreeBSD-5.</P>
+
+<P class="docText">To enable IP packet forwarding, add this line to
+<I>/etc/sysctl.conf</I>:</P>
+
+<PRE>net.inet.ip.forwarding=1</PRE>
+
+<P class="docText">You'll need a kernel with two special options
+enabled. If you don't know how to make a kernel,
+refer to Section 9 of the FreeBSD Handbook (<A class="docLink" target="_blank" HREF="http://www.freebsd.org/handbook/index.html">http://www.freebsd.org/handbook/index.html</A>).
+Edit your kernel config file and make sure these lines are present:</P>
+
+<PRE>options          IPFIREWALL
+options          IPFIREWALL_FORWARD</PRE>
+
+<P class="docText">If the Squid box is in an unattended machine room, I also recommend
+using the <TT>IPFIREWALL_DEFAULT_TO_ACCEPT</TT> option. In
+case you mess up the firewall rules, you'll still be
+able to log in.</P>
+
+<P class="docText">These <I>ipfw</I> commands tell the kernel to redirect
+intercepted connections to Squid:</P>
+
+<PRE>/sbin/ipfw add allow tcp from 172.16.102.66 to any out
+/sbin/ipfw add allow tcp from any 80 to any out
+/sbin/ipfw add fwd 127.0.0.1,3128 tcp from any to any 80 in
+/sbin/ipfw add allow tcp from any 80 to 172.16.102.66 in</PRE>
+
+<P class="docText">The first rule matches packets originating from the Squid host. It
+ensures that outgoing TCP connections won't be
+redirected back to Squid.<sup class="docFootnote"><A class="docLink" HREF="#squid-CHP-9-FNOTE-3">[3]</A></sup> The second rule matches TCP packets sent from Squid back
+to the clients. I've added it here in case you have
+additional <I>ipfw</I> rules later that would deny these
+packets. The third rule is the one that actually redirects incoming
+connections to Squid. The fourth rule matches packets coming back
+from origin servers to Squid. Again, this is in case you have
+subsequent <TT>deny</TT> rules.</P><blockquote><p class="docFootnote"><sup><A NAME="squid-CHP-9-FNOTE-3">[3]</A></sup> Although a misconfiguration
+on the switch/router may still reintercept these packets.</p></blockquote>
+
+<P class="docText">If you're also running an HTTP server on the Squid
+host, you must add another rule that passes, rather than redirects,
+TCP packets destined for the origin server. The following rule goes
+before the <TT>fwd</TT> rule:</P>
+
+<PRE>/sbin/ipfw add allow tcp from any to 172.16.102.66 80 in</PRE>
+
+<P class="docText">FreeBSD typically stores <TT>ipfw</TT> rules in
+<I>/etc/rc.firewall</I>. Once you get your rule set
+working properly, be sure to save them. Add this line to
+<I>/etc/rc.conf</I> to make FreeBSD automatically run
+the <I>/etc/rc.firewall</I> script when it boots:</P>
+
+<PRE>firewall_enable="YES"</PRE>
+
+<A NAME="squid-CHP-9-SECT-4.2.1"></A>
+<H5 class="docSection3Title">9.4.2.1 FreeBSD and WCCP</H5>
+
+<P class="docText">FreeBSD Version 4.8 and later have <A NAME="squid-CHP-9-ITERM-1568"></A>built-in
+support for GRE and WCCP. Earlier versions require patches, which you
+can still find at <A class="docLink" target="_blank" HREF="http://www.squid-cache.org/WCCP-support/FreeBSD/">http://www.squid-cache.org/WCCP-support/FreeBSD/</A>.
+The built-in implementation is much better, however, as it is written
+by real kernel gurus. You'll probably need to make a
+new kernel that supports GRE. Add this line to your kernel
+configuration:</P>
+
+<PRE>pseudo-device   gre</PRE>
+
+<P class="docText">For FreeBSD-5, use <TT>device</TT> instead of
+<TT>pseudo-device</TT>. Of course, you also need the
+<TT>FIREWALL</TT> options mentioned in the preceding
+section.</P>
+
+<P class="docText">After installing and booting from the new kernel, you must configure
+a GRE tunnel to accept GRE packets from the router. For example:</P>
+
+<PRE># ifconfig gre0 create
+# ifconfig gre0 172.16.102.66 172.16.102.65 netmask 255.255.255.255 up
+# ifconfig gre0 tunnel 172.16.102.66 172.16.102.65
+# route delete 172.16.102.65</PRE>
+
+<P class="docText">The <I>ifconfig</I> command adds a routing table entry
+for the router (172.16.102.65) over the <TT>gre0</TT>
+interface. I found it necessary to delete that route so that Squid
+can talk to the router.</P>
+
+<P class="docText">You may want or need to add an <I>ipfw</I> rule for the
+GRE packets coming from the router:</P>
+
+<PRE>/sbin/ipfw add allow gre from 172.16.102.65 to 172.16.102.66</PRE>
+
+
+
+<A NAME="squid-CHP-9-SECT-4.3"></A>
+<H4 class="docSection2Title">9.4.3 OpenBSD</H4>
+
+<P class="docText">The examples in this section <A NAME="squid-CHP-9-ITERM-1569"></A><A NAME="squid-CHP-9-ITERM-1570"></A>are based on OpenBSD 3.3.</P>
+
+<P class="docText">To enable packet forwarding, uncomment or add this line in
+<I>/etc/sysctl.conf</I>:</P>
+
+<PRE>net.inet.ip.forwarding=1</PRE>
+
+<P class="docText">Now, configure the packet filter rules for interception by adding
+lines like these to <I>/etc/pf.conf</I>:</P>
+
+<PRE>rdr inet proto tcp from any to any port = www -&gt; 127.0.0.1 port 3128
+pass out proto tcp from 172.16.102.66 to any
+pass out proto tcp from any port = 80 to any
+pass in proto tcp from any port = 80 to 172.16.102.66</PRE>
+
+<P class="docText">If you aren't already using
+OpenBSD's packet filter, you need to enable it with
+this line in <I>/etc/rc.conf.local</I>:</P>
+
+<PRE>pf=YES</PRE>
+
+<A NAME="squid-CHP-9-SECT-4.3.1"></A>
+<H5 class="docSection3Title">9.4.3.1 OpenBSD and WCCP</H5>
+
+<P class="docText">First, tell the system to accept <A NAME="squid-CHP-9-ITERM-1571"></A>and
+process GRE and WCCP packets by adding these lines to
+<I>/etc/sysctl.conf</I>:</P>
+
+<PRE>net.inet.gre.allow=1
+net.inet.gre.wccp=1</PRE>
+
+<P class="docText">Then, configure a GRE interface with commands like these:</P>
+
+<PRE># ifconfig gre0 172.16.102.66 172.16.102.65 netmask 255.255.255.255 up
+# ifconfig gre0 tunnel 172.16.102.66 172.16.102.65
+# route delete 172.16.102.65</PRE>
+
+<P class="docText">As with FreeBSD, I found it necessary to delete the route that is
+automatically added by <I>ifconfig</I>. Finally,
+depending on your packet filter configuration, you may need to add a
+rule that allows the GRE packets:</P>
+
+<PRE>pass in proto gre from 172.16.102.65 to 172.16.102.66</PRE>
+
+
+
+<A NAME="squid-CHP-9-SECT-4.4"></A>
+<H4 class="docSection2Title">9.4.4 IPFilter on NetBSD and Others</H4>
+
+<P class="docText">The examples in this section
+<A NAME="squid-CHP-9-ITERM-1572"></A><A NAME="squid-CHP-9-ITERM-1573"></A><A NAME="squid-CHP-9-ITERM-1574"></A>are based on NetBSD 1.6.1.
+They might also work on Solaris, HP-UX, IRIX, and Tru64 since
+IPFilter runs on those systems as well.</P>
+
+<P class="docText">To enable packet forwarding (on NetBSD), add this line to
+<I>/etc/sysctl.conf</I>:</P>
+
+<PRE>net.inet.ip.forwarding=1</PRE>
+
+<P class="docText">Then, insert a line like this into the NAT (network address
+translation) configuration file,
+<I>/etc/ipnat.conf</I>:</P>
+
+<PRE>rdr fxp0 0/0 port 80 -&gt; 172.16.102.66 port 3128 tcp</PRE>
+
+<P class="docText">Your interface name may be different from <TT>fxp0</TT> in
+this example.</P>
+
+<A NAME="squid-CHP-9-SECT-4.4.1"></A>
+<H5 class="docSection3Title">9.4.4.1 NetBSD and WCCP</H5>
+
+<P class="docText">I was not able to make WCCP work <A NAME="squid-CHP-9-ITERM-1575"></A>with
+NetBSD, even after patching the GRE code to accept WCCP packets. The
+problem seems to arise because the IPFilter <TT>rdr</TT>
+rule is bound to a specific interface. Packets coming from the router
+go through NetBSD's <TT>gre0</TT>
+interface (where they are unencapsulated). However, packets going the
+other way, back to the router, aren't encapsulated
+and don't go through the same network interface.
+Therefore, the IPFilter code doesn't translate
+Squid's local IP address back to the origin
+server's <A NAME="squid-CHP-9-ITERM-1576"></A><A NAME="squid-CHP-9-ITERM-1577"></A>address.</P>
+
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="squid-CHP-9-SECT-3.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="squid-CHP-9-SECT-5.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

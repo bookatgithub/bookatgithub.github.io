@@ -1,0 +1,325 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Section 19.1.&nbsp; Brute-Force Searches</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=ch19.html><img src="images/prev.gif" width="60" height="17" border="0" align="absmiddle" alt="Previous Page"></a>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=ch19lev1sec2.html><img src="images/next.gif" width="60" height="17" border="0" align="absmiddle" alt="Next Page"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><a href="31031536.html"><img src="images/pixel.jpg" alt="" width="1" height="1" border="0"></a><a name="ch19lev1sec1"></a>
+<h3 id="title-IDAGPLQF" class="docSection1Title">19.1. Brute-Force Searches</h3>
+<p class="docText">In <a class="docLink" href="ch17.html#ch17">Chapter 17</a> we looked at several flags that you can pass to the regular expression search functions to change the details of regular expression matching. Here, we look at some of those flags again but in the context of specific problems that arise in repetitive searches. Eventually, we'll build a search function that avoids these problems; you can judge for yourself whether that's a better approach than using the two forms of regular expression iterator that the TR1 library provides.</p>
+<a name="ch19lev2sec1"></a>
+
+<h4 id="title-IDA2PLQF" class="docSection2Title">19.1.1. Lost Anchors</h4>
+<p class="docText">Earlier in this chapter, we looked at a naive search function that reported two matches when applying the regular expression <tt>&quot;^(abc|def)&quot;</tt> to the target text <tt>&quot;abcdef&quot;</tt>. The problem with simply repeating the same search at a new location in the target text, as that program did, is that on the second call to <tt>regex_search</tt>, the target text is passed, effectively, as <tt>&quot;def&quot;</tt>, which does match the regular expression. That is, we chopped off the start of the target text but didn't tell the search function that we had done that, so it matched the <tt>&quot;^&quot;</tt> at the beginning of the regular expression to the beginning of the text that we passed, even though the text was not the beginning of the target text. The solution to this problem is simply to tell the search function that we're not at the beginning of a line, so <tt>&quot;^&quot;</tt> shouldn't match. To do that, we use the flag <tt>match_not_bol</tt> for all searches except the first.</p>
+<a name="ch19ex03"></a><h5 id="title-IDA3QLQF" class="docExampleTitle">Example 19.3. Preserving Anchors (<tt>regexiter/search1.cpp</tt>)</h5><p><table cellspacing="0" width="90%" border="1" cellpadding="5"><tr><td>
+
+
+
+<pre>#include &lt;regex&gt;
+#include &lt;iostream&gt;
+using std::tr1::regex; using std::tr1::cmatch;
+using std::tr1::regex_search;
+using namespace std::tr1::regex_constants;
+using std::cout;
+
+static void search (const char*tgt, const char *expr)
+   { <span class="docEmphasis">// show all subsequences of tgt that match expr</span>
+     regex rgx (expr);
+     cmatch match;
+     match_flag_type flags  =  match_default;
+     const char*first  =  tgt;
+     const char*last  =  tgt+strlen (tgt);
+     for (;;)
+     { <span class="docEmphasis">// keep trying</span>
+       if (regex_search(first, last, match, rgx, flags))
+           { <span class="docEmphasis">// show match, move past it</span>
+           cout &lt;&lt; match.str ()
+              &lt;&lt; "at offset"
+              &lt;&lt; (match [0].first-tgt) &lt;&lt; '\n';
+           first+=match.position ()+match.length ();
+           flags = flags | match_not_bol;
+           }
+       else
+           break;
+       }
+     }
+
+int  main()
+{ <span class="docEmphasis">// demonstrate use of match_not_bol</span>
+const char*expr = "^(abc | def)";
+const char*tgt = "abcdef";
+search (tgt, expr);
+return 0;
+}
+</pre><br>
+
+</td></tr></table></P>
+
+<a name="ch19lev2sec2"></a>
+
+<h4 id="title-IDA0RLQF" class="docSection2Title">19.1.2. Lost Word Boundaries</H4>
+<p class="docText"><a name="iddle1609"></a>The regular expression <tt>&quot;\babc&quot;</tt> should match the target text <tt>&quot;abcabc&quot;</tt> in one place: the first occurrence of the character sequence <tt>&quot;abc&quot;</tt>. The second <tt>&quot;abc&quot;</tt> doesn't match, because it doesn't start at a word boundary. If you try the previous <tt>search</tt> function with this regular expression and target text, it will find two matches. The problem is similar to the one with lost anchors: When we restart the search after the first match, the regular expression engine treats the start of the text as a word boundary. You might be tempted to fix that with the same approach we used before, by adding the flag <tt>match_not_-bow</tt> after a successful match. But the two cases are different: A <tt>&quot;^&quot;</tt> can match only at the beginning of the original target text, so it's okay to simply disallow that match once we've moved away from the beginning of the text. A word boundary can occur inside the target text as well as at the beginning, so we have to be careful to disable matching the beginning of a word only when we're not at the beginning of a word. That can be done by checking whether the last character in a match can be in a word and, if so, prohibiting matching the beginning of a word on the next pass. That solves half the problem.</p>
+<p class="docText">The other half of the problem occurs with a regular expression like <tt>&quot;\b3&quot;</tt>, when matched against the target text <tt>&quot;33&quot;</tt>. The first <tt>&quot;3&quot;</tt> is at a word boundary, so it should match. The second <tt>&quot;3&quot;</tt> is not at a word boundary, so it should not match. But the previous version of <tt>search</tt> will find that the second one matches because in the target text that's passed for the second search, it is at the beginning of the target text. So we also need to disable matching of the end of a word when the previous character cannot be in a word.</p>
+<p class="docText">But there's an easier way. The regular expression engine already knows how to identify characters that can be in a word, so we don't need to write that logic ourselves. All we need to do is tell the engine that it can look at the character in front of the target text to decide whether it's at the beginning of a word. That's what the flag <tt>match_prev_avail</tt> does. Of course, we should do that only when we know that a valid character is in front of the target <a name="iddle1607"></a>text. Once we've moved forward in the target text, we know that we can look behind the current position.</P>
+<a name="ch19ex04"></a><H5 id="title-IDAXTLQF" class="docExampleTitle">Example 19.4. Preserving Word Boundaries (<tt>regexiter/search2.cpp</tt>)</h5><p><table cellspacing="0" width="90%" border="1" cellpadding="5"><tr><td>
+
+
+
+<pre>#include &lt;regex&gt;
+#include &lt;iostream&gt;
+using std::tr1::regex; using std::tr1::cmatch;
+using std::tr1::regex_search;
+using namespace std::tr1::regex_constants;
+using std::cout;
+
+static void search (const char*tgt, const char*expr)
+     { <span class="docEmphasis">// show all subsequences of tgt that match expr</span>
+     regex rgx (expr);
+     cmatch match;
+     match_flag_type flags =  match_default;
+     const char*first = tgt;
+     const char*last = tgt+strlen (tgt);
+     for (;;)
+    { <span class="docEmphasis">// keep trying</span>
+      if (regex_search (first, last, match, rgx, flags))
+      { <span class="docEmphasis">// show match, move past it</span>
+        cout &lt;&lt; match.str ()
+          &lt;&lt;"at offset"
+          &lt;&lt; (match [0]. first - tgt) &lt;&lt; '\n';
+        first+=match.position ()+match.length ();
+        flags = flags | match_not_bol | match_prev_avail;
+        }
+      else
+        break;
+      }
+     }
+
+int main()
+  { //<span class="docEmphasis">demonstrate use of match_not_bol</span>
+  const char*expr = "\\babc";
+  const char*tgt = "abcabc";
+  search (tgt, expr);
+  return 0;
+  }
+</pre><BR>
+
+</TD></TR></table></P>
+
+<a name="ch19lev2sec3"></a>
+
+<h4 id="title-IDAUULQF" class="docSection2Title">19.1.3. Empty Matches</h4>
+<p class="docText">To understand the problem that empty matches pose, we first need to look at empty matches in more detail. The regular expression <tt>&quot;a*&quot;</tt> matches a sequence of zero or more repetitions of the character '<tt>a</tt>'. When it matches zero characters, that's an empty match. If you call <tt>regex_search</tt> to see whether that regular expression matches the target text <tt>&quot;bcd&quot;</tt>, the answer will be that it matches, right at the beginning.</P>
+<a name="ch19ex05"></a><H5 id="title-IDAJVLQF" class="docExampleTitle">Example 19.5. Empty Match (<tt>regexiter/empty.cpp</tt>)</h5><p><table cellspacing="0" width="90%" border="1" cellpadding="5"><TR><TD>
+
+
+
+<pre>#include &lt;regex&gt;
+#include &lt;iostream&gt;
+using std::tr1::regex; using std::tr1::cmatch;
+using std::tr1::regex_search;
+using namespace std::tr1::regex_constants;
+using std::cout;
+
+int main()
+  { <span class="docEmphasis">// show empty match</span>
+  const char*expr = "a*";
+  regex rgx(expr);
+  cmatch match;
+  const char*tgt = "bcd";
+  if (regex_search(tgt, match, rgx))
+    { <span class="docEmphasis">// show the match</span>
+    cout &lt;&lt; "Matched at offset" &lt;&lt;  match.position ()
+      &lt;&lt; ",with length" &lt;&lt; match.length () &lt;&lt; '\n';
+    }
+  return 0;
+  }
+</pre><br>
+
+</td></tr></table></p>
+<p class="docText">If we use the <tt>search</tt> function that we wrote to eliminate lost anchors to search for all occurrences of <tt>&quot;a*&quot;</tt> in the target text <tt>&quot;bcd&quot;</tt>, we'll get into trouble. The first match is at offset 0, and its length is 0, so the function will adjust the position in the target string by zero characters and call <tt>regex_-search</tt> again. This will loop until you get bored and terminate the program.</P>
+<p class="docText">There are two obvious solutions. First, move the position in the target text forward by one character when you get an empty match. Second, temporarily prohibit empty matches. Both work for some cases, but, as we'll see, you really need a combination of the two.</p>
+<p class="docText">This version of <tt>search</tt> implements the first fix.</P>
+<a name="ch19ex06"></a><h5 id="title-IDAXWLQF" class="docExampleTitle">Example 19.6. Jumping Past Empty Matches (<tt>regexiter/search3.cpp</tt>)</h5><p><table cellspacing="0" width="90%" border="1" cellpadding="5"><tr><td>
+
+
+
+<pre>#include &lt;regex&gt;
+#include &lt;iostream&gt;
+#include &lt;string&gt;
+using std::tr1::regex; using std::tr1::cmatch;
+using std::tr1::regex_search;
+using namespace std::tr1::regex_constants;
+using std::cout; using std::string;
+
+static void search (const char*tgt, const char*expr)
+   { <span class="docEmphasis">// show all subsequences of tgt that match expr</span>
+     regex rgx(expr);
+     cmatch match;
+     match_flag_type flags = match_default;
+     const char*first = tgt;
+     const char*last = tgt+strlen(tgt);
+     string empty("[empty]");
+     for(;;)
+   { <span class="docEmphasis">// keep trying</span>
+     if(regex_search(first, last, match, rgx, flags))
+      { <span class="docEmphasis">// show match, move past it</span>
+        cout &lt;&lt; (match.length()?match.str ():empty)
+          &lt;&lt; "at offset"
+          &lt;&lt; (match[0].first-tgt) &lt;&lt; '\n';
+        if (match.length()!=0)
+          first+=match.position()+match.length();
+        else if (first == last)
+          break;
+        else
+          ++first;
+        flags = flags| match_not_bol|match_prev_avail;
+        }
+     else
+        break;
+     }
+     }
+
+int main()
+  { <span class="docEmphasis">// demonstrate use of match_not_null</span>
+  const char*expr = "a*";
+  const char*tgt = "bcd";
+  search (tgt, expr);
+  return 0;
+  }
+</pre><br>
+
+</td></tr></table></p>
+<p class="docText">Note the test for <tt>first == last</tt>; without this, the function will increment <tt>first</tt> past the end of the target text if an empty match occurs at the end of the target text. This works fine for the regular expression <tt>&quot;a*&quot;</tt>, but try it with the regular expression <tt>&quot;a*|c&quot;</tt>. It doesn't see that the regular expression matches the <tt>&quot;c&quot;</tt> in the target text. That's because it finds the empty match at that position and jumps past it.</p>
+<p class="docText">This version of <tt>search</tt> implements the second fix, using the flag <tt>match_-not_null</tt> to prevent empty matches until after the next successful match.</p>
+<a name="ch19ex07"></a><h5 id="title-IDANYLQF" class="docExampleTitle">Example 19.7. Blocking Empty Matches (<tt>regexiter/search4.cpp</tt>)</h5><p><table cellspacing="0" width="90%" border="1" cellpadding="5"><tr><td>
+
+
+
+<pre>#include &lt;regex&gt;
+#include &lt;iostream&gt;
+#include &lt;string&gt;
+using std::tr1::regex; using std::tr1::cmatch;
+using std::tr1::regex_search;
+using namespace std::tr1:: regex_constants;
+using std::cout; using std::string;
+
+static void search(const char*tgt, const char*expr)
+  { <span class="docEmphasis">// show all subsequences of tgt that match expr</span>
+  regex rgx(expr);
+  cmatch match;
+  match_flag_type flags = match_default;
+  match_flag_type mod = match_default;
+  const char*first = tgt;
+  const char*last = tgt+strlen(tgt);
+  string empty("[empty]");
+  for(;;)
+    { <span class="docEmphasis">// keep trying</span>
+    if (regex_search (first, last, match,
+      rgx, flags| mod))
+      { <span class="docEmphasis">// show match, move past it</span>
+      cout &lt;&lt; (match.length()? match.str():empty)
+        &lt;&lt; "at offset"
+        &lt;&lt; (match [0].first-tgt) &lt;&lt; '\n';
+      if (match.length()!=0)
+        { <span class="docEmphasis">// move past match, clear modifier flags</span>
+        first+=match.position()+match.length();
+        mod =  match_default;
+        }
+      else
+        mod = match_not_null;
+      flags = flags | match_not_bol | match_prev_avail;
+      }
+    else
+      break;
+    }
+  }
+
+int main()
+  { <span class="docEmphasis">// demonstrate use of match_not_bol</span>
+  const char * expr = "a*|c";
+  const char*tgt = "bcd";
+  search(tgt, expr);
+  return 0;
+  }
+</pre><br>
+
+</td></TR></table></p>
+<p class="docText">This program does, indeed, find the match of <tt>&quot;c&quot;</tt>, but it's not right, because it misses the empty match before <tt>&quot;c&quot;</tt>. We've shut off empty matches for too long. The fix is to shut off empty matches only at the current position in the target text. To do that, we need two changes. First, we need to add the flag <tt>match_continuous</tt>, so that the regular expression search engine won't look for matches that occur after the start of the target text. That way, we control when the search advances further into the target text. Second, if that constrained search fails, we need to turn off the constraint and move to the next position in the target text. That is, we need to combine the two previous attempted solutions.</P>
+<a name="ch19ex08"></a><h5 id="title-IDAXZLQF" class="docExampleTitle">Example 19.8. Fixing an Empty Match (<tt>regexiter/search5.cpp</tt>)</h5><P><table cellspacing="0" width="90%" border="1" cellpadding="5"><TR><td>
+
+
+
+<pre>#include &lt;regex&gt;
+# include &lt;iostream&gt;
+# include &lt;string&gt;
+using std::tr1::regex; using std::tr1::cmatch;
+using std::tr1::regex_search;
+using namespace std::tr1::regex_constants;
+using std::cout; using std::string;
+
+static void search(const char*tgt, const char*expr)
+  { <span class="docEmphasis">// show all subsequences of tgt that match expr</span>
+  regex rgx(expr);
+  cmatch match;
+  match_flag_type flags = match_default;
+  match_flag_type mod = match_default;
+  const char*first = tgt;
+  const char* ast = tgt+ strlen(tgt);
+  string empty("[empty]");
+  for(;;)
+    { <span class="docEmphasis">// keep trying</span>
+    if (regex_search(first, last, match,
+      rgx, flags |   mod))
+      { <span class="docEmphasis">// show match, move past it</span>
+      cout &lt;&lt; (match.length()? match.str():empty)
+        &lt;&lt; "at offset"
+        &lt;&lt; (match [0].first-tgt) &lt;&lt; '\n';
+      if (match.length()!=0)
+        { <span class="docEmphasis">// move past match, clear modifier flags</span>
+        first+=match.position()+ match.length();
+        mod = match_default;
+        }
+      else
+        mod = match_not_null | match_continuous;
+      flags = flags | match_not_bol | match_prev_avail;
+      }
+    else if (mod != match_default &amp;&amp; first!= last)
+      { <span class="docEmphasis">// move past failed match, clear modifier flags</span>
+      ++first;
+      mod = match_default;
+      }
+    else
+      break;
+    }
+  }
+
+int main()
+ { <span class="docEmphasis">// demonstrate use of match_not_bol</span>
+  const char *expr = "a*|c";
+  const char *tgt = "bcd";
+  search(tgt, expr);
+  return 0;
+  }
+</pre><br>
+
+</td></tr></table></P>
+<p class="docText"><a name="iddle1588"></a><a name="iddle1593"></a><a name="iddle1614"></a>Now we have a robust search function. It's a little difficult to reuse, <sup class="docFootnote"><a class="docLink" href="#ch19fn1">[1]</a></sup> though, because the action that it performs when it finds a match is embedded in the code that finds the match. Although this code can be made more generic, in most cases, you should use one of the two forms of iterator that the TR1 library provides, rather than trying to adapt this explicit loop.</P><blockquote><p class="docFootnote"><sup><a name="ch19fn1">[1]</a></sup> That is, unless &quot;reuse&quot; means &quot;cut and paste,&quot; as is often the case, for example, in Java.</P></blockquote>
+
+
+<a href="31031536.html"><img src="images/pixel.jpg" alt="" width="1" height="1" border="0"></a></TD></TR></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=ch19.html><img src="images/prev.gif" width="60" height="17" border="0" align="absmiddle" alt="Previous Page"></a>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=ch19lev1sec2.html><img src="images/next.gif" width="60" height="17" border="0" align="absmiddle" alt="Next Page"></a>
+</div></td></tr></table>
+</body></html>

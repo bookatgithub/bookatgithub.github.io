@@ -1,0 +1,163 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;13.6.&nbsp;Bundling Files in a MIME Message</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-13-sect-5.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-13-sect-7.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-13-SECT-6"></a>
+<h3 class="docSection1Title">Recipe 13.6. Bundling Files in a MIME Message</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Matthew Dixon Cowles, Hans Fangohr, John
+Pywtorak</span></p>
+
+<a name="pythoncook2-CHP-13-SECT-6.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-13-ITERM-2835"></a> <a name="pythoncook2-CHP-13-ITERM-2836"></a>You want to create a multipart MIME
+(Multipurpose Internet Mail Extensions) message that includes all
+files in the current directory.<a name="pythoncook2-CHP-13-ITERM-2837"></a>
+<a name="pythoncook2-CHP-13-ITERM-2838"></a></P>
+
+
+<a name="pythoncook2-CHP-13-SECT-6.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText"><a name="pythoncook2-CHP-13-ITERM-2839"></a>If you often deal with
+composing or parsing mail messages, or mail-like messages such as
+Usenet news posts, the Python Standard Library
+<tt>email</tt> package gives you very powerful tools to
+work with. Here is a module that uses <tt>email</tt> to
+solve the task posed in the
+"Problem":</p>
+
+<pre>#!/usr/bin/env python
+import base64, quopri
+import mimetypes, email.Generator, email.Message
+import cStringIO, os
+# sample addresses
+toAddr = "example@example.com"
+fromAddr = "example@example.com"
+outputFile = "dirContentsMail"
+def main( ):
+    mainMsg = email.Message.Message( )
+    mainMsg["To"] = toAddr
+    mainMsg["From"] = fromAddr
+    mainMsg["Subject"] = "Directory contents"
+    mainMsg["Mime-version"] = "1.0"
+    mainMsg["Content-type"] = "Multipart/mixed"
+    mainMsg.preamble = "Mime message\n"
+    mainMsg.epilogue = "" # to ensure that message ends with newline
+    # Get names of plain files (not subdirectories or special files)
+    fileNames = [f for f in os.listdir(os.curdir) if os.path.isfile(f)]
+    for fileName in fileNames:
+        contentType, ignored = mimetypes.guess_type(fileName)
+        if contentType is None:     # If no guess, use generic opaque type
+            contentType = "application/octet-stream"
+        contentsEncoded = cStringIO.StringIO( )
+        f = open(fileName, "rb")
+        mainType = contentType[:contentType.find("/")]
+        if mainType=="text":
+            cte = "quoted-printable"
+            quopri.encode(f, contentsEncoded, 1)   # 1 to also encode tabs
+        else:
+            cte = "base64"
+            base64.encode(f, contentsEncoded)
+        f.close( )
+        subMsg = email.Message.Message( )
+        subMsg.add_header("Content-type", contentType, name=fileName)
+        subMsg.add_header("Content-transfer-encoding", cte)
+        subMsg.set_payload(contentsEncoded.getvalue( ))
+        contentsEncoded.close( )
+        mainMsg.attach(subMsg)
+    f = open(outputFile, "wb")
+    g = email.Generator.Generator(f)
+    g.flatten(mainMsg)
+    f.close( )
+    return None
+if _ _name_ _=="_ _main_ _":
+    main( )</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-13-SECT-6.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">The <tt>email</tt> package makes manipulating MIME messages
+a snap. The Python Standard Library also offers other older modules
+that can serve many of the same purposes, but I suggest you look into
+<tt>email</tt> as an alternative to all such other modules.
+<tt>email</tt> requires some study because it is a very
+functionally rich package, but it will amply repay the time you spend
+studying it.</P>
+
+<p class="docText">MIME is the Internet standard for sending files and non-ASCII data by
+email. The standard is specified in RFCs 2045-2049. A few points are
+especially worth keeping in mind:</p>
+
+<UL><LI><p class="docList">The original specification for the format of an email (RFC 822)
+didn't allow for non-ASCII characters and had no
+provision for attaching or enclosing a file along with a text
+message. Therefore, not surprisingly, MIME messages are very common
+these days.</p></li><li><p class="docList">Messages that follow the MIME standard are backward compatible with
+ordinary RFC 822 (now RFC 2822) messages. An old mail reader
+(technically, an MUA) that doesn't understand the
+MIME specification will probably not be able to display a MIME
+message in a way that's useful to the user, but the
+message will still be legal and therefore shouldn't
+cause unexpected behavior.</p></LI><li><p class="docList">An RFC 2822 message consists of a set of headers, a blank line, and a
+body. MIME handles attachments and other multipart documents by
+specifying a format for the message's body. In
+multipart MIME messages, the body is divided into submessages, each
+of which has a set of headers, a blank line, and a body. Generally,
+each submessage is referred to as a MIME part, and parts may nest
+recursively.</p></LI><li><p class="docList">MIME parts (whether or not in a multipart message) that contain
+characters outside of the strict US-ASCII range are encoded as either
+base-64 or quoted-printable data, so that the resulting mail message
+contains only ordinary ASCII characters. Data can be encoded with
+either method, but, generally, only data that has few non-ASCII
+characters (basically text, possibly with a few extra characters
+outside of the ASCII range, such as national characters in Latin-1
+and similar codes) is worth encoding as quoted-printable, because
+even without decoding it may be readable. If the data is essentially
+binary, with all bytes being equally likely, base-64 encoding is more
+compact.</P></li></UL>
+<p class="docText">Not surprisingly, given all of these issues, manipulating MIME
+messages is often considered to be a nuisance. In the old times, back
+before Python 2.2, the standard library's modules
+for dealing with MIME messages were quite useful but rather
+miscellaneous. In particular, putting MIME messages together and
+taking them apart required two distinct approaches. The
+<tt>email</tt> package, which was added in Python 2.2,
+unified and simplified these two related jobs.</P>
+
+
+<a name="pythoncook2-CHP-13-SECT-6.4"></a>
+<h4 class="docSection2Title">See Also</h4>
+
+<p class="docText"><a class="docLink" href="pythoncook2-CHP-13-SECT-7.html#pythoncook2-CHP-13-SECT-7">Recipe 13.7</a> shows how the
+<tt>email</tt> package can be used to unpack a MIME
+message; documentation for the standard library modules
+<tt>email</tt>, <tt>mimetypes</tt>,
+<tt>base64</tt>, <tt>quopri</tt>, and
+<tt>cStringIO</tt> in the <span class="docEmphasis">Library
+Reference</span> and <span class="docEmphasis">Python in a
+Nutshell</span>.<a name="pythoncook2-CHP-13-ITERM-2840"></a> <a name="pythoncook2-CHP-13-ITERM-2841"></a></p>
+
+
+
+<a href="5991535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-13-sect-5.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-13-sect-7.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

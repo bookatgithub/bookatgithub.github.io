@@ -1,0 +1,329 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>14.4 Chasing and Evading with Brains</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="ch14_sect1_003.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="ch14_sect1_005.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="ch14_sect1_004"></A>
+<H3 class="docSection1Title">14.4 Chasing and Evading with Brains</H3>
+<P class="docText">The example we're going to discuss in this section is a modification of the flocking and chasing example we discussed in <A class="docLink" HREF="ch04.html#ch04">Chapter 4</A>. In that chapter we discussed an example in which a flock of units chased the player-controlled unit. In this modified example, the computer-controlled units will use a neural network to decide whether to chase the player, evade him, or flock with other computer-controlled units. This example is an idealization or approximation of a game scenario in which you have creatures or units within the game that can engage the player in battle. Instead of having the creatures always attack the player and instead of using a finite state machine "brain," you want to use a neural network to not only make decisions for the creatures, but also to adapt their behavior given their experience with attacking the player.</P>
+<P class="docText">Here's how our simple example will work. About 20 computer-controlled units will move around the screen. They will attack the player, run from the player, or flock with other computer-controlled units. All of these behaviors will be handled using the deterministic algorithms we presented in earlier chapters; however, here the decision as to what behavior to perform is up to the neural network. The player can move around the screen as he wishes. When the player and computer-controlled units come within a specified radius of one another, we're going to assume they are engaged in combat. We won't actually simulate combat here and will instead use a rudimentary system whereby the computer-controlled units will lose a certain number of hit points every turn through the game loop when in combat range of the player. The player will lose a certain number of hit points proportional to the number of computer-controlled units within combat range. When a unit's hit points reach zero, he dies and is respawned automatically.</P>
+<P class="docText">All computer-controlled units share an identical brain—the neural network. We're also going to have this brain evolve as the computer-controlled units gain experience with the player. We'll achieve this by implementing the back-propagation algorithm in the game itself so that we can adjust the network's weights in real time. We're assuming that the computer-controlled units evolve collectively.</P>
+<P class="docText">We hope to see the computer-controlled units learn to avoid the player if the player is overwhelming them in combat. Conversely, we hope to see the computer-controlled units become more aggressive as they learn they have a weak player on their hands. Another possibility is that the computer-controlled units will learn to stay in groups, or flock, where they stand a better chance of defeating the player.</P>
+<A NAME="ch14_sect2_014"></A>
+<H4 class="docSection2Title">14.2.14 Initialization and Training</H4>
+<P class="docText">Using the flocking example from <A class="docLink" HREF="ch04.html#ch04">Chapter 4</A> as a starting point, the first thing we have to do is add a new global variable, called <span class="docEmphasis">TheBrain</span>, to represent the neural network, as shown in <A class="docLink" HREF="#ch14exm23">Example 14-23</A>.</P>
+<A NAME="ch14exm23"></A>
+<H5 class="docExampleTitle">Example 14-23. New global variable</H5>
+<PRE>
+NeuralNetwork     TheBrain;
+</PRE><BR>
+
+
+<P class="docText">We must initialize the neural network at the start of the program. Here, initialization includes configuring and training the neural network. The <span class="docEmphasis">Initialize</span> function taken from the earlier example is an obvious place to handle initializing the neural network, as shown in <A class="docLink" HREF="#ch14exm24">Example 14-24</A>.</P>
+<A NAME="ch14exm24"></A>
+<H5 class="docExampleTitle">Example 14-24. Initialization</H5>
+<PRE>
+void     Initialize(void)
+{
+     int i;
+     .
+     .
+     .
+     for(i=0; i&lt;_MAX_NUM_UNITS; i++)
+     {
+          .
+          .
+          .
+          Units[i].HitPoints = _MAXHITPOINTS;
+          Units[i].Chase = false;
+          Units[i].Flock = false;
+          Units[i].Evade = false;
+     }
+     .
+     .
+     .
+     Units[0].HitPoints = _MAXHITPOINTS;
+     TheBrain.Initialize(4, 3, 3);
+     TheBrain.SetLearningRate(0.2);
+     TheBrain.SetMomentum(true, 0.9);
+     TrainTheBrain();
+}
+</PRE><BR>
+
+
+<P class="docText">Most of the code in this version of <span class="docEmphasis">Initialize</span> is the same as in the earlier example, so we omitted it from the code listing in <A class="docLink" HREF="#ch14exm24">Example 14-24</A>. The remaining code is what we added to handle incorporating the neural network into the example.</P>
+<P class="docText">Notice we had to add a few new members to the rigid body structure, as shown in <A class="docLink" HREF="#ch14exm25">Example 14-25</A>. These new members include the number of hit points, and flags to indicate whether the unit is chasing, evading, or flocking.</P>
+<A NAME="ch14exm25"></A>
+<H5 class="docExampleTitle">Example 14-25. RigidBody2D class</H5>
+<PRE>
+class RigidBody2D {
+public:
+     .
+     .
+     .
+     double   HitPoints;
+     int      NumFriends;
+     int      Command;
+     bool     Chase;
+     bool     Flock;
+     bool     Evade;
+     double   Inputs[4];
+};
+</PRE><BR>
+
+
+<P class="docText">Notice also that we added an <span class="docEmphasis">Inputs</span> vector. This is used to store the input values to the neural network when it is used to determine what action the unit should take.</P>
+<P class="docText">Getting back to the <span class="docEmphasis">Initialize</span> method in <A class="docLink" HREF="#ch14exm24">Example 14-24</A>, after the units are initialized it's time to deal with <span class="docEmphasis">TheBrain</span>. The first thing we do is call the <span class="docEmphasis">Initialize</span> method for the neural network, passing it values representing the number of neurons in each layer. In this case, we have four input neurons, three hidden neurons, and three output neurons. This network is similar to that illustrated in <A class="docLink" HREF="ch14_sect1_000.html#ch14_fig04">Figure 14-4</A>.</P>
+<P class="docText">The next thing we do is set the learning rate to a value of 0.2. We tuned this value by trial and error, with the aim of keeping the training time down while maintaining accuracy. Next we call the <span class="docEmphasis">SetMomentum</span> method to indicate that we want to use momentum during training, and we set the momentum factor to 0.9.</P>
+<P class="docText">Now that the network is initialized, we can train it by calling the function <span class="docEmphasis">TrainTheBrain</span>. <A class="docLink" HREF="#ch14exm26">Example 14-26</A> shows the <span class="docEmphasis">TrainTheBrain</span> function.</P>
+<A NAME="ch14exm26"></A>
+<H5 class="docExampleTitle">Example 14-26. TrainTheBrain function</H5>
+<PRE>
+void     TrainTheBrain(void)
+{
+     int           i;
+     double       error = 1;
+     int           c = 0;
+     TheBrain.DumpData("PreTraining.txt");
+     while((error &gt; 0.05) &amp;&amp; (c&lt;50000))
+     {
+          error = 0;
+          c++;
+          for(i=0; i&lt;14; i++)
+          {
+               TheBrain.SetInput(0, TrainingSet[i][0]);
+               TheBrain.SetInput(1, TrainingSet[i][1]);
+               TheBrain.SetInput(2, TrainingSet[i][2]);
+               TheBrain.SetInput(3, TrainingSet[i][3]);
+               TheBrain.SetDesiredOutput(0, TrainingSet[i][4]);
+               TheBrain.SetDesiredOutput(1, TrainingSet[i][5]);
+               TheBrain.SetDesiredOutput(2, TrainingSet[i][6]);
+               TheBrain.FeedForward();
+               error += TheBrain.CalculateError();
+               TheBrain.BackPropagate();
+          }
+          error = error / 14.0f;
+     }
+     TheBrain.DumpData("PostTraining.txt");
+}
+</PRE><BR>
+
+
+<P class="docText">Before we begin training the network, we dump its data to a text file so that we can refer to it during debugging. Next, we enter a <span class="docEmphasis">while</span> loop that trains the network using the back-propagation algorithm. The <span class="docEmphasis">while</span> loop is cycled through until the calculated error is less than some specified value, or until the number of iterations reaches a specified maximum threshold. This latter condition is there to prevent the <span class="docEmphasis">while</span> loop from cycling forever in the event the error threshold is never reached.</P>
+<P class="docText">Before taking a closer look at what's going on within the <span class="docEmphasis">while</span> loop, let's look at the training data used to train this network. The global array called <span class="docEmphasis">TrainingSet</span> is used to store the training data. <A class="docLink" HREF="#ch14exm27">Example 14-27</A> shows the training data.</P>
+<A NAME="ch14exm27"></A>
+<H5 class="docExampleTitle">Example 14-27. Training data</H5>
+<PRE>
+double TrainingSet[14][7] = {
+//#Friends, Hit points, Enemy Engaged, Range, Chase, Flock, Evade
+  0,        1,          0,             0.2,    0.9,   0.1,   0.1,
+  0,        1,          1,             0.2,    0.9,   0.1,   0.1,
+  0,        1,          0,             0.8,    0.1,   0.1,   0.1,
+  0.1,      0.5,        0,             0.2,    0.9,   0.1,   0.1,
+  0,        0.25,       1,             0.5,    0.1,   0.9,   0.1,
+  0,        0.2,        1,             0.2,    0.1,   0.1,   0.9,
+  0.3,      0.2,        0,             0.2,    0.9,   0.1,   0.1,
+  0,        0.2,        0,             0.3,    0.1,   0.9,   0.1,
+  0,        1,          0,             0.2,    0.1,   0.9,   0.1,
+  0,        1,          1,             0.6,    0.1,   0.1,   0.1,
+  0,        1,          0,             0.8,    0.1,   0.9,   0.1,
+  0.1,      0.2,        0,             0.2,    0.1,   0.1,   0.9,
+  0,        0.25,       1,             0.5,    0.1,   0.1,   0.9,
+  0,        0.6,        0,             0.2,    0.1,   0.1,   0.9
+};
+</PRE><BR>
+
+
+<P class="docText">The training data consists of 14 sets of input and output values. Each set consists of values for the four input nodes representing the number of friends for a unit, its hit points, whether the enemy is engaged already, and the range to the enemy. Each set also contains data for three output nodes corresponding to the behaviors chase, flock, and evade.</P>
+<P class="docText">Notice that all the data values are within the range from 0.0 to 1.0. All the input data is scaled to the range 0.0 to 1.0, as we discussed earlier, and because the logistic output function is used, each output value will range from 0.0 to 1.0. We'll see how the input data is scaled a little later. As for the output, it's impractical to achieve 0.0 or 1.0 for output, so we use 0.1 to indicate an inactive output and 0.9 to indicate an active output. Also note that these output values represent the desired output for the corresponding set of input data.</P>
+<P class="docText">We chose the training data rather empirically. Basically, we assumed a few arbitrary input conditions and then specified what a reasonable response would be to that input and set the output values accordingly. In practice you'll probably give this more thought and likely will use more training sets than we did here for this simple example.</P>
+<P class="docText">Now, let's get back to that <span class="docEmphasis">while</span> loop that handles back-propagation training shown in <A class="docLink" HREF="#ch14exm26">Example 14-26</A>. Upon entering the <span class="docEmphasis">while</span> loop, the error is initialized to 0. We're going to calculate the error for each epoch, which consists of all 14 sets of input and output values. For each set of data, we set the input neuron values and desired output neuron values and then call the <span class="docEmphasis">FeedForward</span> method for the network. After that, we can calculate the error. To do this we call the <span class="docEmphasis">CalculateError</span> method for the network and accumulate the result in the error variable. We then proceed to adjust the connection weights by calling the <span class="docEmphasis">BackPropagate</span> method. After these steps are complete for an epoch, we calculate the average error for the epoch by dividing the error by 14—the number of data sets in the epoch. At the end of training, the network's data is dumped to a text file for later inspection.</P>
+<P class="docText">At this point, the neural network is ready to go. You can use it with the trained connection weights, as is. This will save you the trouble of having to code a finite state machine, or the like, to handle all the possible input conditions. A more compelling application of the network is to allow it to learn on the fly. If the units are performing well given the decisions made by the network, we can reinforce that behavior. On the other hand, if the units are performing poorly, we can retrain the network to suppress poor decisions.</P> 
+<A NAME="ch14_sect2_000"></A>
+<H4 class="docSection2Title">14.2.0 Learning</H4>
+<P class="docText">In this section we're going to continue looking at code that implements the neural network, including the ability to learn in-game using the back-propagation algorithm. Take a look at the <span class="docEmphasis">UpdateSimulation</span> function shown in <A class="docLink" HREF="#ch14exm28">Example 14-28</A>. This is a modified version of the <span class="docEmphasis">UpdateSimulation</span> function we discussed in <A class="docLink" HREF="ch04.html#ch04">Chapter 4</A>. For clarity, <A class="docLink" HREF="#ch14exm28">Example 14-28</A> shows only the modifications to the function.</P>
+<A NAME="ch14exm28"></A>
+<H5 class="docExampleTitle">Example 14-28. Modified UpdateSimulation function</H5>
+<PRE>
+void     UpdateSimulation(void)
+{
+     .
+     .
+     .
+     int          i;
+     Vector      u;
+     bool         kill = false;
+     .
+     .
+     .
+     // calc number of enemy units currently engaging the target
+     Vector d;
+     Units[0].NumFriends = 0;
+     for(i=1; i&lt;_MAX_NUM_UNITS; i++)
+     {
+          d = Units[i].vPosition -- Units[0].vPosition;
+          if(d.Magnitude() &lt;= (Units[0].fLength *
+                               _CRITICAL_RADIUS_FACTOR))
+                 Units[0].NumFriends++;
+     }
+     // deduct hit points from target
+     if(Units[0].NumFriends &gt; 0)
+     {
+          Units[0].HitPoints --= 0.2 * Units[0].NumFriends;
+          if(Units[0].HitPoints &lt; 0)
+          {
+               Units[0].vPosition.x = _WINWIDTH/2;
+               Units[0].vPosition.y = _WINHEIGHT/2;
+               Units[0].HitPoints = _MAXHITPOINTS;
+               kill = true;
+          }
+     }
+     // update computer-controlled units:
+     for(i=1; i&lt;_MAX_NUM_UNITS; i++)
+     {
+          u = Units[0].vPosition -- Units[i].vPosition;
+          if(kill)
+          {
+               if((u.Magnitude() &lt;= (Units[0].fLength *
+                                     _CRITICAL_RADIUS_FACTOR)))
+               {
+                    ReTrainTheBrain(i, 0.9, 0.1, 0.1);
+               }
+          }
+          // handle enemy hit points, and learning if required
+          if(u.Magnitude() &lt;= (Units[0].fLength *
+                               _CRITICAL_RADIUS_FACTOR))
+          {
+               Units[i].HitPoints --= DamageRate;
+               if((Units[i].HitPoints &lt; 0))
+               {
+                 Units[i].vPosition.x=GetRandomNumber(_WINWIDTH/2
+                                        --_SPAWN_AREA_R,
+                                        _WINWIDTH/2+_SPAWN_AREA_R,
+                                        false);
+                  Units[i].vPosition.y=GetRandomNumber(_WINHEIGHT/2
+                                        --_SPAWN_AREA_R,
+                                        _WINHEIGHT/2+_SPAWN_AREA_R,
+                                        false);
+                  Units[i].HitPoints = _MAXHITPOINTS/2.0;
+                  ReTrainTheBrain(i, 0.1, 0.1, 0.9);
+               }
+          } else {
+               Units[i].HitPoints+=0.01;
+               if(Units[i].HitPoints &gt; _MAXHITPOINTS)
+                   Units[i].HitPoints = _MAXHITPOINTS;
+          }
+          // get a new command
+          Units[i].Inputs[0] = Units[i].NumFriends/_MAX_NUM_UNITS;
+          Units[i].Inputs[1] = (double) (Units[i].HitPoints/
+                                         _MAXHITPOINTS);
+          Units[i].Inputs[2] = (Units[0].NumFriends&gt;0 ? 1:0);
+          Units[i].Inputs[3] = (u.Magnitude()/800.0f);
+          TheBrain.SetInput(0, Units[i].Inputs[0]);
+          TheBrain.SetInput(1, Units[i].Inputs[1]);
+          TheBrain.SetInput(2, Units[i].Inputs[2]);
+          TheBrain.SetInput(3, Units[i].Inputs[3]);
+          TheBrain.FeedForward();
+          Units[i].Command = TheBrain.GetMaxOutputID();
+          switch(Units[i].Command)
+          {
+               case 0:
+                    Units[i].Chase = true;
+                    Units[i].Flock = false;
+                    Units[i].Evade = false;
+                    Units[i].Wander = false;
+                    break;
+               case 1:
+                    Units[i].Chase = false;
+                    Units[i].Flock = true;
+                    Units[i].Evade = false;
+                    Units[i].Wander = false;
+                    break;
+               case 2:
+                    Units[i].Chase = false;
+                    Units[i].Flock = false;
+                    Units[i].Evade = true;
+                    Units[i].Wander = false;
+                    break;
+          }
+          DoUnitAI(i);
+          .
+          .
+          .
+     } // end i-loop
+     kill = false;
+     .
+     .
+     .
+}
+</PRE><BR>
+
+
+<P class="docText">The first new thing we do in the modified <span class="docEmphasis">UpdateSimulation</span> function is to calculate the number of computer-controlled units currently engaging the target. In our simple example, a unit is considered to be engaging the target if it is within a specified distance from the target.</P>
+<P class="docText">Once we determine the number of engaging units, we deduct a number of hit points from the target proportional to the number of engaging units. If the number of target hit points reaches zero, the target is considered killed and it is respawned in the middle of the screen. Also, the kill flag is set to <span class="docEmphasis">true</span>.</P>
+<P class="docText">The next step is to handle the computer-controlled units. For this task, we enter a <span class="docEmphasis">for</span> loop to cycle through all the computer-controlled units. Upon entering the loop, we calculate the distance from the current unit to the target. Next we check to see if the target was killed. If it was, we check to see where the current unit was in relation to the target—that is, whether it was in engagement range. If it was, we retrain the neural network to reinforce the chase behavior. Essentially, if the unit was engaging the target and the target died, we assume the unit is doing something right and we reinforce the chase behavior to make it more aggressive.</P>
+<P class="docText"><A class="docLink" HREF="#ch14exm29">Example 14-29</A> shows the function that handles retraining the network.</P>
+<A NAME="ch14exm29"></A>
+<H5 class="docExampleTitle">Example 14-29. ReTrainTheBrain function</H5>
+<PRE>
+void     ReTrainTheBrain(int i, double d0, double d1, double d2)
+{
+     double     error = 1;
+     int          c = 0;
+     while((error &gt; 0.1) &amp;&amp; (c&lt;5000))
+     {
+          c++;
+          TheBrain.SetInput(0, Units[i].Inputs[0]);
+          TheBrain.SetInput(1, Units[i].Inputs[1]);
+          TheBrain.SetInput(2, Units[i].Inputs[2]);
+          TheBrain.SetInput(3, Units[i].Inputs[3]);
+          TheBrain.SetDesiredOutput(0, d0);
+          TheBrain.SetDesiredOutput(1, d1);
+          TheBrain.SetDesiredOutput(2, d2);
+          //TheBrain.SetDesiredOutput(3, d3);
+          TheBrain.FeedForward();
+          error = TheBrain.CalculateError();
+          TheBrain.BackPropagate();
+     }
+}
+</PRE><BR>
+
+
+<P class="docText"><span class="docEmphasis">ReTrainTheBrain</span> simply implements the back-propagation training algorithm again, but this time the stored inputs for the given unit and specified target outputs are used as training data. Note here that you don't want to set the maximum iteration threshold for the <span class="docEmphasis">while</span> loop too high. If you do, a noticeable pause could occur in the action as the retraining process takes place. Also, if you try to retrain the network to achieve a very small error, it will adapt too rapidly. You can control somewhat the rate at which the network adapts by varying the error and maximum iteration thresholds.</P>
+<P class="docText">The next step in the <span class="docEmphasis">UpdateSimulation</span> function is to handle the current unit's hit points. If the current unit is in engagement range of the target, we deduct a prescribed number of hit points from the unit. If the unit's hit points reach zero, we assume it died in combat, in which case we respawn it at some random location. We also assume that the unit was doing something wrong, so we retrain the unit to evade rather than chase.</P>
+<P class="docText">Now we go ahead and use the neural network to make a decision for the unit—that is, under the current set of conditions, should the unit chase, flock, or evade. To do this we first set the input to the neural network. The first input value is the number of friends for the current unit. We scale the number of friends by dividing the maximum number of units constant into the number of friends for the unit. The second input is the number of hit points for the unit, which is scaled by dividing the maximum number of hit points into the unit's hit point count. The third input is an indication as to whether the target is engaged. This value is set to 1.0 if the target is engaged or 0.0 if it is not engaged. Finally, the fourth input is the range to the target. In this case, the distance from the current unit to the target is scaled by dividing the screen width (assumed to be 800 pixels) into the range.</P>
+<P class="docText">Once all the inputs are set, the network is propagated by calling the <span class="docEmphasis">FeedForward</span> method. After this call, the output values of the network can be examined to derive the proper behavior. For this, we select the output with the highest activation, which is determined by making a call to the <span class="docEmphasis">GetmaxOutputID</span> method. This ID is then used in the <span class="docEmphasis">switch</span> statement to set the appropriate behavior flag for the unit. If the ID is 0, the unit should chase. If the ID is 1, the unit should flock. If the ID is 2, the unit should evade.</P>
+<P class="docText">That takes care of the modified <span class="docEmphasis">UpdateSimulation</span> function. If you run this example program, which is available from this book's Web site (<A class="docLink" target="_blank" HREF="http://www.oreilly.com/catalog/ai">http://www.oreilly.com/catalog/ai</A>), you'll see that the computer-controlled unit's behavior does indeed adapt as the simulation runs. You can use the number keys to control how much damage the target inflicts on the units. The 1 key corresponds to little or no damage, while the 8 key corresponds to massive damage. If you let the target die without inflicting damage on the units, you'll see that they soon adapt to attack more often. If you set the target so that it inflicts massive damage, you'll see that the units start adapting to avoid the target more. They also start engaging in groups more often as opposed to engaging as individuals. Eventually, they adapt to avoid the target at all costs. An interesting emergent behavior resulting from this example is that the units tend to form flocks and leaders tend to emerge. Often a flock will form, and the leading units might chase or evade while the intermediate and trailing units follow their lead.</P>  
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="ch14_sect1_003.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="ch14_sect1_005.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

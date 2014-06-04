@@ -1,0 +1,552 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Section 7.8.&nbsp; Regex Compilation, the /o Modifier, qr/&#8943;/, and Efficiency</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=regex3-CHP-7-SECT-7.html><img src="images/prev.gif" width="60" height="17" border="0" align="absmiddle" alt="Previous Page"></a>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=regex3-CHP-7-SECT-9.html><img src="images/next.gif" width="60" height="17" border="0" align="absmiddle" alt="Next Page"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><a name="regex3-CHP-7-SECT-8"></a>
+<H3 id="686700-913" class="docSection1Title">7.8. Regex Compilation, the <tt>/o</tt> Modifier, <tt>qr/</tt>&#8943;<tt>/</tt>, and Efficiency</H3>
+<a name="IDX-CHP-7-2543"></a> 
+
+<p class="docText">An important aspect of Perl's regex-related efficiency relates to the setup work Perl must do behind the scenes when program execution reaches a regex operator, before actually applying the regular expression. The precise setup depends on the type of regex operand. In the most common situation, the regex operand is a regex literal, as with <tt>m/</tt>&#8943;<tt>/</tt> or <tt>s/</tt>&#8943;<tt>/</tt>&#8943;<tt>/</tt> or <tt>qr/</tt>&#8943;<tt>/</tt>. For these, Perl has to do a few different things behind the scenes, each taking some time we'd like to avoid, if possible. First, let's look at what needs to be done, and then at ways we might avoid it.</P>
+<a name="regex3-CHP-7-TABLE-6"></a><P><table cellspacing="0" FRAME="hsides" RULES="all" cellpadding="4" width="100%"><caption><h5 class="docTableTitle">Table 7-6. A Few Ways to Pad an IP Address</H5></caption><colgroup span="3"><col><col><col></colgroup><thead><tr><th class="thead" scope="col" align="center"><p class="docText">Rank</p></th><th class="thead" scope="col" align="center"><p class="docText">Time</P></th><th class="thead" scope="col" align="center"><p class="docText">Approach</P></th></tr></thead><TR><TD class="docTableCell" align="center"><p class="docText">1.</p></td><td class="docTableCell" align="left"><p class="docText">1.0x</P></TD><td class="docTableCell" align="left"><p class="docText"><tt>$ip = sprintf("%03d.%03d.%03d.%03d", split(m/\./, $ip));</tt></p></td></tr><TR><td class="docTableCell" align="center"><p class="docText">2.</p></TD><td class="docTableCell" align="left"><p class="docText">1.3x</p></TD><td class="docTableCell" align="left">
+<pre>
+substr($ip, 0, 0) = '0' if substr($ip, 1, 1) eq '.';
+substr($ip, 0, 0) = '0' if substr($ip, 2, 1) eq '.';
+substr($ip, 4, 0) = '0' if substr($ip, 5, 1) eq '.';
+substr($ip, 4, 0) = '0' if substr($ip, 6, 1) eq '.';
+substr($ip, 8, 0) = '0' if substr($ip, 9, 1) eq '.';
+substr($ip, 8, 0) = '0' if substr($ip, 10, 1) eq '.';
+substr($ip, 12, 0) = '0' while length($ip) &lt; 15;
+</pre><BR>
+
+</td></tr><tr><td class="docTableCell" align="center"><p class="docText">3.</p></td><td class="docTableCell" align="left"><p class="docText">1.6x</p></td><td class="docTableCell" align="left"><p class="docText"><tt>$ip = sprintf("%03d.%03d.%03d.%03d", $ip =~ m/\d+/g);</tt></p></td></TR><tr><TD class="docTableCell" align="center"><p class="docText">4.</p></td><TD class="docTableCell" align="left"><p class="docText">1.8x</P></TD><TD class="docTableCell" align="left"><p class="docText"><tt>$ip = sprintf("%03d.%03d.%03d.%03d", $ip =~ m/(\d+)/g);</tt></p></TD></tr><tr><TD class="docTableCell" align="center"><p class="docText">5.</P></td><TD class="docTableCell" align="left"><p class="docText">1.8x</P></td><td class="docTableCell" align="left"><p class="docText"><tt>$ip = sprintf("%03d.%03d.%03d.%03d",</tt></p>
+<p class="docText"><tt>$ip =~ m/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);</tt></P></TD></tr><tr><td class="docTableCell" align="center"><p class="docText">6.</p></TD><td class="docTableCell" align="left"><p class="docText">2.3x</p></TD><td class="docTableCell" align="left"><p class="docText"><tt>$ip =~ s/\b(?=\d\b)/00/g;</tt></p>
+<p class="docText"><tt>$ip =~ s/\b(?=\d\d\b)/0/g;</tt></P></td></TR><tr><td class="docTableCell" align="center"><p class="docText">7.</p></td><td class="docTableCell" align="left"><p class="docText">3.0x</p></td><td class="docTableCell" align="left"><p class="docText"><tt>$ip =~ s/\b(\d(\d?)\b)/$2 eq '' ? "00$1" : "0$1"/eg;</tt></p></td></tr><tr><TD class="docTableCell" align="center"><p class="docText">8.</p></TD><td class="docTableCell" align="left"><p class="docText">3.3x</p></TD><TD class="docTableCell" align="left"><p class="docText"><tt>$ip =~ s/\d+/sprintf("%03d", $&amp;)/eg;</tt></P></TD></tr><TR><td class="docTableCell" align="center"><p class="docText">9.</p></TD><TD class="docTableCell" align="left"><p class="docText">3.4x</p></TD><TD class="docTableCell" align="left"><p class="docText"><tt>$ip =~ s/(?:(?&lt;=\.)|^)(?=\d\b)/00/g;</tt></p>
+<p class="docText"><tt>$ip =~ s/(?:(?&lt;=\.)|^)(?=\d\d\b)/0/g;</tt></p></td></TR><TR><td class="docTableCell" align="center"><p class="docText">10.</p></td><td class="docTableCell" align="left"><p class="docText">3.4x</P></td><td class="docTableCell" align="left"><p class="docText"><tt>$ip =~ s/\b(\d\d?\b)/'0' x (3-length($1)) . $1/eg;</tt></P></td></tr><TR><td class="docTableCell" align="center"><p class="docText">11.</P></td><td class="docTableCell" align="left"><p class="docText">3.4x</p></td><td class="docTableCell" align="left"><p class="docText"><tt>$ip =~ s/\b(\d\b)/00$1/g;</tt></p>
+<p class="docText"><tt>$ip =~ s/\b(\d\d\b)/0$1/g;</tt></p></td></tr><tr><td class="docTableCell" align="center"><p class="docText">12.</p></TD><td class="docTableCell" align="left"><p class="docText">3.4x</P></td><td class="docTableCell" align="left"><p class="docText"><tt>$ip =~ s/\b(\d\d?\b)/sprintf("%03d", $1)/eg;</tt></P></TD></TR><TR><td class="docTableCell" align="center"><p class="docText">13.</P></td><td class="docTableCell" align="left"><p class="docText">3.5x</P></TD><td class="docTableCell" align="left"><p class="docText"><tt>$ip =~ s/\b(\d{1,2}\b)/sprintf("%03d", $1)/eg;</tt></P></TD></tr><tr><td class="docTableCell" align="center"><p class="docText">14.</P></TD><td class="docTableCell" align="left"><p class="docText">3.5x</p></td><td class="docTableCell" align="left"><p class="docText"><tt>$ip =~ s/(\d+)/sprintf("%03d", $1)/eg;</tt></P></td></tr><TR><td class="docTableCell" align="center"><p class="docText">15.</p></TD><td class="docTableCell" align="left"><p class="docText">3.6x</P></td><td class="docTableCell" align="left"><p class="docText"><tt>$ip =~ s/\b(\d\d?(?!\d))/sprintf("%03d", $1)/eg;</tt></p></td></tr><tr><td class="docTableCell" align="center"><p class="docText">16.</p></td><td class="docTableCell" align="left"><p class="docText">4.0x</p></td><TD class="docTableCell" align="left"><p class="docText"><tt>$ip =~ s/(?:(?&lt;=\|)|^)(\d\d?(?!\d))/sprintf("%03d", $1)/eg;</tt></p></TD></tr></table></p><BR>
+<a name="regex3-CHP-7-SECT-8.1"></a>
+<H4 id="title-IDAY1EHE" class="docSection2Title">7.8.1. </H4>
+<a name="regex3-CHP-7-SECT-8.1.1"></a>
+<H5 id="title-IDA41EHE" class="docSection3Title">7.8.1.1. The internal mechanics of preparing a regex</h5>
+<a name="IDX-CHP-7-2544"></a> 
+<a name="IDX-CHP-7-2545"></a> 
+<a name="IDX-CHP-7-2546"></a> 
+
+<p class="docText">The behind-the-scenes work done to prepare a regex operand is discussed generally in <a class="docLink" href="regex3-CHP-6.html#regex3-CHP-6">Chapter 6</a> (&#9758;241), but Perl<a name="IDX-CHP-7-2547"></a> 
+ has its unique twists.</P>
+<p class="docText">Perl's pre-processing<a name="IDX-CHP-7-2548"></a> 
+ of regex operands happens in two general phases.</p>
+<ul><LI><p class="docList"><span class="docEmphasis">1</span>. <span class="docEmphStrong">Regex-literal processing</span> If the operand is a regex literal, it's processed as described in "<a class="docLink" href="regex3-CHP-7-SECT-2.html#regex3-CHP-7-SECT-2.2">How Regex Literals Are Parsed</a>" (&#9758;292). One of the benefits provided by this stage is variable interpolation.</P></li><LI><p class="docList"><span class="docEmphasis">2</span>. <span class="docEmphStrong">Regex Compilation</span> The regex is inspected, and if valid, compiled into an internal form appropriate for its actual application by the regex engine. (If invalid, the error is reported to the user.)</P></li></ul>
+<p class="docText">Once Perl has a compiled regex in hand, it can actually apply it to the target string, as per <a class="docLink" href="regex3-CHP-4.html#regex3-CHP-4">Chapters 4</a><a class="docLink" href="regex3-CHP-6.html#regex3-CHP-6">6</a>.</p>
+<p class="docText">All that pre-processing doesn't necessarily need be done every time each regex operator is used. It must always be done the <span class="docEmphasis">first</span> time a regex literal is used in a program, but if execution reaches the same regex literal more than once (such as in a loop, or in a function that's called more than once), Perl can sometimes re-use some of the previously-done work. The next sections show when and how Perl might do this, and additional techniques available to the programmer to further increase efficiency.</P>
+
+<a name="regex3-CHP-7-SECT-8.1.2"></a>
+<H5 id="title-IDAY4EHE" class="docSection3Title">7.8.1.2. Perl steps to reduce regex compilation</h5>
+<p class="docText">In the next sections, we'll look at two ways in which Perl avoids some of the pre-processing associated with regex literals: <span class="docEmphasis">unconditional<a name="IDX-CHP-7-2549"></a> 
+ caching and on-demand recompilation</span>.</p>
+
+<a name="regex3-CHP-7-SECT-8.1.3"></a>
+<h5 id="title-IDAK5EHE" class="docSection3Title">7.8.1.3. Unconditional caching</h5>
+<p class="docText">If a regex literal has no variable interpolation, Perl knows that the regex can't change from use to use, so after the regex is compiled once, that compiled form is saved ("cached") for use whenever execution again reaches the same code. The regex is examined and compiled just once, no matter how often it's used during the program's execution. Most regular expressions shown in this book have no variable interpolation, and so are perfectly efficient in this respect.</P>
+<p class="docText">Variables within embedded code and dynamic regex constructs don't count, as they're not <span class="docEmphasis">interpolated</span> into the value of the regex, but rather part of the unchanging code the regex executes. When <tt>my</tt> variables are referenced from within embedded code, there may be times that you wish it were interpreted every time: see the warning on page 338.</p>
+<p class="docText">Just to be clear, caching lasts only as long as the program executesnothing is cached from one run to the next.</p>
+
+<a name="regex3-CHP-7-SECT-8.1.4"></a>
+<H5 id="title-IDA25EHE" class="docSection3Title">7.8.1.4. On-demand recompilation</h5>
+<a name="IDX-CHP-7-2550"></a> 
+<a name="IDX-CHP-7-2551"></a> 
+<a name="IDX-CHP-7-2552"></a> 
+<a name="IDX-CHP-7-2553"></a> 
+<a name="IDX-CHP-7-2554"></a> 
+
+<p class="docText">Not all regex operands can be cached directly. Consider this snippet:</p>
+<pre>
+    my <B>$today</b> = (qw&lt;Sun Mon Tue Wed Thu Fri Sat&gt;)[(localtime)[6]];<a name="IDX-CHP-7-2555"></a> 
+
+    # <span class="docEmphasis">$today now holds the day ("Mon", "Tue", etc., as appropriate)</span>
+
+    while (&lt;LOGFILE&gt;) {
+        if (m/^<b>$today:</b>/i) {
+        <img src=images/U22EE.jpg border=0>
+</pre><BR>
+
+<p class="docText">The regex in <tt>m/^$today:/</tt> requires interpolation, but the way it's used in the loop ensures that the result of that interpolation will be the same every time. It would be inefficient to recompile the same thing over and over each time through the loop, so Perl automatically does a simple string check, comparing the result of the interpolation against the result the last time through. If they're the same, the cached regex that was used the previous time is used again this time, eliminating the need to recompile. But if the result of the interpolation turns out to be different, the regex is recompiled. So, for the price of having to redo the interpolation and check the result with the cached value, the relatively expensive compile is avoided whenever possible.</p>
+<p class="docText">How much do these features actually save? Quite a lot. As an example, I benchmarked the cost of pre-processing three forms of the <tt>$HttpUrl</tt><a name="IDX-CHP-7-2556"></a> 
+<a name="IDX-CHP-7-2557"></a> 
+ example from page 303 (using the extended <tt>$HostnameRegex</tt>).<a name="IDX-CHP-7-2558"></a> 
+<a name="IDX-CHP-7-2559"></a> 
+ I designed the benchmarks to show the overhead of regex pre-processing (the interpolation, string check, compilation, and other background tasks), not the actual application of the regex, which is the same regardless of how you get there.</p>
+<p class="docText">The results are pretty interesting. I ran a version that has no interpolation (the entire regex manually spelled out within <tt>m/</tt>&#8943;<tt>/</tt>), and used that as the basis of comparison. The interpolation and check, if the regex doesn't change each time, takes about 25x longer. The full pre-processing (which adds the recompilation of the regex each time) takes about 1,000x longer! Wow.</p>
+<p class="docText">Just to put these numbers into context, realize that even the full pre-processing, despite being over 1,000x slower than the static regex literal pre-processing, still takes only about 0.00026 seconds on my system. (It benchmarked at a rate of about 3,846 per second; on the other hand, the static regex literal's pre-processing benchmarked at a rate of about 3.7 million per second.) Still, the savings of not having to do the interpolation are impressive, and the savings of not having to recompile are down right fantastic. In the next sections, we'll look at how you can take action to enjoy these savings in even more cases.</p>
+
+<a name="regex3-CHP-7-SECT-8.1.5"></a>
+<h5 id="title-IDAZCFHE" class="docSection3Title">7.8.1.5. The "compile once" <tt>/o</tt> modifier</h5>
+<a name="IDX-CHP-7-2560"></a> 
+
+<a name="IDX-CHP-7-2561"></a> 
+
+<a name="IDX-CHP-7-2562"></a> 
+<a name="IDX-CHP-7-2563"></a> 
+<a name="IDX-CHP-7-2564"></a> 
+
+<p class="docText">Put simply, if you use the <tt>/o</tt> modifier with a regex literal operand, the regex literal will be inspected and compiled just once, regardless of whether it uses interpolation. If there's no interpolation, adding <tt>/o</tt> doesn't buy you anything because expressions without interpolation are always cached automatically. If there <span class="docEmphasis">is</span> interpolation, the first time execution arrives at the regex literal, the normal full pre-processing happens, but because of <tt>/o</tt>, the internal form is cached. If execution comes back again to the same regex operator, that cached form is used directly.</p>
+<p class="docText">Here's the example from the previous page, with the addition of <tt>/o</tt>:</p>
+<pre>
+    my $today = (qw&lt;Sun Mon Tue Wed Thu Fri Sat&gt;)[(localtime)[6]];
+
+    while (&lt;LOGFILE&gt;) {
+        if (m/^$today:/io) {
+             <img src=images/U22EE.jpg border=0>
+</pre><br>
+
+<p class="docText">This is now much more efficient because the regex ignores <tt>$today</tt> on all but the first iteration through the loop. Not having to interpolate or otherwise pre-process and compile the regex every time represents a real savings that Perl couldn't do for us automatically because of the variable interpolation: <tt>$today</tt> <span class="docEmphasis">might</span> change, so Perl must play it safe and reinspect it each time. By using <tt>/o</tt>, we tell Perl to "lock in" the regex after the regex literal is first pre-processed and compiled. It's safe to do this when we know that the variables interpolated into a regex literal won't change, or when we don't want Perl to use the new values even if they do change.</p>
+
+<a name="regex3-CHP-7-SECT-8.1.6"></a>
+<h5 id="title-IDAWEFHE" class="docSection3Title">7.8.1.6. Potential "gotchas" of <tt>/o</tt></h5>
+<p class="docText">There's an important "gotcha" to watch out for with <tt>/o</tt>. Consider putting our example into a function:</P>
+<pre>
+    sub CheckLogfileForToday()
+    {
+      my $today = (qw&lt;Sun Mon Tue Wed Thu Fri Sat&gt;)[(localtime)[6]];
+
+      while (&lt;LOGFILE&gt;) {
+          if (m/^$today:/io) { #<span class="docEmphasis">dangerous -- has a gotcha</span>
+              <img src=images/U22EE.jpg border=0>
+          }
+       }
+    }
+</pre><br>
+
+<p class="docText">Remember, <tt>/o</tt> indicates that the regex operand should be compiled <span class="docEmphasis">once</span>. The first time <tt>CheckLogfileForToday ()</tt> is called, a regex operand representing the current day is locked in. If the function is called again some time later, even though <tt>$today</tt> may change, it will not be not inspected again; the original locked-in regex is used every time for the duration of execution.</P>
+<p class="docText">This is a major shortcoming, but as we'll see in the next section, regex objects<a name="IDX-CHP-7-2565"></a> 
+ provide a best-of-both-worlds way around it.</p>
+
+<a name="regex3-CHP-7-SECT-8.1.7"></a>
+<h5 id="title-IDA2FFHE" class="docSection3Title">7.8.1.7. Using regex objects for efficiency</H5>
+<a name="IDX-CHP-7-2566"></a> 
+
+<p class="docText">All the discussion of pre-processing we've seen so far applies to regex <span class="docEmphasis">literals</span>. The goal has been to end up with a compiled regex with as little work as possible. Another approach to the same end is to use a regex <span class="docEmphasis">object</span>, which is basically a ready-to-use compiled regex encapsulated into a variable. They're created with the <tt>qr/</tt>&#8943;<tt>/</tt> operator (&#9758;303).</P>
+<p class="docText">Here's a version of our example using a regex object:</P>
+<pre>
+    sub CheckLogfileForToday()
+    {
+      my $today = (qw&lt;Sun Mon Tue Wed Thu Fri Sat&gt;)[(localtime)[6]];
+      my <B>$RegexObj = qr/^$today:/i;</b> # <span class="docEmphasis">compiles once per function call</span>
+      while (&lt;LOGFILE&gt;) {
+          if ($_<a name="IDX-CHP-7-2567"></a> 
+ =~ <b>$RegexObj</b>) {
+                <img src=images/U22EE.jpg border=0>
+          }
+      }
+    }
+</pre><BR>
+
+<p class="docText">Here, a new regex object is created each time the function is called, but it is then used directly for each line of the log file. When a regex object is used as an operand, it undergoes none of the pre-processing discussed throughout this section. The pre-processing is done when the regex object is <span class="docEmphasis">created</span>, not when it's later <span class="docEmphasis">used</span>. You can think of a regex object, then, as a "floating regex cache," a ready-to-use compiled regex that you can apply whenever you like.</p>
+<p class="docText">This solution has the best of both worlds: it's efficient, since only one regex is compiled during each function call (not with each line in the log file), but, unlike the previous example where <tt>/o</tt> was used inappropriately, this example actually works correctly with multiple calls to <tt>CheckLogfileForToday ()</tt>.</p>
+<p class="docText">Be sure to realize that there are two regex operands in this example. The regex operand of the <tt>qr/</tt>&#8943;<tt>/</tt> is <span class="docEmphasis">not</span> a regex object, but a regex literal supplied to <tt>qr/</tt>&#8943;<tt>/</tt> to <span class="docEmphasis">create</span> a regex object. The object is then used as the regex operand for the <span class="docEmphStrong">=~</span> match operator in the loop.</P>
+
+<a name="regex3-CHP-7-SECT-8.1.8"></a>
+<H5 id="title-IDAGQFHE" class="docSection3Title">7.8.1.8. Using m/&#8943;/ with regex objects</h5>
+<p class="docText">The use of the regex object,</P>
+<pre>
+    if ($_ =~ <B>$RegexObj</b>) {
+</pre><br>
+
+<p class="docText">can also be written as:</p>
+<pre>
+    if (m/<b>$RegexObj</b>/) {
+</pre><BR>
+
+<p class="docText">This is not a normal regex literal, even though it looks like one. When the only thing in the "regex literal" is a regex object, it's just the same as using a regex object. This is useful for several reasons. One is simply that the <tt>m/</tt>&#8943;<tt>/</tt> notation may be more familiar, and perhaps more comfortable to work with. It also relieves you from explicitly stating the target string <tt>$_</tt>, which makes things look better in conjunction with other operators that use the same default. Finally, it allows you to use the <tt>/g</tt><a name="IDX-CHP-7-2568"></a> 
+ modifier with regex objects.<a name="IDX-CHP-7-2569"></a> 
+</P>
+
+<a name="regex3-CHP-7-SECT-8.1.9"></a>
+<h5 id="title-IDAPRFHE" class="docSection3Title">7.8.1.9. Using <tt>/o</tt> with <tt>qr/</tt>&#8943;<tt>/</tt></h5>
+<a name="IDX-CHP-7-2570"></a> 
+
+<p class="docText">The <tt>/o</tt> modifier can be used with <tt>qr/</tt>&#8943;<tt>/</tt>, but you'd certainly not want to in this example. Just as when <tt>/o</tt> is used with any of the other regex operators, <tt>qr/</tt>&#8943;<tt>/o</tt> locks in the regex the first time it's used, so if used here, <tt>$RegexObj</tt> would get the same regex object each time the function is called, regardless of the value of <tt>$today</tt>. That would be the same mistake as when we used <tt>m/</tt>&#8943;<tt>/o</tt> on page 352.</p>
+
+<a name="regex3-CHP-7-SECT-8.1.10"></a>
+<h5 id="title-IDAYSFHE" class="docSection3Title">7.8.1.10. Using the default regex for efficiency</H5>
+<a name="IDX-CHP-7-2571"></a> 
+<a name="IDX-CHP-7-2572"></a> 
+<a name="IDX-CHP-7-2573"></a> 
+<a name="IDX-CHP-7-2574"></a> 
+<a name="IDX-CHP-7-2575"></a> 
+
+<p class="docText">The default regex (&#9758;308) feature of regex operators can be used for efficiency, although the need for it has mostly been eliminated with the advent of regex objects. Still, I'll describe it quickly. Consider:</p>
+<pre>
+    sub CheckLogfileForToday()
+    {
+      my $today = (qw&lt;Sun Mon Tue Wed Thu Fri Sat&gt;)[(localtime)[6]];
+
+      # <span class="docEmphasis">Keep trying until one matches, so the default regex is set</span>.
+      "Sun:" =~ m/^$today:/i or
+      "Mon:" =~ m/^$today:/i or
+      "Tue:" =~ m/^$today:/i or
+      "Wed:" =~ m/^$today:/i or
+      "Thu:" =~ m/^$today:/i or
+      "Fri:" =~ m/^$today:/i or
+      "Sat:" =~ m/^$today:/i;
+
+      while (&lt;LOGFILE&gt;) {
+          if (<span class="docEmphStrong">m//</span>) { # <span class="docEmphasis">Now use the default regex</span>
+               <img src=images/U22EE.jpg border=0>
+          }
+      }
+    }
+</pre><br>
+
+<p class="docText">The key to using the default regex is that a match must be successful for it to be set, which is why this example goes to such trouble to get a match after <tt>$today</tt> has been set. As you can see, it's fairly kludgey, and I wouldn't recommend it.</P>
+
+
+<a name="regex3-CHP-7-SECT-8.2"></a>
+<h4 id="title-IDALUFHE" class="docSection2Title">7.8.2. Understanding the "Pre-Match" Copy</h4>
+<p class="docText">While doing matches and substitutions, Perl sometimes must spend extra time and memory to make a pre-match copy<a name="IDX-CHP-7-2576"></a> 
+<a name="IDX-CHP-7-2577"></a> 
+<a name="IDX-CHP-7-2578"></a> 
+<a name="IDX-CHP-7-2579"></a> 
+<a name="IDX-CHP-7-2580"></a> 
+<a name="IDX-CHP-7-2581"></a> 
+<a name="IDX-CHP-7-2582"></a> 
+<a name="IDX-CHP-7-2583"></a> 
+ of the target text. As we'll see, sometimes this copy is used in support of important features, but sometimes it's not. When the copy is made but not used, the wasted effort is an inefficiency we'd like to avoid, especially in situations where the target text is very long, or speed particularly important.</P>
+<p class="docText">In the next sections, we'll look at when and why Perl might make a pre-match copy of the target text, when the copy is actually used, and how we might avoid the copy when efficiency is at a premium.</p>
+<a name="regex3-CHP-7-SECT-8.2.1"></a>
+<H5 id="title-IDA4VFHE" class="docSection3Title">7.8.2.1. Pre-match copy supports <tt>$1, $&amp;, $', $+</tt>, ...</h5>
+<p class="docText">Perl makes a pre-match copy of the original target text of a match or substitution to support <tt>$1, $&amp;</tt>, and the other after-match variables that actually hold text (&#9758;299). After each match, Perl doesn't actually create each of these variables because many (or all) may never be used by the program. Rather, Perl just files away a copy of the original text, remembers <span class="docEmphasis">where</span> in that original string the various matches happened, and then refers to that if and when <tt>$1</tt> or the like is actually used. This requires less work up-front, which is good, because often, some or all of these after-match variables are not even used. This is a form of "lazy evaluation," and successfully avoids a lot of unneeded work.</p>
+<p class="docText">Although Perl saves work by not creating <tt>$1</tt> and the like until they're used, it still has to do the work of saving the extra copy of the target text. But why does this really need to be done? Why can't Perl just refer to that original text to begin with? Well, consider:</p>
+<pre>
+    $Subject =~ s/^(?:Re:\s*)+//;
+</pre><br>
+
+<p class="docText">After this, <tt>$&amp;</tt> properly refers to the text that was removed from <tt>$Subject</tt>, but since it was <span class="docEmphasis">removed</span> from <tt>$Subject</tt>, Perl can't refer to <tt>$Subject</tt> itself when providing for a subsequent use of <tt>$&amp;</tt>. The same logic applies for something like:</p>
+<pre>
+    if ($Subject =~ m/^SPAM:(.+)/i) {
+        $Subject = "-- spam subject removed --";
+        $SpamCount{$1}++;
+    }
+</pre><br>
+
+<p class="docText">By the time <tt>$1</tt> is referenced, the original <tt>$Subject</tt> has been erased. Thus, Perl must make an internal pre-match copy.</p>
+
+<a name="regex3-CHP-7-SECT-8.2.2"></a>
+<h5 id="title-IDAQXFHE" class="docSection3Title">7.8.2.2. The pre-match copy is not always needed</h5>
+<p class="docText">In practice, the primary "users" of the pre-match copy are <tt>$1</tt>, <tt>$2</tt>, <tt>$3</tt>, and the like. But what if a regex doesn't even have capturing parentheses? If it doesn't, there's no need to even worry about <tt>$1</tt>, so any work needed to support it can be bypassed. So, at least those regexes that don't have capturing parentheses can avoid the costly copy? Not always ...</p>
+<a name="regex3-CHP-7-SECT-8.2.2.1"></a>
+<h5 id="title-IDAEYFHE" class="docSection4Title">7.8.2.2.1. The variables <tt>$', $&amp;</tt>, and <tt>$</tt>' are naughty</h5>
+<a name="IDX-CHP-7-2584"></a> 
+
+<a name="IDX-CHP-7-2585"></a> 
+
+<a name="IDX-CHP-7-2586"></a> 
+
+<a name="IDX-CHP-7-2587"></a> 
+
+<a name="IDX-CHP-7-2588"></a> 
+
+<p class="docText">The three variables <tt>$</tt>', <tt>$&amp;</tt>, and <tt>$</tt>' aren't related to capturing parentheses. As the text before, of, and after the match, they can potentially apply to <span class="docEmphasis">every</span> match and substitution. Since it's impossible for Perl to tell which match any particular use of one of these variables refers to, Perl must make the pre-match copy<a name="IDX-CHP-7-2589"></a> 
+ <span class="docEmphasis">every time</span>.</P>
+<p class="docText">It might sound like there's no opportunity to avoid the copy, but Perl is smart enough to realize that if these variables do not appear in the program, <span class="docEmphasis">anywhere</span> (including in any library that might be used) the blind copying to support them is no longer needed. <span class="docEmphStrong">Thus, ensuring that you don't use <tt>$'</tt>, <tt>$&amp;</tt>, and <tt>$'</tt> allows all matches without capturing parentheses to dispense with the pre-match copy  a handsome optimization!</span> Having even one <tt>$'</tt>, <tt>$&amp;</tt>, or <tt>$'</tt> anywhere in the program means the optimization is lost. How unsociable! For this reason, I call these three variables "naughty."</p>
+
+
+<a name="regex3-CHP-7-SECT-8.2.3"></a>
+<H5 id="title-IDAQ0FHE" class="docSection3Title">7.8.2.3. How expensive is the pre-match copy?</h5>
+<p class="docText">I ran a simple benchmark, checking <tt>m/c/</tt> against each of the 130,000 lines of C that make up the main Perl source. The benchmark noted whether a '<tt>c</tt>' appeared on each line, but didn't do anything further, since the goal was to determine the effect of the behind-the-scenes copying. I ran the test two different ways: once where I made sure not to trigger the pre-match copy, and once where I made sure to do so. The only difference, therefore, was in the extra copy overhead.</p>
+<p class="docText">The run with the pre-match copying consistently took over 40 percent longer than the one without. This represents an "average worst case," so to speak, since the benchmark didn't do any "real work," whose time would reduce the relative relevance of (and perhaps overshadow) the extra overhead.</P>
+<p class="docText">On the other hand, in true worst-case scenarios, the extra copy might truly be an overwhelming portion of the work. I ran the same test on the same data, but this time as <span class="docEmphasis">one huge line</span> incorporating the more than 3.5 megabytes of data, rather than the 130,000 or so reasonably sized lines. Thus, the relative performance of a single match can be checked. The match without the pre-match copy returned almost immediately, since it was sure to find a '<tt>c</tt>' somewhere near the start of the string. Once it did, it was finished. The test <span class="docEmphasis">with</span> the pre-match copy is the same except that it had to make a copy of the huge string first. It took over 7,000 times longer! Knowing the ramifications, therefore, of certain constructs allows you to tweak your code for better efficiency.</P>
+
+<a name="regex3-CHP-7-SECT-8.2.4"></a>
+<H5 id="title-IDAJ1FHE" class="docSection3Title">7.8.2.4. Avoiding the pre-match copy</H5>
+<a name="IDX-CHP-7-2590"></a> 
+<a name="IDX-CHP-7-2591"></a> 
+<a name="IDX-CHP-7-2592"></a> 
+<a name="IDX-CHP-7-2593"></a> 
+<a name="IDX-CHP-7-2594"></a> 
+<a name="IDX-CHP-7-2595"></a> 
+<a name="IDX-CHP-7-2596"></a> 
+<a name="IDX-CHP-7-2597"></a> 
+<a name="IDX-CHP-7-2598"></a> 
+<a name="IDX-CHP-7-2599"></a> 
+<a name="IDX-CHP-7-2600"></a> 
+
+<p class="docText">It would be nice if Perl knew the programmer's intentions and made the copy only as necessary. But remember, the copies are not "bad"  Perl's handling of these bookkeeping drudgeries behind the scenes is why we use it and not, say, C or assembly language. Indeed, Perl was first developed in part to free users from the mechanics of bit fiddling so they could concentrate on creating solutions to problems.</p>
+<p class="docText"><span class="docEmphasis"><span class="docEmphStrong">Never use naughty variables</span></span>. Still, it's nice to avoid the extra work if possible. Foremost, of course, is to never use <tt>$'</tt>,<a name="IDX-CHP-7-2601"></a> 
+<a name="IDX-CHP-7-2602"></a> 
+ <tt>$&amp;</tt>,<a name="IDX-CHP-7-2603"></a> 
+ or <tt>$'</tt> <span class="docEmphasis">anywhere</span> in your code. Often, <tt>$&amp;</tt> is easy to eliminate by wrapping the regex with capturing parentheses, and using <tt>$1</tt> instead. For example, rather than using <tt><span class="docEmphStrong">s/&lt;\w+&gt;/\L$&amp;\E/g</span></tt> to lowercase certain HTML tags, use <tt><span class="docEmphStrong">s/(&lt;\w+&gt;)/\L$1\E/g</span></tt> instead.</P>
+<p class="docText"><tt>$'</tt> and <tt>$'</tt> can often be easily mimicked if you still have an unmodified copy of the original target string. After a match against a given <span class="docEmphasis">target</span>, the following shows valid replacements:</p>
+<p><table cellspacing="0" border="1" RULES="all" cellpadding="4" width="100%"><colgroup span="2"><col><col></colgroup><thead><TR><th class="thead" scope="col" align="left"><p class="docText">Variable</P></th><th class="thead" scope="col" align="left"><p class="docText">Mimicked with</p></th></TR></thead><TR><td class="docTableCell" align="left"><p class="docText"><tt>$'</tt></p></td><TD class="docTableCell" align="left"><p class="docText"><tt>substr(<span class="docEmphasis">target</span>, 0, $-[0])</tt></P></td></tr><tr><td class="docTableCell" align="left"><p class="docText"><tt>$&amp;</tt></P></td><td class="docTableCell" align="left"><p class="docText"><tt>substr(<span class="docEmphasis">target</span>, $-[0], $+[0] - $-[0])</tt></P></td></tr><TR><td class="docTableCell" align="left"><p class="docText"><tt>$'</tt></P></td><td class="docTableCell" align="left"><p class="docText"><tt>substr(<span class="docEmphasis">target</span>, $+[0])</tt></p></td></tr></table></p><br>
+<p class="docText">Since <tt>@-</tt> and <tt>@+</tt> (&#9758;302) are arrays of <span class="docEmphasis">positions</span> in the original target string, rather than actual <span class="docEmphasis">text</span> in it, they can be safely used without an efficiency penalty.</p>
+<p class="docText">I've included a substitute for <tt>$&amp;</tt> in there as well. This may be a better alternative to wrapping with capturing parentheses and using <tt>$1</tt>, as it may allow you to eliminate capturing parentheses altogether. Remember, the whole point of avoiding <tt>$&amp;</tt>; and friends is to avoid the copy for matches that have no capturing parentheses. If you make changes to your program to eliminate <tt>$&amp;</tt>, but end up adding capturing parentheses to every match, you haven't saved anything.</p>
+<p class="docText"><span class="docEmphasis"><span class="docEmphStrong">Don't use naughty modules</span></span>. Of course, part of not using <tt>$'</tt>, <tt>$&amp;</tt>, or <tt>$'</tt> is to not use modules that use them. The core modules that come with Perl do not use them, except for the <tt>English</tt> module. If you wish to use that module, you can have it not apply to these three variables by invoking it as:</p>
+<pre>
+    use English<a name="IDX-CHP-7-2604"></a> 
+ '-no_match_vars';<a name="IDX-CHP-7-2605"></a> 
+
+</pre><br>
+
+<p class="docText">This makes it safe. If you download modules from CPAN or elsewhere, you may wish to check to see if they use the variables. See the sidebar on the next page for a technique to check to see if your program is infected with any of these variables.</p>
+<a name="regex3-CHP-7-SIDEBAR-5"></a><P><table cellspacing="0" width="90%" border="1" cellpadding="5"><tr><TD>
+<h2 class="docSidebarTitle">How to Check Whether Your Code is Tainted by <tt>$&amp;</tt></h2>
+<p class="docText">It's not always easy to notice whether your program is naughty (references <tt>$&amp;</tt>, <tt>$'</tt>, or <tt>$'</tt>), especially with the use of libraries, but there are several ways to find out. The easiest, if your <span class="docEmphasis">perl</span> binary has been compiled with the <tt>-DDEBUGGING</tt> option, is to use the <tt><span class="docEmphStrong">-c</span></tt> and <tt><span class="docEmphStrong">-Mre=debug</span></tt> command-line arguments (&#9758;361) and look toward the end of the output for a line that says either <tt><span class="docEmphStrong">'Enabling $' $&amp; $' support'</span></tt> or <tt><span class="docEmphStrong">'Omitting $' $&amp; $' support'</span></tt>. If it's enabled, the code is tainted.</P>
+<p class="docText">It's possible (but unlikely) that the code could be tainted by the use of a naughty variable within an eval that's not known to Perl until it's executed. One option to catch those as well is to install the <tt>Devel::SawAmpersand</tt><a name="IDX-CHP-7-2606"></a> 
+ package from CPAN (<a class="docLink" target="_blank" href="http://www.cpan.org">http://www.cpan.org</a>):<a name="IDX-CHP-7-2607"></a> 
+<a name="IDX-CHP-7-2608"></a> 
+</P>
+<pre>
+    END {
+       require Devel::SawAmpersand;
+       if (Devel::SawAmpersand::sawampersand) {
+           print "Naughty variable was used!\n";
+       }
+    }
+</pre><BR>
+
+<p class="docText">Included with <tt>Devel::SawAmpersand</tt> comes <tt>Devel::FindAmpersand</tt>,<a name="IDX-CHP-7-2609"></a> 
+ a package that purportedly shows you where the offending variable is located. Unfortunately, it doesn't work reliably with the latest versions of Perl. Also, they both have some installation issues, so your mileage may vary. (Check <a class="docLink" target="_blank" href="http://regex.info/">http://regex.info/</a><a name="IDX-CHP-7-2610"></a> 
+ for possible updates.)</P>
+<p class="docText">Also, it may be interesting to see how you can check for naughtiness by just checking for<a name="IDX-CHP-7-2611"></a> 
+<a name="IDX-CHP-7-2612"></a> 
+<a name="IDX-CHP-7-2613"></a> 
+ the performance penalty:</p>
+<pre>
+    use Time::HiRes;<a name="IDX-CHP-7-2614"></a> 
+<a name="IDX-CHP-7-2615"></a> 
+
+    sub CheckNaughtiness()<a name="IDX-CHP-7-2616"></a> 
+
+    {
+      my $text = 'x' x 10_000; # <span class="docEmphasis">Create some non-small amount of data</span>.
+      # <span class="docEmphasis">Calculate the overhead of a do-nothing loop</span>.
+      my $start = Time::HiRes::time();
+      for (my $i = 0; $i &lt; 5_000; $i++) <B>{ }</b>
+      my $overhead = Time::HiRes::time() - $start;
+      # <span class="docEmphasis">Now calculate the time for the same number of simple matches</span>.
+      $start = Time::HiRes::time();
+      for (my $i = 0; $i &lt; 5_000; $i++) <b>{ $text =~ m/^/ }</b>
+      my $delta = Time::HiRes::time() - $start;
+
+      # <span class="docEmphasis">A differential of 5 is just a heuristic</span>.
+      printf "It seems your code is %s (overhead=%.2f, delta=%.2f)\n",
+         ($delta &gt; $overhead+5) ? "naughty" : "clean", $overhead, $delta;
+    }
+</pre><br>
+
+</TD></TR></table></p><BR>
+
+
+<a name="regex3-CHP-7-SECT-8.3"></a>
+<H4 id="title-IDANHGHE" class="docSection2Title">7.8.3. The Study Function</h4>
+<a name="IDX-CHP-7-2617"></a> 
+<a name="IDX-CHP-7-2618"></a> 
+<a name="IDX-CHP-7-2619"></a> 
+<a name="IDX-CHP-7-2620"></a> 
+
+<p class="docText">In contrast to optimizing the regex itself, <tt>study(&#8943;)</tt><a name="IDX-CHP-7-2621"></a> 
+ optimizes certain kinds of searches of a <span class="docEmphasis">string</span>. After studying a <span class="docEmphasis">string</span>, a regex (or multiple regexes) can benefit from the cached knowledge when applied to the string. It's generally used like this:</p>
+<pre>
+    while (&lt;&gt;)
+    {
+       study($R); # <span class="docEmphasis">Study the default target $_<a name="IDX-CHP-7-2622"></a> 
+ before doing lots of
+ matches on it</span>
+       if (m/<span class="docEmphasis">regex</span> 1/) { &#8943; }
+       if (m/<span class="docEmphasis">regex</span> 2/) { &#8943; }
+       if (m/<span class="docEmphasis">regex</span> 3/) { &#8943; }
+       if (m/<span class="docEmphasis">regex</span> 4/) { &#8943; }
+    }
+</pre><br>
+
+<p class="docText">What <tt>study</tt> does is simple, but understanding when it's a benefit can be quite difficult. It has no effect whatsoever on any values or results of a programthe only effects are that Perl uses more memory, and that overall execution time might increase, stay the same, or (here's the goal) decrease.</P>
+<p class="docText">When a string is studied, Perl takes some time and memory to build a list of places in the string that each character is found. (On most systems, the memory required is four times the size of the string.) <tt>study</tt>'s benefit can be realized with each subsequent regex match against the string, but only until the string is modified. Any modification of the string invalidates the <tt>study</tt> list, as does studying a different string.</P>
+<p class="docText">How helpful it is to have the target string <tt>study</tt>ied is highly dependent on the regex matching against it, and the optimizations that Perl is able to apply. For example, searching for literal text with <tt>m/foo/</tt> can see a huge speedup due to study (with large strings, speedups of 10,000x are possible). But, if <tt>/i</tt> is used, that speedup evaporates, as <tt>/i</tt> currently removes the benefit of <tt>study</tt> (as well as some other optimizations).</p>
+<a name="regex3-CHP-7-SECT-8.3.1"></a>
+<h5 id="title-IDABKGHE" class="docSection3Title">7.8.3.1. When not to use study</h5>
+<ul><LI><p class="docList">Don't use <tt>study</tt> on strings you intend to check only with <tt>/i</tt>, or when all literal text is governed by <img src=images/U2308.jpg border=0><tt>(?i)</tt><img src=images/U230B.jpg border=0> or <img src=images/U2308.jpg border=0><tt>(?i:&#8943;)</tt><img src=images/U230B.jpg border=0>, as these disable the benefits of study.</p></li><LI><p class="docList">Don't use <tt>study</tt> when the target string is short. In such cases, the normal fixed-string cognizance optimization should suffice (&#9758;247). How short is "short"? String length is just one part of a large, hard-to-pin-down mix, so when it comes down to it, only benchmarking <span class="docEmphasis">your</span> expressions on <span class="docEmphasis">your</span> data will tell you if <tt>study</tt> is a benefit. But for what it's worth, I generally don't even consider <tt>study</tt> unless the strings are at least several kilobytes long.</p></li><LI><p class="docList">Don't use <tt>study</tt> when you plan only a few matches against the target string before it's modified, or before you <tt>study</tt> a different string. An overall speedup is more likely if the time spent to <tt>study</tt> a string is amortized over many matches. With just a few matches, the time spent building the <tt>study</tt> list can overshadow any savings.</p></LI><li><p class="docList">Use <tt>study</tt> only on strings that you intend to search with regular expressions having "exposed" literal text (&#9758;255). Without a known character that must appear in any match, <tt>study</tt> is useless. (Along these lines, one might think that <tt>study</tt> would benefit the <tt>index</tt> function, but it doesn't seem to.)</p></li></ul>
+
+<a name="regex3-CHP-7-SECT-8.3.2"></a>
+<h5 id="title-IDA4LGHE" class="docSection3Title">7.8.3.2. When study can help</h5>
+<p class="docText"><tt>study</tt> is best used when you have a large string you intend to match many times before the string is modified. A good example is a filter I use in the preparation of this book. I write in a home-grown markup that the filter converts to SGML (which is then converted to <span class="docEmphasis">troff</span>, which is then converted to PostScript). Within the filter, an entire chapter eventually ends up within one huge string (for instance, this chapter is about 475KB). Before exiting, I apply a bevy of checks to guard against mistaken markup leaking through. These checks don't modify the string, and they often look for fixed strings, so they're what <tt>study</tt> thrives on.</p>
+
+
+<a name="regex3-CHP-7-SECT-8.4"></a>
+<h4 id="title-IDAOMGHE" class="docSection2Title">7.8.4. Benchmarking</h4>
+<p class="docText">If you really care about efficiency, it may be best to try benchmarking. Perl<a name="IDX-CHP-7-2623"></a> 
+ comes standard with the <tt>Benchmark</tt> module, which has fine documentation ("<tt>perldoc Benchmark</tt>"). Perhaps more out of habit than anything else, I tend to write my benchmarks from scratch. After</p>
+<pre>
+   use Time::HiRes<a name="IDX-CHP-7-2624"></a> 
+<a name="IDX-CHP-7-2625"></a> 
+ 'time';
+</pre><br>
+
+<p class="docText">I wrap what I want to test in something simple like:</P>
+<pre>
+    my $start = time;
+      <img src=images/U22EE.jpg border=0>
+    my $delta = time - $start;
+    printf "took %.1f seconds\n", $delta;
+</pre><br>
+
+<p class="docText">Important issues with benchmarking include making sure to benchmark enough work to show meaningful times, and to benchmark as much of the work you want to measure while benchmarking as little of the work you don't. This is discussed in more detail in <a class="docLink" href="regex3-CHP-6.html#regex3-CHP-6">Chapter 6</a> (&#9758;232). It might take some time to get used to benchmarking in a reasonable way, but the results can be quite enlightening and rewarding.</P>
+
+<a name="regex3-CHP-7-SECT-8.5"></a>
+<h4 id="title-IDAZNGHE" class="docSection2Title">7.8.5. Regex Debugging Information</h4>
+<a name="IDX-CHP-7-2626"></a> 
+<a name="IDX-CHP-7-2627"></a> 
+<a name="IDX-CHP-7-2628"></a> 
+<a name="IDX-CHP-7-2629"></a> 
+<a name="IDX-CHP-7-2630"></a> 
+<a name="IDX-CHP-7-2631"></a> 
+<a name="IDX-CHP-7-2632"></a> 
+<a name="IDX-CHP-7-2633"></a> 
+<a name="IDX-CHP-7-2634"></a> 
+<a name="IDX-CHP-7-2635"></a> 
+<a name="IDX-CHP-7-2636"></a> 
+<a name="IDX-CHP-7-2637"></a> 
+<a name="IDX-CHP-7-2638"></a> 
+<a name="IDX-CHP-7-2639"></a> 
+
+<p class="docText">Perl carries out a phenomenal number of optimizations to try to arrive at a match result quickly; some of the less esoteric ones are listed in <a class="docLink" href="regex3-CHP-6.html#regex3-CHP-6">Chapter 6</a>'s "<a class="docLink" href="regex3-CHP-6-SECT-5.html#regex3-CHP-6-SECT-5">Common Optimizations</a>" (&#9758;240), but there are many more. Most optimizations apply to only very specific cases, so any particular regex benefits from only some (or none) of them.</P>
+<p class="docText">Perl has debugging<a name="IDX-CHP-7-2640"></a> 
+ modes that tell you about some of the optimizations. When a regex is first compiled, Perl figures out which optimizations go with the regex, and the debugging mode reports on some of them. The debugging modes can also tell you a lot about how the engine actually applies that expression. A detailed analysis of this debugging information is beyond the scope of even this book, but I'll provide a short introduction here.</P>
+<p class="docText">You can turn on the debugging information by putting <span class="docEmphStrong">use re<a name="IDX-CHP-7-2641"></a> 
+<a name="IDX-CHP-7-2642"></a> 
+ 'debug';</span> in your code, and you can turn it back off with <span class="docEmphStrong">no re 'debug';</span>.<a name="IDX-CHP-7-2643"></a> 
+ (We've seen this use re pragma<a name="IDX-CHP-7-2644"></a> 
+ before, with different arguments, to allow embedded code in interpolated variables &#9758;337.)</P>
+<p class="docText">Alternatively, if you want to turn it on for the entire script, you can use the <tt>-Mre=debug</tt> command-line argument. This is particularly useful just for inspecting how a single regex is compiled. Here's an example (edited to remove some lines that are not of interest):</P>
+<pre>
+    &#10102; % <span class="docEmphStrong">perl -cw -Mre=debug -e<a name="IDX-CHP-7-2645"></a> 
+<a name="IDX-CHP-7-2646"></a> 
+ 'm/^Subject: (.*)/'</span>
+    &#10103; Compiling REx '^Subject: (.*)'
+    &#10104; rarest char j at 3
+    &#10105;     1: BOL(2)
+    &#10106;     2: EXACT &lt;Subject: &gt;(6)
+                      <img src=images/U22EE.jpg border=0>
+    &#10107;   12: END(0)
+    &#10108; anchored 'Subject: ' at 0 (checking anchored) anchored(BOL) minlen 9
+    &#10109; Omitting $' $&amp; $' support.
+</pre><br>
+
+<p class="docText">At &#10102;, I invoke <span class="docEmphasis">perl</span> at my shell prompt, using the command-line flags <tt><span class="docEmphStrong">-c</span></tt><a name="IDX-CHP-7-2647"></a> 
+<a name="IDX-CHP-7-2648"></a> 
+ (which means to check the script, but don't actually execute it), <tt><span class="docEmphStrong">-w</span></tt><a name="IDX-CHP-7-2649"></a> 
+<a name="IDX-CHP-7-2650"></a> 
+ (issue warnings about things Perl thinks are dubious  always used as a matter of principle), and <tt><span class="docEmphStrong">-Mre=debug</span></tt> to turn on regex debugging. The <tt><span class="docEmphStrong">-e</span></tt> flag means that the following argument, '<tt>m/^Subject:&#8226;(.*)/'</tt>, is actually a mini Perl program to be run or checked.</P>
+<p class="docText">Line &#10104; reports the "rarest" character (the least common, as far as Perl guesses) from among those in the longest fixed substring part of the regex. Perl uses this for some optimizations (such as <a class="docLink" href="regex3-CHP-6-SECT-5.html#regex3-CHP-6-SECT-5.4.5">pre-check of required character/substring</a><a name="IDX-CHP-7-2651"></a> 
+ &#9758;245).</p>
+<p class="docText">Lines &#10105; through &#10107; represents Perl's compiled form of the regex. For the most part, we won't be concerned much about it here. However, in even a casual look, line &#10106; sticks out as understandable.</p>
+<p class="docText">Line &#10108; is where most of the action is. Some of the information that might be shown here includes:</P>
+<a name="IDX-CHP-7-2652"></a><a name="IDX-CHP-7-2653"></a><a name="IDX-CHP-7-2654"></a><a name="IDX-CHP-7-2655"></a><a name="IDX-CHP-7-2656"></a><a name="IDX-CHP-7-2657"></a><a name="IDX-CHP-7-2658"></a><a name="IDX-CHP-7-2659"></a><dl class="docList">
+<dt><BR><p><span class="docPubcolor"><span class="docPubcolor"><span class="docMonofont">anchored</span></span> <span class="docEmphasis">'string'</span> <span class="docPubcolor"><span class="docMonofont">at</span></span> <span class="docEmphasis">offset</span></span></P></dt>
+<dd><p class="docList">Indicates that any match must have the given <span class="docEmphasis">string</span>, starting <span class="docEmphasis">offset</span> characters from the start of the match. If '<tt>$</tt>' is shown immediately after <span class="docEmphasis">'string'</span>, the <span class="docEmphasis">string</span> also ends the match.</P></dd>
+
+<dt><br><p><span class="docPubcolor"><span class="docPubcolor"><span class="docMonofont">floating</span></span> <span class="docEmphasis">'string'</span> <span class="docPubcolor"><span class="docMonofont">at</span></span> <span class="docEmphasis">from . . to</span></span></p></dt>
+<dd><p class="docList">Indicates that any match must have the given <span class="docEmphasis">string</span>, but that it could start anywhere from <span class="docEmphasis">from</span> characters into the match, to <span class="docEmphasis">to</span> characters. If '<tt>$</tt>' is shown immediately after <span class="docEmphasis">'string'</span>, the <span class="docEmphasis">string</span> also ends the match.</P></dd>
+
+<dt><BR><p><span class="docPubcolor"><span class="docPubcolor"><span class="docMonofont">stclass</span></span> <span class="docEmphasis">'list'</span></span></p></dt>
+<dd><p class="docList">Shows the list of characters with which a match can begin.</p></dd>
+
+<dt><br><P><span class="docPubcolor"><span class="docPubcolor"><span class="docMonofont">anchored(MBOL)</span></span>, <span class="docPubcolor"><span class="docMonofont">anchored(BOL)</span></span>, <span class="docPubcolor"><span class="docMonofont">anchored(SBOL)</span></span></span></p></dt>
+<a name="IDX-CHP-7-2652"></a> 
+
+<a name="IDX-CHP-7-2653"></a> 
+
+<a name="IDX-CHP-7-2654"></a> 
+
+<dd><p class="docList">The regex leads with <img src=images/U2308.jpg border=0><tt>^</tt><img src=images/U230B.jpg border=0>. The <tt>MBOL</tt> version appears when the <tt>/m</tt> modifier is used, while <tt>BOL</tt> and <tt>SBOL</tt> appear when it's is not used. (The difference between <tt>BOL</tt> and <tt>SBOL</tt> is not relevant for modern Perl. <tt>SBOL</tt> relates to the regex-related <tt>$*</tt><a name="IDX-CHP-7-2655"></a> 
+ variable, which has long been deprecated.)</p></dd>
+
+<dt><BR><p><span class="docPubcolor"><span class="docPubcolor"><span class="docMonofont">anchored(GPOS)</span></span></span></p></dt>
+<a name="IDX-CHP-7-2656"></a> 
+
+<dd><p class="docList">The regex leads with <img src=images/U2308.jpg border=0><tt>\G</tt><img src=images/U230B.jpg border=0>.<a name="IDX-CHP-7-2657"></a> 
+<a name="IDX-CHP-7-2658"></a> 
+</P></dd>
+
+<dt><br><P><span class="docPubcolor"><span class="docPubcolor"><span class="docMonofont">implicit</span></span></span></p></dt>
+<a name="IDX-CHP-7-2659"></a> 
+
+<dd><p class="docList">The <tt>anchored(MBOL)</tt> is an implicit one added by Perl because the regex begins with <img src=images/U2308.jpg border=0> <tt>.*</tt><img src=images/U230B.jpg border=0>.</p></dd>
+
+<dt><br><p><span class="docPubcolor"><span class="docPubcolor"><span class="docMonofont">minlen</span></span> <span class="docEmphasis">length</span></span></p></dt>
+<dd><p class="docList">Any match is at least <span class="docEmphasis">length</span> characters long.</p></dd>
+
+<dt><br><p><span class="docPubcolor"><span class="docPubcolor"><span class="docMonofont">with eval</span></span></span></p></dt>
+<dd><p class="docList">The regex has <img src=images/U2308.jpg border=0><tt>(?{&#8943;})</tt><img src=images/U230B.jpg border=0> or <img src=images/U2308.jpg border=0><tt>(??{&#8943;})</tt><img src=images/U230B.jpg border=0>.</p></dd>
+</dl>
+<p class="docText">Line &#10109; is not related to any particular regex, and appears only if your <span class="docEmphasis">perl</span> binary has been compiled with <tt>-DDEBUGGING</tt> turned on. With it, after loading the whole program, Perl reports if support for <tt>$&amp;</tt> and friends has been enabled (&#9758;356).</p>
+<a name="regex3-CHP-7-SECT-8.5.1"></a>
+<h5 id="title-IDAT0GHE" class="docSection3Title">7.8.5.1. Run-time debugging information</H5>
+<a name="IDX-CHP-7-2660"></a> 
+<a name="IDX-CHP-7-2661"></a> 
+<a name="IDX-CHP-7-2662"></a> 
+<a name="IDX-CHP-7-2663"></a> 
+<a name="IDX-CHP-7-2664"></a> 
+<a name="IDX-CHP-7-2665"></a> 
+
+<p class="docText">We've already seen how we can use embedded code to get information about how a match progresses (&#9758;331), but Perl's regex debugging can show much more. If you omit the <tt>-c</tt> compile-only option, Perl displays quite a lot of information detailing just how each match progresses.</p>
+<p class="docText">If you see "Match rejected by optimizer," it means that one of the optimizations enabled the transmission to realize that the regex could never match the target text, and so the application is bypassed altogether. Here's an example:</P>
+<pre>
+    <b>% perl -w -Mre=debug<a name="IDX-CHP-7-2666"></a> 
+<a name="IDX-CHP-7-2667"></a> 
+
+ -e '"this is a test" =~ m/^Subject:/;'</b>
+       <img src=images/U22EE.jpg border=0>
+    Did not find anchored substr 'Subject:'&#8943;
+    Match rejected by optimizer
+</pre><br>
+
+<p class="docText">When debugging is turned on, you'll see the debugging information for any regular expressions that are used, not necessarily just your own. For example</P>
+<pre>
+    <B>% perl -w -Mre=debug -e 'use warnings'</b><a name="IDX-CHP-7-2668"></a> 
+<a name="IDX-CHP-7-2669"></a> 
+<a name="IDX-CHP-7-2670"></a> 
+
+    ... <span class="docEmphasis">lots of debugging information</span> ...
+                     <img src=images/U22EE.jpg border=0>
+</pre><BR>
+
+<p class="docText">does nothing more than load the <tt>warnings</tt> module, but because that module has regular expressions, you see a lot of debugging information.</P>
+
+<a name="regex3-CHP-7-SECT-8.5.2"></a>
+<h5 id="title-IDAI3GHE" class="docSection3Title">7.8.5.2. Other ways to invoke debugging messages</H5>
+<a name="IDX-CHP-7-2671"></a> 
+<a name="IDX-CHP-7-2672"></a> 
+<a name="IDX-CHP-7-2673"></a> 
+<a name="IDX-CHP-7-2674"></a> 
+<a name="IDX-CHP-7-2675"></a> 
+
+<p class="docText">I've mentioned that you can use <tt>"use re<a name="IDX-CHP-7-2676"></a> 
+<a name="IDX-CHP-7-2677"></a> 
+ 'debug';"</tt> or <tt>-Mre=debug</tt> to turn on regex debug information. However, if you use <tt>debugcolor</tt><a name="IDX-CHP-7-2678"></a> 
+ instead of <tt>debug</tt> with either of these, and if you are using a terminal that understands ANSI terminal contr ol escape sequences, the information is shown with highlighting that makes the output easier to read.</p>
+<p class="docText">Another option is that if your perl binary has been compiled with extra debugging support turned on, you can use the <tt>-Dr</tt><a name="IDX-CHP-7-2679"></a> 
+<a name="IDX-CHP-7-2680"></a> 
+<a name="IDX-CHP-7-2681"></a> 
+<a name="IDX-CHP-7-2682"></a> 
+ command-line flag as a shorthand for <tt>-Mre=debug</tt>.</p>
+
+
+
+</TD></TR></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=regex3-CHP-7-SECT-7.html><img src="images/prev.gif" width="60" height="17" border="0" align="absmiddle" alt="Previous Page"></a>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=regex3-CHP-7-SECT-9.html><img src="images/next.gif" width="60" height="17" border="0" align="absmiddle" alt="Next Page"></a>
+</div></td></tr></table>
+</body></html>

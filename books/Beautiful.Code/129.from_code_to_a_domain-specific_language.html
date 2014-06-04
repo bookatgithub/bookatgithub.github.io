@@ -1,0 +1,53 @@
+<html><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<link href="styles/globalstyle.css" type="text/css" rel="stylesheet"/>
+<link title="medium" href="styles/two.css" type="text/css" rel="stylesheet"/>
+<script src="scripts/main.js" type="text/javascript" language="javascript"></script>
+<title>Section 17.4. From Code to a Domain-Specific Language</title>
+</head><body>
+<DIV class=h3 style="MARGIN-TOP: 0px; PADDING-BOTTOM: 1em; WIDTH: 100%; PADDING-TOP: 0px"><SPAN>Another Level of Indirection</SPAN><SPAN> &gt; From Code to a Domain-Specific Language</SPAN></DIV>
+<DIV></DIV>
+<DIV>
+<DIV><A name=from_code_to_a_domain-specific_language></A>
+<H3 class=docSection1Title id=-100000>17.4. From Code to a Domain-Specific Language</H3>
+<P class=docText><A name="You may"></A>You may have noticed that some of the code associated with the implementation of the read system call, such as the packing of its arguments into a structure or the logic for calling the appropriate function, is highly stylized and is probably repeated in similar forms for all 52 other interfaces. Another implementation detail, which we have not so far discussed and which can keep me awake at nights, concerns <A name=idx-CHP-17-1415></A>locking.</P>
+<P class=docText><A name="ensure that"></A>Operating systems must ensure that various processes running concurrently don't step on each other's toes when they modify data without coordination between them. On modern <A name=idx-CHP-17-1416></A><A name="by maintaining"></A>multithreaded, multi-core processors, ensuring data consistency by maintaining one mutual exclusion lock for all critical operating system structures (as was the case in older operating system implementations) would result in an intolerable drain on performance. Therefore, <A name=idx-CHP-17-1417></A><A name="nowadays held"></A>locks are nowadays held over fine-grained objects, such as a user's credentials or a single buffer. Furthermore, because obtaining and releasing locks can be expensive operations, ideally once a lock is held it should not be released if it will be needed again in short order. These locking specifications can best be described through preconditions (what the state of a lock must be before entering a function) and postconditions (the state of the lock at a function's exit).</P>
+<P class=docText><A name="programming under"></A>As you can imagine, programming under those constraints and verifying the code's correctness can be hellishly complicated. Fortunately for me, another level of indirection can be used to bring some sanity into the picture. This indirection handles both the redundancy of packing code and the fragile locking requirements.<A name=I_indexterm17_tt379></A><A name=I_indexterm17_tt380></A></P>
+<P class=docText>In the FreeBSD kernel, the <A name=idx-CHP-17-1418></A>interface functions and data structures we've examined, such as <TT>VOP_READ_AP, VOP_READ_APV</TT>, and <TT>vop_read_desc</TT><A name="types of"></A>, aren't directly written in C. Instead, a domain-specific language is used to specify the types of each call's arguments and their locking pre- and postconditions. Such an implementation style always raises my pulse, because the productivity boost it gives can be enormous. Here is an excerpt from the read system call specification:</P><PRE>	#
+	#% read          vp     L L L
+	#
+	vop_read {
+	        IN struct <A name=idx-CHP-17-1419></A>vnode *vp;
+	        INOUT struct uio *uio;
+	        IN int ioflag;
+	        IN struct ucred *cred;
+	};
+</PRE><BR>
+<P class=docText><A name=idx-CHP-17-1420></A><A name="such as"></A>From specifications such as the above, an <SPAN class=docEmphasis>awk</SPAN> script creates:</P>
+<UL>
+<LI>
+<P class=docList>C <A name=idx-CHP-17-1421></A><A name="arguments of"></A>code for packing the arguments of the functions into a single structure</P></LI>
+<LI>
+<P class=docList>Declarations for the structures <A name=idx-CHP-17-1422></A><A name="the functions"></A>holding the packed arguments and the functions doing the work</P></LI>
+<LI>
+<P class=docList><A name="Initialized data"></A>Initialized data specifying the contents of the packed argument structures</P></LI>
+<LI>
+<P class=docList><A name="code we"></A>The boilerplate C code we saw used for implementing filesystem layers</P></LI>
+<LI>
+<P class=docList><A name=idx-CHP-17-1423></A><A name="the state"></A>Assertions for verifying the state of the locks when the function enters and exits</P></LI></UL>
+<P class=docText><A name="FreeBSD version"></A>In the FreeBSD version 6.1 implementation of the <SPAN class=docEmphasis>vnode</SPAN><A name="lines of"></A> call interface, all in all, 588 lines of domain-specific code expand into 4,339 lines of C code and declarations.</P>
+<P class=docText>Such <A name=idx-CHP-17-1424></A><A name="in the"></A>compilation from a specialized high-level domain-specific language into C is quite common in the computing field. For example, the input to the <A name=idx-CHP-17-1425></A><A name=generator></A>lexical analyzer generator <SPAN class=docEmphasis>lex</SPAN><A name="maps regular"></A> is a file that maps regular expressions <A name=idx-CHP-17-1426></A><A name="parser generator"></A>into actions; the input to the parser generator <SPAN class=docEmphasis>yacc</SPAN><A name="is a"></A> is a language's grammar and corresponding production rules. Both systems (and their descendants <SPAN class=docEmphasis>flex</SPAN> and <SPAN class=docEmphasis>bison</SPAN>) generate C <A name=idx-CHP-17-1427></A><A name="A more"></A>code implementing the high-level specifications. A more extreme case involves the early implementations of the C++ programming language. These consisted of a preprocessor, <SPAN class=docEmphasis>cfront</SPAN><A name="code into"></A>, that would compile C++ code into C.<A name=idx-CHP-17-1428></A><A name=idx-CHP-17-1429></A><A name=idx-CHP-17-1430></A><A name=idx-CHP-17-1431></A></P>
+<P class=docText><A name="these cases"></A>In all these cases, C is used as a portable assembly language. When used appropriately, domain-specific languages increase the code's expressiveness and thereby programmer productivity. On the other hand, a gratuitously used obscure domain-specific language can make a system more difficult to comprehend, debug, and maintain.</P>
+<P class=docText>The <A name=idx-CHP-17-1432></A><A name="assertions deserves"></A>handling of locking assertions deserves more explanation. For each argument, the code lists the state of its lock for three instances: when the function is entered, when the function exits successfully, and when the function exits with an error—an elegantly clear separation of concerns. For example, the preceding specification of the <TT>read</TT> call indicated that the <TT>vp</TT><A name="are also"></A> argument should be locked in all three cases. More complex scenarios are also possible. The following code excerpt indicates that the <TT>rename</TT> call arguments <TT>fdvp</TT> and <TT>fvp</TT><A name="but the"></A> are always unlocked, but the argument <TT>tdvp</TT><A name="the routine"></A> has a process-exclusive lock when the routine is called. All arguments should be unlocked when the function terminates:</P><PRE>	# 
+	#% rename      fdvp    U U U
+	#% rename      fvp     U U U
+	#% rename      tdvp    E U U
+	#
+</PRE><BR>
+<P class=docText><A name="to instrument"></A>The locking specification is used to instrument the C code with assertions at the function's entry, the function's normal exit, and the function's error exit. For example, the code at the entry point of the <TT>rename</TT><A name="function contains"></A> function contains the following assertions:</P><PRE>	ASSERT_VOP_UNLOCKED(a-&gt;a_fdvp, "VOP_RENAME");
+	ASSERT_VOP_UNLOCKED(a-&gt;a_fvp, "VOP_RENAME");
+	ASSERT_VOP_ELOCKED(a-&gt;a_tdvp, "VOP_RENAME");
+</PRE><BR>
+<P class=docText><A name="the preceding"></A>Although assertions, such as the preceding one, don't guarantee that the code will be bug-free, they do at least provide an early-fail indication that will diagnose errors during system testing, before they destabilize the system in a way that hinders debugging. When I read complex code that lacks assertions, it's like watching acrobats performing without a net: an impressive act where a small mistake can result in considerable grief.</P></DIV></DIV>
+<p>&nbsp;</p><p>&nbsp;</p><!-- 仁·义 -->
+</body></html>

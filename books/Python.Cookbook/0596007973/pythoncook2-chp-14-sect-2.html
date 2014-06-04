@@ -1,0 +1,144 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;14.2.&nbsp;Handling URLs Within a CGI Script</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-14-sect-1.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-14-sect-3.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-14-SECT-2"></a>
+<h3 class="docSection1Title" id="409771-989">Recipe 14.2. Handling URLs Within a CGI Script</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: J&uuml;rgen Hermann</span></p>
+
+<a name="pythoncook2-CHP-14-SECT-2.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-14-ITERM-2913"></a> <a name="pythoncook2-CHP-14-ITERM-2914"></a>You need to build URLs within a CGI
+scriptfor example, to send an HTTP redirection header.</P>
+
+
+<a name="pythoncook2-CHP-14-SECT-2.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">To build a URL within a script, you need information such as the
+hostname and script name. According to the CGI standard, the web
+server sets up a lot of useful information in the process environment
+of a script before it runs the script itself. In a Python script, we
+can access the process environment as the dictionary
+<tt>os.environ</tt>, an attribute of the standard Python
+library <tt>os</tt> module, and through accesses to the
+process environment build our own module of useful helper functions:</p>
+
+<pre>import os, string
+def isSSL( ):
+    """ Return true if we are on an SSL (https) connection. """
+    return os.environ.get('SSL_PROTOCOL', '') != ''
+def getScriptname( ):
+    """ Return the scriptname part of the URL ("/path/to/my.cgi"). """
+    return os.environ.get('SCRIPT_NAME', '')
+def getPathinfo( ):
+    """ Return the remaining part of the URL. """
+    pathinfo = os.environ.get('PATH_INFO', '')
+    # Fix for a well-known bug in IIS/4.0
+    if os.name == 'nt':
+        scriptname = getScriptname( )
+        if pathinfo.startswith(scriptname):
+            pathinfo = pathinfo[len(scriptname):]
+    return pathinfo
+def getQualifiedURL(uri=None):
+    """ Return a full URL starting with schema, servername, and port.
+        Specifying uri causes it to be appended to the server root URL
+        (uri must then start with a slash).
+    """
+    schema, stdport = (('http', '80'), ('https', '443'))[isSSL( )]
+    host = os.environ.get('HTTP_HOST', '')
+    if not host:
+        host = os.environ.get('SERVER_NAME', 'localhost')
+        port = os.environ.get('SERVER_PORT', '80')
+        if port != stdport: host = host + ":" + port
+    result = "%s://%s" % (schema, host)
+    if uri: result = result + uri
+    return result
+def getBaseURL( ):
+    """ Return a fully qualified URL to this script. """
+    return getQualifiedURL(getScriptname( ))</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-14-SECT-2.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">URLs can be manipulated in numerous ways, but many CGI scripts have
+common needs. This recipe collects a few typical high-level
+functional needs for URL synthesis from within CGI scripts. You
+should never hard-code hostnames or absolute paths in your scripts.
+Doing so makes it difficult to port the scripts elsewhere or rename a
+virtual host. The CGI environment has sufficient information
+available to avoid such hard-coding. By importing this
+recipe's code as a module, you can avoid duplicating
+code in your scripts to collect and use that information in typical
+ways.</P>
+
+<p class="docText">The recipe works by accessing information in
+<tt>os.environ</tt>, the attribute of
+Python's standard <tt>os</tt> module that
+collects the process environment of the current process and lets your
+script access it as if it were a normal Python dictionary. In
+particular, <tt>os.environ</tt> has a
+<tt>get</tt> method, just like a normal dictionary does,
+that returns either the mapping for a given key or, if that key is
+missing, a default value that you supply in the call to
+<tt>get</tt>. This recipe performs all accesses through
+<tt>os.environ.get</tt>, thus ensuring sensible behavior
+even if the relevant environment variables have been left undefined
+by your web server (which should never happenbut not all web
+servers are free of bugs).</p>
+
+<p class="docText"><a name="pythoncook2-CHP-14-ITERM-2915"></a>Among the functions presented in this
+recipe, <tt>getQualifiedURL</tt> is the one
+you'll use most often. It transforms a URI
+(Universal Resource Identifier) into a URL on the same host (and with
+the same schema) used by the CGI script that calls it. It gets the
+information from the environment variables
+<tt>HTTP_HOST</tt>, <tt>SERVER_NAME</tt>, and
+<tt>SERVER_PORT</tt>. Furthermore, it can handle secure
+(<tt>https</tt>) as well as normal
+(<tt>http</tt>) connections, and selects between the two by
+using the <I>isSSL</I> function, which is also part of this
+recipe.<a name="pythoncook2-CHP-14-ITERM-2916"></a></p>
+
+<p class="docText">Suppose you need to redirect a visiting browser to another location
+on this same host. Here's how you can use a function
+from this recipe, hard-coding only the redirect location on the host
+itself, but not the hostname, port, and normal or secure schema:</p>
+
+<pre># example redirect header:
+print "Location:", getQualifiedURL("/go/here")</pre><br>
+
+
+
+<a name="pythoncook2-CHP-14-SECT-2.4"></a>
+<h4 class="docSection2Title">See Also</H4>
+
+<p class="docText">Documentation on the <tt>os</tt> standard library module in
+the <span class="docEmphasis">Library Reference</span> and <span class="docEmphasis">Python in
+a Nutshell</span>; a basic introduction to the CGI protocol is
+available at <a class="docLink" target="_blank" href="http://hoohoo.ncsa.uiuc.edu/cgi/overview.html">http://hoohoo.ncsa.uiuc.edu/cgi/overview.html</a>.<a name="pythoncook2-CHP-14-ITERM-2917"></a> <a name="pythoncook2-CHP-14-ITERM-2918"></a></p>
+
+
+
+<ul></UL></td></TR></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-14-sect-1.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-14-sect-3.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

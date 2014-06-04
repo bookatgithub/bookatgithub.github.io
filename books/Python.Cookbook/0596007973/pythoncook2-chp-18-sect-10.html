@@ -1,0 +1,199 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;18.10.&nbsp;Computing Prime Numbers</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-18-sect-9.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-18-sect-11.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-18-SECT-10"></a>
+<h3 class="docSection1Title">Recipe 18.10. Computing Prime Numbers</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: David Eppstein, Tim Peters, Alex Martelli, Wim
+Stolker, Kazuo Moriwaka, Hallvard Furuseth, Pierre Denis, Tobias
+Klausmann, David Lees, Raymond Hettinger</span></p>
+
+<a name="pythoncook2-CHP-18-SECT-10.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-18-ITERM-3099"></a>You need to compute an unbounded
+sequence of all primes, or the list of all primes that are less than
+a certain threshold.</P>
+
+
+<a name="pythoncook2-CHP-18-SECT-10.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">To compute an unbounded sequence, a generator is the natural Pythonic
+approach, and the Sieve of Eratosthenes, using a dictionary as the
+supporting data structure, is the natural algorithm to use:</p>
+
+<pre>import itertools
+def eratosthenes( ):
+    '''Yields the sequence of prime numbers via the Sieve of Eratosthenes.'''
+    D = {  }  # map each composite integer to its first-found prime factor
+    for q in itertools.count(2):     # q gets 2, 3, 4, 5, ... ad infinitum
+        p = D.pop(q, None)
+        if p is None:
+            # q not a key in D, so q is prime, therefore, yield it
+            yield q
+            # mark q squared as not-prime (with q as first-found prime factor)
+            D[q*q] = q
+        else:
+            # let x &lt;- smallest (N*p)+q which wasn't yet known to be composite
+            # we just learned x is composite, with p first-found prime factor,
+            # since p is the first-found prime factor of q -- find and mark it
+            x = p + q
+            while x in D:
+                x += p
+            D[x] = p</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-18-SECT-10.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">To compute all primes up to a predefined threshold, rather than an
+unbounded sequence, it's reasonable to wonder if
+it's possible to use a faster way than good old
+Eratosthenes, even in the smart variant shown as the
+"Solution". Here is a function that
+uses a few speed-favoring tricks, such as a hard-coded tuple of the
+first few primes:</P>
+
+<pre>def primes_less_than(N):
+    # make `primes' a list of known primes &lt; N
+    primes = [x for x in (2, 3, 5, 7, 11, 13) if x &lt; N]
+    if N &lt;= 17: return primes
+    # candidate primes are all odd numbers less than N and over 15,
+    # not divisible by the first few known primes, in descending order
+    candidates = [x for x in xrange((N-2)|1, 15, -2)
+                  if x % 3 and x % 5 and x % 7 and x % 11 and x % 13]
+    # make `top' the biggest number that we must check for compositeness
+    top = int(N ** 0.5)
+    while (top+1)*(top+1) &lt;= N:
+        top += 1
+    # main loop, weeding out non-primes among the remaining candidates
+    while True:
+        # get the smallest candidate: it must be a prime
+        p = candidates.pop( )
+        primes.append(p)
+        if p &gt; top:
+            break
+        # remove all candidates which are divisible by the newfound prime
+        candidates = filter(p._ _rmod_ _, candidates)
+    # all remaining candidates are prime, add them (in ascending order)
+    candidates.reverse( )
+    primes.extend(candidates)
+    return primes</pre><br>
+
+
+<p class="docText">On a typical small task such as looping over all primes up to 8,192,
+<tt>eratosthenes</tt> (on an oldish 1.2 GHz Athlon PC, with
+Python 2.4) takes 22 milliseconds, while
+<tt>primes_less_than</tt> takes 9.7; so, the slight
+trickery and limitations of <tt>primes_less_than</tt> can
+pay for themselves quite handsomely if generating such primes is a
+bottleneck in your program. Be aware, however, that
+<tt>eratosthenes</tt> scales better. If you need all primes
+up to 199,999, <tt>eratosthenes</tt> will deliver them in
+0.88 seconds, while <tt>primes_less_than</tt> takes 0.65.</P>
+
+<p class="docText">Since <tt>primes_less_than</tt>'s little
+speed-up tricks can help, it's natural to wonder
+whether a perhaps simpler trick can be retrofitted into
+<tt>eratosthenes</tt> as well. For example, we might simply
+avoid wasting work on a lot of <span class="docEmphasis">even</span> numbers,
+concentrating on odd numbers only, beyond the initial
+<tt>2</tt>. In other words:</P>
+
+<pre>def erat2( ):
+    D = {  }
+    yield 2
+    for q in itertools.islice(itertools.count(3), 0, None, 2):
+        p = D.pop(q, None)
+        if p is None:
+            D[q*q] = q
+            yield q
+        else:
+            x = p + q
+            while x in D or not (x&amp;1):
+                x += p
+            D[x] = p</pre><br>
+
+
+<p class="docText">And indeed, <tt>erat2</tt> takes 16 milliseconds, versus
+<tt>eratosthenes</tt>' 22, to get primes
+up to 8,192; 0.49 seconds, versus
+<tt>eratosthenes</tt>' 0.88, to get primes
+up to 199,999. In other words, <tt>erat2</tt> scales just
+as well as <tt>eratosthenes</tt> and is always
+approximately 25% faster. Incidentally, if you're
+wondering whether it might be even faster to program at a slightly
+lower level, with <tt>q = 3</tt> to start, a <tt>while
+True</tt> as the loop header, and a <tt>q += 2</tt> at
+the end of the loop, don't worrythe slightly
+higher-level approach using
+<tt>itertools</tt>'
+<tt>count</tt> and <tt>islice</tt> functions is
+repeatedly approximately 4% faster. Other languages may impose a
+performance penalty for programming with higher abstraction, Python
+<span class="docEmphasis">rewards</span> you for doing that.</p>
+
+<p class="docText">You might keep pushing the same idea yet further, avoiding multiples
+of <tt>3</tt> as well as even numbers, and so on. However,
+it would be an exercise in diminishing returns: greater and greater
+complication for smaller and smaller gain. It's
+better to quit while we're ahead!</p>
+
+<p class="docText">If you're into one liners, you might want to study
+the following:</p>
+
+<pre>def primes_oneliner(N):
+    aux = {  }
+    return [aux.setdefault(p, p) for p in range(2, N)
+            if 0 not in [p%d for d in aux if p&gt;=d+d]]</pre><BR>
+
+
+<p class="docText">Be aware that one liners, even clever ones, are generally anything
+but speed demons! <i>primes_oneliner</i> takes 2.9 seconds
+to complete the same small task (computing primes up to 8,192) which,
+<tt>eratosthenes</tt> does in 22 milliseconds, and
+<tt>primes_less_than</tt> in 9.7so,
+you're slowing things down by 130 to 300 times just
+for the fun of using a clever, opaque one liner, which is clearly not
+a sensible tradeoff. Clever one liners can be instructive but should
+almost never be used in production code, not just because
+they're terse and make maintenance harder than
+straightforward coding (which is by far the main reason), but also
+because of the speed penalties they may entail.</P>
+
+<p class="docText">While prime numbers, and number theory more generally, used to be
+considered purely theoretical problems, nowadays they have plenty of
+practical applications, starting with cryptography.</p>
+
+
+<a name="pythoncook2-CHP-18-SECT-10.4"></a>
+<H4 class="docSection2Title">See Also</h4>
+
+<p class="docText">To explore both number theory and its applications, the best book is
+probably Kenneth Rosen, <span class="docEmphasis">Elementary Number Theory and Its
+Applications</span> (Addison-Wesley); <a class="docLink" target="_blank" href="http://www.utm.edu/research/primes/">http://www.utm.edu/research/primes/</a> for more
+information about prime numbers.<a name="pythoncook2-CHP-18-ITERM-3100"></a></P>
+
+
+
+<a href="5991535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><UL></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-18-sect-9.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-18-sect-11.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

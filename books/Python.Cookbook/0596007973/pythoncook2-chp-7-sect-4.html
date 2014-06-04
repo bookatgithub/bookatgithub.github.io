@@ -1,0 +1,244 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;7.4.&nbsp;Using the cPickle Module on Classes and Instances</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-7-sect-3.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-7-sect-5.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-7-SECT-4"></a>
+<h3 class="docSection1Title" id="409771-896">Recipe 7.4. Using the cPickle Module on Classes and Instances</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Luther Blissett</span></p>
+
+<a name="pythoncook2-CHP-7-SECT-4.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-7-ITERM-2311"></a> <a name="pythoncook2-CHP-7-ITERM-2312"></a> <a name="pythoncook2-CHP-7-ITERM-2313"></a>You want to save and restore
+class and instance objects using the <tt>cPickle</tt>
+module.</P>
+
+
+<a name="pythoncook2-CHP-7-SECT-4.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">You often need no special precautions to use
+<tt>cPickle</tt> on your classes and their instances. For
+example, the following works fine:</p>
+
+<pre>import cPickle
+class ForExample(object):
+    def _ _init_ _(self, *stuff):
+        self.stuff = stuff
+anInstance = ForExample('one', 2, 3)
+saved = cPickle.dumps(anInstance)
+reloaded = cPickle.loads(saved)
+assert anInstance.stuff == reloaded.stuff</pre><BR>
+
+
+<p class="docText">However, sometimes there are problems:</p>
+
+<pre>anotherInstance = ForExample(1, 2, open('three', 'w'))
+wontWork = cPickle.dumps(anotherInstance)</pre><BR>
+
+
+<p class="docText">This snippet causes a <tt>TypeError</tt>:
+"can't pickle file
+objects" exception, because the state of
+<tt>anotherInstance</tt> includes a <tt>file</tt>
+object, and <tt>file</tt> objects cannot be pickled. You
+would get exactly the same exception if you tried to pickle any other
+container that includes a <tt>file</tt> object among its
+items.</P>
+
+<p class="docText">However, in some cases, you may be able to do something about it:</p>
+
+<pre>class PrettyClever(object):
+    def _ _init_ _(self, *stuff):
+        self.stuff = stuff
+    def _ _getstate_ _(self):
+        def normalize(x):
+            if isinstance(x, file):
+                return 1, (x.name, x.mode, x.tell( ))
+            return 0, x
+        return [ normalize(x) for x in self.stuff ]
+    def _ _setstate_ _(self, stuff):
+        def reconstruct(x):
+            if x[0] == 0:
+                return x[1]
+            name, mode, offs = x[1]
+            openfile = open(name, mode)
+            openfile.seek(offs)
+            return openfile
+        self.stuff = tuple([reconstruct(x) for x in stuff])</pre><BR>
+
+
+<p class="docText">By defining the <tt>_ _getstate_ _</tt> and <tt>_
+_setstate_ _</tt> special methods in your class, you gain
+fine-grained control about what, exactly, your
+class' instances consider to be their state. As long
+as you can define such state in picklable terms, and reconstruct your
+instances from the unpickled state in some way that is sufficient for
+your application, you can make your instances themselves picklable
+and unpicklable in this way.</P>
+
+
+<a name="pythoncook2-CHP-7-SECT-4.3"></a>
+<h4 class="docSection2Title">Discussion</h4>
+
+<p class="docText"><tt>cPickle</tt> dumps class and function objects by name
+(i.e., through their module's name and their name
+within the module). Thus, you can dump only classes defined at module
+level (not inside other classes and functions). Reloading such
+objects requires the respective modules to be available for
+<tt>import</tt>. Instances can be saved and reloaded only
+if they belong to such classes. In addition, the
+instance's state must also be picklable.</p>
+
+<p class="docText">By default, an instance's state is the contents of
+the instance's <tt>_ _dict_ _</tt>, plus
+whatever state the instance may get from the built-in type the
+instance's class inherits from, if any. For example,
+an instance of a new-style class that subclasses
+<tt>list</tt> includes the list items as part of the
+instance's state. <tt>cPickle</tt> also
+handles instances of new-style classes that define or inherit a class
+attribute named <tt>_ _</tt>slots<tt>_ _</tt>
+(and therefore hold some or all per-instance state in those
+predefined slots, rather than in a per-instance <tt>_ _dict_
+_</tt>). <tt>Overall,
+cPickle</tt>'s <tt>default approach is
+often quite sufficient and satisfactory</tt>.</p>
+
+<p class="docText">Sometimes, however, you may have nonpicklable attributes or items as
+part of your instance's state (as
+<tt>cPickle</tt> defines such state by default, as
+explained in the previous paragraph). In this recipe, for example, I
+show a class whose instances hold arbitrary stuff, which may include
+open <tt>file</tt> objects. To handle this case, your class
+can define the special method <tt>_ _getstate_ _</tt>.
+<tt>cPickle</tt> calls that method on your object, if your
+object's class defines it or inherits it, instead of
+going directly for the object's <tt>_ _dict_
+_</tt> (or possibly <tt>_ _slots_ _</tt> and/or
+built-in type bases).</P>
+
+<p class="docText">Normally, when you define the <tt>_ _getstate_ _</tt>
+method, you define the <tt>_ _setstate_ _</tt> method as
+well, as shown in this recipe's Solution. <tt>_
+_getstate_ _</tt> can return any picklable object, and that
+object gets pickled, and later, at unpickling time, passed as
+<tt>_ _setstate_ _</tt>'s argument. In
+this recipe's Solution, <tt>_ _getstate_
+_</tt> returns a list that's similar to the
+instance's default state (attribute
+<tt>self.stuff</tt>), except that each item is turned into
+a tuple of two items. The first item in the pair can be set to
+<tt>0</tt> to indicate that the second one will be taken
+verbatim, or <tt>1</tt> to indicate that the second item
+will be used to reconstruct an open file. (Of course, the
+reconstruction may fail or be unsatisfactory in several ways. There
+is no general way to save an open file's state,
+which is why <tt>cPickle</tt> itself
+doesn't even try. But in the context of our
+application, we can assume that the given approach will work.) When
+reloading the instance from pickled form, <tt>cPickle</tt>
+calls <tt>_ _setstate_ _</tt> with the list of pairs, and
+<tt>_ _setstate_ _</tt> can reconstruct
+<tt>self.stuff</tt> by processing each pair appropriately
+in its nested <i>reconstruct</i> function. This scheme can
+clearly generalize to getting and restoring state that may contain
+various kinds of normally unpicklable objectsjust be sure to
+use different numbers to tag each of the various kinds of
+"nonverbatim" pairs you need to
+support.</P>
+
+<p class="docText">In one particular case, you can define <tt>_ _getstate_
+_</tt> without defining <tt>_ _setstate_ _</tt>:
+<tt>_ _getstate_ _</tt> must then return a dictionary, and
+reloading the instance from pickled form uses that dictionary just as
+the instance's <tt>_ _dict_ _</tt> would
+normally be used. Not running your own code at reloading time is a
+serious hindrance, but it may come in handy when you want to use
+<tt>_ _getstate_ _</tt>, not to save otherwise unpicklable
+state but rather as an optimization. Typically, this optimization
+opportunity occurs when your instance caches results that it can
+recompute if they're absent, and you decide
+it's best not to store the cache as a part of the
+instance's state. In this case, you should define
+<tt>_ _getstate_ _</tt> to return a dictionary
+that's the indispensable subset of the
+instance's <tt>_ _dict_ _</tt>. (See
+<a class="docLink" href="pythoncook2-CHP-4-SECT-13.html#pythoncook2-CHP-4-SECT-13">Recipe 4.13</a>) for a simple
+and handy way to "subset a
+dictionary".)</p>
+
+<p class="docText">Defining <tt>_ _getstate_ _</tt> (and then, normally, also
+<tt>_ _setstate_ _</tt>) also gives you a further important
+bonus, besides the pickling support: if a class offers these methods
+but doesn't offer special methods <tt>_ _copy_
+_</tt> or <tt>_ _deepcopy_ _</tt>, then the methods
+are also used for copying, both shallowly and deeply, as well as for
+serializing. The state data returned by <tt>_ _getstate_
+_</tt> is deep-copied if and only if the object is being
+dee-copied, but, other than this distinction, shallow and deep copies
+work very similarly when they are implemented through <tt>_
+_getstate_ _</tt>. See <a class="docLink" href="pythoncook2-CHP-4-SECT-1.html#pythoncook2-CHP-4-SECT-1">Recipe 4.1</a> for more information about
+how a class can control the way its instances are copied, shallowly
+or deeply.</P>
+
+<p class="docText"><a name="pythoncook2-CHP-7-ITERM-2314"></a> <a name="pythoncook2-CHP-7-ITERM-2315"></a>With either the default
+pickling/unpickling approach, or your own <tt>_ _getstate_
+_</tt> and <tt>_ _setstate_ _</tt>, the
+instance's special method <tt>_ _init_
+_</tt> is <span class="docEmphasis">not</span> called when the instance is
+getting unpickled. If the most convenient way for you to reconstruct
+an instance is to call the <tt>_ _init_ _</tt> method with
+appropriate parameters, then you may want to define the special
+method <tt>_ _getinitargs_ _</tt>, instead of <tt>_
+_getstate_ _</tt>. In this case, <tt>cPickle</tt>
+calls this method without arguments: the method must return a
+pickable <tt>tuple</tt>, and at unpickling time,
+<tt>cPickle</tt> calls <tt>_ _init_ _</tt> with
+the arguments that are that tuple's items.
+<tt>_ _getinitargs_ _</tt>, like <tt>_ _getstate_
+_</tt> and <tt>_ _setstate_ _</tt>, can also be used
+for copying.</p>
+
+<p class="docText">The <span class="docEmphasis">Library Reference</span> for the
+<tt>pickle</tt> and <tt>copy_reg</tt> modules
+details even subtler things you can do when pickling and unpickling,
+as well as the thorny security issues that are likely to arise if you
+ever stoop to unpickling data from untrusted sources. (Executive
+summary: <span class="docEmphasis">don't do
+that</span>there is no way Python can protect you if you
+do.) However, the techniques I've discussed here
+should suffice in almost all practical cases, as long as the security
+aspects of unpickling are not a problem (and if they are, the
+<span class="docEmphasis">only</span> practical suggestion is: forget pickling!).</P>
+
+
+<a name="pythoncook2-CHP-7-SECT-4.4"></a>
+<H4 class="docSection2Title">See Also</h4>
+
+<p class="docText"><a class="docLink" href="pythoncook2-CHP-7-SECT-2.html#pythoncook2-CHP-7-SECT-2">Recipe 7.2</a>; documentation
+for the standard library module <tt>cPickle</tt> in the
+<span class="docEmphasis">Library Reference</span> and <span class="docEmphasis">Python in a
+Nutshell</span>.<a name="pythoncook2-CHP-7-ITERM-2316"></a> <a name="pythoncook2-CHP-7-ITERM-2317"></a> <a name="pythoncook2-CHP-7-ITERM-2318"></a></p>
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-7-sect-3.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-7-sect-5.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

@@ -1,0 +1,245 @@
+<html><head>
+<META http-equiv="Content-Type" content="text/html">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="7.5 The asynchat Module"-->
+<link rel="STYLESHEET" type="text/css" href="FILES/style.css">
+<link rel="STYLESHEET" type="text/css" href="FILES/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+	<a href="0596000960_pythonsl-CHP-7-SECT-4.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+	<a href="0596000960_pythonsl-CHP-7-SECT-6.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr>
+<td valign="top"><A NAME="pythonsl-CHP-7-SECT-5"></A>
+<H3 class="docSection1Title">7.5 The asynchat Module</H3>
+
+<P class="docText">
+
+<A NAME="pythonsl-IDXTERM-585"></A>
+<A NAME="pythonsl-IDXTERM-586"></A>
+
+
+
+The <TT>asynchat</TT> module is an extension to <TT>asyncore</TT>.  It
+provides additional support for line-oriented protocols.  It also
+provides improved buffering support, via the <TT>push</TT>
+methods and the 
+"producer" mechanism.</P>
+
+<P class="docText"><A class="docLink" HREF="#pythonsl-CHP-7-EX-12">Example 7-12</A> implements a very minimal HTTP responder.  It
+simply returns an HTML document containing information from an HTTP
+request (the output appears in the browser window).</P>
+
+
+<H5 class="docExampleTitle"><A NAME="pythonsl-CHP-7-EX-12"></A>Example 7-12. Using the asynchat Module to Implement a Minimal HTTP Server</H5>
+
+<PRE>
+File: asynchat-example-1.py
+
+import asyncore, asynchat
+import os, socket, string
+
+PORT = 8000
+
+class HTTPChannel(asynchat.async_chat):
+
+    def _ _init_ _(self, server, sock, addr):
+        asynchat.async_chat._ _init_ _(self, sock)
+        self.set_terminator("\r\n")
+        self.request = None
+        self.data = ""
+        self.shutdown = 0
+
+    def collect_incoming_data(self, data):
+        self.data = self.data + data
+
+    def found_terminator(self):
+        if not self.request:
+            # got the request line
+            self.request = string.split(self.data, None, 2)
+            if len(self.request) != 3:
+                self.shutdown = 1
+            else:
+                self.push("HTTP/1.0 200 OK\r\n")
+                self.push("Content-type: text/html\r\n")
+                self.push("\r\n")
+            self.data = self.data + "\r\n"
+            self.set_terminator("\r\n\r\n") # look for end of headers
+        else:
+            # return payload.
+            self.push("&lt;html&gt;&lt;body&gt;&lt;pre&gt;\r\n")
+            self.push(self.data)
+            self.push("&lt;/pre&gt;&lt;/body&gt;&lt;/html&gt;\r\n")
+            self.close_when_done()
+
+class HTTPServer(asyncore.dispatcher):
+
+    def _ _init_ _(self, port):
+        self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.bind(("", port))
+        self.listen(5)
+
+    def handle_accept(self):
+        conn, addr = self.accept()
+        HTTPChannel(self, conn, addr)
+
+#
+# try it out
+
+s = HTTPServer(PORT)
+print "serving at port", PORT, "..."
+asyncore.loop()
+
+<B>GET / HTTP/1.1
+Accept: */*
+Accept-Language: en, sv
+Accept-Encoding: gzip, deflate
+User-Agent: Mozilla/4.0 (compatible; Bruce/1.0)
+Host: localhost:8000
+Connection: Keep-Alive</B></PRE>
+
+
+<P class="docText">The producer interface allows you to 
+"push" objects that
+are too large to store in memory.  <TT>asyncore</TT> calls
+the producer's <TT>more</TT> method whenever it needs more
+data.  To signal end of file, just return an empty string.</P>
+
+<P class="docText"><A class="docLink" HREF="#pythonsl-CHP-7-EX-13">Example 7-13</A> implements a very simple file-based HTTP server,
+using a simple <I>FileProducer</I> class that reads
+data from a file, a few kilobytes at the time.</P>
+
+
+<H5 class="docExampleTitle"><A NAME="pythonsl-CHP-7-EX-13"></A>Example 7-13. Using the asynchat Module to Implement a Simple HTTP Server</H5>
+
+<PRE>
+File: asynchat-example-2.py
+
+import asyncore, asynchat
+import os, socket, string, sys
+import StringIO, mimetools
+
+ROOT = "."
+
+PORT = 8000
+
+class HTTPChannel(asynchat.async_chat):
+
+    def _ _init_ _(self, server, sock, addr):
+        asynchat.async_chat._ _init_ _(self, sock)
+        self.server = server
+        self.set_terminator("\r\n\r\n")
+        self.header = None
+        self.data = ""
+        self.shutdown = 0
+
+    def collect_incoming_data(self, data):
+        self.data = self.data + data
+        if len(self.data) &gt; 16384:
+            # limit the header size to prevent attacks
+            self.shutdown = 1
+
+    def found_terminator(self):
+        if not self.header:
+            # parse http header
+            fp = StringIO.StringIO(self.data)
+            request = string.split(fp.readline(), None, 2)
+            if len(request) != 3:
+                # badly formed request; just shut down
+                self.shutdown = 1
+            else:
+                # parse message header
+                self.header = mimetools.Message(fp)
+                self.set_terminator("\r\n")
+                self.server.handle_request(
+                    self, request[0], request[1], self.header
+                    )
+                self.close_when_done()
+            self.data = ""
+        else:
+            pass # ignore body data, for now
+
+    def pushstatus(self, status, explanation="OK"):
+        self.push("HTTP/1.0 %d %s\r\n" % (status, explanation))
+
+
+class FileProducer:
+    # a producer that reads data from a file object
+
+    def _ _init_ _(self, file):
+        self.file = file
+
+    def more(self):
+        if self.file:
+            data = self.file.read(2048)
+            if data:
+                return data
+            self.file = None
+        return ""
+
+
+class HTTPServer(asyncore.dispatcher):
+
+    def _ _init_ _(self, port=None, request=None):
+        if not port:
+            port = 80
+        self.port = port
+        if request:
+            self.handle_request = request # external request handler
+        self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.bind(("", port))
+        self.listen(5)
+
+    def handle_accept(self):
+        conn, addr = self.accept()
+        HTTPChannel(self, conn, addr)
+
+    def handle_request(self, channel, method, path, header):
+        try:
+            # this is not safe!
+            while path[:1] == "/":
+                path = path[1:]
+            filename = os.path.join(ROOT, path)
+            print path, "=&gt;", filename
+            file = open(filename, "r")
+        except IOError:
+            channel.pushstatus(404, "Not found")
+            channel.push("Content-type: text/html\r\n")
+            channel.push("\r\n")
+            channel.push("&lt;html&gt;&lt;body&gt;File not found.&lt;/body&gt;&lt;/html&gt;\r\n")
+        else:
+            channel.pushstatus(200, "OK")
+            channel.push("Content-type: text/html\r\n")
+            channel.push("\r\n")
+            channel.push_with_producer(FileProducer(file))
+
+#
+# try it out
+
+s = HTTPServer(PORT)
+print "serving at port", PORT
+asyncore.loop()
+
+<B>serving at port 8000
+log: adding channel &lt;HTTPServer  at 8e54d0&gt;
+log: adding channel &lt;HTTPChannel  at 8e64a0&gt;
+samples/sample.htm =&gt; .\samples/sample.htm
+log: closing channel 96:&lt;HTTPChannel connected at 8e64a0&gt;</B></PRE>
+
+
+<ul></ul>
+</td>
+</tr>
+</table>
+<td></td>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+          <a href="0596000960_pythonsl-CHP-7-SECT-4.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+          <a href="0596000960_pythonsl-CHP-7-SECT-6.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+</body></html>

@@ -1,0 +1,172 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;9.2.&nbsp;Terminating a Thread</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-9-sect-1.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-9-sect-3.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-9-SECT-2"></a>
+<h3 class="docSection1Title" id="409771-828">Recipe 9.2. Terminating a Thread</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Doug Fort</span></p>
+
+<a name="pythoncook2-CHP-9-SECT-2.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-9-ITERM-2524"></a>You
+must terminate a thread from the outside, but Python
+doesn't let one thread just brutally kill another,
+so you need to use a suitable controlled-termination idiom.</P>
+
+
+<a name="pythoncook2-CHP-9-SECT-2.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">A frequently asked question is: How do I kill a thread? The answer
+is: You don't. Instead, you kindly ask it to go
+away. Each thread must periodically check whether
+it's been asked to go away and then comply
+(typically after some kind of cleanup). Here is an example:</p>
+
+<pre>import threading
+class TestThread(threading.Thread):
+    def _ _init_ _(self, name='TestThread'):
+        """ constructor, setting initial variables """
+        self._stopevent = threading.Event( )
+        self._sleepperiod = 1.0
+        threading.Thread._ _init_ _(self, name=name)
+    def run(self):
+        """ main control loop """
+        print "%s starts" % (self.getName( ),)
+        count = 0
+        while not self._stopevent.isSet( ):
+            count += 1
+            print "loop %d" % (count,)
+            self._stopevent.wait(self._sleepperiod)
+        print "%s ends" % (self.getName( ),)
+    def join(self, timeout=None):
+        """ Stop the thread and wait for it to end. """
+        self._stopevent.set( )
+        threading.Thread.join(self, timeout)
+if _ _name_ _ == "_ _main_ _":
+    testthread = TestThread( )
+    testthread.start( )
+    import time
+    time.sleep(5.0)
+    testthread.join( )</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-9-SECT-2.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">You often want to exert some control on a thread from the outside,
+but the ability to kill a thread is, well, overkill. Python
+doesn't give you this ability, and thus forces you
+to design your thread systems more carefully. This recipe is based on
+the idea of a thread whose main function uses a loop. Periodically,
+the loop checks if a <tt>tHReading.Event</tt> object has
+been set. If so, the thread terminates; otherwise, it waits for the
+object.</p>
+
+<p class="docText"><a name="pythoncook2-CHP-9-ITERM-2525"></a>
+<a name="pythoncook2-CHP-9-ITERM-2526"></a>The
+<I>TestThread</I> class in this recipe also overrides
+<tt>threading.Thread</tt>'s
+<tt>join</tt> method. Normally, <tt>join</tt>
+waits only for a certain thread to terminate (for up to a specified
+amount of time, if any) without doing anything to
+<span class="docEmphasis">cause</span> that termination. In this recipe, however,
+<tt>join</tt> is overridden to set the stop event object
+before delegating the rest of its operation to the normal (base
+class) <tt>join</tt> method. Therefore, in this recipe, the
+<tt>join</tt> call is guaranteed to terminate the target
+thread within a short amount of time.</p>
+
+<p class="docText">You can use the recipe's central idea (a loop
+periodically checking a <tt>threading.Event</tt> to
+determine whether it must terminate) in several other, slightly
+different ways. The <tt>Event</tt>'s
+<tt>wait</tt> method can let you pause the target thread.
+You can also expose the <tt>Event</tt>, letting controller
+code <tt>set</tt> it and then go on its merry way without
+bothering to <tt>join</tt> the thread, knowing the thread
+will terminate in a short amount of time. Once the event is exposed,
+you may choose to use the same event to request the termination of
+more than one threadfor example, all threads in a certain
+thread pool might stop when one event object they all share is set.
+The simplicity of this recipe provides the modest amount of control I
+need, with no headaches, so I haven't pursued the
+more sophisticated (and complicated) ideas.</p>
+
+<p class="docText">Python also lets you terminate a thread in another way: by raising an
+exception in that thread. This
+"rougher" approach also has its
+limits: it cannot interrupt a blocking call to the operating system,
+and it could fail to work if the thread you want to terminate is
+executing a <tt>TRy</tt> clause whose
+<tt>except</tt> clauses are too broad. Despite its limits,
+this approach can still sometimes be useful, when
+you're essentially writing a debugger: that is, when
+you cannot count on the code executing in the target thread to be
+well written, but you can hope the code is not written in an utterly
+disastrous way. The normal way to make use of this functionality is
+by running the possibly-buggy code in the main thread, after spawning
+a separate monitoring thread to keep an eye on things. If the
+monitoring thread decides the time has come to terminate the code
+that is currently running in the main thread, the monitoring thread
+can call <tt>thread.interrupt_main</tt>, passing as the
+argument the desired exception class.</p>
+
+<p class="docText"><a name="pythoncook2-CHP-9-ITERM-2527"></a>
+<a name="pythoncook2-CHP-9-ITERM-2528"></a>Once in a blue moon, the debugger
+you're writing cannot run the possibly-buggy code in
+the process' main thread, typically because that
+thread is required for other uses by some other framework you depend
+on, such as your GUI code. To support such remote eventualities, the
+Python interpreter has a function that can raise an exception in any
+thread, given the target thread's ID. However, this
+specialized functionality is intended for a tiny subset of that tiny
+subset of Python applications that are debuggers. To avoid tempting
+all other Python programmers (well over 99.9%) into misusing this
+approach for any other case of thread termination, the function is
+not directly callable from Python code: rather, the function is only
+exposed as a part of Python's C API. This special
+function's name is
+<tt>PyThreadState_SetAsyncExc</tt>, and the
+function's two arguments are the target
+thread's ID and the class of the desired exception.
+If you are writing a Python debugger with such peculiar needs, no
+doubt you already have, as part of your code, at least one C-coded
+Python extension module that supplies to your higher-level Python
+code other tidbits of peculiar, low-level functionality. Just add to
+your C code, a Python-callable function that in turn calls
+<tt>PyThreadState_SetAsyncExc</tt>, and your debugger will
+gain this peculiar but useful functionality.</P>
+
+
+<a name="pythoncook2-CHP-9-SECT-2.4"></a>
+<h4 class="docSection2Title">See Also</H4>
+
+<p class="docText">Documentation of the standard library module
+<tt>threading</tt> in the <span class="docEmphasis">Library
+Reference</span> and <span class="docEmphasis">Python in a
+Nutshell</span>.<a name="pythoncook2-CHP-9-ITERM-2529"></a></P>
+
+
+
+<UL></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-9-sect-1.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-9-sect-3.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

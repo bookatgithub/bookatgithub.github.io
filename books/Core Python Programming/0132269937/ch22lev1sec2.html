@@ -1,0 +1,423 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Section 22.2.&nbsp; Extending Python by Writing Extensions</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=ch22lev1sec1.html><img src="images/prev.gif" width="60" height="17" border="0" align="absmiddle" alt="Previous Page"></a>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=ch22lev1sec3.html><img src="images/next.gif" width="60" height="17" border="0" align="absmiddle" alt="Next Page"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><TD valign="top"><a name="ch22lev1sec2"></a>
+<h3 id="title-IDAZV4IC" class="docSection1Title">22.2. Extending Python by Writing Extensions</H3>
+<p class="docText">Creating extensions for Python involves three main steps:</p>
+<div style="font-weight:bold"><ol class="docList" type="1"><LI><div style="font-weight:normal"><p class="docList">Creating application code</P></div></LI><LI><div style="font-weight:normal"><p class="docList">Wrapping code with boilerplates</p></div></li><li><div style="font-weight:normal"><p class="docList">Compilation and testing</P></div></li></ol></div>
+<p class="docText">In this section, we will break out all three pieces and expose them all to you.</P>
+<a name="ch22lev2sec3"></a>
+
+<h4 id="title-IDAZW4IC" class="docSection2Title">22.2.1. Create Your Application Code</H4>
+<p class="docText"><a name="iddle1933"></a>First, before any code becomes an extension, create a standalone &quot;library.&quot; In other words, create your code keeping in mind that it is going to turn into a Python module. Design your functions and objects with the vision that Python code will be communicating and sharing data with your C code and vice versa.</p>
+<p class="docText">Next, create test code to bulletproof your software. You may even use the &quot;Pythonic&quot; development method of designating your <tt>main()</tt> function in C as the testing application so that if your code is compiled, linked, and loaded into an executable (as opposed to just a shared object), invocation of such an executable will result in a regression test of your software library. For our extension example below, this is exactly what we do.</P>
+<p class="docText">The test case involves two C functions that we want to bring to the world of Python programming. The first is the recursive factorial function, <tt>fac()</tt>. The second, <tt>reverse()</tt>, is a simple string reverse algorithm, whose main purpose is to reverse a string &quot;in place,&quot; that is, to return a string whose characters are all reversed from their original positions, all without allocating a separate string to copy in reverse order. Because this involves the use of pointers, we need to carefully design and debug our code before bringing Python into the picture.</P>
+<p class="docText">Our first version, <tt>Extest1.c</tt>, is presented in <a class="docLink" href="#ch22ex01">Example 22.1</a>.</p>
+<p class="docText">This code consists of a pair of functions, <tt>fac()</tt> and <tt>reverse()</tt>, which are implementations of the functionality we described above. <tt>fac()</tt> takes a single integer argument and recursively calculates the result, which is eventually returned to the caller once it exits the outermost call.</p>
+<a name="ch22ex01"></a><h5 id="title-IDATY4IC" class="docExampleTitle">Example 22.1. Pure C Version of Library (<tt>Extest1.c</tt>)</h5><P><table cellspacing="0" width="90%" border="1" cellpadding="5"><tr><td>
+
+
+<p class="docText"><span class="docEmphasis">The following code represents our library of C functions which we want to wrap so that we can use this code from within the Python interpreter. <tt>main()</tt> is our tester function.</span></P>
+
+<pre>1    #include &lt;stdio.h&gt;
+2    #include &lt;stdlib.h&gt;
+3    #include &lt;string.h&gt;
+4
+5    <span class="docEmphStrong">int</span> fac(<span class="docEmphStrong">int</span> n)
+6    {
+7       <span class="docEmphStrong">if</span> (n &lt; 2) <span class="docEmphStrong">return</span>(1); /* 0! == 1! == 1 */
+8       <span class="docEmphStrong">return</span> (n)*fac(n-1); /* n! == n*(n-1)! */
+9    }
+10
+11   <span class="docEmphStrong">char</span> *reverse(<span class="docEmphStrong">char</span> *s)
+12   {
+13       <span class="docEmphStrong">register char</span> t,                    /* tmp */
+14               *p = s,                     /* fwd */
+15               *q = (s + (strlen(s)-1));   /* bwd */
+16
+17       <span class="docEmphStrong">while</span> (p &lt; q)            /* if p &lt; q */
+18         {     /*swap &amp; mv ptrs */
+19             t = *p;
+20             *p++ = *q;
+21             *q-- = t;
+22         }
+23         <span class="docEmphStrong">return</span> s;
+24   }
+25
+26   <span class="docEmphStrong">int</span> main()
+27   {
+28        <span class="docEmphStrong">char</span> s[BUFSIZ];
+29        printf("4! == %d\n", fac(4));
+30        printf("8! == %d\n", fac(8));
+31        printf("12! == %d\n", fac(12));
+32        strcpy(s, "abcdef");
+33        printf("reversing 'abcdef', we get '%s'\n", \
+34            reverse(s));
+35        strcpy(s, "madam");
+36        printf("reversing 'madam', we get '%s'\n", \
+37            reverse(s));
+38        <span class="docEmphStrong">return</span> 0;
+39   }</pre><br>
+
+</td></tr></table></P>
+<p class="docText">The last piece of code is the required <tt>main()</tt> function. We use it to be our tester, sending various arguments to <tt>fac()</tt> and <tt>reverse()</tt> . With this function, we can actual tell whether our code works (or not).</P>
+<p class="docText">Now we should compile the code. For many versions of Unix with the <tt>gcc</tt> compiler, we can use the following command:</p>
+<div class="docText"><pre>$ gcc Extest1.c -o Extest
+$</pre></div><br>
+<p class="docText">To run our program, we issue the following command and get the output:</p>
+<div class="docText"><pre>$ Extest
+4! == 24
+8! == 40320
+12! == 479001600
+reversing 'abcdef', we get 'fedcba'
+reversing 'madam', we get 'madam'
+$</pre></div><br>
+<p class="docText">We stress again that you should try to complete your code as much as possible, because you do not want to mix debugging of your library with potential bugs when integrating with Python. In other words, keep the<a name="iddle1214"></a><a name="iddle1449"></a><a name="iddle1949"></a><a name="iddle2317"></a> debugging of your core code separate from the debugging of the integration. The closer you write your code to Python interfaces, the sooner your code will be integrated and work correctly.</p>
+<p class="docText">Each of our functions takes a single value and returns a single value. It's pretty cut and dried, so there shouldn't be a problem integrating with Python. Note that, so far, we have not seen any connection or relationship with Python. We are simply creating a standard C or C++ application.</p>
+
+<a name="ch22lev2sec4"></a>
+<h4 id="title-IDA524IC" class="docSection2Title">22.2.2. Wrap Your Code in Boilerplate</h4>
+<p class="docText">The entire implementation of an extension primarily revolves around the &quot;wrapping&quot; concept that we introduced earlier in <a class="docLink" href="ch13lev1sec15.html#ch13lev2sec48">Section 13.15.1</a>. You should design your code in such a way that there is a smooth transition between the world of Python and your implementing language. This interfacing code is commonly called &quot;boilerplate&quot; code because it is a necessity if your code is to talk to the Python interpreter.</p>
+<p class="docText">There are four main pieces to the boilerplate software:</p>
+<div style="font-weight:bold"><ol class="docList" type="1"><li><div style="font-weight:normal"><p class="docList">Include Python header file</p></div></LI><li><div style="font-weight:normal"><p class="docList">Add <tt>PyObject* </tt><span class="docEmphasis"><tt>Module_func</tt></span><tt>()</tt> Python wrappers for each module function</P></div></li><LI><div style="font-weight:normal"><p class="docList">Add <tt>PyMethodDef</tt> <span class="docEmphasis"><tt>Module</tt></span> <tt>Methods[]</tt> array/table for each module function</p></div></LI><li><div style="font-weight:normal"><p class="docList">Add <span class="docEmphStrong"><tt>void </tt></span><tt>init </tt><span class="docEmphasis"><tt>Module</tt></span><tt>()</tt> module initializer function</P></div></LI></ol></div>
+<a name="ch22lev3sec1"></a>
+<H5 id="title-IDA344IC" class="docSection3Title">Include Python Header File</H5>
+<p class="docText">The first thing you should do is to find your Python include files and make sure your compiler has access to that directory. On most Unix-based systems, this would be either <tt>/usr/local/include/python2.x</tt> or <tt>/usr/include/python2.x</tt>, where the &quot;2.x&quot; is your version of Python. If you compiled and installed your Python interpreter, you should not have a problem because the system generally knows where your files are installed.</p>
+<p class="docText">Add the inclusion of the <tt>Python.h</tt> header file to your source. The line will look something like:</p>
+<div class="docText"><pre>         #include "Python.h"</pre></div><br>
+<p class="docText">That is the easy part. Now you have to add the rest of the boilerplate software.</P>
+
+<a name="ch22lev3sec2"></a>
+
+<h5 id="title-IDACA5IC" class="docSection3Title">Add <tt>PyObject*</tt> <span class="docEmphasis"><tt>Module</tt></span> <tt>_func()</tt> Python Wrappers for Each Function</H5>
+<p class="docText"><a name="iddle1253"></a><a name="iddle1264"></a><a name="iddle1269"></a><a name="iddle1531"></a><a name="iddle2581"></a><a name="iddle3478"></a><a name="iddle3480"></a><a name="iddle3492"></a><a name="iddle4448"></a><a name="iddle4531"></a>This part is the trickiest. For each function you want accessible to the Python environment, you will create a <span class="docEmphStrong"><tt>static</tt></span> <tt>PyObject*</tt> function with the module name along with an underscore ( _ ) prepended to it.</p>
+<p class="docText">For example, we want <tt>fac()</tt> to be one of the functions available for import from Python and we will use Extest as the name of our final module, so we create a &quot;wrapper&quot; called <tt>Extest_fac()</tt>. In the client Python script, there will be an &quot;<span class="docEmphStrong"><tt>import</tt></span> <tt>Extest</tt>&quot; and an &quot;<tt>Extest.fac()</tt>&quot; call somewhere (or just &quot;<tt>fac()</tt>&quot; for &quot;<span class="docEmphStrong"><tt>from</tt></span> <tt>Extest</tt> <span class="docEmphStrong"><tt>import</tt></span> <tt>fac</tt>&quot;).</P>
+<p class="docText">The job of the wrapper is to take Python values, convert them to C, then make a call to the appropriate function with what we want. When our function has completed, and it is time to return to the world of Python, it is also the job of this wrapper to take whatever return values we designate, convert them to Python, and then perform the return, passing back any values as necessary.</p>
+<p class="docText">In the case of <tt>fac()</tt>, when the client program invokes <tt>Extest.fac()</tt>, our wrapper will be called. We will accept a Python integer, convert it to a C integer, call our C function <tt>fac()</tt> and obtain another integer result. We then have to take that return value, convert it back to a Python integer, then return from the call. (In your head, try to keep in mind that you are writing the code that will proxy for a &quot;<span class="docEmphStrong"><tt>def</tt></span> <tt>fac(n)</tt>&quot; declaration. When you are returning, it is as if that imaginary Python <tt>fac()</tt> function is completing.)</P>
+<p class="docText">So, you're asking, how does this conversion take place? The answer is with the <tt>PyArg_Parse*()</tt> functions when going from Python to C, and <tt>Py_BuildValue()</tt> when returning from C to Python.</P>
+<p class="docText">The <tt>PyArg_Parse*()</tt> functions are similar to the C <tt>sscanf()</tt> function. It takes a stream of bytes, and, according to some format string, parcels them off to corresponding container variables, which, as expected, take pointer addresses. They both return 1 on successful parsing and 0 otherwise.</p>
+<p class="docText"><tt>Py_BuildValue()</tt> works like <tt>sprintf()</tt>, taking a format string and converting all arguments to a single returned object containing those values in the formats that you requested.</p>
+<p class="docText">You will find a summary of these functions in <a class="docLink" href="#ch22table01">Table 22.1</a>.</p>
+<a name="ch22table01"></a><p><table cellspacing="0" FRAME="hsides" RULES="none" cellpadding="5"><caption><H5 class="docTableTitle">Table 22.1. <a name="iddle1254"></a><a name="iddle1270"></a><a name="iddle1532"></a>Converting Data Between Python and C/C++</h5></caption><colgroup align="left" span="2"><col width="200"><col width="200"></colgroup><thead><tr><th class="thead" scope="col" align="left" valign="top"><p class="docText"><span class="docEmphasis">Function</span></P></th><th class="thead" scope="col" align="left" valign="top"><p class="docText"><span class="docEmphasis">Description</span></p></th></tr></thead><tr><TD class="docTableCell" align="left" valign="top" style="background-color:#DDDDDD"><p class="docText"><span class="docEmphBoldItalic">Python to C</span></P></td><td class="docTableCell" align="left" valign="top" style="background-color:#DDDDDD">&nbsp;</td></tr><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><span class="docEmphStrong">int</span> <tt>PyArg_ParseTuple()</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText">Converts (a tuple of) arguments passed from Python to C</p></td></tr><TR><td class="docTableCell" align="left" valign="top"><p class="docText"><span class="docEmphStrong">int</span> <tt>PyArg_ParseTupleAndKeywords()</tt></P></td><TD class="docTableCell" align="left" valign="top"><p class="docText">Same as <tt> PyArg_ParseTuple()</tt> but also parses keyword arguments</p></TD></tr><TR><TD class="docTableCell" align="left" valign="top" style="background-color:#DDDDDD"><p class="docText"><span class="docEmphBoldItalic">C to Python</span></P></TD><td class="docTableCell" align="left" valign="top" style="background-color:#DDDDDD">&nbsp;</td></tr><TR><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>PyObject* Py_BuildValue()</tt></P></td><TD class="docTableCell" align="left" valign="top"><p class="docText">Converts C data values into a Python return object, either a single object or a single tuple of objects</p></TD></TR></table></p><br>
+<p class="docText">A set of conversion codes is used to convert data objects between C and Python; they are given in <a class="docLink" href="#ch22table02">Table 22.2</a>.</p>
+<a name="ch22table02"></a><p><table cellspacing="0" FRAME="hsides" RULES="none" cellpadding="5"><caption><H5 class="docTableTitle">Table 22.2. Common Codes to Convert Data Between Python and C/C++</h5></caption><colgroup align="left" span="3"><col width="200"><col width="200"><col width="200"></colgroup><thead><tr><th class="thead" scope="col" align="center" valign="top"><p class="docText"><span class="docEmphasis">Format Code</span></P></th><th class="thead" scope="col" align="left" valign="top"><p class="docText"><span class="docEmphasis">Python Type</span></p></th><th class="thead" scope="col" align="left" valign="top"><p class="docText"><span class="docEmphasis">C/C++ Type</span></p></th></tr></thead><TR><TD class="docTableCell" align="center" valign="top"><p class="docText"><tt>s</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>str</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><span class="docEmphStrong"><tt>char*</tt></span></p>
+</td></tr><tr><td class="docTableCell" align="center" valign="top"><p class="docText"><tt>z</tt></p></TD><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>str/None</tt></P></td><TD class="docTableCell" align="left" valign="top"><p class="docText"><span class="docEmphStrong"><tt>char*</tt></span> <tt>/NULL</tt></p></TD></tr><TR><TD class="docTableCell" align="center" valign="top"><p class="docText"><tt>i</tt></P></TD><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>int</tt></p></td><TD class="docTableCell" align="left" valign="top"><p class="docText"><span class="docEmphStrong"><tt>int</tt></span></p></TD></tr><TR><td class="docTableCell" align="center" valign="top"><p class="docText"><tt>l</tt></P></TD><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>long</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><span class="docEmphStrong"><tt>long</tt></span></P></td></tr><TR><td class="docTableCell" align="center" valign="top"><p class="docText"><tt>c</tt></p></td><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>str</tt></P></td><td class="docTableCell" align="left" valign="top"><p class="docText"><span class="docEmphStrong"><tt>char</tt></span></p></td></tr><tr><td class="docTableCell" align="center" valign="top"><p class="docText"><tt>d</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>float</tt></p></td><TD class="docTableCell" align="left" valign="top"><p class="docText"><span class="docEmphStrong"><tt>double</tt></span></p></TD></tr><TR><td class="docTableCell" align="center" valign="top"><p class="docText"><tt>D</tt></P></td><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>complex</tt></P></TD><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>Py_Complex*</tt></p></td></tr><TR><td class="docTableCell" align="center" valign="top"><p class="docText"><tt>O</tt></P></td><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>(any)</tt></p></TD><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>PyObject*</tt></p></td></tr><tr><TD class="docTableCell" align="center" valign="top"><p class="docText"><tt>S</tt></p></td><TD class="docTableCell" align="left" valign="top"><p class="docText"><tt>str</tt></p></td><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>PyStringObject</tt></P></TD></tr></table></p><br>
+<p class="docText">These conversion codes are the ones given in the respective format strings that dictate how the values should be converted when moving between both languages. Note: The conversion types are different for Java since all data types are classes. Consult the Jython documentation to obtain the corresponding Java types for Python objects. The same applies for C# and VB.NET.</p>
+<p class="docText"><a name="iddle3479"></a><a name="iddle3481"></a>Here we show you our completed <tt>Extest_fac()</tt> wrapper function:</p>
+<div class="docText"><pre><span class="docEmphStrong">static</span> PyObject *
+Extest_fac(PyObject *self, PyObject *args) {
+
+     <span class="docEmphStrong">int</span> res;              // parse result
+     <span class="docEmphStrong">int</span> num;              // arg for fac()
+     PyObject* retval;     // return value
+
+     res = PyArg_ParseTuple(args, "i", &amp;num);
+     <span class="docEmphStrong">if</span> (!res) {           // TypeError
+         <span class="docEmphStrong">return</span> NULL;
+     }
+     res = fac(num);
+     retval = (PyObject*)Py_BuildValue("i", res);
+     <span class="docEmphStrong">return</span> retval;
+}</pre></div><br>
+<p class="docText">The first step is to parse the data received from Python. It should be a regular integer, so we use the &quot;i&quot; conversion code to indicate as such. If the value was indeed an integer, then it gets stored in the <tt>num</tt> variable. Otherwise, <tt>PyArg_ParseTuple()</tt> will return a NULL, in which case we also return one. In our case, it will generate a <tt>TypeError</tt> exception that tells the client user that we are expecting an integer.</p>
+<p class="docText">We then call <tt>fac()</tt> with the value stored in <tt>num</tt> and put the result in <tt>res</tt>, reusing that variable. Now we build our return object, a Python integer, again using a conversion code of &quot;i.&quot; <tt>Py_BuildValue()</tt> creates an integer Python object which we then return. That's all there is to it!</p>
+<p class="docText">In fact, once you have created wrapper after wrapper, you tend to shorten your code somewhat to avoid extraneous use of variables. Try to keep your code legible, though. We take our <tt>Extest_fac()</tt> function and reduce it to its smaller version given here, using only one variable, <tt>num</tt>:</p>
+<div class="docText"><pre><span class="docEmphStrong">static</span> PyObject *
+Extest_fac(PyObject *self, PyObject *args) {
+    <span class="docEmphStrong">int</span> num;
+    <span class="docEmphStrong">if</span> (!PyArg_ParseTuple(args, "i", &amp;num))
+           <span class="docEmphStrong">return</span> NULL;
+    <span class="docEmphStrong">return</span> (PyObject*)Py_BuildValue("i", fac(num));
+}</pre></div><br>
+<p class="docText">What about <tt>reverse()</tt>? Well, since you already know how to return a single value, we are going to change our <tt>reverse()</tt> example somewhat, returning two values instead of one. We will return a pair of strings as a tuple, the first element being the string as passed in to us, and the second being the newly reversed string.</p>
+<p class="docText"><a name="iddle3482"></a>To show you that there is some flexibility, we will call this function <tt>Extest.doppel()</tt> to indicate that its behavior differs from <tt>reverse()</tt>. Wrapping our code into an <tt>Extest_doppel()</tt> function, we get:</p>
+<div class="docText"><pre><span class="docEmphStrong">static</span> PyObject *
+Extest_doppel(PyObject *self, PyObject *args) {
+    <span class="docEmphStrong">char</span> *orig_str;
+    <span class="docEmphStrong">if</span> (!PyArg_ParseTuple(args, "s", &amp;orig_str)) <span class="docEmphStrong">return</span> NULL;
+    <span class="docEmphStrong">return</span> (PyObject*)Py_BuildValue("ss", orig_str, \
+        reverse(strdup(orig_str)));
+}</pre></div><BR>
+<p class="docText">As in <tt>Extest_fac()</tt>, we take a single input value, this time a string, and store it into <tt>orig_str</tt>. Notice that we use the &quot;<tt>s</tt>&quot; conversion code now. We then call <tt>strdup()</tt> to create a copy of the string. (Since we want to return the original one as well, we need a string to reverse, so the best candidate is just a copy of the string.) <tt>strdup()</tt> creates and returns a copy, which we immediate dispatch to <tt>reverse()</tt>. We get back a reversed string.</p>
+<p class="docText">As you can see, <tt>Py_BuildValue()</tt> puts together both strings using a conversion string of &quot;<tt>ss</tt>.&quot; This creates a tuple of two strings, the original string and the reversed one. End of story, right? Unfortunately, no.</P>
+<p class="docText">We got caught by one of the perils of C programming: the memory leak, that is, when memory is allocated but not freed. Memory leaks are analogous to borrowing books from the library but not returning them. You should always release resources that you have acquired when you no longer require them. How did we commit such a crime with our code (which looks innocent enough)?</p>
+<p class="docText">When <tt>Py_BuildValue()</tt> puts together the Python object to return, it makes copies of the data it has been passed. In our case here, that would be a pair of strings. The problem is that we allocated the memory for the second string, but we did not release that memory when we finished, leaking it. What we really want to do is to build the return object and then free the memory that we allocated in our wrapper. We have no choice but to lengthen our code to:</P>
+<div class="docText"><pre><span class="docEmphStrong">static</span> PyObject *
+Extest_doppel(PyObject *self, PyObject *args) {
+    <span class="docEmphStrong">char</span> *orig_str;                 // original string
+    <span class="docEmphStrong">char</span> *dupe_str;                 // reversed string
+    PyObject* retval;
+    <span class="docEmphStrong">if</span> (!PyArg_ParseTuple(args, "s", &amp;orig_str)) <span class="docEmphStrong">return</span> NULL;
+    retval = (PyObject*)Py_BuildValue("ss", orig_str, \
+        dupe_str=reverse(strdup(orig_str)));
+    free(dupe_str);
+    <span class="docEmphStrong">return</span> retval;
+}</pre></div><br>
+<p class="docText"><a name="iddle2431"></a><a name="iddle2931"></a><a name="iddle3490"></a><a name="iddle4525"></a><a name="iddle4526"></a>We introduce the <tt>dupe_str</tt> variable to point to the newly allocated string and build the return object. Then we <tt>free()</tt> the memory allocated and finally return back to the caller. Now we are done.</P>
+
+<a name="ch22lev3sec3"></a>
+<h5 id="title-IDA205IC" class="docSection3Title">Add <tt>PyMethodDef</tt> <span class="docEmphasis"><tt>Module</tt></span><tt>Methods[]</tt> Array/Table for Each Module Function</H5>
+<p class="docText">Now that both of our wrappers are complete, we want to list them somewhere so that the Python interpreter knows how to import and access them. This is the job of the<span class="docEmphasis"><tt>Module</tt></span><tt>Methods[]</tt> array.</P>
+<p class="docText"> It is made up of an array of arrays, with each individual array containing information about each function, terminated by a NULL array marking the end of the list. For our <tt>Extest</tt> module, we create the following <tt>ExtestMethods[]</tt> array:</P>
+<div class="docText"><pre><span class="docEmphStrong">static</span> PyMethodDef
+ExtestMethods[] = {
+     { "fac", Extest_fac, METH_VARARGS },
+     { "doppel", Extest_doppel, METH_VARARGS },
+     { NULL, NULL },
+};</pre></div><BR>
+<p class="docText">The Python-accessible names are given, followed by the corresponding wrapping functions. The constant <tt>METH_VARARGS</tt> is given, indicating a set of arguments in the form of a tuple. If we are using <tt>PyArg_ParseTupleAndKeywords()</tt> with keyworded arguments, we would logically OR this flag with the <tt>METH_KEYWORDS</tt> constant. Finally, a pair of NULLs properly terminates our list of two functions.</p>
+
+<a name="ch22lev3sec4"></a>
+<h5 id="title-IDAO25IC" class="docSection3Title">Add <tt>void init</tt><span class="docEmphasis"><tt>Module</tt></span><tt>()</tt> Module Initializer Function</h5>
+<p class="docText">The final piece to our puzzle is the module initializer function. This code is called when our module is imported for use by the interpreter. In this code, we make one call to <tt>Py_Init</tt><span class="docEmphasis"><tt>Module</tt></span> <tt>()</tt> along with the module name and the name of the <span class="docEmphasis"><tt>Module</tt></span><tt>Methods[]</tt> array so that the interpreter can access our module functions. For our <tt>Extest</tt> module, our <tt>initExtest()</tt> procedure looks like this:</P>
+<div class="docText"><pre><span class="docEmphStrong">void</span> initExtest() {
+         Py_InitModule("Extest", ExtestMethods);
+}</pre></div><br>
+<p class="docText"><a name="iddle1482"></a><a name="iddle1722"></a><a name="iddle1774"></a><a name="iddle1932"></a><a name="iddle4065"></a><a name="iddle4530"></a><a name="iddle4533"></a>We are now done with all our wrapping. We add all this code to our original code from <tt>Extest1.c</tt> and merge the results into a new file called <tt>Extest2.c</tt>, concluding the development phase of our example.</P>
+<p class="docText">Another approach to creating an extension would be to make your wrapping code first, using &quot;stubs&quot; or test or dummy functions which will, during the course of development, be replaced by the fully functional pieces of implemented code. That way you can ensure that your interface between Python and C is correct, and then use Python to test your C code.</p>
+
+
+<a name="ch22lev2sec5"></a>
+<H4 id="title-IDAN55IC" class="docSection2Title">22.2.3. Compilation</h4>
+<p class="docText">Now we are on to the compilation phase. In order to get your new wrapper Python extension to build, you need to get it to compile with the Python library. This task has been standardized (since 30) across platforms to make life a lot easier for extension writers. The <tt>distutils</tt> package is used to build, install, and distribute modules, extensions, and packages. It came about back in Python 2.0 and replaced the old 1.x way of building extensions using &quot;makefiles.&quot; Using <tt>distutils</tt>, we can follow this easy recipe:</P>
+<div style="font-weight:bold"><ol class="docList" type="1"><LI><div style="font-weight:normal"><p class="docList">Create <tt>setup.py</tt></p></div></li><li><div style="font-weight:normal"><p class="docList">Compile and link your code by running <tt>setup.py</tt></p></div></LI><li><div style="font-weight:normal"><p class="docList">Import your module from Python</p></div></LI><li><div style="font-weight:normal"><p class="docList">Test function</p></div></li></ol></div>
+<a name="ch22lev3sec5"></a>
+<H5 id="title-IDAXAAJC" class="docSection3Title">Create <tt>setup.py</tt></H5>
+<p class="docText">The next step is to create a <tt>setup.py</tt> file. The bulk of the work will be done by the <tt>setup()</tt> function. All the lines of code that come before that call are preparatory steps. For building extension modules, you need to create an <tt>Extension</tt> instance per extension. Since we only have one, we only need one <tt>Extension</tt> instance:</p>
+<div class="docText"><pre>    Extension('Extest', sources=['Extest2.c'])</pre></div><br>
+<p class="docText">The first argument is the (full) extension name, including any high-level packages if necessary. The name should be in full dotted-attribute notation. Ours is standalone, hence the name &quot;Extest.&quot; <tt>sources</tt> is a list of all the source files. Again, we only have the one, <tt>Extest2.c</tt>.</p>
+<p class="docText">Now we are ready to call <tt>setup()</tt>. It takes a name argument for what it is building and a list of the items to build. Since we are creating an extension, we set it a list of extension modules to build as <tt>ext_modules</tt>. The syntax will be like this:</p>
+<div class="docText"><pre>    setup('Extest', ext_modules=[...])</pre></div><br>
+<p class="docText"><a name="iddle2671"></a>Since we only have one module, we combine the instantiation of our extension module into our call to <tt>setup()</tt>, setting the module name as &quot;constant&quot; <tt>MOD</tt> on the preceding line:</p>
+<div class="docText"><pre>   MOD = 'Extest'
+   setup(name=MOD, ext_modules=[
+       Extension(MOD, sources=['Extest2.c'])])</pre></div><br>
+<p class="docText">There are many more options to <tt>setup()</tt>, which are too numerous to list here. You can find out more about creating <tt>setup.py</tt> and calling <tt>setup()</tt> in the official Python documentation that we refer to at the end of this chapter. <a class="docLink" href="#ch22ex02">Example 22.2</a> shows the complete script that we are using for our example.</p>
+<a name="ch22ex02"></a><h5 id="title-IDAQDAJC" class="docExampleTitle">Example 22.2. The Build Script (<tt>setup.py</tt>)</h5><p><table cellspacing="0" width="90%" border="1" cellpadding="5"><tr><TD>
+
+
+<p class="docText"><span class="docEmphasis">This script compiles our extension into the <span class="docEmphRoman">build/lib.*</span> subdirectory.</span></p>
+
+<pre>   1    #!/usr/bin/env python
+   2
+   3    <span class="docEmphStrong">from</span> distutils.core <span class="docEmphStrong">import</span> setup, Extension
+   4
+   5    MOD = 'Extest'
+   6    setup(name=MOD, ext_modules=[
+   7        Extension(MOD, sources=['Extest2.c'])])</pre><BR>
+
+</td></TR></table></p>
+
+<a name="ch22lev3sec6"></a>
+<H5 id="title-IDASEAJC" class="docSection3Title">Compile and Link Your Code by Running <tt>setup.py</tt></h5>
+<p class="docText">Now that we have our <tt>setup.py</tt> file, we can build our extension by running it with the &quot;build&quot; directive, as we have done here on our Mac (your output will differ based on the version of the operating system you are running as well as the version of Python you are using):</P>
+<div class="docText"><pre> $ python setup.py build
+ running build
+ running build_ext
+ building 'Extest' extension
+ creating build
+ creating build/temp.macosx-10.<span class="docEmphasis">x</span>-fat-2.<span class="docEmphasis">x</span>
+ gcc -fno-strict-aliasing -Wno-long-double -no-cpp-
+ precomp -mno-fused-madd -fno-common -dynamic -DNDEBUG -g
+ -I/usr/include -I/usr/local/include -I/sw/include -I/
+ usr/local/include/python2.<span class="docEmphasis">x</span> -c Extest2.c -o build/
+ temp.macosx-10.<span class="docEmphasis">x</span>-fat-2.<span class="docEmphasis">x</span>/Extest2.o
+ creating build/lib.macosx-10.<span class="docEmphasis">x</span>-fat-2.<span class="docEmphasis">x</span>
+ gcc -g -bundle -undefined dynamic_lookup -L/usr/lib -L/
+ usr/local/lib -L/sw/lib -I/usr/include -I/usr/local/
+ include -I/sw/include build/temp.macosx-10.<span class="docEmphasis">x</span>-fat-2.<span class="docEmphasis">x</span>/
+ Extest2.o -o build/lib.macosx-10.<span class="docEmphasis">x</span>-fat-2.<span class="docEmphasis">x</span>/Extest.so</pre></div><BR>
+
+
+<a name="ch22lev2sec6"></a>
+
+<H4 id="title-IDAEGAJC" class="docSection2Title">22.2.4. Import and Test</H4>
+<a name="ch22lev3sec7"></a>
+<h5 id="title-IDANGAJC" class="docSection3Title">Import Your Module from Python</h5>
+<p class="docText"><a name="iddle1937"></a><a name="iddle1946"></a><a name="iddle2383"></a><a name="iddle4155"></a>Your extension module will be created in the <tt>build/lib.*</tt> directory from where you ran your <tt>setup.py</tt> script. You can either change to that directory to test your module or install it into your Python distribution with:</p>
+<div class="docText"><pre> $ python setup.py install</pre></div><BR>
+<p class="docText">If you do install it, you will get the following output:</p>
+<div class="docText"><pre> running install
+ running build
+ running build_ext
+ running install_lib
+ copying build/lib.macosx-10.<span class="docEmphasis">x</span>-fat-2.<span class="docEmphasis">x</span>/Extest.so -&gt;
+ /usr/local/lib/python2.<span class="docEmphasis">x</span>/site-packages</pre></div><BR>
+<p class="docText">Now we can test out our module from the interpreter:</p>
+<div class="docText"><pre> &gt;&gt;&gt; <span class="docEmphStrong">import</span> Extest
+ &gt;&gt;&gt; Extest.fac(5)
+ 120
+ &gt;&gt;&gt; Extest.fac(9)
+ 362880
+ &gt;&gt;&gt; Extest.doppel('abcdefgh')
+ ('abcdefgh', 'hgfedcba')
+ &gt;&gt;&gt; Extest.doppel("Madam, I'm Adam.")
+ ("Madam, I'm Adam.", ".madA m'I, madaM")</pre></div><BR>
+
+<a name="ch22lev3sec8"></a>
+<h5 id="title-IDABJAJC" class="docSection3Title">Test Function</H5>
+<p class="docText">The one last thing we want to do is to add a test function. In fact, we already have one, in the form of the <tt>main()</tt> function. Now, it is potentially dangerous to have a <tt>main()</tt> function in our code because there should only be one <tt>main()</tt> in the system. We remove this danger by changing the name of our <tt>main()</tt> to <tt>test()</tt> and wrapping it, adding <tt>Extest_test()</tt> and updating the <tt>ExtestMethods</tt> array so that they both look like this:</P>
+<div class="docText"><pre><span class="docEmphStrong">static</span> PyObject *
+Extest_test(PyObject *self, PyObject *args) {
+    test();
+    <span class="docEmphStrong">return</span> (PyObject*)Py_BuildValue("");
+}
+<span class="docEmphStrong">static</span> PyMethodDef
+ExtestMethods[] = {
+    { "fac", Extest_fac, METH_VARARGS },
+    { "doppel", Extest_doppel, METH_VARARGS },
+    { "test", Extest_test, METH_VARARGS },
+    { NULL, NULL },
+};</pre></div><br>
+<p class="docText"><a name="iddle1943"></a><a name="iddle2841"></a><a name="iddle3575"></a>The <tt>Extest_test()</tt> module function just runs <tt>test()</tt> and returns an empty string, resulting in a Python value of <tt>None</tt> being returned to the caller.</p>
+<p class="docText">Now we can run the same test from Python:</p>
+<div class="docText"><pre>   &gt;&gt;&gt; Extest.test()
+   4! == 24
+   8! == 40320
+   12! == 479001600
+   reversing 'abcdef', we get 'fedcba'
+   reversing 'madam', we get 'madam'
+   &gt;&gt;&gt;</pre></div><br>
+<p class="docText">In <a class="docLink" href="#ch22ex03">Example 22.3</a>, we present the final version of <tt>Extest2.c</tt> that was used to generate the output we just witnessed.</P>
+<a name="ch22ex03"></a><h5 id="title-IDAGMAJC" class="docExampleTitle">Example 22.3. Python-Wrapped Version of C Library (<tt>Extest2.c</tt>)</h5><P><table cellspacing="0" width="90%" border="1" cellpadding="5"><tr><td>
+
+
+
+<pre>
+1  #include &lt;stdio.h&gt;
+2  #include &lt;stdlib.h&gt;
+3  #include &lt;string.h&gt;
+4
+5  <span class="docEmphStrong">int</span> fac(<span class="docEmphStrong">int</span> n)
+6  {
+7      <span class="docEmphStrong">if</span> (n &lt; 2) <span class="docEmphStrong">return</span>(1);
+8      <span class="docEmphStrong">return</span> (n)*fac(n-1);
+9  }
+10
+11 <span class="docEmphStrong">char</span> *reverse(char *s)
+12 {
+13     <span class="docEmphStrong">register char</span> t,
+14                 *p = s,
+15                 *q = (s + (strlen(s) - 1));
+16
+17     <span class="docEmphStrong">while</span> (s &amp;&amp; (p &lt; q))
+18     {
+19         t = *p;
+20         *p++ = *q;
+21         *q-- = t;
+22     }
+23     <span class="docEmphStrong">return</span> s;
+24 }
+25
+26 <span class="docEmphStrong">int</span> test()
+27 {
+28      <span class="docEmphStrong">char</span> s[BUFSIZ];
+29      printf("4! == %d\n", fac(4));
+30      printf("8! == %d\n", fac(8));
+31      printf("12! == %d\n", fac(12));
+32      strcpy(s, "abcdef");
+33      printf("reversing 'abcdef', we get '%s'\n", \
+34          reverse(s));
+35      strcpy(s, "madam");
+36      printf("reversing 'madam', we get '%s'\n", \
+37          reverse(s));
+38      <span class="docEmphStrong">return</span> 0;
+39 }
+40
+41 #include "Python.h"
+42
+43 <span class="docEmphStrong">static</span> PyObject *
+44 Extest_fac(PyObject *self, PyObject *args)
+45 {
+46     <span class="docEmphStrong">int</span> num;
+47     <span class="docEmphStrong">if</span> (!PyArg_ParseTuple(args, "i", &amp;num))
+48         <span class="docEmphStrong">return</span> NULL;
+49     <span class="docEmphStrong">return</span> (PyObject*)Py_BuildValue("i", fac(num));}
+50 }
+51
+52 <span class="docEmphStrong">static</span> PyObject *
+
+53 Extest_doppel(PyObject *self, PyObject *args)
+54 {
+55     <span class="docEmphStrong">char</span>  *orig_str;
+56     <span class="docEmphStrong">char</span> *dupe_str;
+57     PyObject* retval;
+58
+59     <span class="docEmphStrong">if</span> (!PyArg_ParseTuple(args, "s", &amp;orig_str))
+60         <span class="docEmphStrong">return</span> NULL;
+61     retval = (PyObject*)Py_BuildValue("ss", orig_str, \
+62         dupe_str=reverse(strdup(orig_str)));
+63     free(dupe_str);
+64     <span class="docEmphStrong">return</span> retval;
+65 }
+66
+67 <span class="docEmphStrong">static</span> PyObject *
+68 Extest_test(PyObject *self, PyObject *args)
+69 {
+70     test();
+71     <span class="docEmphStrong">return</span> (PyObject*)Py_BuildValue("");
+72 }
+73
+74 <span class="docEmphStrong">static</span> PyMethodDef
+75 ExtestMethods[] =
+76 {
+77     { "fac", Extest_fac, METH_VARARGS },
+78     { "doppel", Extest_doppel, METH_VARARGS },
+79     { "test", Extest_test, METH_VARARGS },
+80     { NULL, NULL },
+81 };
+82
+83 <span class="docEmphStrong">void</span> initExtest()
+84 {
+85     Py_InitModule("Extest", ExtestMethods);
+86 }</pre><br>
+
+</TD></TR></table></p>
+<p class="docText">In this example, we chose to segregate our C code from our Python code. It just kept things easier to read and is no problem with our short example. In practice, these source files tend to get large, and some choose to implement their wrappers completely in a different source file, i.e., <tt>ExtestWrappers.c</tt> or something of that nature.</p>
+
+
+<a name="ch22lev2sec7"></a>
+<h4 id="title-IDAPQAJC" class="docSection2Title">22.2.5. Reference Counting</h4>
+<p class="docText">You may recall that Python uses reference counting as a means of keeping track of objects and deallocating objects no longer referenced as part of the garbage collection mechanism. When creating extensions, you must pay extra special attention to how you manipulate Python objects because you must be mindful of whether or not you need to change the reference count for such objects.</p>
+<p class="docText">There are two types of references you may have to an object, one of which is an <span class="docEmphasis">owned reference</span>, meaning that the reference count to the object is incremented by one to indicate your ownership. One place where you would definitely have an owned reference is where you create a Python object from scratch.</p>
+<p class="docText">When you are done with a Python object, you must dispose of your ownership, either by decrementing the reference count, transferring your ownership by passing it on, or storing the object. Failure to dispose of an owned reference creates a memory leak.</p>
+<p class="docText">You may also have a <span class="docEmphasis">borrowed reference</span> to an object. Somewhat lower on the responsibility ladder, this is where you are passed the reference of an <a name="iddle1944"></a><a name="iddle2842"></a><a name="iddle3576"></a>object, but otherwise do not manipulate the data in any way. Nor do you have to worry about its reference count, as long as you do not hold on to this reference after its reference count has decreased to zero. You may convert your borrowed reference to an owned reference simply by incrementing an object's reference count.</p>
+<p class="docText">Python provides a pair of C macros which are used to change the reference count to a Python object. They are given in <a class="docLink" href="#ch22table03">Table 22.3</a>.</p>
+<a name="ch22table03"></a><p><table cellspacing="0" FRAME="hsides" RULES="none" cellpadding="5"><caption><h5 class="docTableTitle">Table 22.3. Macros for Performing Python Object Reference Counting</h5></caption><colgroup align="left" span="2"><col width="200"><col width="200"></colgroup><thead><TR><th class="thead" scope="col" align="left" valign="top"><p class="docText"><span class="docEmphasis">Function</span></p></th><th class="thead" scope="col" align="left" valign="top"><p class="docText"><span class="docEmphasis">Description</span></P></th></tr></thead><TR><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>Py_INCREF</tt>(<span class="docEmphasis"><tt>obj</tt></span>)</P></td><TD class="docTableCell" align="left" valign="top"><p class="docText">Increment the reference count to <span class="docEmphasis"><tt>obj</tt></span></P></TD></TR><tr><td class="docTableCell" align="left" valign="top"><p class="docText"><tt>Py_DECREF</tt>(<span class="docEmphasis"><tt>obj</tt></span>)</p></TD><td class="docTableCell" align="left" valign="top"><p class="docText">Decrement the reference count to <span class="docEmphasis"><tt>obj</tt></span></P></td></TR></table></p><BR>
+<p class="docText">In our above <tt>Extest_test()</tt> function, we return <tt>None</tt> by building a <tt>PyObject</tt> with an empty string; however, it can also be accomplished by becoming an owner of the <tt>None</tt> object, <tt>PyNone</tt>, incrementing your reference <a name="iddle1936"></a><a name="iddle1939"></a><a name="iddle2261"></a><a name="iddle2764"></a><a name="iddle2995"></a><a name="iddle2997"></a>count to it, and returning it explicitly, as in the following alternative piece of code:</P>
+<div class="docText"><pre> <span class="docEmphStrong">static</span> PyObject *
+ Extest_test(PyObject *self, PyObject *args) {
+          test();
+          Py_INCREF(Py_None);
+          <span class="docEmphStrong">return</span> PyNone;
+ }</pre></div><br>
+<p class="docText"><tt>Py_INCREF()</tt> and <tt>Py_DECREF()</tt> also have versions that check for NULL objects. They are <tt>Py_XINCREF()</tt> and <tt>Py_XDECREF()</tt>, respectively.</p>
+<p class="docText">We strongly urge the reader to consult the Python documentation regarding extending and embedding Python for all the details with regard to reference counting (see the documentation reference in the Appendix).</p>
+
+<a name="ch22lev2sec8"></a>
+<h4 id="title-IDAPXAJC" class="docSection2Title">22.2.6. Threading and the GIL</H4>
+<p class="docText">Extension writers must be aware that their code may be executed in a multithreaded Python environment. Back in <a class="docLink" href="ch18lev1sec3.html#ch18lev2sec3">Section 18.3.1</a>, we introduced the Python Virtual Machine (PVM) and the Global Interpreter Lock (GIL) and described how only one thread of execution can be running at any given time in the PVM and that the GIL is responsible for keeping other threads from running. Furthermore, we indicated that code calling external functions such as in extension code would keep the GIL locked until the call returns.</p>
+<p class="docText">We also hinted that there was a remedy, a way for the extension programmer to release the GIL, for example before performing a system call. This is accomplished by &quot;blocking&quot; your code off to where threads may (and may not) run safely using another pair of C macros, <tt>Py_BEGIN_ALLOW_THREADS</tt> and <tt>Py_END_ALLOW_THREADS</tt>. A block of code bounded by these macros will permit other threads to run.</p>
+<p class="docText">As with the reference counting macros, we urge you to consult with the documentation regarding extending and embedding Python as well as the Python/C API reference manual.</P>
+
+
+</TD></TR></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=ch22lev1sec1.html><img src="images/prev.gif" width="60" height="17" border="0" align="absmiddle" alt="Previous Page"></a>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=ch22lev1sec3.html><img src="images/next.gif" width="60" height="17" border="0" align="absmiddle" alt="Next Page"></a>
+</div></td></tr></table>
+</body></html>

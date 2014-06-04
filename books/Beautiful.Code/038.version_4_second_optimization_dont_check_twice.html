@@ -1,0 +1,54 @@
+<html><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<link href="styles/globalstyle.css" type="text/css" rel="stylesheet"/>
+<link title="medium" href="styles/two.css" type="text/css" rel="stylesheet"/>
+<script src="scripts/main.js" type="text/javascript" language="javascript"></script>
+<title>Section 5.6. Version 4: Second Optimization: Don't Check Twice</title>
+</head><body>
+<DIV class=h3 style="MARGIN-TOP: 0px; PADDING-BOTTOM: 1em; WIDTH: 100%; PADDING-TOP: 0px"><SPAN>Correct, Beautiful, Fast (in That Order): Lessons from Designing XML Verifiers</SPAN><SPAN> &gt; Version 4: Second Optimization: Don't Check Twice</SPAN></DIV>
+<DIV></DIV>
+<DIV>
+<DIV><A name=version_4_second_optimization_dont_check_twice></A>
+<H3 class=docSection1Title id=-100000>5.6. Version 4: Second Optimization: Don't Check Twice</H3>
+<P class=docText><A name="At this"></A>At this point, the time spent on verification had dropped by about a factor of four, and was no longer a huge concern. Version 3 is essentially what shipped in JDOM 1.0. However, by this point I had decided that JDOM was not good enough, and suspected that I could do better. My defection had more to do with issues of API design than with performance. I was also concerned with correctness, since JDOM still wasn't verifying everything it could, and it was still possible (though difficult) to use JDOM to create malformed documents. Consequently, I embarked on XOM.<A name=idx-CHP-5-0252></A></P>
+<P class=docText><A name="compromises on"></A>XOM, unlike JDOM, made no compromises on correctness in the name of performance. The rule in XOM was that correctness came first, always. Nonetheless, for people to choose XOM over JDOM, its performance was going to have to be comparable to or better than that of JDOM. Thus, it was time to take another whack at the verification problem.</P>
+<P class=docText><A name="of JDOM"></A>The optimization efforts of JDOM version 3 had improved the performance of the <TT>checkXMLName</TT><A name="hoped to"></A> method, but I hoped to eliminate it completely in this next optimization. The reason for this is that you don't always need to check the <A name=idx-CHP-5-0253></A><A name="coming from"></A>XML input if it's coming from a known good source. In particular, an XML parser carries out many of the necessary checks before the input reaches the XML verifier, and there's no reason to duplicate this work. Because the <A name=idx-CHP-5-0254></A><A name="parsing speed"></A>constructors always checked for correctness, they caused a real drain on parsing speed performance, which in practice was a large fraction (often a substantial majority) of the time an application spent on each document.</P>
+<P class=docText><A name="of separate"></A>The use of separate paths for separate types of input would resolve this issue. I had determined that constructors should <SPAN class=docEmphasis>not</SPAN><A name="when creating"></A> verify the element names when creating an object from strings that the parser had already read and checked in the document. Conversely, constructors <SPAN class=docEmphasis>should</SPAN><A name="creating an"></A> verify the element names when creating an object from strings passed by the library client. Clearly, two different constructors were needed; one for the parser and one for everybody else.</P>
+<P class=docText><A name="JDOM developers"></A>JDOM developers had considered this optimization, but got hung up on poor <A name=idx-CHP-5-0255></A>package design. In JDOM, the <TT>SAXBuilder</TT><A name="a new"></A> class that creates a new <TT>Document</TT><A name="SAX parser"></A> object from a SAX parser is in the <TT>org.jdom.input</TT> package. The <TT>Element, Document, Attribute</TT><A name="node classes"></A>, and other node classes are in the <TT>org.jdom</TT><A name="all verifying"></A> package. This means that all verifying and nonverifying constructors called by the builder must be public. Consequently, other clients can also call those constructors—clients that aren't making the appropriate checks. This enables JDOM to produce malformed XML. Later, in JDOM 1.0, the developers reversed themselves and decided to bundle a special factory class that accepted unverified input. This factory class is faster, but opens up a potentially troublesome backdoor in the verification system. The problem was just an artifact of separating the JDOM builder into input and core packages.</P><A name=note-1></A>
+<HR noShade SIZE=1>
+<SPAN class=v2><I><B>Note:</B></I> <SPAN class=docEmphStrong>Excessive package subdivision is a common anti-pattern in Java code. It often leaves developers faced with the unappealing choice of either making things public that shouldn't be, or limiting functionality</SPAN>.<SPAN class=docEmphStrong>Do not use packages merely to organize a class structure. Each package should be essentially independent of the internals of all other packages. If two classes in your program or library have to access each other more than they have to access other, nonrelated classes, they should be placed together in one package</SPAN>.<SPAN class=docEmphStrong>In C++, <SPAN class=docEmphasis>friend</SPAN> functions solve this problem neatly. Although Java does not currently have friend functions, Java 7 may make it possible to grant more access to subpackages that members of the general public do not have</SPAN>.</SPAN>
+<HR noShade SIZE=1>
+ 
+<P class=docText><A name="JDOM to"></A>When I commenced work on XOM, I had the example of JDOM to learn from, so I kept the input classes in the same package as the core node classes. This meant I could provide package-protected, nonverifying methods that were available to the parser, but not to client classes from other packages.</P>
+<P class=docText><A name="of XOM"></A>The mechanics of XOM are straightforward. Each node class has a private no-args constructor, along with a package-protected factory method named <TT>build</TT><A name="and sets"></A> that invokes this constructor and sets up the fields without checking the names. <A class=docLink href="javascript:moveTo('parser-based_digit_character_verification');">Example 5-6</A><A name="code from"></A> demonstrates this with the relevant code from the <TT>Element</TT><A name="XOM is"></A> class. XOM is actually a little pickier than most parsers about namespaces, so it does have to check those. Still, it can omit a lot of redundant checks.</P><A name=parser-based_digit_character_verification></A>
+<H5 class=docExampleTitle id=title-ID0ET1CK>Example 5-6. Parser-based digit character verification</H5>
+<P>
+<TABLE cellSpacing=0 cellPadding=5 width=* border=1>
+<TBODY>
+<TR>
+<TD><PRE>	private Element() {}
+
+	static Element build(String name, String uri, String localName) {
+
+	    Element result = new Element();
+	    String prefix = "";
+	    int colon = name.indexOf(':');
+	    if (colon &gt;= 0) {
+	        prefix = name.substring(0, colon);
+	    }
+	    result.prefix = prefix;
+	    result.localName = localName;
+	    // We do need to verify the URI here because parsers are
+	    // allowing relative URIs which XOM forbids, for reasons
+	    // of canonical <A name=idx-CHP-5-0256></A>XML if nothing else. But we only have to verify
+	    // that it's an absolute base URI. I don't have to verify
+	    // no conflicts.
+	    if (! "".equals(uri)) Verifier.checkAbsoluteURIReference(uri);
+	    result.URI = uri;
+	    return result;
+
+	}
+</PRE><BR></TD></TR></TBODY></TABLE></P>
+<P class=docText><A name="and measurably"></A>This approach dramatically and measurably sped up parsing performance, since it didn't require the same large amount of work as its predecessors.</P></DIV></DIV>
+<p>&nbsp;</p><p>&nbsp;</p><!-- 仁·义 -->
+</body></html>

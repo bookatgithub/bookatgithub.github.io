@@ -1,0 +1,170 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;4.22.&nbsp;Handling Exceptions Within an Expression</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-4-sect-21.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-4-sect-23.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-4-SECT-22"></a>
+<h3 class="docSection1Title">Recipe 4.22. Handling Exceptions Within an Expression</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Chris Perkins, Gregor Rayman, Scott David
+Daniels</span></p>
+
+<a name="pythoncook2-CHP-4-SECT-22.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-4-ITERM-1881"></a>
+<a name="pythoncook2-CHP-4-ITERM-1882"></a> <a name="pythoncook2-CHP-4-ITERM-1883"></a>You want
+to code an <span class="docEmphasis">expression</span>, so you
+can't directly use the
+<span class="docEmphasis">statement</span>
+<tt>TRy</tt>/<tt>except</tt>, but you still need
+to handle exceptions that the expression may throw.</p>
+
+
+<a name="pythoncook2-CHP-4-SECT-22.2"></a>
+<H4 class="docSection2Title">Solution</h4>
+
+<p class="docText">To catch exceptions, <tt>TRy</tt>/<tt>except</tt>
+is indispensable, and, since
+<tt>try</tt>/<tt>except</tt> is a
+<span class="docEmphasis">statement</span>, the only way to use it inside an
+<span class="docEmphasis">expression</span> is to code an auxiliary
+function:<a name="pythoncook2-CHP-4-ITERM-1884"></a></P>
+
+<pre>def throws(t, f, *a, **k):
+    '''Return True iff f(*a, **k) raises an exception whose type is t
+      (or, one of the items of _tuple_ t, if t is a tuple).'''
+    try:
+        f(*a, **k)
+    except t:
+        return True
+    else:
+        return False</pre><BR>
+
+
+<p class="docText">For example, suppose you have a text file, which has one number per
+line, but also extra lines which may be whitespace, comments, or
+what-have-you. Here is how you can make a list of all the numbers in
+the file, skipping the lines that aren't numbers:</p>
+
+<pre>data = [float(line) for line in open(some_file)
+                    if not throws(ValueError, float, line)]</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-4-SECT-22.3"></a>
+<H4 class="docSection2Title">Discussion</h4>
+
+<p class="docText">You might prefer to name such a function <i>raises</i>, but
+I personally prefer <i>throws</I>, which is probably a
+throwback to C++. By whatever name, the auxiliary function shown in
+this recipe takes as its arguments, first an exception type (or tuple
+of exception types) <i>t</i>, then a callable
+<I>f</i>, and then arbitrary positional and named arguments
+<I>a</i> and <I>k</I>, which
+are to be passed on to <i>f</i>. Do
+<span class="docEmphasis">not</span> code, for example, <tt>if not</tt>
+<tt>throws(ValueError, float(line))</tt>! When you call a
+function, Python evaluates the arguments before passing control to
+the function; if an argument's evaluation raises an
+exception, the function never even gets started.
+I've seen this erroneous usage attempted more than
+once by people who are just starting to use the
+<tt>assertRaises</tt> method from the standard Python
+library's <tt>unittest.TestCase</tt>
+class, for example.</p>
+
+<p class="docText">When <i>throws</i> executes, it just calls
+<i>f</i> within the <tt>try</tt> clause of a
+<tt>try</tt>/<tt>except</tt> statement, passing
+on the arbitrary positional and named arguments. If the call to
+<i>f</i> in the <tt>try</tt> clause raises an
+exception whose type is <I>t</I> (or one of the items of
+<i>t</i>, if <I>t</i> is a
+<tt>tuple</tt> of exception types), then control passes to
+the corresponding <tt>except</tt> clause, which, in this
+case, returns <tt>true</tt> as
+<i>throws</i>' result. If no exception is
+raised in the <tt>try</tt> clause, then control passes to
+the corresponding <tt>else</tt> clause (if any), which, in
+this case, returns <tt>False</tt> as
+<i>throws</I>' result.</p>
+
+<p class="docText">Note that, if some <span class="docEmphasis">unexpected</span> exception (one
+whose type is not in <I>t</i>) gets raised, then function
+<I>throws</i> does not catch that exception, so that
+<I>throws</I> terminates and propagates the exception to
+its caller. This choice is quite a deliberate one. Catching
+exceptions with a too-wide <tt>except</tt> clause is a
+bug-diagnosing headache waiting to happen. If the caller really wants
+<i>throws</I> to catch just about everything, it can always
+call <tt>tHRows(Exception</tt>, . . .and live with
+the resulting headaches.</p>
+
+<p class="docText">One problem with the <i>throws</i> function is that you end
+up doing the key operation twiceonce just to see if it throws,
+tossing the result away, then, a second time, to get the result. It
+would be nicer to get the result, if any, together with an indication
+of whether an exception has been caught. I first tried something
+along the lines of:</p>
+
+<pre>def throws(t, f, *a, **k):
+    " Return a pair (True, None) if f(*a, **k) raises an exception whose 
+      type is in t, else a pair (False, x) where x is the result of f(*a, **k). "
+    try:
+        return False, f(*a, **k)
+    except t:
+        return True, None</pre><BR>
+
+
+<p class="docText">Unfortunately, this version doesn't fit in well in a
+list comprehension: there is no elegant way to get and use both the
+flag and the result. So, I chose a different approach: a function
+that returns a <tt>list</tt> in any caseempty if an
+exception was caught, otherwise with the result as the only item.
+This approach works fine in a list comprehension, but for clarity,
+the name of the function needs to be changed:</p>
+
+<pre>def returns(t, f, *a, **k):
+    " Return [f(*a, **k)] normally, [  ] if that raises an exception in t. "
+    try:
+        return [ f(*a, **k) ]
+    except t:
+        return [ ]</pre><br>
+
+
+<p class="docText">The resulting list comprehension is even <span class="docEmphasis">more</span>
+elegant, in my opinion, than the original one in this
+recipe's Solution:</P>
+
+<pre>data = [ x for line in open(some_file)
+           for x in returns(ValueError, float, line) ]</pre><br>
+
+
+
+<a name="pythoncook2-CHP-4-SECT-22.4"></a>
+<H4 class="docSection2Title">See Also</h4>
+
+<p class="docText"><span class="docEmphasis">Python in a Nutshell</span>'s
+section on catching and handling exceptions; the sidebar <a class="docLink" href="pythoncook2-CHP-4-SECT-8.html#pythoncook2-CHP-4-SIDEBAR-1">The *args and **kwds Syntax</a> for an explanation of
+<tt>*args</tt> and <tt>**kwds</tt> syntax.</P>
+
+
+
+<a href="5991535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><UL></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-4-sect-21.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-4-sect-23.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

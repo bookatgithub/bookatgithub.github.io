@@ -1,0 +1,374 @@
+<html><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<link href="styles/globalstyle.css" type="text/css" rel="stylesheet"/>
+<link title="medium" href="styles/two.css" type="text/css" rel="stylesheet"/>
+<script src="scripts/main.js" type="text/javascript" language="javascript"></script>
+<title>Section 25.2. Expansion Algorithm</title>
+</head><body>
+<DIV class=h3 style="MARGIN-TOP: 0px; PADDING-BOTTOM: 1em; WIDTH: 100%; PADDING-TOP: 0px"><SPAN>Syntactic Abstraction: The syntax-case Expander</SPAN><SPAN> &gt; Expansion Algorithm</SPAN></DIV>
+<DIV></DIV>
+<DIV>
+<DIV><A name=expansion_algorithm></A>
+<H3 class=docSection1Title id=-100000>25.2. Expansion Algorithm</H3>
+<P class=docText><A name=The></A>The <TT>syntax-case</TT><A name="essentially a"></A> expansion algorithm is essentially a lazy variant of the KFFD algorithm that operates on an abstract representation of the input expression rather than on the traditional s-expression representation. The abstract representation encapsulates both a representation of an input form and a <SPAN class=docEmphasis>wrap</SPAN><A name="algorithm to"></A> that enables the algorithm to determine the scope of all identifiers within the form. The wrap consists of <SPAN class=docEmphasis>marks</SPAN> and <SPAN class=docEmphasis>substitutions</SPAN>.<A name=idx-CHP-25-2152></A><A name=idx-CHP-25-2153></A><A name=idx-CHP-25-2154></A><A name=I_indexterm25_tt554></A></P>
+<P class=docText><A name="like KFFD"></A>Marks are like KFFD timestamps and are added to the portions of a macro's output that are introduced by the macro.</P>
+<P class=docText>Substitutions map identifiers <A name=idx-CHP-25-2155></A><A name="the help"></A>to bindings with the help of a compile-time environment. Substitutions are created whenever a binding form, such as <TT>lambda</TT>, is encountered, and they are added to the wraps of the <A name=idx-CHP-25-2156></A><A name="binding form"></A>syntax objects representing the forms within the scope of the binding form's bindings. A substitution applies to an identifier only if the identifier has the same name and marks as the substituted identifier.</P>
+<P class=docText><A name="in a"></A>Expansion operates in a recursive, top-down fashion. As the expander encounters a macro call, it invokes the associated transformer on the form, marking it first with a fresh mark and then marking it again with the same mark. Like marks cancel, so only the introduced portions of the macro's output—i.e., those portions not simply copied from the input to the output—remain marked.</P>
+<P class=docText><A name="is encountered"></A>When a core form is encountered, a core form in the output language of the expander (in our case, the traditional s-expression representation) is produced, with any subforms recursively expanded as necessary. Variable references are replaced by generated names via the substitution mechanism.</P><A name=representations></A>
+<H4 class=docSection2Title id=title-ID0EJDEK>25.2.1. Representations</H4>
+<P class=docText><A name=the></A>The most important aspect of the <TT>syntax-case</TT><A name="mechanism is"></A> mechanism is its abstract representation of program source code as <SPAN class=docEmphasis>syntax objects</SPAN><A name="syntax object"></A>. As described above, a syntax object encapsulates not only a representation of the program source code but also a wrap that provides sufficient information about the identifiers contained within the code to implement hygiene:<A name=idx-CHP-25-2157></A><A name=idx-CHP-25-2158></A></P><PRE>	(define-record syntax-object (expr wrap))
+</PRE><BR>
+<P class=docText>The <TT>define-record</TT><A name="new type"></A> form creates a new type of value with the specified name (in this case, <TT>syntax-object</TT><A name="this case"></A>) and fields (in this case, <TT>expr</TT> and <TT>wrap</TT><A name="set of"></A>), along with a set of procedures to manipulate it. The procedures in this case are:</P>
+<DL class=docList>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docPubcolor><SPAN class=docMonofont>make-syntax-object</SPAN></SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList>Returns a new syntax object with the <TT>expr</TT> and <TT>wrap</TT> fields initialized to the values of its arguments</P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docPubcolor><SPAN class=docMonofont>syntax-object?</SPAN></SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList><A name="syntax object"></A>Returns true if and only if its argument is a syntax object</P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docPubcolor><SPAN class=docMonofont>syntax-object-expr</SPAN></SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList><A name="value of"></A>Returns the value of the <TT>expr</TT> field of a <TT>syntax-object</TT></P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docPubcolor><SPAN class=docMonofont>syntax-object-wrap</SPAN></SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList><A name=the></A>Returns the value of the <TT>wrap</TT> field of a syntax object</P></DD></DL>
+<P class=docText>A complete implementation of <TT>syntax-case</TT><A name="source information"></A> might also include, within each syntax object, source information to be tracked through the expansion process.</P>
+<P class=docText><A name="Each wrap"></A>Each wrap, as explained previously, consists of a list of marks and substitutions. Marks are distinguished by their object identity and do not require any fields:</P><PRE>	(define-record mark ())
+</PRE><BR>
+<P class=docText>A substitution maps <A name=idx-CHP-25-2159></A><A name="and list"></A>a symbolic name and list of marks to a label:</P><PRE>	(define-record subst (sym mark* label))
+</PRE><BR>
+<P class=docText><A name=idx-CHP-25-2160></A><A name="by their"></A>Labels, like marks, are distinguished by their identity and require no fields:</P><PRE>	(define-record label ())
+</PRE><BR>
+<P class=docText><A name="maintained by"></A>The expand-time environment maintained by the expander maps labels to <SPAN class=docEmphasis>bindings</SPAN><A name="structured as"></A>. The environment is structured as a traditional <SPAN class=docEmphasis>association list</SPAN><A name="and each"></A>—i.e., a list of pairs, each car of which contains a label and each cdr of which contains a binding. Bindings consist of a <A name=idx-CHP-25-2161></A><A name="a symbol"></A>type (represented as a symbol) and a <A name=idx-CHP-25-2162></A>value:<A name=idx-CHP-25-2163></A><A name=idx-CHP-25-2164></A></P><PRE>	(define-record binding (type value))
+</PRE><BR>
+<P class=docText><A name="nature of"></A>The type identifies the nature of the binding: <TT>macro</TT> for <A name=idx-CHP-25-2165></A>keyword bindings and <TT>lexical</TT> for <TT>lexical</TT><A name="additional information"></A> variable bindings. The value is any additional information required to specify the binding, such as the transformation procedure when the binding is a keyword binding.<A name=idx-CHP-25-2166></A></P><A name=producing_expander_output></A>
+<H4 class=docSection2Title id=title-ID0EPJEK>25.2.2. Producing Expander Output</H4>
+<P class=docText><A name="The expander"></A>The expander's output is a simple s-expression in the core language and is thus constructed for the most part using Scheme's <TT>quasiquote</TT> <A name=idx-CHP-25-2167></A><A name="list structure"></A>syntax for creating list structure. For example, a <TT>lambda</TT><A name="created with"></A> expression may be created with formal parameter <TT><I>var</I></TT> and body <TT><I>body</I></TT> as follows:<A name=idx-CHP-25-2168></A><A name=idx-CHP-25-2169></A></P><PRE>	`(lambda (<TT><I>,var) ,body</I></TT>)
+</PRE><BR>
+<P class=docText><A name="does need"></A>The expander does need to create fresh names, however, and does so via the <TT>gen-var</TT><A name="of the"></A> helper, which makes use of the Scheme <A name=idx-CHP-25-2170></A><A name="a local"></A>primitives for converting strings to symbols and vice versa, along with a local sequence counter:<A name=idx-CHP-25-2171></A></P><PRE>	(define gen-var
+	  (let ([n 0])
+	    (lambda (id)
+	      (set! n (+ n 1))
+	      (let ([name (syntax-object-expr id)])
+	        (string-&gt;symbol (format "~s.~s" name n))))))
+</PRE><BR><A name=stripping_syntax_objects></A>
+<H4 class=docSection2Title id=title-ID0EQLEK>25.2.3. Stripping Syntax Objects</H4>
+<P class=docText>Whenever a <TT>quote</TT><A name="encountered in"></A> form is encountered in the input, the expander must return a representation of the constant contents appearing within the <TT>quote</TT><A name="strip off"></A> form. To do this, it must strip off any embedded syntax objects and wraps using the <TT>strip</TT><A name="and list"></A> procedure, which traverses the syntax object and list structure of its input and recreates an s-expression representation of its input:<A name=idx-CHP-25-2172></A><A name=idx-CHP-25-2173></A></P><PRE>	(define strip
+	  (lambda (x)
+	    (cond
+	      [(syntax-object? x)
+	       (if (top-marked? (syntax-object-wrap x))
+	           (syntax-object-expr x)
+	           (strip (syntax-object-expr x)))]
+	      [(pair? x)
+	       (let ([a (strip (car x))] [d (strip (cdr x))])
+	         (if (and (eq? a (car x)) (eq? d (cdr x)))
+	             x
+	             (cons a d)))]
+	      [else x])))
+</PRE><BR>
+<P class=docText><A name="Traversal terminates"></A>Traversal terminates along any branch of the input expression when something other than a syntax object or pair is found—i.e., when a symbol or immediate value is found. It also terminates when a syntax object is found to be "<A name=idx-CHP-25-2174></A><A name="wrap contains"></A>top marked"—i.e., when its wrap contains a unique <SPAN class=docEmphasis>top mark</SPAN>:</P><PRE>	(define top-mark (make-mark))
+
+	(define top-marked?
+	  (lambda (wrap)
+	    (and (not (null? wrap))
+	    (or (eq? (car wrap) top-mark)
+	        (top-marked? (cdr wrap))))))
+</PRE><BR>
+<P class=docText><A name="creates a"></A>When the expander creates a syntax object representing the original input, it uses a wrap that contains the top mark at its base, specifically to allow the stripping code detect when it has reached the syntax-object base and need not traverse the object further. This feature prevents the expander from traversing constants unnecessarily so that it can easily preserve shared and cyclic structure, and not be confused by the presence of quoted syntax objects in the input.</P><A name=syntax_errors></A>
+<H4 class=docSection2Title id=title-ID0EANEK>25.2.4. Syntax Errors</H4>
+<P class=docText><A name=reports></A>The expander reports <A name=idx-CHP-25-2175></A>syntax errors via <TT>syntax-error</TT><A name="as follows"></A>, which is defined as follows:<A name=idx-CHP-25-2176></A><A name=idx-CHP-25-2177></A></P><PRE>	(define syntax-error
+	  (lambda (object message)
+	    (error #f "~a ~s" message (strip object))))
+</PRE><BR>
+<P class=docText><A name="information can"></A>If the implementation attaches source information to syntax objects, this source information can be used to construct an error message that incorporates the source line and character position.</P><A name=structural_predicates></A>
+<H4 class=docSection2Title id=title-ID0EGOEK>25.2.5. Structural Predicates</H4>
+<P class=docText>The <A name=idx-CHP-25-2178></A><A name="of a"></A>nonatomic structure of a syntax object is always determined with the patterns of a <TT>syntax-case</TT> form. The <TT>identifier?</TT><A name="syntax object"></A> predicate determines whether a syntax object represents an identifier:<A name=idx-CHP-25-2179></A><A name=idx-CHP-25-2180></A></P><PRE>	(define identifier?
+	  (lambda (x)
+	    (and (syntax-object? x)
+	         (symbol? (syntax-object-expr x)))))
+</PRE><BR>
+<P class=docText>Similarly, the <TT>self-evaluating?</TT><A name="syntax object"></A> predicate is used, after stripping a syntax object, to deter-mine whether it represents a constant:<A name=idx-CHP-25-2181></A></P><PRE>	(define self-evaluating?
+	  (lambda (x)
+	    (or (boolean? x) (number? x) (string? x) (char? x))))
+</PRE><BR><A name=creating_wraps></A>
+<H4 class=docSection2Title id=title-ID0EZPEK>25.2.6. Creating Wraps</H4>
+<P class=docText><A name="A mark"></A>A mark or substitution is added to a syntax object by extending the wrap:<A name=idx-CHP-25-2182></A><A name=idx-CHP-25-2183></A></P><PRE>	(define add-mark
+	  (lambda (mark x)
+	    (extend-wrap (list mark) x)))
+
+	(define add-subst
+	  (lambda (id label x)
+	    (extend-wrap
+	      (list (make-subst
+	              (syntax-object-expr id)
+	              (wrap-marks (syntax-object-wrap id))
+	              label))
+	x)))
+</PRE><BR>
+<P class=docText><A name="object is"></A>If the syntax object is only partially wrapped, the wrap is extended simply by creating a syntax object encapsulating the partially wrapped structure. Otherwise, the syntax object is rebuilt with the new wrap joined to the old wrap:</P><PRE>	(define extend-wrap
+	  (lambda (wrap x)
+	    (if (syntax-object? x)
+	        (make-syntax-object
+	          (syntax-object-expr x)
+	          (join-wraps wrap (syntax-object-wrap x)))
+	        (make-syntax-object x wrap))))
+</PRE><BR>
+<P class=docText><A name="is almost"></A>Joining two wraps is almost as simple as appending the lists of marks. The only complication is that the <A name=idx-CHP-25-2184></A><A name="requires that"></A>expansion algorithm requires that two like marks cancel when they meet.</P><PRE>	(define join-wraps
+	  (lambda (wrap1 wrap2)
+	    (cond
+	      [(null? wrap1) wrap2]
+	      [(null? wrap2) wrap1]
+	      [else
+	       (let f ([w (car wrap1)] [w* (cdr wrap1)])
+	         (if (null? w*)
+	             (if (and (mark? w) (eq? (car wrap2) w))
+	                 (cdr wrap2)
+	                 (cons w wrap2))
+	             (cons w (f (car w*) (cdr w*)))))])))
+</PRE><BR><A name=manipulating_environments></A>
+<H4 class=docSection2Title id=title-ID0EIREK>25.2.7. Manipulating Environments</H4>
+<P class=docText><A name="to bindings"></A>Environments map labels to bindings and are represented as association lists. Extending an environment therefore involves adding a single pair <A name=idx-CHP-25-2185></A>mapping a label to a binding:<A name=idx-CHP-25-2186></A><A name=idx-CHP-25-2187></A></P><PRE>	(define extend-env
+	  (lambda (label binding env)
+	    (cons (cons label binding) env)))
+</PRE><BR><A name=identifier_resolution></A>
+<H4 class=docSection2Title id=title-ID0EJSEK>25.2.8. Identifier Resolution</H4>
+<P class=docText><A name=idx-CHP-25-2188></A><A name="first step"></A>Determining the binding associated with an identifier is a two-step process. The first step is to determine the label associated with the identifier in the identifier's wrap, and the second is to look the label up in the current environment:<A name=idx-CHP-25-2189></A></P><PRE>	define id-binding
+	 (lambda (id r)
+	   (label-binding id (<A name=idx-CHP-25-2190></A>id-label id) r)))
+</PRE><BR>
+<P class=docText><A name="and substitutions"></A>The marks and substitutions that appear <A name=idx-CHP-25-2191></A><A name="the associated"></A>in an identifier's wrap determine the associated label, if any. Substitutions map names and lists of marks to labels. Any substitution whose name is not the name of the identifier is ignored, as is any whose marks do not match. The names are symbols and are thus compared using the pointer equivalence operator, <TT>eq?</TT>.</P>
+<P class=docText><A name="relevant are"></A>The set of marks considered relevant are those that were layered onto the wrap before the substitution. Thus, the set of marks to which a substitution's marks are compared changes as the search through the wrap proceeds. The starting set of marks is the entire set that appears in the wrap. Each time a mark is encountered during the search for a matching substitution in the wrap, the first mark in the list is removed:</P><PRE>	(define id-label
+	  (lambda (id)
+	    (let ([sym (syntax-object-expr id)]
+	          [wrap (syntax-object-wrap id)])
+	      (let search ([wrap wrap] [mark* (wrap-marks wrap)])
+	        (if (null? wrap)
+	            (syntax-error id "undefined identifier")
+	            (let ([w0 (car wrap)])
+	              (if (mark? w0)
+	                  (search (cdr wrap) (cdr mark*))
+	                  (if (and (eq? (subst-sym w0) sym)
+	                           (<A name=idx-CHP-25-2192></A>same-marks? (subst-mark* w0) mark*))
+	                      (subst-label w0)
+	                      (search (cdr wrap) mark*)))))))))
+</PRE><BR>
+<P class=docText><A name="If no"></A>If no matching substitution exists in the wrap, the identifier is undefined, and a syntax error is signaled. It would be possible instead to treat all such identifier references as global variable references.</P>
+<P class=docText>The <TT>id-label</TT><A name="starting list"></A> procedure obtains the starting list of marks via <TT>wrap-marks</TT> and uses the <TT>same-marks?</TT><A name="lists of"></A> predicate to compare lists of marks:</P><PRE>	(define wrap-marks
+	  (lambda (wrap)
+	    (if (null? wrap)
+	        '()
+	        (let ([w0 (car wrap)])
+	          (if (mark? w0)
+	              (cons w0 (wrap-marks (cdr wrap)))
+	              (wrap-marks (cdr wrap)))))))
+
+	(define same-marks?
+	  (lambda (m1* m2*)
+	    (if (null? m1*)
+	        (null? m2*)
+	        (and (not (null? m2*))
+	             (eq? (car m1*) (car m2*))
+	             (same-marks? (cdr m1*) (cdr m2*))))))
+</PRE><BR>
+<P class=docText><A name="label has"></A>Once a label has been found, <TT>id-binding</TT><A name="find the"></A> is used to find the associated binding, if any, using the <TT>assq</TT><A name="the cdr"></A> procedure for performing association-list lookups. If an association is found, the binding in the cdr of the association is returned:<A name=idx-CHP-25-2193></A></P><PRE>	(define label-binding
+	  (lambda (id label r)
+	    (let ([a (assq label r)])
+	      (if a
+	          (cdr a)
+	          (syntax-error id "displaced lexical")))))
+</PRE><BR>
+<P class=docText><A name="binding is"></A>If no binding is found, the identifier is a "displaced lexical." This occurs when a macro improperly inserts into its output a reference to an identifier that is not visible in the context of the macro output.</P><A name=the_expander></A>
+<H4 class=docSection2Title id=title-ID0EGVEK>25.2.9. The Expander</H4>
+<P class=docText><A name="handling wraps"></A>With the mechanisms for handling wraps and environments in place, the <A name=idx-CHP-25-2194></A>expander is straightforward. The expression expander, <TT>exp</TT><A name="and constants"></A>, handles macro calls, lexical variable references, applications, core forms, and constants. Macro calls come in two forms: singleton macro-keyword references and structured forms with a macro keyword in the first position.<A name=idx-CHP-25-2195></A><A name=idx-CHP-25-2196></A></P>
+<P class=docText><A name=The></A>The <TT>exp</TT><A name="a syntax"></A> procedure takes three arguments: a syntax object <TT><I>x</I></TT>, a <A name=idx-CHP-25-2197></A>runtime environment <TT><I>r</I></TT>, and a <A name=idx-CHP-25-2198></A>meta environment <TT><I>mr</I></TT><A name="is used"></A>. The runtime environment is used to process ordinary expressions whose code will appear in the expander's output, while the <A name=idx-CHP-25-2199></A><A name="is used"></A>meta environment is used to process transformer expressions (e.g., on the righthand sides of <TT>letrec-syntax</TT><A name="and used"></A> bindings), which are evaluated and used at expansion time. The difference between the runtime and meta environments is that the meta environment does not contain lexical variable bindings, because these bindings are not available when the transformer is evaluated and used:</P>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedHeight>	(define exp
+	  (lambda (x r mr)
+	    (<A name=idx-CHP-25-2200></A>syntax-case x ()
+	   [id
+	    (identifier? #'id)
+	    (let ([b (id-binding #'id r)])
+	     (case (binding-type b)
+	       [(macro) (exp (<A name=idx-CHP-25-2201></A>exp-macro (binding-value b) x) r mr)]
+	       [(lexical) (binding-value b)]
+	       [else (syntax-error x "invalid syntax")]))]
+	  [(e0 e1 ...)
+	   (identifier? #'e0)
+	   (let ([b (id-binding #'e0 r)])
+	     (case (binding-type b)
+	       [(macro) (exp (exp-macro (binding-value b) x) r mr)]
+	       [(lexical)
+	        `(,(binding-value b) ,@(exp-exprs #'(e1 ...) r mr))]
+	       [(core) (exp-core (binding-value b) x r mr)]
+	       [else (syntax-error x "invalid syntax")]))]
+	  [(e0 e1 ...)
+	   `(,(exp #'e0 r mr) ,@(exp-exprs #'(e1 ...) r mr))]
+	  [_
+	   (let ([d (strip x)])
+	     (if (self-evaluating? d)
+	         d
+	         (syntax-error x "invalid syntax")))])))
+
+
+					    </PRE><BR>
+<P class=docText>Macro calls are handled by <TT>exp-macro</TT><A name="is always"></A> (described shortly) and then re-expanded. Lexical variables are rewritten into the binding value, which is always a generated variable name. Applications are rewritten into lists as in the traditional s-expression syntax for Lisp and Scheme, with the subforms expanded recursively. Core forms are handled by <TT>exp-core</TT><A name="back to"></A> (described shortly); any recursion back to the expression <A name=idx-CHP-25-2202></A><A name="by the"></A>expander is performed explicitly by the core transformer. A constant is rewritten into the constant value, stripped of its syntax wrapper.</P>
+<P class=docText>The <A name=idx-CHP-25-2203></A>expander <A name=idx-CHP-25-2204></A>uses <TT>syntax-case</TT> and <TT>syntax</TT> (in its abbreviated form—i.e., #'<TT><I>template</I></TT><A name="the input"></A>) to parse and refer to the input or portions thereof. Because the expander is also charged with implementing <TT>syntax-case</TT><A name="this may"></A>, this may seem like a paradox. In actuality, it is handled by bootstrapping one version of the expander using a previous version. The expander would be much more tedious to write if <TT>syntax-case</TT> and <TT>syntax</TT> were not used.</P>
+<P class=docText>The <TT>exp-macro</TT><A name="transformation procedure"></A> procedure applies the transformation procedure (the value part of the macro binding) to the entire macro form, which may either be a single macro keyword or a structured expression with the macro keyword at its head. The <TT>exp-macro</TT><A name="a fresh"></A> procedure first adds a fresh mark to the wrap of the input form, then applies the same mark to the wrap of the output form. The first mark serves as an "anti-mark" that cancels out the second mark, so the net effect is that the mark adheres only to the portions of the output that were introduced by the transformer, thus uniquely identifying the portions of the code introduced at this transcription step:</P><PRE>	(define exp-macro
+	  (lambda (p x)
+	    (let ([m (make-mark)])
+	      (add-mark m (p (add-mark m x))))))
+</PRE><BR>
+<P class=docText>The <TT>exp-core</TT><A name="applies the"></A> procedure simply applies the given <A name=idx-CHP-25-2205></A><A name="part of"></A>core transformer (the value part of the core binding) to the input form:<A name=idx-CHP-25-2206></A></P><PRE>	(define exp-core
+	  (lambda (p x r mr)
+	    (p x r mr)))
+</PRE><BR>
+<P class=docText>The <TT>exp-exprs</TT> procedure used to process application subforms simply maps the <A name=idx-CHP-25-2207></A>expander over the forms:<A name=idx-CHP-25-2208></A></P><PRE>	(define exp-exprs
+	  (lambda (x* r mr)
+	    (map (lambda (x) (exp x r mr)) x*)))
+</PRE><BR><A name=core_transformers></A>
+<H4 class=docSection2Title id=title-ID0E21EK>25.2.10. Core Transformers</H4>
+<P class=docText>Transformers for several representative core forms (<TT>quote, if, lambda, let</TT>, and <TT>letrec-syntax</TT>) are described here. Adding transformers for other core forms, such as <TT>letrec</TT> or <TT>let-syntax</TT>, is straightforward.<A name=idx-CHP-25-2209></A><A name=idx-CHP-25-2210></A></P>
+<P class=docText>The <TT>exp-quote</TT> procedure produces an s-expression <A name=idx-CHP-25-2211></A>representing a <TT>quote</TT> form, with the data value stripped of its syntax wrap:<A name=idx-CHP-25-2212></A></P><PRE>	(define exp-quote
+	  (lambda (x r mr)
+	    (<A name=idx-CHP-25-2213></A>syntax-case x ()
+	      [(_ d) `(quote ,(strip #'d))])))
+</PRE><BR>
+<P class=docText>The <TT>exp-if</TT> procedure produces an s-expression representation of an <TT>if</TT> form, with the sub-forms recursively expanded:<A name=idx-CHP-25-2214></A></P><PRE>	(define exp-if
+	  (lambda (x r mr)
+	    (syntax-case x ()
+	      [(_ e1 e2 e3)
+	        `(if ,(exp #'e1 r mr)
+	             ,(exp #'e2 r mr)
+	             ,(exp #'e3 r mr))])))
+</PRE><BR>
+<P class=docText>The <TT>exp-lambda</TT> procedure handles <TT>lambda</TT><A name="a single"></A> expressions that have only a single formal parameter and only a single body expression. Extending it to handle multiple parameters is straightforward. It is less straightforward to handle arbitrary <TT>lambda</TT><A name="but support"></A> bodies, including internal definitions, but support for internal definitions is beyond the scope of this chapter.<A name=idx-CHP-25-2215></A></P>
+<P class=docText><A name=a></A>When the s-expression representation of a <TT>lambda</TT><A name="name is"></A> expression is produced, a generated variable name is created for the formal parameter. A substitution mapping the identifier to a fresh label is added to the wrap on the body, and the environment is extended with an association from the label to a <TT>lexical</TT><A name="binding whose"></A> binding whose value is the generated variable,during the recursive processing of the body:</P><PRE>	(define exp-lambda
+	  (lambda (x r mr)
+	    (syntax-case x ()
+	  [(_ (var) body)
+	   (<A name=idx-CHP-25-2216></A>let ([label (make-label)] [new-var (gen-var #'var)])
+	     `(lambda (,new-var)
+	        ,(exp (add-subst #'var label #'body)
+	              (extend-env label
+	                (make-binding 'lexical new-var)
+	                r)
+	              mr)))])))
+</PRE><BR>
+<P class=docText><A name="is not"></A>The meta environment is not extended because the meta environment should not include lexical variable bindings.</P>
+<P class=docText>The <TT>exp-let</TT> procedure that transforms <A name=idx-CHP-25-2217></A>single-binding <TT>let</TT><A name="to the"></A> forms is similar to the transformer for <TT>lambda</TT><A name="bit more"></A>, but a bit more involved:<A name=idx-CHP-25-2218></A></P><PRE>	(define exp-let
+	  (lambda (x r mr)
+	    (<A name=idx-CHP-25-2219></A>syntax-case x ()
+	      [(_ ([var expr]) body)
+	       (let ([label (make-label)] [new-var (gen-var #'var)])
+	         `(let ([,new-var ,(exp #'expr r mr)])
+	            ,(exp (add-subst #'var label #'body)
+	                  (extend-env label
+	               (make-binding 'lexical new-var)
+	               r)
+	             mr)))])))
+</PRE><BR>
+<P class=docText><A name="in the"></A>The body is in the scope of the binding created by <TT>let</TT>, so it is expanded with the extended wrap and environment. The righthand-side expression, <TT>expr</TT><A name="original wrap"></A>, is not within the scope, so it is expanded with the original wrap and environment.</P>
+<P class=docText>The <TT>exp-letrec-syntax</TT> procedure handles <A name=idx-CHP-25-2220></A>single-binding <TT>letrec-syntax</TT> forms. As with <TT>lambda</TT> and <TT>let</TT><A name="mapping the"></A>, a substitution mapping the bound identifier—in this case, a keyword rather than a variable—to a fresh label is added to the wrap on the body, and an association from the label to a binding is added to the environment while the body is recursively processed. The binding is a macro binding rather than a <TT>lexical</TT><A name="is the"></A> binding, and the binding value is the result of recursively expanding and evaluating the righthand-side expression of the <TT>letrec-syntax</TT> form.<A name=idx-CHP-25-2221></A></P>
+<P class=docText>In contrast with <TT>let</TT><A name="with a"></A>, the righthand-side expression is also wrapped with a substitution from the keyword to the label and expanded with the extended environment; this allows the macro to be recursive. This would not be done if the form were a <TT>let-syntax</TT><A name="form instead"></A> form instead of a <TT>letrec-syntax</TT><A name="by expanding"></A> form. The output produced by expanding a <TT>letrec-syntax</TT><A name="of the"></A> form consists only of the output of the recursive call to the expander on the body of the form:<A name=idx-CHP-25-2222></A></P><PRE>	(define <A name=idx-CHP-25-2223></A>exp-letrec-syntax
+	  (lambda (x r mr)
+	    (syntax-case x ()
+	      [(_ ((kwd expr)) body)
+	       (let ([label (make-label)])
+	         (let ([b (make-binding 'macro
+	                    (eval (exp (add-subst #'kwd label #'expr)
+	                               mr mr)))])
+	    (exp (add-subst #'kwd label #'body)
+	         (extend-env label b r)
+	         (extend-env label b mr))))])))
+</PRE><BR>
+<P class=docText><A name="runtime and"></A>Both the runtime and meta environments are extended in this case, since <A name=idx-CHP-25-2224></A><A name="both in"></A>transformers are available both in runtime and transformer code.</P><A name=parsing_and_constructing_syntax_objects></A>
+<H4 class=docSection2Title id=title-ID0ESBFK>25.2.11. Parsing and Constructing Syntax Objects</H4>
+<P class=docText>Macros are written in a pattern-matching style using <TT>syntax-case</TT> to match and take apart the input, and <TT>syntax</TT><A name="reconstruction is"></A> to reconstruct the output. The implementation of the pattern matching and reconstruction is outside the scope of this chapter, but the following low-level operators can be used as the basis for the implementation. The <TT>syntax-case</TT><A name="be built"></A> form can be built from the following set of three operators that treat syntax objects as abstract s-expressions:<A name=idx-CHP-25-2225></A></P><PRE>	(define <A name=idx-CHP-25-2226></A>syntax-pair?
+	  (lambda (x)
+	    (pair? (syntax-object-expr x))))
+
+	(define <A name=idx-CHP-25-2227></A>syntax-car
+	  (lambda (x)
+	    (<A name=idx-CHP-25-2228></A>extend-wrap
+	      (syntax-object-wrap x)
+	      (car (syntax-object-expr x)))))
+
+	(define <A name=idx-CHP-25-2229></A>syntax-cdr
+	  (lambda (x)
+	    (extend-wrap
+	      (syntax-object-wrap x)
+	      (cdr (syntax-object-expr x)))))
+</PRE><BR>
+<P class=docText>The definitions of <TT>syntax-car</TT> and <TT>syntax-cdr</TT> employ the <TT>extend-wrap</TT><A name="earlier section"></A> helper defined in the earlier section "Creating Wraps" to push the wrap on the pair onto the car and cdr.</P>
+<P class=docText>Similarly, <TT>syntax</TT><A name="following more"></A> can be built from the following more basic version of <TT>syntax</TT><A name="that handles"></A> that handles constant input, but not pattern variables and ellipses:</P><PRE>	(define exp-syntax
+	  (lambda (x r mr)
+	    (syntax-case x ()
+	      [(_ t) `(quote ,#'t)])))
+</PRE><BR>
+<P class=docText><A name="version of"></A>In essence, the simplified version of syntax is just like <TT>quote</TT> except that <TT>syntax</TT><A name="the encapsulated"></A> does not strip the encapsulated value but rather leaves the syntax wrappers intact.</P><A name=comparing_identifiers></A>
+<H4 class=docSection2Title id=title-ID0EAEFK>25.2.12. Comparing Identifiers</H4>
+<P class=docText><A name="compared based"></A>Identifiers are compared based on their intended use. They may be compared as symbols by using the pointer equivalence operator <TT>eq?</TT><A name="names of"></A> on the symbolic names of the identifiers. They may also be compared according to their intended use as free or bound identifiers in the output of a macro.<A name=idx-CHP-25-2230></A><A name=idx-CHP-25-2231></A><A name=I_indexterm25_tt586></A></P>
+<P class=docText>Two identifiers are considered equivalent by <TT>free-identifier=?</TT><A name="into the"></A> if they would resolve to the same binding if introduced into the output of a macro outside of any binding introduced by the macro. Equivalency is tested by comparing the labels to which the identifiers resolve, as described previously in the section "Identifier Resolution":<A name=idx-CHP-25-2232></A></P><PRE>	(define free-identifier=?
+	  (lambda (x y)
+	    (eq? (id-label x) (id-label y))))
+</PRE><BR>
+<P class=docText>The <TT>free-identifier=?</TT><A name="often used"></A> predicate is often used to check for auxiliary keywords, such as <TT>else</TT> in <TT>cond</TT> or <TT>case</TT>.</P>
+<P class=docText><A name="equivalent by"></A>Two identifiers are considered equivalent by <TT>bound-identifier=?</TT><A name="would be"></A> if a reference to one would be captured by an enclosing binding for another. This is accomplished by comparing the names and marks of the two identifiers:<A name=idx-CHP-25-2233></A></P><PRE>	(define bound-identifier=?
+	  (lambda (x y)
+	    (and (eq? (syntax-object-expr x) (syntax-object-expr y))
+	         (same-marks?
+	           (wrap-marks (syntax-object-wrap x))
+	           (wrap-marks (syntax-object-wrap y))))))
+</PRE><BR>
+<P class=docText><A name=The></A>The <TT>bound-identifier=?</TT><A name="used to"></A> predicate is often used to check for duplicate identifier errors in a binding form, such as <TT>lambda</TT> or <TT>let</TT>.</P><A name=conversions></A>
+<H4 class=docSection2Title id=title-ID0EQGFK>25.2.13. Conversions</H4>
+<P class=docText>The <A name=idx-CHP-25-2234></A>conversion from <A name=idx-CHP-25-2235></A><A name="performed by"></A>s-expression to syntax object performed by <TT>datum-&gt;syntax</TT><A name="that the"></A> requires only that the wrap be transferred from the template identifier to the s-expression:<A name=idx-CHP-25-2236></A><A name=idx-CHP-25-2237></A></P><PRE>	(define datum-&gt;syntax
+	   (lambda (template-id x)
+	      (make-syntax-object x (syntax-object-wrap template-id))))
+</PRE><BR>
+<P class=docText><A name="involves stripping"></A>The opposite conversion involves stripping the wrap away from a syntax object, so <TT>syntax-&gt;datum</TT> is just <TT>strip</TT>:</P><PRE>	(define syntax-&gt;datum strip)
+</PRE><BR><A name=starting_expansion></A>
+<H4 class=docSection2Title id=title-ID0EEIFK>25.2.14. Starting Expansion</H4>
+<P class=docText><A name=Scheme></A>All of the pieces are now in place to expand Scheme <A name=idx-CHP-25-2238></A><A name="macros into"></A>expressions containing macros into expressions in the core language. The main expander merely supplies an initial wrap and environment that include names and bindings for the core forms and primitives:<A name=idx-CHP-25-2239></A><A name=idx-CHP-25-2240></A></P><PRE>	(define expand
+	  (lambda (x)
+	    (let-values ([(wrap env) (initial-wrap-and-env)])
+	      (exp (make-syntax-object x wrap) env env))))
+</PRE><BR>
+<P class=docText><A name="of a"></A>The initial wrap consists of a set of substitutions mapping each predefined identifier to a fresh label, and the initial environment associates each of these labels with the corresponding binding:</P>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedHeight>	(define initial-wrap-and-env
+	  (lambda ()
+	    (define id-binding*
+	      `((quote . ,(make-binding 'core exp-quote))
+	        (if . ,(make-binding 'core exp-if))
+	        (lambda . ,(make-binding 'core exp-lambda))
+	        (let . ,(make-binding 'core exp-let))
+	        (letrec-syntax . ,(make-binding 'core exp-letrec-syntax))
+	        (identifier? . ,(make-binding 'lexical 'identifier?))
+	        (free-identifier=? . ,(make-binding 'lexical 'free-identifier=?))
+	        (bound-identifier=? . ,(make-binding 'lexical 'bound-identifier=?))
+	        (datum-&gt;syntax . ,(make-binding 'lexical 'datum-&gt;syntax))
+	        (syntax-&gt;datum . ,(make-binding 'lexical 'syntax-&gt;datum))
+	        (syntax-error . ,(make-binding 'lexical 'syntax-error))
+	        (syntax-pair? . ,(make-binding 'lexical 'syntax-pair?))
+	        (syntax-car . ,(make-binding 'lexical 'syntax-car))
+	        (syntax-cdr . ,(make-binding 'lexical 'syntax-cdr))
+	        (syntax . ,(make-binding 'core exp-syntax))
+	        (list . ,(make-binding 'core 'list))))
+	    (let ([label* (map (lambda (x) (make-label)) id-binding*)])
+	      (values
+	        `(,@(map (lambda (sym label)
+	                   (make-subst sym (list top-mark) label))
+	                 (map car id-binding*)
+	                 label*)
+	          ,top-mark)
+	        (map cons label* (map cdr id-binding*))))))
+
+
+					    </PRE><BR>
+<P class=docText><A name="the initial"></A>In addition to the entries listed, the initial environment should also include bindings for the built-in <A name=idx-CHP-25-2241></A><A name="syntactic forms"></A>syntactic forms we have not implemented (e.g., <TT>letrec</TT> and <TT>let-syntax</TT><A name="for all"></A>), as well as for all built-in Scheme procedures. It should also include a full version of <TT>syntax</TT> and, in place of <TT>syntax-pair?, syntax-car</TT>, and <TT>syntax-cdr</TT>, it should include <TT>syntax-case</TT>.</P></DIV></DIV>
+<p>&nbsp;</p><p>&nbsp;</p><!-- 仁·义 -->
+</body></html>

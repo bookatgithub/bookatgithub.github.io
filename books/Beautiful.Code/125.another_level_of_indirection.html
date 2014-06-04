@@ -1,0 +1,68 @@
+<html><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<link href="styles/globalstyle.css" type="text/css" rel="stylesheet"/>
+<link title="medium" href="styles/two.css" type="text/css" rel="stylesheet"/>
+<script src="scripts/main.js" type="text/javascript" language="javascript"></script>
+<title>Chapter 17. Another Level of Indirection</title>
+</head><body>
+<DIV class=h3 style="MARGIN-TOP: 0px; PADDING-BOTTOM: 1em; WIDTH: 100%; PADDING-TOP: 0px"><SPAN>Another Level of Indirection</SPAN><SPAN> &gt; From Code to Pointers</SPAN></DIV>
+<DIV></DIV>
+<DIV>
+<DIV><A name=another_level_of_indirection></A>
+<H2 class=docChapterTitle id=title-ID0E2QDK>17. Another Level of Indirection</H2>
+<P class=docText><SPAN class=docEmphasis><A name="Diomidis Spinellis"></A>Diomidis Spinellis</SPAN> <A name=idx-CHP-17-1366></A></P>
+<P class=docText><SPAN class=docEmphSmaller><A name="computer science"></A>All problems in computer science can be solved by another level of indirection</SPAN><A name="quote attributed"></A>," is a famous quote attributed to Butler <A name=idx-CHP-17-1367></A><A name="who in"></A>Lampson, the scientist who in 1972 envisioned the modern personal computer. The quote rings in my head on various occasions: when I am forced to talk to a secretary instead of the person I wish to communicate with, when I first travel east to Frankfurt in order to finally fly west to Shanghai or Bangalore, and—yes—when I examine a complex system's source code.</P>
+<P class=docText><A name="journey by"></A>Let's start this particular journey by considering the problem of a typical operating system that supports disparate filesystem formats. An operating system may use data residing on its <A name=idx-CHP-17-1368></A>native filesystem, a CD-ROM, or a <A name=idx-CHP-17-1369></A>USB stick. These storage devices may, in turn, employ <A name=idx-CHP-17-1370></A>different filesystem organizations: NTFS or ext3fs for a Windows or Linux <A name=idx-CHP-17-1371></A>native filesystem, ISO-9660 for the CD-ROM, and, often, the legacy <A name=idx-CHP-17-1372></A><A name="for managing"></A>FAT-32 filesystem for the USB stick. Each filesystem uses different data structures for managing free space, for storing file metadata, and for organizing files into directories. Therefore, each filesystem requires different code for each operation on a file (<TT>open, read, write, seek, close, delete</TT>, and so on).</P><A name=from_code_to_pointers></A>
+<H3 class=docSection1Title id=-100000>17.1. From Code to Pointers</H3>
+<P class=docText><A name="up in"></A>I grew up in an era where different computers more often than not had incompatible filesystems, forcing me <A name=idx-CHP-17-1373></A><A name="one machine"></A>to transfer data from one machine to another over serial links. Therefore, the ability to read on my PC a flash card written on my camera never ceases to amaze me. Let's consider how the operating system would structure the code for accessing the different filesystems. One approach would be to employ a <TT>switch</TT><A name="an example"></A> statement for each operation. Consider as an example a hypothetical <A name=idx-CHP-17-1374></A><A name="implementation of"></A>implementation of the <TT>read</TT><A name=the></A> system call under the <A name=idx-CHP-17-1375></A><A name="interface would"></A>FreeBSD operating system. Its kernel-side interface would look as follows:<A name=idx-CHP-17-1376></A></P><PRE>	int VOP_READ(
+	        struct vnode *vp,          /* File to read from */
+	        struct uio *uio,           /* Buffer specification */
+	        int ioflag,                /* I/O-specific flags */
+	        struct ucred *cred)        /* User's credentials */
+	{
+	    /* Hypothetical implementation */
+	       switch (vp-&gt;filesystem) {
+	       case FS_NTFS:               /* NTFS-specific code */
+	       case FS_ISO9660:            /* ISO-9660-specific code */
+	       case FS_FAT32:              /* FAT-32-specific code */
+	    /* [...] */
+	    }
+	}
+</PRE><BR>
+<P class=docText><A name="would bundle"></A>This approach would bundle together code for the various filesystems, limiting modularity. Worse, adding support for a new filesystem type would require modifying the code of each system call implementation and recompiling the kernel. Moreover, adding a processing step to all the operations of a filesystem (for example, the mapping of remote user credentials) would also require the error-prone modification of each operation with the same boilerplate code.</P>
+<P class=docText><A name="have guessed"></A>As you might have guessed, our task at hand calls for some <A name=idx-CHP-17-1377></A><A name="I admire"></A>additional levels of indirection. Consider how the FreeBSD operating system—a code base I admire for the maturity of its engineering—solves these problems. Each filesystem defines the operations that it supports as functions and then initializes a <TT>vop_vector</TT><A name="pointers to"></A> structure with pointers to them. Here are some fields of the <TT>vop_vector</TT> structure:<A name=idx-CHP-17-1378></A></P><PRE>	struct vop_vector {
+	         struct vop_vector *vop_default;
+	         int (*vop_open)(struct vop_open_args *);
+	         int (*vop_access)(struct vop_access_args *);
+</PRE><BR>
+<P class=docText><A name=the></A>and here is how the <A name=idx-CHP-17-1379></A>ISO-9660 filesystem initializes the structure:</P><PRE>	struct vop_vector cd9660_vnodeops = {
+	        .vop_default =          &amp;default_vnodeops,
+	        .vop_open =             cd9660_open,
+	        .vop_access =           cd9660_access,
+	        .vop_bmap =             cd9660_bmap,
+	        .vop_cachedlookup =     cd9660_lookup,
+	        .vop_getattr =          cd9660_getattr, 
+	        .vop_inactive =         cd9660_inactive,
+	        .vop_ioctl =            cd9660_ioctl,]
+	        .vop_lookup =           vfs_cache_lookup, 
+	        .vop_pathconf =         cd9660_pathconf,
+	        .vop_read =             cd9660_read,
+	        .vop_readdir =          cd9660_readdir,
+	        .vop_readlink =         cd9660_readlink, 
+	        .vop_reclaim =          cd9660_reclaim,
+	        .vop_setattr =          cd9660_setattr,
+	        .vop_strategy =         cd9660_strategy,
+	};
+</PRE><BR>
+<P class=docText>(The <TT>.field = value</TT><A name="that allows"></A> syntax is a nifty C99 feature that allows fields of a structure to be initialized in an arbitrary order and in a readable way.) Note that although the complete <TT>vop_vector</TT><A name="structure contains"></A> structure contains 52 fields, only 16 are defined in the preceding code. As an example, the <TT>vop_write</TT><A name="undefined "></A> field is left undefined (getting a value of <TT>NULL</TT><A name="files is"></A>) because writing to files is not supported on ISO-9660 <A name=idx-CHP-17-1380></A><A name="one such"></A>CD-ROMs. Having initialized one such structure for every filesystem type (see the bottom of <A class=docLink href="javascript:moveTo('layers_of_indirection_in_the_freebsd_implementation_of_the_r');">Figure 17-1</A><A name="easy to"></A>), it is then easy to tie this structure to the administrative data associated with each file handle. Then, in the FreeBSD kernel, the <A name=idx-CHP-17-1381></A>filesystem-independent part of the read system call implementation appears simply as (see <A class=docLink href="javascript:moveTo('layers_of_indirection_in_the_freebsd_implementation_of_the_r');">Figure 17-1</A>):</P><PRE>	struct vop_vector *vop;
+
+	     rc = vop-&gt;vop_read(a);
+</PRE><BR><A name=layers_of_indirection_in_the_freebsd_implementation_of_the_r></A>
+<P>
+<CENTER>
+<H5 class=docFigureTitle><A name="read system"></A>Figure 17-1. Layers of indirection in the FreeBSD implementation of the read system call</H5><IMG id="" height=414 alt="" src="images/another_level_of_indirection.0.png" width=500 border=0> </CENTER>
+<P></P><BR>
+<P class=docText><A name="from a"></A>So, when reading from a CD <A name=idx-CHP-17-1382></A><A name="call through"></A>containing an ISO-9660 filesystem, the previous call through a pointer would actually result in a call to the function <TT>cd9660_read;</TT> in effect:</P><PRE>	rc = cd9660_read(a);
+</PRE><BR></DIV></DIV>
+<p>&nbsp;</p><p>&nbsp;</p><!-- 仁·义 -->
+</body></html>

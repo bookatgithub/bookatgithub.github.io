@@ -1,0 +1,112 @@
+<html><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<link href="styles/globalstyle.css" type="text/css" rel="stylesheet"/>
+<link title="medium" href="styles/two.css" type="text/css" rel="stylesheet"/>
+<script src="scripts/main.js" type="text/javascript" language="javascript"></script>
+<title>Section 13.3. A Little Polymorphism Can Go a Long Way</title>
+</head><body>
+<DIV class=h3 style="MARGIN-TOP: 0px; PADDING-BOTTOM: 1em; WIDTH: 100%; PADDING-TOP: 0px"><SPAN>The Design of the Gene Sorte</SPAN><SPAN> &gt; A Little Polymorphism Can Go a Long Way</SPAN></DIV>
+<DIV></DIV>
+<DIV>
+<DIV><A name=a_little_polymorphism_can_go_a_long_way></A>
+<H3 class=docSection1Title id=-100000>13.3. A Little Polymorphism Can Go a Long Way</H3>
+<P class=docText><A name="Inside most"></A>Inside most programs of any flexibility, there is likely to be a <A name=idx-CHP-13-1044></A><A name="some sort"></A>polymorphic object of some sort. The table that takes up most of the main page of the Gene Sorter is composed of a series of <A name=idx-CHP-13-1045></A>polymorphic column objects.<A name=idx-CHP-13-1046></A><A name=idx-CHP-13-1047></A></P>
+<P class=docText><A name="in C"></A>Making polymorphic objects in C is not as easy as it is in more modern object-oriented languages, but it can be done in a relatively straightforward manner using a <TT>struct</TT><A name="of an"></A> in place of an object, and function pointers in place of polymorphic methods. <A class=docLink href="javascript:moveTo('the_column_structure_a_polymorphic_object_in_c');">Example 13-1</A><A name="abbreviated version"></A> shows a somewhat abbreviated version of the C code for the column object.</P><A name=the_column_structure_a_polymorphic_object_in_c></A>
+<H5 class=docExampleTitle id=title-ID0EXKDK>Example 13-1. The column structure, a polymorphic object in C</H5>
+<P>
+<TABLE cellSpacing=0 cellPadding=5 width=* border=1>
+<TBODY>
+<TR>
+<TD>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedHeight>struct column
+/* A column in the big table. The central data structure for
+ * hgNear. */
+   {
+   /* Data set guaranteed to be in each column. */
+   struct column *next;   /* Next column in list. */
+   char *name;            /* Column name, not seen by user. */
+   char *shortLabel;      /* Column label. */
+   char *longLabel;       /* Column description. */
+
+   /* -- Methods -- */
+   void (*cellPrint)(struct column *col, struct genePos *gp,
+        struct sqlConnection *conn);
+   /* Print one cell of this column in HTML. */
+
+   void (*labelPrint)(struct column *col);
+   /* Print the label in the label row. */
+   void (*filterControls)(struct column *col,
+        struct sqlConnection *conn);
+   /* Print <A name=idx-CHP-13-1048></A>out controls for advanced filter. */
+
+   struct <A name=idx-CHP-13-1049></A>genePos *(*advFilter)(struct column *col,
+        struct sqlConnection *conn,
+   /* Return list of positions for advanced filter. */
+
+   /* Lookup tables use the next few fields. */
+   char *table;                 /* Name of associated table. */
+   char *keyField;              /* GeneId field in associated table. */
+   char *valField;              /* Value field in associated table. */
+
+   /* Association tables use these as well as the lookup fields. */
+   char *queryFull;      /* Query that returns 2 columns key/value. */
+   char *queryOne;       /* Query that returns value, given key. */
+   char *invQueryOne;    /* Query that returns key, given value. */
+   };
+
+
+					    </PRE><BR></TD></TR></TBODY></TABLE></P>
+<P class=docText><A name="Next come"></A>The structure starts with data shared by all types of columns. Next come the <A name=idx-CHP-13-1050></A><A name="section containing"></A>polymorphic methods. Finally, there's a section containing type-specific data.</P>
+<P class=docText><A name="space for"></A>Each column object contains space for the data of all types of columns. It would be possible, using a union or some related mechanism, to avoid this waste of space. However, this would complicate the use of the type-specific fields, and because there are fewer than 100 columns, the total space saved would be no more than a few kilobytes.</P>
+<P class=docText><A name="the program"></A>Most of the functionality of the program resides in the column methods. A column knows how to retrieve data for a particular gene either as a string or as HTML. A column can search for genes where the column data fits a simple search string. The columns also implement the interactive controls to filter data, and the routine to do the filtering itself.</P>
+<P class=docText><A name="The columns"></A>The columns are created by a factory routine based on information in the <SPAN class=docEmphasis>columnDb.ra</SPAN><A name="one of"></A> files. An excerpt of one of these files is shown in <A class=docLink href="javascript:moveTo('a_section_of_a_columndbra_file_containing_metadata_on_the_co');">Example 13-2</A>. All <TT>columnDb</TT><A name="describing the"></A> records contain fields describing the column name, user-visible short and long labels, the default location of the column in the table (priority), whether the column is visible by default, and a type field. The type field controls what methods the column has. There may be additional fields, some of which are type-specific. In many cases, the SQL used to query the tables in the database associated with a column is included in the <TT>columnDb</TT><A name="as a"></A> record, as well as a URL to hyperlink to each item in the column.<A name=idx-CHP-13-1051></A></P><A name=a_section_of_a_columndbra_file_containing_metadata_on_the_co></A>
+<H5 class=docExampleTitle id=title-ID0EOMDK>Example 13-2. A section of a columnDb.ra file containing metadata on the columns</H5>
+<P>
+<TABLE cellSpacing=0 cellPadding=5 width=* border=1>
+<TBODY>
+<TR>
+<TD>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedHeight>name proteinName
+shortLabel UniProt
+longLabel UniProt (SwissProt/TrEMBL) Protein Display ID
+priority 2.1
+visibility off
+type association kgXref
+queryFull select kgID,spDisplayID from kgXref
+queryOne select spDisplayId,spID from kgXref where kgID = '%s'
+<A name=idx-CHP-13-1052></A>invQueryOne select kgID from kgXref where spDisplayId = '%s'
+search fuzzy
+itemUrl http://us.expasy.org/cgi-bin/niceprot.pl?%s
+
+name proteinAcc
+shortLabel UniProt Acc
+longLabel UniProt (SwissProt/TrEMBL) Protein Accession
+priority 2.15
+visibility off
+type <A name=idx-CHP-13-1053></A>lookup kgXref kgID spID
+search exact
+itemUrl http://us.expasy.org/cgi-bin/niceprot.pl?%s
+
+name refSeq
+shortLabel RefSeq
+longLabel NCBI RefSeq Gene Accession
+priority 2.2
+visibility off
+type lookup knownToRefSeq name value
+search exact
+itemUrl http://www.ncbi.nlm.nih.gov/entrez/query.
+fcgi?cmd=Search&amp;db=Nucleotide&amp;term=%s&amp;doptcmdl=GenBank&amp;tool=genome.ucsc.edu
+
+
+					    </PRE><BR></TD></TR></TBODY></TABLE></P>
+<P class=docText><A name=a></A>The format of a <SPAN class=docEmphasis>columnDb.ra</SPAN> file is simple: one field per line, and records separated <A name=idx-CHP-13-1054></A><A name="remainder of"></A>by blank lines. Each line begins with the field name, and the remainder of the line is the field value.</P>
+<P class=docText><A name="is used"></A>This simple, line-oriented format is used for a lot of the metadata at <A class=docLink href="http://genome.ucsc.edu/" target=_blank>http://genome.ucsc.edu</A><A name="using indexed"></A>. At one point, we considered using indexed versions of these files as an alternative to a relational database (<SPAN class=docEmphasis>.ra</SPAN><A name="are a"></A> stands for relational alternative). But there are a tremendous number of good tools associated with relational databases, so we decided keep the bulk of our data relational. The <SPAN class=docEmphasis>.ra</SPAN><A name="files are"></A> files are very easy to read, edit, and parse, though, so they see continued use in applications such as these.</P>
+<P class=docText>The <SPAN class=docEmphasis>columnDb.ra</SPAN><A name="in a"></A> files are arranged in a three-level directory hierarchy. At the root lies information about <A name=idx-CHP-13-1055></A><A name="for all"></A>columns that appear for all organisms. The mid-level contains information that is organism-specific. As our understanding of a particular organism's genome progresses, we'll have different assemblies of its DNA sequence. The lowest level contains information that is assembly-specific.</P>
+<P class=docText><A name="that reads"></A>The code that reads a <TT>columnDb</TT><A name="of hashes"></A> constructs a hash of hashes, where the outer hash is keyed by the column name and the inner hashes are keyed by the field name. Information at the lower levels can contain entirely new records, or add or override particular fields of records first defined at a higher level.</P>
+<P class=docText><A name="the relational"></A>Some types of columns correspond very directly to columns in the relational database. The <TT>lookup</TT><A name="refer to"></A> type columns refer to a table that contains an indexed gene ID field with no more than one row per gene ID. The <TT>type</TT><A name="gene ID"></A> line contains the table, the gene ID field, and the field displayed by the column. The <TT>proteinAcc</TT> and <TT>refSeq</TT> columns in <A class=docLink href="javascript:moveTo('a_section_of_a_columndbra_file_containing_metadata_on_the_co');">Example 13-2</A> are examples of type lookup.</P>
+<P class=docText>If the relational table can <A name=idx-CHP-13-1056></A><A name="per gene"></A>contain more than one row per gene, its type becomes <TT>association</TT>. <A name=idx-CHP-13-1057></A><A name="Associations with"></A>Associations with multiple values for a single gene are displayed as a comma-separated list in the <A name=idx-CHP-13-1058></A><A name="the SQL"></A>Gene Sorter. Associations include the SQL <A name=idx-CHP-13-1059></A><A name="the data"></A>code to fetch the data either one gene at a time (<TT>queryOne</TT><A name="genes "></A>), for all genes (<TT>queryFull</TT><A name="genes associated"></A>), or for the genes associated with a particular value (<TT>invQueryOne</TT>). The <TT>queryOne</TT><A name="Sorter and"></A> SQL actually returns two values, one to display in the Gene Sorter and another to use in the hyperlink, although these can be the same.</P>
+<P class=docText><A name="the columns"></A>Most of the columns in the Gene Sorter are of type <TT>lookup</TT> or <TT>association</TT><A name="table that"></A>, and given any relational table that is keyed by gene ID, it is a simple matter to make it into Gene Sorter columns.</P>
+<P class=docText><A name="expression columns"></A>Other columns, such as the gene expression columns, are relatively complex. <A class=docLink href="096.the_user_interface_of_the_gene_sorter.html#main_page_of_the_gene_sorter">Figure 13-1</A><A name="shows a"></A> shows a gene expression column as colored boxes underneath the names of various organs such as brain, liver, kidney, etc. The colors indicate how much of the mRNA for the gene is found in these specific organs in comparison to the level of mRNA in the body as a whole. Red indicates a higher-than-average expression, green a lower-than-average expression, and black an average expression level.</P>
+<P class=docText><A name="of gene"></A>The entire set of gene expression information from fetal brain to testis in <A class=docLink href="096.the_user_interface_of_the_gene_sorter.html#main_page_of_the_gene_sorter">Figure 13-1</A><A name="single Gene"></A> is considered a single Gene Sorter column. It's broken into three columns from the HTML table point of view, to provide the gray lines <A name=idx-CHP-13-1060></A><A name="of five"></A>between groups of five organs for better readability.</P></DIV></DIV>
+<p>&nbsp;</p><p>&nbsp;</p><!-- 仁·义 -->
+</body></html>

@@ -1,0 +1,490 @@
+<HTML><HEAD><META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=iso-8859-1">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="18.7 Writing to the Event Log"-->
+<LINK REL="stylesheet" href="FILES/sbolM.css">
+</HEAD>
+<BODY link="#354278" vlink="#000066" alink="#000080" topmargin="0">
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right"><a href="pythonwin32_snode144.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a> <a href="pythonwin32_snode146.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a></td></table>
+<FONT>
+<h3>18.7
+Writing to the Event Log</h3>
+
+
+<p>
+<a NAME="idx1821"></a>Almost all
+services use the Windows NT Event Log. It's quite common for
+services to load startup and shutdown events, and error conditions
+should always go to the Event Log.</p>
+
+
+
+<p>We look first at the facilities provided by the
+<tT CLAss="monofont">servicemanager</tt>
+<A NAMe="idx1822"></a> module for working with the Event Log.
+Then we will have another look at a couple of modules described
+previously in this chapter, <tt class="monofont">win32evtlog</tt>
+<a name="idx1823"></a> and
+<tt clASS="monofont">win32evtlogutil</TT>
+<A nAMe="idx1824"></A>. We discussed how to use these modules
+to read the Event Log, so now let's look at how they can write
+to the Log.</P>
+
+
+
+
+<h4>18.7.1
+The servicemanager Module</H4>
+
+
+<P>As mentioned previously in this chapter,
+<I>PythonService.exe</I> hosts all Python programs
+running as services. Once this host .<I>exe</I> is
+running, it makes a module <tt clASS="monofont">servicemanager</Tt>
+available to the Python program. Because your Python scripts are used
+both by <i>Python.exe</i> (when installing, starting,
+or debugging the service) and by
+<i>PythonService.exe</I> (when running as a service),
+you can't import this module from the top level of your Python
+program; the <TT Class="monofont">import</TT>
+<TT class="monofont">servicemanager</tt> statement will fail for
+<i>Python.exe</i>. In practice, this means you should
+only import this module locally to a function.</p>
+
+
+
+<p>The primary purpose of <tt class="monofont">servicemanager</tt> is to
+provide facilities for interacting with the SCM at runtime. Most of
+this interaction is done by the base class
+<tT CLASS="monofont">win32serviceutil.ServiceFramework()</tT>, so in general
+this is covered for you.</P>
+
+
+
+<p>There are, however, some useful utility functions you may wish to
+use. Among these is a set of functions for writing to the Event Log.
+The most general purpose is the function
+<TT cLASS="monofont">LogMsg()</TT>
+<a namE="idx1825"></A>, which takes the following parameters:</P>
+
+
+
+<Dl>
+<dt>
+<fONT Color="#990000"><FONT color="#990000"><span class="monofont">ErrorType</span></fonT>
+</FONT></Dt>
+<DD>
+<p>One of <TT cLASS="monofont">EVENTLOG_INFORMATION_TYPE</TT>,
+<tt clASS="monofont">EVENTLOG_ERROR_TYPE</Tt>, or
+<tt cLASS="monofont">EVENT-LOG_WARNING_TYPE</tt>. These constants can be
+found in <tt CLASs="monofont">servicemanager</tt>.</p>
+</dd>
+<dt>
+<font color="#990000"><font COLOR="#990000"><SpAN cLAsS="monofont">ErrorID</SPAN></Font>
+</fONT></Dt>
+<dd>
+<p>The message ID. This uniquely identifies the message text.</P>
+</DD>
+<Dt>
+<fonT COLor="#990000"><font color="#990000"><span class="monofont">Inserts = None</sPAN></FONt>
+</FOnT></Dt>
+<DD>
+<P>A list of string inserts for the message or <TT Class="monofont">None</TT>.
+The inserts are merged with the message text to provide the final
+result for the user.</P>
+</Dd>
+</dl>
+
+
+<p>There are three other Event Log-related functions in this module.
+<TT CLass="monofont">LogInfoMsg()</tT>
+<A NAme="idx1826"></a>,
+<tt class="monofont">LogErrorMsg()</tt>
+<a name="idx1827"></a>, and
+<tt cLASS="monofont">LogWarningMessage()</TT>
+<a NAmE="idx1828"></A>. All take a single string parameter
+and write a generic message to the Event Log. These functions also
+provide an additional debugging facility. When debugging the service,
+these Event Log helpers write their output to the console window.
+This allows you to see the messages your application would log
+without needing to use the Event Log Viewer. When the service is
+running normally, these messages go to the log. We'll see this
+in action for our example.</p>
+
+
+
+<P>The Event Log facilities of <TT CLAss="monofont">servicemanager</tt> use the
+name of the executable as the application name. This means that by
+default, the application name will be PythonService. The only way
+this can be changed is to take a copy of
+<I>PythonService.exe</I> and rename it to something of
+your liking (it's only around 20 KB!). Alternatively, you may
+wish to use the Event Log natively, as described later in this
+chapter.</P>
+
+
+
+<P>Our host .<i>exe</i> also contains a number of messages
+related to starting and stopping the services. The
+<tt CLASs="monofont">servicemanager</tt> exposes the message ID of these
+through constants that include
+<tT CLAss="monofont">PYS_SERVICE_STARTING</tt>,
+<tt class="monofont">PYS_SERVICE_STARTED</tt>,
+<tt class="monofont">PYS_SERVICE_STOPPING</tT>, and
+<TT CLAsS="monofont">PYS_SERVICE_STOPPED</Tt>. These messages all have two
+inserts: the name of the service and an arbitrary message to be
+appended.</P>
+
+
+
+
+
+
+
+<H4>18.7.2
+Modifying the Service to Add Messages</h4>
+
+
+<P>
+<A NAME="idx1829"></a>Finally we are ready to change our
+service to use the Event Log. We will change the service to write
+messages as it starts and stops, and also after each user has
+connected.</p>
+
+
+
+<p>We add the code for the service starting message at the start of the
+service's <tT CLAss="monofont">SvcDoRun()</tt> method. A good place to
+add the service stopping message is just as this function returns.</P>
+
+
+
+<P>The top of this function now looks like:</P>
+
+
+
+<Pre clASS="monofont">def SvcDoRun(self):
+        # Log a "started" message to the event log.
+        import servicemanager
+        servicemanager.LogMsg(
+                servicemanager.EVENTLOG_INFORMATION_TYPE, 
+                servicemanager.PYS_SERVICE_STARTED,
+                (self._svc_name_, ''))</Pre>
+
+
+<p>And the last lines are:</p>
+
+
+
+<pre class="monofont"># Now log a "service stopped" message
+        servicemanager.LogMsg(
+                servicemanager.EVENTLOG_INFORMATION_TYPE, 
+                servicemanager.PYS_SERVICE_STOPPED,
+                (self._svc_name_, ''))</pre>
+
+
+<p>Note that you import the <tt claSS="monofont">servicemanager</TT> object at
+the start of the function. This is because, as described previously,
+it's provided by the host .<I>exe</I> so it
+can't be imported at the top level of the program. To write a
+message as the user disconnects, insert this code:</p>
+
+
+
+<PRe CLaSS="monofont"># Log a message to the event log indicating what we did.
+message = "Processed %d bytes for client connection" % len(data)
+servicemanager.LogInfoMsg(message)</PRE>
+
+
+<P>Let's see our code in action. First, let's run this
+service in debug mode. From a command prompt, type:</p>
+
+
+
+<pre CLASs="monofont">C:\Scripts&gt; PipeService2.py debug
+Debugging service PythonPipeService
+Info 0x40001002 - The PythonPipeService service has started.</pre>
+
+
+<P>Now make a client connection to the pipe. It's necessary to
+open a new command prompt, as the service is being debugged in the
+other one. From this new command prompt, type:</P>
+
+
+
+<PRe claSS="monofont">C:\Scripts&gt; PipeServiceClient.py Hi there
+The service sent back:
+You sent me:Hi there</PRe>
+
+
+<p>If you look at your service's window, you see the status
+message:</p>
+
+
+
+<pre class="monofont">Info 0x400000FF - Processed 8 bytes for client connection</pre>
+
+
+<p>Finally, stop the service by pressing Ctrl-Break, and the service
+responds:</p>
+
+
+
+<pre clASS="monofont">Stopping debug service.
+Info 0x40001004 - The PythonPipeService service has stopped.</PRE>
+
+
+<p>As you can see, the service works as expected, and now you can run it
+as a real service. This forces the messages to the Event Log.</P>
+
+
+
+<P>Start the service using any of the techniques described previously,
+then make a new client connection. If you check the Event Log Viewer,
+you see the messages at the top of the application log. <a href="pythonwin32_snode145.html#6">Figure 18.2</A> shows the Event Log Viewer with the list of
+all events; <A href="pythonwin32_snode145.html#7">Figure 18.3</a> shows the detail for the
+client connection message.</p>
+
+
+
+<cENTEr>
+<h5>
+<a nAME="6"></A>Figure 18.2. Event Log records as displayed in the Windows NT Event Viewer</h5>
+
+<img BORDer="0" width="502" height="245" src="FILES/ppw.1802.gif" alt="figs/ppw.1802.gif"></ceNTER>
+
+
+<CEnTEr>
+<H5>
+<A nAME="7"></A>Figure 18.3. Details for the client connection Event Log record</H5>
+
+<Img boRDER="0" widtH="502" HEIght="260" src="FILES/ppw.1803.gif" ALt="figs/ppw.1803.gif"></center>
+
+
+
+
+
+
+
+<h4>18.7.3
+Custom Event Log Writing</h4>
+
+
+<p>
+<a name="idx1830"></a>There will be cases where you need
+better facilities than those provided by the
+<tt claSS="monofont">servicemanager</TT> module. The primary reason is that
+you will require your own set of messages, tailored for your
+application. In this scenario, you need the message compiler from
+Microsoft Visual C++ to create your own custom message texts and IDs.</P>
+
+
+
+
+<H5>18.7.3.1
+Registering with the Event Log</h5>
+
+
+<P>The Event Log doesn't store the full text of each message in
+the log; instead, when the text is needed, it uses the ID of the
+message to look it up from a DLL or EXE file nominated by the
+application. This means you need to tell the Event Log where your
+messages are located.</P>
+
+
+
+<p>Applications register with the Event Log by writing an entry to the
+Event Log's registry. If you open the registry editor, you can
+view all applications providing Event Log data by looking under the
+key
+<I>KLM\SYSTEM\CurrentControlSet\Services\EventLog.</I></p>
+
+
+
+<P>Fortunately, the <TT CLAss="monofont">win32evtlogutil</tt> module has a
+utility function for registering your application. As the registry is
+persistent, it's necessary to register your application only
+when it's installed; however, some applications choose to do
+this each time they start.</P>
+
+
+
+<P>Any EXE or DLL can hold messages for the Event Log Viewer. The text
+for messages are typically created with a text editor, and the
+"message compiler" (supplied with Microsoft Visual C++)
+compiles them. When the application is linked, the compiled messages
+are inserted into the final executable. However, this doesn't
+help you use the Event Log from Python, so a number of the standard
+Win32 extension files have built-in generic messages for this
+purpose.</P>
+
+
+
+<P>The files <i>PythonService.exe</i>,
+<i>win32evtlog.pyd</i>, and
+<I>win32service.pyd</I> each have a set of generic
+messages. Each file has nine messages for each of the classes Error,
+Informational, Warning, and Success.</P>
+
+
+
+<P>To register with the Event Viewer, use the function
+<tt clASS="monofont">win32evtlogutil.Add-SourceToRegistry()</Tt>.</p>
+
+<a name="idx1831"></a>
+
+
+<pre class="monofont">win32evtlogutil.AddSourceToRegistry(<tt claSS="monofont"><I>ApplicationName</I></TT>, <tT ClASs="monofont"><I>MessageDll</I></TT>, EventLogType= "<TT clasS="monofont"><I>Application</I></Tt>")</pre>
+
+
+<DL>
+<DT>
+<font COLOr="#990000"><tt class="monofont"><i>ApplicationName</i></tt></font></dt>
+<dd>
+<p>The name of the application, as shown in the Event Log Viewer. This
+is an varbitrary name that need not match the name of the service.</P>
+</DD>
+<DT>
+<FoNT cOLoR="#990000"><TT CLAss="monofont"><i>MessageDll</i></TT></FOnt></dt>
+<DD>
+<P>The name of the DLL or EXE file that contains the messages.</P>
+</dd>
+<dt>
+<FONT color="#990000"><font color="#990000"><span claSS="monofont">EventLogType = </SPAN></fONt>
+
+     
+  "<TT cLASS="monofont"><I>Application</I></tt>"</foNT></DT>
+<dd>
+<p>The Event Log this application writes to. Valid values are
+<tT CLAss="monofont">Application</tt> (the default),
+<TT CLass="monofont">System</tt>, or <tt class="monofont">Security</tt>.</p>
+</dd>
+</dl>
+
+
+
+
+
+<h5>18.7.3.2
+Writing to the Log</h5>
+
+
+<P>Now that we are registered with the Event Log, it's time to
+start logging some messages. As mentioned before, you call the
+<TT CLAsS="monofont">win32evtlog</Tt>
+<A NaME="idx1832"></A> and
+<TT Class="monofont">win32evtlogutil</TT>
+<A Name="idx1833"></a> modules to help out.</P>
+
+
+
+<P>To manually insert a message in the Event Log, use the function
+<TT clasS="monofont">win32evtlog-util.ReportEvent()</TT>
+<A name="idx1834"></a>.</p>
+
+
+
+<pre class="monofont">win32evtlogutil.ReportEvent(<tt class="monofont"><I>ApplicationName</I></TT>, <TT cLAsS="monofont"><I>EventID</i></TT>, <TT CLass="monofont"><i>EventCategory</I></TT>, <Tt claSS="monofont"><I>EventType</I></tt>, 
+Inserts=[], Data=None, SID=None)</prE>
+
+
+<DL>
+<Dt>
+<font color="#990000"><tt class="monofont"><i>ApplicationName</i></tt></FONT></DT>
+<dD>
+<P>The name of the application, as registered using the
+<tT ClASS="monofont">AddSourceTo-Registry()</TT> function.</P>
+</dd>
+<dt>
+<FONT coloR="#990000"><TT Class="monofont"><I>EventID</I></TT></font></dt>
+<dd>
+<p>The numeric ID of the event.</p>
+</dd>
+<dt>
+<font colOR="#990000"><TT CLaSS="monofont"><i>EventCategory</I></Tt> <FONT COlor="#990000"><sPAN Class="monofont">= 0</SPAN></font>
+
+     
+  </FONT></dt>
+<dd>
+<p>The event category, as defined by the message file.</p>
+</dd>
+<dt>
+<font color="#990000"><tt CLASS="monofont"><I>EventType</i></TT> <fONt COLOR="#990000"><Span cLASS="monofont">= win32evtlog.EVENTLOG_ERROR_TYPE</span></FONT>
+
+     
+  </font></DT>
+<DD>
+<p>The numeric event type. This indicates the message is an error, a
+warning, informational, etc.</p>
+</dd>
+<dt>
+<font color="#990000"><font coLOR="#990000"><SPAn CLaSS="monofont">Inserts = []</sPAN></FONt>
+</fonT></DT>
+<Dd>
+<p>A list of string inserts for the message. These inserts create the
+full text of the message and are inserted into the message text at
+the appropriate place holders.</p>
+</dD>
+<DT>
+<Font cOLOR="#990000"><font color="#990000"><span class="monofont">Data = None</spaN></FONT>
+</FoNT></dT>
+<Dd>
+<P>The data for the message. This is raw binary data as a Python string
+and is displayed in hexadecimal by the Event Log Viewer.</P>
+</DD>
+<DT>
+<font COLOr="#990000"><fonT COLor="#990000"><spAN CLass="monofont">SID = None</span></font>
+</font></dt>
+<dd>
+<p>A security identifier for the user this message relates to, if any.</p>
+</DD>
+</DL>
+
+
+<P>Let's look at the long way we could add the startup and
+shutdown messages to our service. This should give you a reasonable
+idea of how you could implement your own custom messages in the Log.</P>
+
+
+
+<p>If you use the table in <A href="pythonwin32_cnode188.html">Appendix B</a>, you can see
+that <I>PythonService.exe</I> has messages specifically
+for this purpose: Informational Event IDs 1002 and 1004,
+respectively. The <TT CLass="monofont">servicemanager</tT> module exposes
+these constants as <TT Class="monofont">PYS_SERVICE_STARTED</TT> and
+<TT clasS="monofont">PYS_SERVICE_STOPPED</TT>. The table also indicates that
+this message requires two inserts: the first is the name of the
+service, and the second is arbitrary text you can append to the
+message. To log one of these messages, use the following code at the
+top of your <Tt class="monofont">SvcDoRun()</tt> method:</p>
+
+
+
+<pre class="monofont">def SvcDoRun(self):
+        # Log a "started" message to the event log.
+        import servicemanager
+        win32evtlogutil.ReportEvent( 
+                self._svc_name_, # Application name
+                servicemanager.PYS_SERVICE_STARTED, # Event ID
+                0, # Event category
+                win32evtlog.EVENTLOG_INFORMATION_TYPE,
+                (self._svc_name_, "")) # The inserts</pre>
+
+
+<p>This assumes you have already called
+<TT CLASs="monofont">win32evtlogutil.Add-SourceToRegistry()</TT>, using the
+service name (as defined in <tT ClASS="monofont">_svc_name_</TT>) as
+the<A name="idx1835"></A>
+Event Log<TT Class="monofont"></TT>
+<A Name="idx1836"></a>
+application<TT CLass="monofont"></tt>
+<a name="idx1837"></a> name.<a name="idx1838"></a></p>
+
+
+
+</fonT>
+ 
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right"><a href="pythonwin32_snode144.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a> <a href="pythonwin32_snode146.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a></td></table>
+</BODY></HTML>

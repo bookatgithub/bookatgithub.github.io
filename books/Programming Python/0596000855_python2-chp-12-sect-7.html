@@ -1,0 +1,817 @@
+<html><head>
+<META http-equiv="Content-Type" content="text/html">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="12.7 Sending Files to Clients and Servers"-->
+<link rel="STYLESHEET" type="text/css" href="FILES/style.css">
+<link rel="STYLESHEET" type="text/css" href="FILES/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+	<a href="0596000855_python2-CHP-12-SECT-6.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+	<a href="0596000855_python2-CHP-13.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr>
+<td valign="top"><A NAME="python2-CHP-12-SECT-7"></A>
+<H3 class="docSection1Title">12.7 Sending Files to Clients and Servers</H3>
+
+<P class="docText"><A NAME="python2-IDXTERM-1264"></A> <A NAME="python2-IDXTERM-1265"></A><A NAME="python2-IDXTERM-1266"></A> <A NAME="python2-IDXTERM-1267"></A>It's time to explain
+a bit of HTML code we've been keeping in the shadows. Did you
+notice those hyperlinks on the language selector example's main
+page for showing the CGI script's source code? Normally, we
+can't see such script source code, because accessing a CGI
+script makes it execute (we can see only its HTML output, generated
+to make the new page). The script in <A class="docLink" HREF="#python2-CHP-12-EX-23">Example 12-23</A>,
+referenced by a hyperlink in the main
+<TT>language.html</TT> page, works around that by opening
+the source file and sending its text as part of the HTML response.
+The text is marked with <TT>&lt;PRE&gt;</TT> as
+pre-formatted text, and escaped for transmission inside HTML with
+<TT>cgi.escape</TT>.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-12-EX-23"></A>Example 12-23. PP2E\Internet\Cgi-Web\Basics\languages-src.cgi </H5>
+<PRE>#!/usr/bin/python
+#################################################################
+# Display languages.cgi script code without running it.
+#################################################################
+
+import cgi
+filename = 'languages.cgi'
+
+print "Content-type: text/html\n"       # wrap up in html
+print "&lt;TITLE&gt;Languages&lt;/TITLE&gt;"
+print "&lt;H1&gt;Source code: '%s'&lt;/H1&gt;" % filename
+print '&lt;HR&gt;&lt;PRE&gt;' 
+print cgi.escape(open(filename).read(  ))
+print '&lt;/PRE&gt;&lt;HR&gt;' </PRE>
+
+
+<P class="docText">When we visit this script on the Web via the hyperlink or a manually
+typed URL, the script delivers a response to the client that includes
+the text of the CGI script source file. It appears as in <A class="docLink" HREF="#python2-CHP-12-FIG-25">Figure 12-25</A>.
+</P>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="python2-CHP-12-FIG-25"></A>Figure 12-25. Source code viewer page</H5>
+<IMG BORDER="0" WIDTH="381" HEIGHT="384" src="FILES/ppy2_1225.gif" ALT="figs/ppy2_1225.gif"></CENTER>
+
+<P class="docText">Note that here, too, it's crucial to format the text of the
+file with <TT>cgi.escape</TT>, because it is embedded in
+the HTML code of the reply. If we don't, any characters in the
+text that mean something in HTML code are interpreted as HTML tags.
+For example, the C++ <TT>&lt;</TT> operator character
+within this file's text may yield bizarre results if not
+properly escaped. The <TT>cgi.escape</TT> utility converts
+it to the standard sequence <TT>&amp;lt;</TT> for safe
+embedding.
+</P>
+
+<A NAME="python2-CHP-12-SECT-7.1"></A>
+<H4 class="docSection2Title">12.7.1 Displaying Arbitrary Server Files on the Client</H4>
+
+<P class="docText"><A NAME="python2-IDXTERM-1268"></A> <A NAME="python2-IDXTERM-1269"></A>Almost immediately after
+writing the languages source code viewer script in the previous
+example, it occurred to me that it wouldn't be much more work,
+and would be much more useful, to write a generic version -- one
+that could use a passed-in filename to display
+<span class="docEmphasis">any</span> file on the site. It's a
+straightforward mutation on the server side; we merely need to allow
+a filename to be passed in as an input. The
+<I>getfile.cgi</I> Python script in <A class="docLink" HREF="#python2-CHP-12-EX-24">Example 12-24</A> implements this generalization. It assumes the
+filename is either typed into a web page form or appended to the end
+of the URL as a parameter. Remember that Python's
+<TT>cgi</TT> module handles both cases transparently, so
+there is no code in this script that notices any difference.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-12-EX-24"></A>Example 12-24. PP2E\Internet\Cgi-Web\Basics\getfile.cgi </H5>
+<PRE>#!/usr/bin/python
+#################################################################
+# Display any cgi (or other) server-side file without running it.
+# The filename can be passed in a URL param or form field; e.g.,
+# http://server/~lutz/Basics/getfile.cgi?filename=somefile.cgi.
+# Users can cut-and-paste or "View source" to save file locally.
+# On IE, running the text/plain version (formatted=0) sometimes
+# pops up Notepad, but end-of-lines are not always in DOS format; 
+# Netscape shows the text correctly in the browser page instead.
+# Sending the file in text/html mode works on both browsers--text
+# is displayed in the browser response page correctly. We also 
+# check the filename here to try to avoid showing private files;
+# this may or may not prevent access to such files in general.
+#################################################################
+
+import cgi, os, sys
+formatted = 1                                  # 1=wrap text in html
+privates  = ['../PyMailCgi/secret.py']         # don't show these
+
+html = """
+&lt;html&gt;&lt;title&gt;Getfile response&lt;/title&gt;
+&lt;h1&gt;Source code for: '%s'&lt;/h1&gt;
+&lt;hr&gt;
+&lt;pre&gt;%s&lt;/pre&gt;
+&lt;hr&gt;&lt;/html&gt;"""
+
+def restricted(filename):
+    for path in privates:
+        if os.path.samefile(path, filename):   # unify all paths by os.stat
+            return 1                           # else returns None=false
+ 
+try:
+    form = cgi.FieldStorage(  )
+    filename = form['filename'].value          # url param or form field
+except:
+    filename = 'getfile.cgi'                   # else default filename
+
+try:
+    assert not restricted(filename)            # load unless private
+    filetext = open(filename).read(  )
+except AssertionError:
+    filetext = '(File access denied)'
+except:
+    filetext = '(Error opening file: %s)' % sys.exc_value
+
+if not formatted:
+    print "Content-type: text/plain\n"         # send plain text
+    print filetext                             # works on NS, not IE
+else:
+    print "Content-type: text/html\n"          # wrap up in html
+    print html % (filename, cgi.escape(filetext))</PRE>
+
+
+<P class="docText">This Python server-side script simply extracts the filename from the
+parsed CGI inputs object, and reads and prints the text of the file
+to send it to the client browser. Depending on the
+<TT>formatted</TT> global variable setting, it either sends
+the file in plain text mode (using <TT>text/plain</TT> in
+the response header) or wrapped up in an HTML page definition
+(<TT>text/html</TT>).
+</P>
+
+<P class="docText">Either mode (and others) works in general under most browsers, but
+Internet Explorer doesn't handle the plain text mode as
+gracefully as Netscape -- during testing, it popped up the Notepad
+text editor to view the downloaded text, but end-of-line characters
+in Unix format made the file appear as one long line. (Netscape
+instead displays the text correctly in the body of the response web
+page itself.) HTML display mode works more portably with current
+browsers. More on this script's restricted file logic in a
+moment.
+</P>
+
+<P class="docText">Let's launch this script by typing its URL at the top of a
+browser, along with a desired filename appended after the
+script's name. <A class="docLink" HREF="#python2-CHP-12-FIG-26">Figure 12-26</A> shows the page we
+get by visiting this URL:
+</P>
+
+<PRE>http://starship.python.net/~lutz/Basics/getfile.cgi?filename=languages-src.cgi</PRE>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="python2-CHP-12-FIG-26"></A>Figure 12-26. Generic source code viewer page</H5>
+<IMG BORDER="0" WIDTH="338" HEIGHT="250" src="FILES/ppy2_1226.gif" ALT="figs/ppy2_1226.gif"></CENTER>
+
+<P class="docText">The body of this page shows the text of the server-side file whose
+name we passed at the end of the URL; once it arrives, we can view
+its text, cut-and-paste to save it in a file on the client, and so
+on. In fact, now that we have this generalized source code viewer, we
+could replace the hyperlink to script
+<I>languages-src.cgi</I> in
+<I>language.html</I>, with a URL of this form:
+</P>
+
+<PRE>http://starship.python.net/~lutz/Basics/getfile.cgi?filename=languages.cgi</PRE>
+
+<P class="docText">For illustration purposes, the main HTML page in <A class="docLink" HREF="0596000855_python2-CHP-12-SECT-4.html#python2-CHP-12-EX-16">Example 12-16</A> has links both to the original source code
+display script, as well as to the previous URL (less the server and
+directory paths, since the HTML file and <TT>getfile</TT>
+script live in the same place). Really, URLs like these are direct
+calls (albeit, across the Web) to our Python script, with filename
+parameters passed explicitly. As we've seen, parameters passed
+in URLs are treated the same as field inputs in forms; for
+convenience, let's also write a simple web page that allows the
+desired file to be typed directly into a form, as shown in <A class="docLink" HREF="#python2-CHP-12-EX-25">Example 12-25</A>.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-12-EX-25"></A>Example 12-25. PP2E\Internet\Cgi-Web\Basics\getfile.html </H5>
+<PRE>&lt;html&gt;&lt;title&gt;Getfile: download page&lt;/title&gt;
+&lt;body&gt;
+&lt;form method=get action="getfile.cgi"&gt;
+  &lt;h1&gt;Type name of server file to be viewed&lt;/h1&gt;
+  &lt;p&gt;&lt;input type=text size=50 name=filename&gt;
+  &lt;p&gt;&lt;input type=submit value=Download&gt;
+&lt;/form&gt;
+&lt;hr&gt;&lt;a href="getfile.cgi?filename=getfile.cgi"&gt;View script code&lt;/a&gt;
+&lt;/body&gt;&lt;/html&gt;</PRE>
+
+
+<P class="docText"><A class="docLink" HREF="#python2-CHP-12-FIG-27">Figure 12-27</A> shows the page we receive when we visit
+this file's URL. We need to type only the filename in this
+page, not the full CGI script address.
+</P>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="python2-CHP-12-FIG-27"></A>Figure 12-27. source code viewer selection page</H5>
+<IMG BORDER="0" WIDTH="296" HEIGHT="181" src="FILES/ppy2_1227.gif" ALT="figs/ppy2_1227.gif"></CENTER>
+
+<P class="docText">When we press this page's Download button to submit the form,
+the filename is transmitted to the server, and we get back the same
+page as before, when the filename was appended to the URL (see <A class="docLink" HREF="#python2-CHP-12-FIG-26">Figure 12-26</A>). In fact, the filename
+<span class="docEmphasis">will</span> be appended to the URL here, too; the
+<TT>get</TT> method in the form's HTML instructs the
+browser to append the filename to the URL, exactly as if we had done
+so manually. It shows up at the end of the URL in the response
+page's address field, even though we really typed it into a
+form.<sup class="docFootnote"><A class="docLink" HREF="#">[13]</A></sup>
+</P>
+<blockquote><p class="docFootnote"><sup><A NAME="">[13]</A></sup> You may notice one difference in the response
+pages produced by the form and an explicitly typed URL: for the form,
+the value of the "filename" parameter at the end of the
+URL in the response may contain URL escape codes for some characters
+in the file path you typed. Browsers automatically translate some
+non-ASCII characters into URL escapes (just like
+<TT>urllib.quote</TT>). URL escapes are discussed earlier
+in this chapter; we'll see an example of this automatic browser
+escaping at work in a moment.</p></blockquote>
+
+<A NAME="python2-CHP-12-SECT-7.1.1"></A>
+<H5 class="docSection3Title">12.7.1.1 Handling private files and errors</H5>
+
+<P class="docText"><A NAME="IXT-12-337591"></A>
+<A NAME="IXT-12-337592"></A>As long as CGI scripts have
+permission to open the desired server-side file, this script can be
+used to view and locally save <span class="docEmphasis">any</span> file on the
+server. For instance, <A class="docLink" HREF="#python2-CHP-12-FIG-28">Figure 12-28</A> shows the page
+we're served after asking for file path <A class="docLink" target="_blank" HREF="PyMailCgi/index.html">../PyMailCgi/index.html</A> -- an HTML text
+file in another application's subdirectory, nested within the
+parent directory of this script.<sup class="docFootnote"><A class="docLink" HREF="#">[14]</A></sup> Users
+can specify both relative and absolute paths to reach a
+file -- any path syntax the server understands will do.
+</P>
+<blockquote><p class="docFootnote"><sup><A NAME="">[14]</A></sup> PyMailCgi is
+described in the next chapter. If you're looking for source
+files for PyErrata (also in the next chapter), use a path like
+<I>.. /PyErrata/xxx</I>. In general, the top level of
+the book's web site corresponds to the top level of the
+<I>Internet/Cgi-Web</I> directory in the examples on
+the book's CD-ROM (see <A class="docLink" target="_blank" HREF="http://examples.oreilly.com/python2">http://examples.oreilly.com/python2</A>); <TT>getfile</TT> runs in
+subdirectory <I>Basics</I>. </p></blockquote>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="python2-CHP-12-FIG-28"></A>Figure 12-28. Viewing files with relative paths</H5>
+<IMG BORDER="0" WIDTH="309" HEIGHT="181" src="FILES/ppy2_1228.gif" ALT="figs/ppy2_1228.gif"></CENTER>
+
+<P class="docText">More generally, this script will display any file path for which the
+user "nobody" (the username under which CGI scripts
+usually run) has read access. Just about every server-side file used
+in web applications will, or else they wouldn't be accessible
+from browsers in the first place. That makes for a flexible tool, but
+it's also potentially dangerous. What if we don't want
+users to be able to view some files on the server? For example, in
+the next chapter, we will implement an encryption module for email
+account passwords. Allowing users to view that module's source
+code would make encrypted passwords shipped over the Net much more
+vulnerable to
+cracking.<A NAME="IXT-12-337593"></A>
+</P>
+
+<P class="docText"><A NAME="IXT-12-337594"></A>To minimize this potential, the
+<TT>getfile</TT> script keeps a list,
+<TT>privates</TT>, of restricted filenames, and uses the
+<TT>os.path.samefile</TT> built-in to check if a requested
+filename path points to one of the names on
+<TT>privates</TT>. The <TT>samefile</TT> call
+checks to see if the <TT>os.stat</TT> built-in returns the
+same identifying information for both file paths; because of that,
+pathnames that look different syntactically but reference the same
+file are treated as identical. For example, on my server, the
+following paths to the encryptor module are different strings, but
+yield a true result from
+<TT>os.path.samefile</TT>:
+</P>
+
+<PRE>../PyMailCgi/secret.py
+/home/crew/lutz/public_html/PyMailCgi/secret.py</PRE>
+
+<P class="docText">Accessing either path form generates an error page like that in <A class="docLink" HREF="#python2-CHP-12-FIG-29">Figure 12-29</A>.
+</P>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="python2-CHP-12-FIG-29"></A>Figure 12-29. Accessing private files</H5>
+<IMG BORDER="0" WIDTH="356" HEIGHT="181" src="FILES/ppy2_1229.gif" ALT="figs/ppy2_1229.gif"></CENTER>
+
+<P class="docText">Notice that bona fide file errors are handled differently. Permission
+problems and accesses to nonexistent files, for example, are trapped
+by a different exception handler clause, and display the
+exception's message to give additional context. <A class="docLink" HREF="#python2-CHP-12-FIG-30">Figure 12-30</A> shows one such error page.
+</P>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="python2-CHP-12-FIG-30"></A>Figure 12-30. File errors display</H5>
+<IMG BORDER="0" WIDTH="381" HEIGHT="186" src="FILES/ppy2_1230.gif" ALT="figs/ppy2_1230.gif"></CENTER>
+
+<P class="docText">As a general rule of thumb, file-processing exceptions should always
+be reported in detail, especially during script debugging. If we
+catch such exceptions in our scripts, it's up to us to display
+the details (assigning <TT>sys.stderr</TT> to
+<TT>sys.stdout</TT> won't help if Python
+doesn't print an error message). The current exception's
+type, data, and traceback objects are always available in the
+<TT>sys</TT> module for manual display.<A NAME="IXTR3-329"></A> <A NAME="IXTR3-330"></A>
+</P>
+
+<P><table border="0" bgcolor="black" cellspacing="0" cellpadding="1" width="90%" align="center"><tr><td>
+<table bgcolor="white" width="100%" border="0" cellspacing="0" cellpadding="6"><tr>
+<td width="60" valign="top"><img src="FILES/tip_yellow.gif" width="50" height="54"></td>
+<td valign="top">
+<P class="docText">The private files list check does prevent the encryption module from
+being viewed directly with this script, but it still may or may not
+be vulnerable to attack by malicious users. This book isn't
+about security, so I won't go into further details here, except
+to say that on the Internet, a little paranoia goes a long way.
+Especially for systems installed on the general Internet (instead of
+closed intranets), you should assume that the worst-case scenario
+will eventually happen.
+</P>
+</td>
+</tr></table></td></tr></table></P>
+
+
+
+<A NAME="python2-CHP-12-SECT-7.2"></A>
+<H4 class="docSection2Title">12.7.2 Uploading Client Files to the Server</H4>
+
+<P class="docText"><A NAME="python2-IDXTERM-1276"></A> <A NAME="python2-IDXTERM-1277"></A> <A NAME="python2-IDXTERM-1278"></A>The <TT>getfile</TT> script lets
+us view server files on the client, but in some sense, it is a
+general-purpose file download tool. Although not as direct as
+fetching a file by FTP or over raw sockets, it serves similar
+purposes. Users of the script can either cut-and-paste the displayed
+code right off the web page or use their browser's View Source
+option to view and cut.
+</P>
+
+<P class="docText">But what about going the other way -- uploading a file from the
+client machine to the server? As we saw in the last chapter, that is
+easy enough to accomplish with a client-side script that uses
+Python's FTP support module. Yet such a solution doesn't
+really apply in the context of a web browser; we can't usually
+ask all of our program's clients to start up a Python FTP
+script in another window to accomplish an upload. Moreover, there is
+no simple way for the server-side script to request the upload
+explicitly, unless there happens to be an FTP server running on the
+client machine (not at all the usual case).
+</P>
+
+<P class="docText"><A NAME="IXT-12-337595"></A>So is there no way to write a web-based
+program that lets its users upload files to a common server? In fact,
+there is, though it has more to do with HTML than with Python itself.
+HTML <TT>&lt;input&gt;</TT> tags also support a
+<TT>type=file</TT> option, which produces an input field,
+along with a button that pops up a file-selection dialog. The name of
+the client-side file to be uploaded can either be typed into the
+control, or selected with the pop-up dialog. The HTML page file in
+<A class="docLink" HREF="#python2-CHP-12-EX-26">Example 12-26</A> defines a page that allows any
+client-side file to be selected and uploaded to the server-side
+script named in the form's <TT>action</TT> option.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-12-EX-26"></A>Example 12-26. PP2E\Internet\Cgi-Web\Basics\putfile.html </H5>
+<PRE>&lt;html&gt;&lt;title&gt;Putfile: upload page&lt;/title&gt;
+&lt;body&gt;
+&lt;form enctype="multipart/form-data" 
+      method=post 
+      action="putfile.cgi"&gt;
+  &lt;h1&gt;Select client file to be uploaded&lt;/h1&gt;
+  &lt;p&gt;&lt;input type=file size=50 name=clientfile&gt;
+  &lt;p&gt;&lt;input type=submit value=Upload&gt;
+&lt;/form&gt;
+&lt;hr&gt;&lt;a href="getfile.cgi?filename=putfile.cgi"&gt;View script code&lt;/a&gt;
+&lt;/body&gt;&lt;/html&gt;</PRE>
+
+
+<P class="docText">One constraint worth noting: forms that use <TT>file</TT>
+type inputs must also specify a
+<TT>multipart/form-data</TT> encoding type and the
+<TT>post</TT> submission method, as shown in this file;
+<TT>get</TT> style URLs don't work for uploading
+files. When we visit this page, the page shown in <A class="docLink" HREF="#python2-CHP-12-FIG-31">Figure 12-31</A> is delivered. Pressing its Browse button opens
+a file-selection dialog, while Upload sends the file.
+</P>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="python2-CHP-12-FIG-31"></A>Figure 12-31. File upload selection page</H5>
+<IMG BORDER="0" WIDTH="285" HEIGHT="181" src="FILES/ppy2_1231.gif" ALT="figs/ppy2_1231.gif"></CENTER>
+
+<P class="docText">On the client side, when we press this page's Upload button,
+the browser opens and reads the selected file, and packages its
+contents with the rest of the form's input fields (if any).
+When this information reaches the server, the Python script named in
+the form <TT>action</TT> tag is run as always, as seen in
+<A class="docLink" HREF="#python2-CHP-12-EX-27">Example 12-27</A>.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-12-EX-27"></A>Example 12-27. PP2E\Internet\Cgi-Web\Basics\putfile.cgi </H5>
+<PRE>#!/usr/bin/python
+#######################################################
+# extract file uploaded by http from web browser;
+# users visit putfile.html to get the upload form 
+# page, which then triggers this script on server;
+# note: this is very powerful, and very dangerous:
+# you will usually want to check the filename, etc.
+# this will only work if file or dir is writeable;
+# a unix 'chmod 777 uploads' command may suffice;
+# file path names arrive in client's path format;
+#######################################################
+
+import cgi, string, os, sys
+import posixpath, dospath, macpath     # for client paths
+debugmode    = 0                       # 1=print form info
+loadtextauto = 0                       # 1=read file at once
+uploaddir    = './uploads'             # dir to store files
+
+sys.stderr = sys.stdout                # show error msgs
+form = cgi.FieldStorage(  )              # parse form data
+print "Content-type: text/html\n"      # with blank line
+if debugmode: cgi.print_form(form)     # print form fields
+
+# html templates
+
+html = """
+&lt;html&gt;&lt;title&gt;Putfile response page&lt;/title&gt;
+&lt;body&gt;
+&lt;h1&gt;Putfile response page&lt;/h1&gt;
+%s
+&lt;/html&gt;"""
+
+goodhtml = html % """
+&lt;p&gt;Your file, '%s', has been saved on the server as '%s'. 
+&lt;p&gt;An echo of the file's contents received and saved appears below.
+&lt;/p&gt;&lt;hr&gt;
+&lt;p&gt;&lt;pre&gt;%s&lt;/pre&gt;
+&lt;/p&gt;&lt;hr&gt;
+"""
+
+# process form data
+
+def splitpath(origpath):                              # get file at end
+    for pathmodule in [posixpath, dospath, macpath]:  # try all clients
+        basename = pathmodule.split(origpath)[1]      # may be any server
+        if basename != origpath:
+            return basename                           # lets spaces pass
+    return origpath                                   # failed or no dirs
+    
+def saveonserver(fileinfo):                           # use file input form data
+    basename = splitpath(fileinfo.filename)           # name without dir path
+    srvrname = os.path.join(uploaddir, basename)      # store in a dir if set
+    if loadtextauto:
+        filetext = fileinfo.value                     # reads text into string 
+        open(srvrname, 'w').write(filetext)           # save in server file
+    else:
+        srvrfile = open(srvrname, 'w')                # else read line by line
+        numlines, filetext = 0, ''                    # e.g., for huge files
+        while 1:
+            line = fileinfo.file.readline(  )
+            if not line: break
+            srvrfile.write(line)
+            filetext = filetext + line
+            numlines = numlines + 1
+        filetext = ('[Lines=%d]\n' % numlines) + filetext
+    os.chmod(srvrname, 0666)   # make writeable: owned by 'nobody'
+    return filetext, srvrname
+
+def main(  ):
+    if not form.has_key('clientfile'): 
+        print html % "Error: no file was received"
+    elif not form['clientfile'].filename:
+        print html % "Error: filename is missing"
+    else:
+        fileinfo = form['clientfile']
+        try: 
+            filetext, srvrname = saveonserver(fileinfo)
+        except:
+            errmsg = '&lt;h2&gt;Error&lt;/h2&gt;&lt;p&gt;%s&lt;p&gt;%s' % (sys.exc_type, sys.exc_value)
+            print html % errmsg
+        else:
+            print goodhtml % (cgi.escape(fileinfo.filename), 
+                              cgi.escape(srvrname), 
+                              cgi.escape(filetext))
+main(  )</PRE>
+
+
+<P class="docText">Within this script, the Python-specific interfaces for handling
+uploaded files are employed. They aren't much different,
+really; the file comes into the script as an entry in the parsed form
+object returned by <TT>cgi.FieldStorage</TT> as usual; its
+key is <TT>clientfile</TT>, the input control's
+<TT>name</TT> in the HTML page's code.
+</P>
+
+<P class="docText">This time, though, the entry has additional attributes for the
+file's name on the client. Moreover, accessing the
+<TT>value</TT> attribute of an uploaded file input object
+will automatically read the file's contents all at once into a
+string on the server. For very large files, we can instead read line
+by line (or in chunks of bytes). For illustration purposes, the
+script implements either scheme: based on the setting of the
+<TT>loadtextauto</TT> global variable, it either asks for
+the file contents as a string, or reads it line by line.<sup class="docFootnote"><A class="docLink" HREF="#">[16]</A></sup> In general, the CGI module gives us back
+objects with the following attributes for file upload controls:
+</P>
+<blockquote><p class="docFootnote"><sup><A NAME="">[16]</A></sup> Note that reading line means that this CGI script is biased
+towards uploading text files, not binary data files. The fact that it
+also uses a "w" open mode makes it ill suited for binary
+uploads if run on a Windows server -- <TT>\r</TT>
+characters might be added to the data when written. See <A class="docLink" HREF="0596000855_python2-CHP-2.html#python2-CHP-2">Chapter 2</A> for details if you've forgotten
+why.</p></blockquote>
+
+<DL class="docList">
+<DT><span class="docPubcolor"><span class="docPubcolor"><span class="docMonofont">filename</span></span></span></DT>
+<DD>
+<P class="docList">The name of the file as specified on the client</P>
+</DD><DT><span class="docPubcolor"><span class="docPubcolor"><span class="docMonofont">file</span></span></span></DT>
+<DD>
+<P class="docList">A file object from which the uploaded file's contents can be
+read
+</P>
+</DD><DT><span class="docPubcolor"><span class="docPubcolor"><span class="docMonofont">value</span></span></span></DT>
+<DD>
+<P class="docList">The contents of the uploaded file (read from file on demand)</P>
+</DD>
+</DL>
+
+<P class="docText">There are additional attributes not used by our script. Files
+represent a third input field object; as we've also seen, the
+<TT>value</TT> attribute is a <span class="docEmphasis">string</span>
+for simple input fields, and we may receive a
+<span class="docEmphasis">list</span> of objects for multiple-selection controls.
+</P>
+
+<P class="docText">For uploads to be saved on the server, CGI scripts (run by user
+"nobody") must have write access to the enclosing
+directory if the file doesn't yet exist, or to the file itself
+if it does. To help isolate uploads, the script stores all uploads in
+whatever server directory is named in the
+<TT>uploaddir</TT> global. On my site's Linux server,
+I had to give this directory a mode of 777 (universal
+read/write/execute permissions) with <TT>chmod</TT> to make
+uploads work in general. Your mileage may vary, but be sure to check
+permissions if this script fails.
+</P>
+
+<P class="docText"><A NAME="IXT-12-337596"></A>The script also calls
+<TT>os.chmod</TT> to set the permission on the server file
+such that it can be read and written by everyone. If created anew by
+an upload, the file's owner will be "nobody," which
+means anyone out in cyberspace can view and upload the file. On my
+server, though, the file will also be only writable by user
+"nobody" by default, which might be inconvenient when it
+comes time to change that file outside the Web (the degree of pain
+can vary per operation).
+</P>
+
+<P><table border="0" bgcolor="black" cellspacing="0" cellpadding="1" width="90%" align="center"><tr><td>
+<table bgcolor="white" width="100%" border="0" cellspacing="0" cellpadding="6"><tr>
+<td width="60" valign="top"><img src="FILES/tip_yellow.gif" width="50" height="54"></td>
+<td valign="top">
+<P class="docText">Isolating client-side file uploads by placing them in a single
+directory on the server helps minimize security risks: existing files
+can't be overwritten arbitrarily. But it may require you to
+copy files on the server after they are uploaded, and it still
+doesn't prevent all security risks -- mischievous clients
+can still upload huge files, which we would need to trap with
+additional logic not present in this script as is. Such traps may
+only be needed in scripts open to the Internet at large.
+</P>
+</td>
+</tr></table></td></tr></table></P>
+
+<P class="docText">If both client and server do their parts, the CGI script presents us
+with the response page shown in <A class="docLink" HREF="#python2-CHP-12-FIG-32">Figure 12-32</A>, after
+it has stored the contents of the client file in a new or existing
+file on the server. For verification, the response gives the client
+and server file paths, as well as an echo of the uploaded file with a
+line count (in line-by-line reader mode).
+</P>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="python2-CHP-12-FIG-32"></A>Figure 12-32. Putfile response page</H5>
+<IMG BORDER="0" WIDTH="481" HEIGHT="310" src="FILES/ppy2_1232.gif" ALT="figs/ppy2_1232.gif"></CENTER>
+
+<P class="docText">Incidentally, we can also verify the upload with the
+<TT>getfile</TT> program we wrote in the prior section.
+Simply access the selection page to type the pathname of the file on
+the server, as shown in <A class="docLink" HREF="#python2-CHP-12-FIG-33">Figure 12-33</A>.
+</P>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="python2-CHP-12-FIG-33"></A>Figure 12-33. Verifying putfile with getfile  --  selection</H5>
+<IMG BORDER="0" WIDTH="314" HEIGHT="191" src="FILES/ppy2_1233.gif" ALT="figs/ppy2_1233.gif"></CENTER>
+
+<P class="docText">Assuming uploading the file was successful, <A class="docLink" HREF="#python2-CHP-12-FIG-34">Figure 12-34</A> shows the resulting viewer page we will
+obtain. Since user "nobody" (CGI scripts) was able to
+write the file, "nobody" should be able to view it as
+well.
+</P>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="python2-CHP-12-FIG-34"></A>Figure 12-34. Verifying putfile with getfile  --  response</H5>
+<IMG BORDER="0" WIDTH="318" HEIGHT="210" src="FILES/ppy2_1234.gif" ALT="figs/ppy2_1234.gif"></CENTER>
+
+<P class="docText">Notice the URL in this page's address field -- the browser
+translated the <TT>/</TT> character we typed into the
+selection page to a <TT>%2F</TT> hexadecimal escape code
+before adding it to the end of the URL as a parameter. We met URL
+escape codes like this earlier in this chapter. In this case, the
+browser did the translation for us, but the end result is as if we
+had manually called one of the <TT>urllib</TT> quoting
+functions on the file path string.
+</P>
+
+<P class="docText">Technically, the <TT>%2F</TT> escape code here represents
+the standard URL translation for non-ASCII characters, under the
+default encoding scheme browsers employ. Spaces are usually
+translated to <TT>+</TT> characters as well. We can often
+get away without manually translating most non-ASCII characters when
+sending paths explicitly (in typed URLs). But as we saw earlier, we
+sometimes need to be careful to escape characters (e.g.,
+<TT>&amp;</TT>) that have special meaning within URL
+strings with <TT>urllib</TT> tools.
+</P>
+
+<A NAME="python2-CHP-12-SECT-7.2.1"></A>
+<H5 class="docSection3Title">12.7.2.1 Handling client path formats</H5>
+
+<P class="docText"><A NAME="IXT-12-337597"></A>In the end, the
+<I>putfile.cgi</I> script stores the uploaded file on
+the server, within a hardcoded <TT>uploaddir</TT>
+directory, under the filename at the end of the file's path on
+the client (i.e., less its client-side directory path). Notice,
+though, that the <TT>splitpath</TT> function in this script
+needs to do extra work to extract the base name of the file on the
+right. Browsers send up the filename in the directory path format
+used on the <span class="docEmphasis">client</span> machine; this path format may
+not be the same as that used on the server where the CGI script runs.
+</P>
+
+<P class="docText"><A NAME="IXT-12-337598"></A>The
+standard way to split up paths, <TT>os.path.split</TT>,
+knows how to extract the base name, but only recognizes path
+separator characters used on the platform it is running on. That is,
+if we run this CGI script on a Unix machine,
+<TT>os.path.split</TT> chops up paths around a
+<TT>/</TT> separator. If a user uploads from a DOS or
+Windows machine, however, the separator in the passed filename is
+<TT>\</TT>, not <TT>/</TT>. Browsers running on a
+Macintosh may send a path that is more different still.
+</P>
+
+<P class="docText">To handle client paths generically, this script imports
+platform-specific, path-processing modules from the Python library
+for each client it wishes to support, and tries to split the path
+with each until a filename on the right is found. For instance,
+<TT>posixpath</TT> handles paths sent from Unix-style
+platforms, and <TT>dospath</TT> recognizes DOS and Windows
+client paths. We usually don't import these modules directly
+since <TT>os.path.split</TT> is automatically loaded with
+the correct one for the underlying platform; but in this case, we
+need to be specific since the path comes from another machine. Note
+that we could have instead coded the path splitter logic like this to
+avoid some split calls:
+</P>
+
+<PRE>def splitpath(origpath):                                    # get name at end
+    basename = os.path.split(origpath)[1]                   # try server paths
+    if basename == origpath:                                # didn't change it?
+        if '\\' in origpath:
+            basename = string.split(origpath, '\\')[-1]     # try dos clients
+        elif '/' in origpath:
+            basename = string.split(origpath, '/')[-1]      # try unix clients
+    return basename</PRE>
+
+<P class="docText"><A NAME="IXT-12-337599"></A>But this
+alternative version may fail for some path formats (e.g., DOS paths
+with a drive but no backslashes). As is, both options waste time if
+the filename is already a base name (i.e., has no directory paths on
+the left), but we need to allow for the more complex cases
+generically.
+</P>
+
+<P class="docText">This upload script works as planned, but a few caveats are worth
+pointing out before we close the book on this example:
+</P>
+
+<UL>
+<LI><P class="docList">First, <TT>putfile</TT> doesn't do anything about
+cross-platform incompatibilities in filenames themselves. For
+instance, spaces in a filename shipped from a DOS client are not
+translated to nonspace characters; they will wind up as spaces in the
+server-side file's name, which may be legal but which are
+difficult to process in some scenarios.
+</P></LI>
+<LI><P class="docList">Second, the script is also biased towards uploading text files; it
+opens the output file in text mode (which will convert end-of-line
+marker codes in the file to the end-of-line convention on the web
+server machine), and reads input line-by-line (which may fail for
+binary data).
+</P></LI>
+</UL>
+<P class="docText">If you run into any of these limitations, you will have crossed over
+into the domain of suggested exercises.<A NAME="IXTR3-331"></A> <A NAME="IXTR3-332"></A> <A NAME="IXTR3-333"></A>
+</P>
+
+
+
+<A NAME="python2-CHP-12-SECT-7.3"></A>
+<H4 class="docSection2Title">12.7.3 More Than One Way to Push Bits Over the Net</H4>
+
+<P class="docText">Finally, let's discuss some context. We've seen three
+<TT>getfile</TT> scripts at this point in the book. The one
+in this chapter is different than the other two we wrote in earlier
+chapters, but it accomplishes a similar goal:
+</P>
+
+<UL>
+<LI><P class="docList">This chapter's <TT>getfile</TT> is a server-side CGI
+script that displays files over the HTTP protocol (on port 80).
+</P></LI>
+<LI><P class="docList">In <A class="docLink" HREF="0596000855_python2-CHP-10.html#python2-CHP-10">Chapter 10</A>, we built a client and server-side
+<TT>getfile</TT> to transfer with raw sockets (on port
+50001) and <A class="docLink" HREF="0596000855_python2-CHP-11.html#python2-CHP-11">Chapter 11</A> implemented a client-side
+<TT>getfile</TT> to ship over FTP (on port 21)
+</P></LI>
+</UL>
+<P class="docText">The CGI- and HTTP-based <TT>putfile</TT> script here is
+also different from the FTP-based <TT>putfile</TT> in the
+last chapter, but it can be considered an alternative to both socket
+and FTP uploads. To help underscore the distinctions, <A class="docLink" HREF="#python2-CHP-12-FIG-35">Figure 12-35</A> and <A class="docLink" HREF="#python2-CHP-12-FIG-36">Figure 12-36</A> show the new
+<TT>putfile</TT> uploading the original socket-based
+<TT>getfile</TT>.<sup class="docFootnote"><A class="docLink" HREF="#">[17]</A></sup>
+</P>
+<blockquote><p class="docFootnote"><sup><A NAME="">[17]</A></sup> Shown here being loaded
+from a now defunct <I>Part2</I> directory -- replace
+<I>Part2</I> with <I>PP2E</I> to find its
+true location, and don't be surprised if a few difference show
+up in transferred files contents if you run such examples yourself.
+Like I said, engineers love to change things.</p></blockquote>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="python2-CHP-12-FIG-35"></A>Figure 12-35. A new putfile with the socket-based getfile uploaded</H5>
+<IMG BORDER="0" WIDTH="320" HEIGHT="200" src="FILES/ppy2_1235.gif" ALT="figs/ppy2_1235.gif"></CENTER>
+
+<P class="docText">Really, the <TT>getfile</TT> CGI script in this chapter
+simply displays files only, but can be considered a download tool
+when augmented with cut-and-paste operations in a web browser.
+Figures <A class="docLink" HREF="#python2-CHP-12-FIG-37">Figure 12-37</A> and <A class="docLink" HREF="#python2-CHP-12-FIG-38">Figure 12-38</A>
+show the CGI <TT>getfile</TT> displaying the uploaded
+socket-based <TT>getfile</TT>.
+</P>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="python2-CHP-12-FIG-36"></A>Figure 12-36. A new putfile with the socket-based getfile</H5>
+<IMG BORDER="0" WIDTH="381" HEIGHT="327" src="FILES/ppy2_1236.gif" ALT="figs/ppy2_1236.gif"></CENTER>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="python2-CHP-12-FIG-37"></A>Figure 12-37. A new getfile with the socket-based getfile</H5>
+<IMG BORDER="0" WIDTH="346" HEIGHT="200" src="FILES/ppy2_1237.gif" ALT="figs/ppy2_1237.gif"></CENTER>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="python2-CHP-12-FIG-38"></A>Figure 12-38. A new getfile with the socket-based getfile downloaded</H5>
+<IMG BORDER="0" WIDTH="281" HEIGHT="250" src="FILES/ppy2_1238.gif" ALT="figs/ppy2_1238.gif"></CENTER>
+
+<P class="docText"><A NAME="IXT-12-337600"></A>
+<A NAME="IXT-12-337601"></A>The point to notice here is that there
+are a variety of ways to ship files around the
+Internet -- sockets, FTP, and HTTP (web pages) can all move files
+between computers. Technically speaking, we can transfer files with
+other techniques and protocols, too -- POP email, NNTP news, and
+so on.
+</P>
+
+<P class="docText">Each technique has unique properties but does similar work in the
+end: moving bits over the Net. All ultimately run over sockets on a
+particular port, but protocols like FTP add additional structure to
+the socket layer, and application models like CGI add both structure
+and programmability.<A NAME="IXTR3-334"></A> <A NAME="IXTR3-335"></A><A NAME="IXTR3-336"></A> <A NAME="IXTR3-337"></A><A NAME="IXTR3-338"></A> <A NAME="IXTR3-339"></A>
+</P>
+
+
+
+<ul></ul>
+</td>
+</tr>
+</table>
+<td></td>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+          <a href="0596000855_python2-CHP-12-SECT-6.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+          <a href="0596000855_python2-CHP-13.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+</body></html>

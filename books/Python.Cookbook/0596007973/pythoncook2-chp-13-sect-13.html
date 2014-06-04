@@ -1,0 +1,173 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;13.13.&nbsp;Forwarding and Redirecting Network Ports</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-13-sect-12.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-13-sect-14.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-13-SECT-13"></a>
+<h3 class="docSection1Title">Recipe 13.13. Forwarding and Redirecting Network Ports</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Simon Foster</span><a name="pythoncook2-CHP-13-ITERM-2875"></a></p>
+
+<a name="pythoncook2-CHP-13-SECT-13.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText">You need to forward a network port to another host
+(<I>forwarding</i>), possibly to a different port
+number (<I>redirecting</i>).</P>
+
+
+<a name="pythoncook2-CHP-13-SECT-13.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">Classes using the <tt>tHReading</tt> and
+<tt>socket</tt> modules can provide port forwarding and
+redirecting:</p>
+
+<pre>import sys, socket, time, threading
+LOGGING = True
+loglock = threading.Lock( )
+def log(s, *a):
+    if LOGGING:
+        loglock.acquire( )
+        try:
+            print '%s:%s' % (time.ctime( ), (s % a))
+            sys.stdout.flush( )
+        finally:
+            loglock.release( )
+class PipeThread(threading.Thread):
+    pipes = [  ]
+    pipeslock = threading.Lock( )
+    def _ _init_ _(self, source, sink):
+        Thread._ _init_ _(self)
+        self.source = source
+        self.sink = sink
+        log('Creating new pipe thread %s ( %s -&gt; %s )',
+             self, source.getpeername( ), sink.getpeername( ))
+        self.pipeslock.acquire( )
+        try: self.pipes.append(self)
+        finally: self.pipeslock.release( )
+        self.pipeslock.acquire( )
+        try: pipes_now = len(self.pipes)
+        finally: self.pipeslock.release( )
+        log('%s pipes now active', pipes_now)
+    def run(self):
+        while True:
+            try:
+                data = self.source.recv(1024)
+                if not data: break
+                self.sink.send(data)
+            except:
+                break
+        log('%s terminating', self)
+        self.pipeslock.acquire( )
+        try: self.pipes.remove(self)
+        finally: self.pipeslock.release( )
+        self.pipeslock.acquire( )
+        try: pipes_left = len(self.pipes)
+        finally: self.pipeslock.release( )
+        log('%s pipes still active', pipes_left)
+class Pinhole(threading.Thread):
+    def _ _init_ _(self, port, newhost, newport):
+        Thread._ _init_ _(self)
+        log('Redirecting: localhost:%s -&gt; %s:%s', port, newhost, newport)
+        self.newhost = newhost
+        self.newport = newport
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.bind(('', port))
+        self.sock.listen(5)
+    def run(self):
+        while True:
+            newsock, address = self.sock.accept( )
+            log('Creating new session for %s:%s', *address)
+            fwd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            fwd.connect((self.newhost, self.newport))
+            PipeThread(newsock, fwd).start( )
+            PipeThread(fwd, newsock).start( )</pre><BR>
+
+
+<p class="docText">A short ending to this <I>pinhole.py</i> module, with
+the usual guard to run this part only when <i>pinhole</i>
+is run as a main script rather than imported, lets us offer this
+recipe's functionality as a command-line script:</p>
+
+<pre>if _ _name_ _ == '_ _main_ _':
+    print 'Starting Pinhole port forwarder/redirector'
+    import sys
+    # get the arguments, give help in case of errors
+    try:
+        port = int(sys.argv[1])
+        newhost = sys.argv[2]
+        try: newport = int(sys.argv[3])
+        except IndexError: newport = port
+    except (ValueError, IndexError):
+        print 'Usage: %s port newhost [newport]' % sys.argv[0]
+        sys.exit(1)
+    # start operations
+    sys.stdout = open('pinhole.log', 'w')
+    Pinhole(port, newhost, newport).start( )</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-13-SECT-13.3"></a>
+<h4 class="docSection2Title">Discussion</h4>
+
+<p class="docText">Port forwarding and redirecting can often come in handy when
+you're operating a network, even a small one.
+Applications or other services, possibly not under your control, may
+be hardwired to connect to servers on certain addresses or ports; by
+interposing a forwarder and redirector, you can send such
+applications' connection requests onto any other
+host and/or port that suits you better.</P>
+
+<p class="docText">The code in this recipe supplies two classes that liberally use
+threading to provide this functionality and a small
+"main script" at the end, with the
+usual <tt>if _ _name_ _ = = '_ _main_ _</tt>' guard, to
+deliver this functionality as a command-line script. For once, the
+small "main script" is not just for
+demonstration and testing purposes but is actually quite useful on
+its own. For example:</p>
+
+<pre># python pinhole.py 80 webserver</pre><BR>
+
+
+<p class="docText">forwards all incoming HTTP sessions on standard port 80 to host
+<i>webserver</I>;</P>
+
+<pre># python pinhole.py 23 localhost 2323</pre><br>
+
+
+<p class="docText">redirects all incoming <tt>telnet</tt> sessions on standard
+port 23 to port 2323 on this same host (since
+<span class="docEmphasis">localhost</span> is the conventional hostname for
+"this host" in all TCP/IP
+implementations).</p>
+
+
+<a name="pythoncook2-CHP-13-SECT-13.4"></a>
+<h4 class="docSection2Title">See Also</h4>
+
+<p class="docText">Documentation for the standard library modules
+<tt>socket</tt> and <tt>threading</tt> in the
+<span class="docEmphasis">Library Reference</span> and <span class="docEmphasis">Python in a
+Nutshell</span>.<a name="pythoncook2-CHP-13-ITERM-2876"></a></p>
+
+
+
+<a href="5991535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-13-sect-12.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-13-sect-14.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

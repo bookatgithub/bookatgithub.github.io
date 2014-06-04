@@ -1,0 +1,313 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;6.16.&nbsp;Avoiding the "Singleton" Design Pattern with the Borg Idiom</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-6-sect-15.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-6-sect-17.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-6-SECT-16"></a>
+<h3 class="docSection1Title">Recipe 6.16. Avoiding the "Singleton" Design Pattern with the Borg Idiom</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Alex Martelli, Alex A. Naanou</span></p>
+
+<a name="pythoncook2-CHP-6-SECT-16.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-6-ITERM-2195"></a> <a name="pythoncook2-CHP-6-ITERM-2196"></a>You want to make sure that only one
+instance of a class is ever created: you don't care
+about the <tt>id</tt> of the resulting instances, just
+about their state and behavior, and you need to ensure
+subclassability.</P>
+
+
+<a name="pythoncook2-CHP-6-SECT-16.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">Application needs (<span class="docEmphasis">forces</span>) related to the
+"Singleton" Design Pattern can be
+met by allowing multiple instances to be created while ensuring that
+all instances share state and behavior. This is more flexible than
+fiddling with instance creation. Have your class inherit from the
+following <i>Borg</I> class:</p>
+
+<pre>class Borg(object):
+    _shared_state = {  }
+    def _ _new_ _(cls, *a, **k):
+        obj = object._ _new_ _(cls, *a, **k)
+        obj._ _dict_ _ = cls._shared_state
+        return obj</pre><BR>
+
+
+<p class="docText">If you override <tt>_ _new_ _</tt> in your class (very few
+classes need to do that), just remember to use <I>Borg._ _new_
+_</i>, rather than <tt>object._ _new_ _</tt>, within
+your override. If you want instances of your class to share state
+among themselves, but not with instances of other subclasses of
+<I>Borg</I>, make sure that your class has, at class scope,
+the "state"ment:</p>
+
+<pre>    _shared_state = {  }</pre><br>
+
+
+<p class="docText">With this "data override", your
+class doesn't inherit the
+<i>_shared_state</i> attribute from <I>Borg</i>
+but rather gets its own. It is to enable this "data
+override" that
+<i>Borg</I>'s <tt>_ _new_ _</tt>
+uses <i>cls._shared_state</I> instead of
+<i>Borg._shared_state</I>.</P>
+
+
+<a name="pythoncook2-CHP-6-SECT-16.3"></a>
+<h4 class="docSection2Title">Discussion</h4>
+
+<a name="pythoncook2-CHP-6-SECT-16.3.1"></a>
+<h5 class="docSection3Title">Borg in action</h5>
+
+<p class="docText">Here's a typical example of <tt>Borg</tt>
+use:</p>
+
+<pre>if _ _name_ _ == '_ _main_ _':
+    class Example(Borg):
+        name = None
+        def _ _init_ _(self, name=None):
+            if name is not None: self.name = name
+        def _ _str_ _(self): return 'name-&gt;%s' % self.name
+    a = Example('Lara')
+    b = Example( )                  # instantiating b shares self.name with a
+    print a, b
+    c = Example('John Malkovich')  # making c changes self.name of a &amp; b too
+    print a, b, c
+    b.name = 'Seven'               # setting b.name changes name of a &amp; c too 
+    print a, b, c</pre><br>
+
+
+<p class="docText">When running this module as a main script, the output is:</p>
+
+<pre>name-&gt;Lara name-&gt;Lara
+name-&gt;John Malkovich name-&gt;John Malkovich name-&gt;John Malkovich
+name-&gt;Seven name-&gt;Seven name-&gt;Seven</pre><br>
+
+
+<p class="docText">All instances of <tt>Example</tt> share state, so any
+setting of the <i>name</i> attribute of any instance,
+either in <tt>_ _init_ _</tt> or directly, affects all
+instances equally. However, note that the instance's
+<tt>id</tt>s differ; therefore, since we have not defined
+special methods <tt>_ _eq_ _</tt> and <tt>_ _hash_
+_</tt>, each instance can work as a distinct key in a
+dictionary. Thus, if we continue our sample code as follows:</p>
+
+<pre>    adict = {  }
+    j = 0
+    for i in a, b, c:
+        adict[i] = j
+        j = j + 1
+    for i in a, b, c:
+        print i, adict[i]</pre><br>
+
+
+<p class="docText">the output is:</p>
+
+<pre>name-&gt;Seven 0
+name-&gt;Seven 1
+name-&gt;Seven 2</pre><BR>
+
+
+<p class="docText"><a name="pythoncook2-CHP-6-ITERM-2197"></a>
+<a name="pythoncook2-CHP-6-ITERM-2198"></a>If this behavior is not what you want, add
+<tt>_ _eq_ _</tt> and <tt>_ _hash_ _</tt> methods
+to the <tt>Example</tt> class or the <I>Borg</i>
+superclass. Having these methods might better simulate the existence
+of a single instance, depending on your exact needs. For example,
+here's a version of <i>Borg</I> with these
+special methods added:</p>
+
+<pre>class Borg(object):
+    _shared_state = {  }
+    def _ _new_ _(cls, *a, **k):
+        obj = object._ _new_ _(cls, *a, **k)
+        obj._ _dict_ _ = cls._shared_state
+        return obj
+    def _ _hash_ _(self): return 9      # any arbitrary constant integer
+    def _ _eq_ _(self, other):
+        try: return self._ _dict_ _ is other._ _dict_ _
+        except AttributeError: return False</pre><br>
+
+
+<p class="docText">With this enriched version of <i>Borg</i>, the
+example's output changes to:</p>
+
+<pre>name-&gt;Seven 2
+name-&gt;Seven 2
+name-&gt;Seven 2</pre><br>
+
+
+
+
+<a name="pythoncook2-CHP-6-SECT-16.3.2"></a>
+<H5 class="docSection3Title">Borg, Singleton, or neither?</h5>
+
+<p class="docText"><a name="pythoncook2-CHP-6-ITERM-2199"></a>
+<a name="pythoncook2-CHP-6-ITERM-2200"></a>The Singleton Design Pattern has a catchy
+name, but unfortunately it also has the wrong focus for most
+purposes: it focuses on object identity, rather than on object state
+and behavior. The Borg design nonpattern makes all instances share
+state instead, and Python makes implementing this idea a snap.</P>
+
+<p class="docText">In most cases in which you might think of using Singleton or Borg,
+you don't really need either of them. Just write a
+Python module, with functions and module-global variables, instead of
+defining a class, with methods and per-instance attributes. You need
+to use a class only if you must be able to inherit from it, or if you
+need to take advantage of the class' ability to
+define special methods. (See <a class="docLink" href="pythoncook2-CHP-6-SECT-2.html#pythoncook2-CHP-6-SECT-2">Recipe 6.2</a> for a way to combine some of
+the advantages of classes and modules.) Even when you do need a
+class, it's usually unnecessary to include in the
+class itself any code to enforce the idea that one
+can't make multiple instances of it; other, simpler
+idioms are generally preferable. For example:</p>
+
+<pre>class froober(object):
+    def _ _init_ _(self):
+        <I>etc, etc</i>
+froober = froober( )</pre><BR>
+
+
+<p class="docText">Now <I>froober</i> is by nature the only instance of its
+own class, since name '<tt>froober</tt>' has been rebound
+to mean the instance, not the class. Of course, one might call
+<tt>froober._ _class_ _( )</tt>, but it's
+not sensible to spend much energy taking precautions against
+deliberate abuse of your design intentions. Any obstacles you put in
+the way of such abuse, somebody else can bypass. Taking precautions
+against <span class="docEmphasis">accidental</span> misuse is way plenty. If the
+very simple idiom shown in this latest snippet is sufficient for your
+needs, use it, and forget about Singleton and Borg. Remember:
+<span class="docEmphasis">do the simplest thing that could possibly work</span>.
+On rare occasions, though, an idiom as simple as this one cannot
+work, and then you do need more.</P>
+
+<p class="docText">The Singleton Design Pattern (described previously in <a class="docLink" href="pythoncook2-CHP-6-SECT-15.html#pythoncook2-CHP-6-SECT-15">Recipe 6.15</a>) is all about ensuring that
+just one instance of a certain class is ever created. In my
+experience, Singleton is generally not the best solution to the
+problems it tries to solve, producing different kinds of issues in
+various object models. We typically want to let as many instances be
+created as necessary, but all with shared state. Who cares about
+identity? It's state (and behavior) we care about.
+The alternate pattern based on sharing state, in order to solve
+roughly the same problems as Singleton does, has also been called
+<I>Monostate</i>. Incidentally, I like to call
+Singleton "Highlander" because
+there can be only one.</p>
+
+<p class="docText"><a name="pythoncook2-CHP-6-ITERM-2201"></a>
+<a name="pythoncook2-CHP-6-ITERM-2202"></a>In
+Python, you can implement the Monostate Design Pattern in many ways,
+but the Borg design nonpattern is often best. Simplicity is
+Borg's greatest strength. Since the <tt>_
+_dict_ _</tt> of any instance can be rebound,
+<i>Borg</i> in its <tt>_ _new_ _</tt> rebinds the
+<tt>_ _dict_ _</tt> of each of its instances to a
+class-attribute dictionary. Now, any reference or binding of an
+instance attribute will affect all instances equally. I thank David
+Ascher for suggesting the appropriate name <I>Borg</i> for
+this nonpattern. Borg is a nonpattern because it had no known uses at
+the time of its first publication (although several uses
+<span class="docEmphasis">are</span> now known): two or more known uses are part
+of the prerequisites for being a design pattern. See the detailed
+discussion at <a class="docLink" target="_blank" href="http://www.aleax.it/5ep.html">http://www.aleax.it/5ep.html</a>.</p>
+
+<p class="docText">An excellent article by Robert Martin about Singleton and Monostate
+can be found at <a class="docLink" target="_blank" href="http://www.objectmentor.com/resources/articles/SingletonAndMonostate.pdf">http://www.objectmentor.com/resources/articles/SingletonAndMonostate.pdf</a>.
+Note that most of the disadvantages that Martin attributes to
+Monostate are really due to the limitations of the languages that
+Martin is considering, such as C++ and Java, and just disappear when
+using Borg in Python. For example, Martin indicates, as
+Monostate's first and main disadvantage, that
+"A non-Monostate class cannot be converted into a
+Monostate class through derivation"but that
+is obviously not the case for Borg, which, through multiple
+inheritance, makes such conversions trivial.</P>
+
+
+
+<a name="pythoncook2-CHP-6-SECT-16.3.3"></a>
+<h5 class="docSection3Title">Borg odds and ends</H5>
+
+<p class="docText"><a name="pythoncook2-CHP-6-ITERM-2203"></a>The <tt>_
+_getattr_ _</tt> and <tt>_ _setattr_ _</tt> special
+methods are not involved in <i>Borg</I>'s
+operations. Therefore, you can define them independently in your
+subclass, for whatever other purposes you may require, or you may
+leave these special methods undefined. Either way is not a problem
+because Python does not call <tt>_ _setattr_ _</tt> in the
+specific case of the rebinding of the instance's
+<tt>_ _dict_ _</tt> attribute.</P>
+
+<p class="docText"><i>Borg</i> does not work well for classes that choose to
+keep some or all of their per-instance state somewhere other than in
+the instance's <tt>_ _dict_ _</tt>. So, in
+subclasses of <i>Borg</i>, avoid defining <tt>_
+_slots_ _</tt>that's a memory-footprint
+optimization that would make no sense, anyway, since
+it's meant for classes that have a large number of
+instances, and <i>Borg</i> subclasses will effectively have
+just one instance! Moreover, instead of inheriting from built-in
+types such as <tt>list</tt> or <tt>dict</tt>,
+your Borg subclasses should use wrapping and automatic delegation, as
+shown previously <a class="docLink" href="pythoncook2-CHP-6-SECT-5.html#pythoncook2-CHP-6-SECT-5">Recipe 6.5</a>. (I named this latter twist
+"DeleBorg," in my paper available
+at <a class="docLink" target="_blank" href="http://www.aleax.it/5ep.html">http://www.aleax.it/5ep.html</a>.)</p>
+
+<p class="docText">Saying that Borg "is a Singleton"
+would be as silly as saying that a portico is an umbrella. Both serve
+similar purposes (letting you walk in the rain without getting
+wet)solve similar forces, in design pattern parlancebut
+since they do so in utterly different ways, they're
+not instances of the same pattern. If anything, as already mentioned,
+Borg has similarities to the Monostate alternative design pattern to
+Singleton. However, Monostate is a design pattern, while Borg is not;
+also, a Python Monostate could perfectly well exist without being a
+Borg. We can say that Borg is an idiom that makes it easy and
+effective to implement Monostate in Python.</p>
+
+<p class="docText">For reasons mysterious to me, people often conflate issues germane to
+Borg and Highlander with other, independent issues, such as access
+control and, particularly, access from multiple threads. If you need
+to control access to an object, that need is exactly the same whether
+there is one instance of that object's class or
+twenty of them, and whether or not those instances share state. A
+fruitful approach to problem-solving is known as <span class="docEmphasis">divide and
+conquer</span>making problems easier to solve by splitting
+apart their different aspects. Making problems more difficult to
+solve by joining together several aspects must be an example of an
+approach known as <span class="docEmphasis">unite and suffer!</span></p>
+
+
+
+<a name="pythoncook2-CHP-6-SECT-16.4"></a>
+<h4 class="docSection2Title">See Also</h4>
+
+<p class="docText"><a class="docLink" href="pythoncook2-CHP-6-SECT-5.html#pythoncook2-CHP-6-SECT-5">Recipe 6.5</a>; <a class="docLink" href="pythoncook2-CHP-6-SECT-15.html#pythoncook2-CHP-6-SECT-15">Recipe 6.15</a>; Alex Martelli,
+"Five Easy Pieces: Simple Python
+Non-Patterns" (<a class="docLink" target="_blank" href="http://www.aleax.it/5ep.html">http://www.aleax.it/5ep.html</a>).<a name="pythoncook2-CHP-6-ITERM-2204"></a> <a name="pythoncook2-CHP-6-ITERM-2205"></a> <a name="pythoncook2-CHP-6-ITERM-2206"></a></p>
+
+
+
+<a href="5991535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><ul></UL></TD></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-6-sect-15.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-6-sect-17.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

@@ -1,0 +1,162 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
+<title>14.2 Reference-counted handles</title>
+<link rel="stylesheet" type="text/css" href="./acc.css" />
+</head>
+
+<body>
+<div class="prevnext">
+<a href="89.htm"><img src="images/Prev1.gif" /></a>&nbsp;&nbsp;<a href="91.htm"><img src="images/Next1.gif" /></a>
+</div>
+<h3>14.2 Reference-counted handles</h3>
+<p>At this point, we have achieved our goal of separating the work of managing pointers 
+from our interface class. We can use <code>Handle</code>s to implement a wide variety of interface 
+classes, none of which would have to worry about memory management. However, our 
+<code>Handle</code> class still has the problem that copying or assigning objects copies the underlying 
+data, even when it does not need to do so. The reason being that <code>Handle</code> always copies 
+the object to which the <code>Handle</code> is bound.</p>
+<p>In general, we would like to be able to decide whether we want to make such copies. 
+For example, we might want objects that are copies of one another to share their underlying 
+information. Such classes do not need or want valuelike behavior. Other classes may 
+not have any way of changing state once an object is created. In such cases, there is no 
+reason to copy the underlying object. Copying such objects would waste time and space. 
+To support these kinds of classes, we'd like a kind of <code>Handle</code> that does not copy the 
+underlying object when the <code>Handle</code> itself is copied. Of course, if we allow multiple 
+<code>Handle</code>s to be bound to the same underlying object, we'll still need to free that object at 
+some point. The obvious point at which to free the object is when the last <code>Handle</code> that 
+points to it goes away.</p>
+<p>To this end, we will use a <b><i>reference count, </i></b>which is an object that keeps track of how 
+many objects refer to another object. Each target object will have a reference count associated 
+with it. We will arrange to increment the reference count each time we create a new 
+handle that refers to our target object, and to decrement the reference count each time a 
+referring object goes away. When the last referring object goes away, the reference count 
+will become zero. At that point we'll know that it is safe to destroy the target object.</p>
+<p>This technique can save a lot of unneeded memory management and copying of data. 
+We'll first build a new class, called <code>Ref_handle</code>, which will show how to add reference 
+counts to our <code>Handle</code> class. Then, in the next two sections, we'll explore how reference 
+counting can help us define classes that behave like values while sharing representations.</p>
+<p>To add reference counting to a class, we have to allocate a counter, and change the 
+operations that create, copy, and destroy the objects so that they update the counter 
+appropriately. Each object to which we have a <code>Ref_handle</code> will have a reference count 
+associated with it. The only question is where to store the counter. In general, we don't 
+own the source code for the types from which we want to make Ref_handles, so we 
+can't just add the counter to the object class type itself. Instead, we'll add another pointer 
+to our <code>Ref_handle</code> class to keep track of the count. Each object to which we have 
+attached a <code>Ref_handle</code> will also have an associated reference count that tracks how 
+many copies we have made of that object:</p>
+<div class="prebox"><pre>
+template &lt;class T&gt; class Ref_handle {
+public:
+
+    // <i>manage reference count as well as pointer</i>
+    Ref_handle(): refptr(new size_t(1)), p(0) { }
+    Ref_handle(T* t): refptr(new size_t(1)), p(t) { }
+    Ref_handle(const Ref_handle&amp; h): refptr(h.refptr), p(h.p)
+    {
+       ++*refptr;
+    }
+
+    Ref_handle&amp; operator=(const Ref_handle&amp;);
+    ~Ref_handle();
+
+    // <i>as before</i>
+    operator bool() const { return p; }
+    T&amp; operator*() const
+    {
+        if (p)
+            return *p;
+        throw std::runtime_error(&quot;unbound Ref_handle&quot;);
+    }
+
+    T* operator-&gt;() const {
+        if (p)
+            return p;
+        throw std::runtime_error(&quot;unbound Ref_handle&quot;);
+    }
+
+private:
+    T* p;
+    size_t* refptr;         // <i>added</i>
+};
+</pre></div>
+<p>We have added a second data member to our <code>Ref_handle</code> class, and updated the constructors 
+to initialize that new member. The default constructor and the constructor that 
+takes a <code>T*</code> create new <code>Ref_handle</code> objects, so they allocate a new reference count (of type 
+<code>size_t</code>) and set the value of that counter to 1. The copy constructor doesn't create a new 
+object. Instead, it copies the pointers from the <code>Ref_handle&lt;T&gt;</code> object that it was passed, 
+and increments the reference count to indicate that there is one more pointer to the <code>T</code> 
+object than there was previously. Thus, the new <code>Ref_handle&lt;T&gt;</code> object points to the 
+same <code>T</code> object, and to the same reference count, as the <code>Ref_handle&lt;T&gt;</code> object from which 
+we copy. So, for example, if <code>X</code> is a <code>Ref_handle&lt;T&gt;</code> object, and we create <code>Y</code> as a copy of 
+<code>X</code>, then the situation looks like this:</p>
+<center>
+<img src="images/261.jpg" />
+</center>
+<p>The assignment operator also manipulates the reference count instead of copying the 
+underlying object:</p>
+<div class="prebox"><pre>
+template&lt;class T&gt;
+Ref_handle&lt;T&gt;&amp; Ref_handle&lt;T&gt;::operator=(const Ref_handle&amp; rhs)
+{
+    ++*rhs.refptr;
+    // <i>free the left-hand side, destroying pointers if appropriate </i>
+    if (--*refptr == 0) {
+        delete refptr;
+        delete p;
+    }
+
+    // <i>copy in values from the right-hand side </i>
+    refptr = rhs.refptr;
+    p = rhs.p;
+    return *this;
+}
+</pre></div>
+<p>As always, it is important to protect against self-assignment, which we do by incrementing 
+the reference count of the right-hand side before decrementing the reference count of 
+the left-hand side. If both operands refer to the same object, the net effect will be to leave 
+the reference count unchanged, while ensuring that it will not reach zero unintentionally.</p>
+<p>If the reference count goes to zero when we decrement it, then the left operand is the 
+last <code>Ref_handle</code> bound to the underlying object. Because we are about to obliterate 
+the value of the left operand, we are about to <code>delete</code> the last reference to that object. Therefore, 
+we must <code>delete</code> the object, and its corresponding reference count before we overwrite 
+the values in <code>refptr</code> and <code>p</code>. We <code>delete</code> both <code>p</code> and <code>refptr</code> because both were 
+dynamically allocated objects; thus, we must free them to avoid a memory leak.</p>
+<p>Having <code>delete</code>d the pointers, if needed, we then copy the values from the right-hand 
+side into the left-hand side and, as usual, return a reference to the left operand.</p>
+<p>The destructor, like the assignment operator, checks whether the <code>Ref_handle</code> object 
+being destroyed is the last one bound to its <code>T</code> object. If so, the destructor deletes the 
+objects to which the pointers point:</p>
+<div class="prebox"><pre>
+template&lt;class T&gt; Ref_handle&lt;T&gt;::~Ref_handle()
+{
+    if (--*refptr == 0) {
+        delete refptr;
+        delete p;
+    }
+}
+</pre></div>
+<p>This version of <code>Ref_handle</code> works well for classes that can share state between copies 
+of different objects, but what about classes, such as <code>Student_info</code>, that want to provide 
+valuelike behavior? For example, if we used the <code>Ref_handle</code> class to implement 
+<code>Student_info</code>, then after executing, say,</p>
+<div class="prebox"><pre>
+Student_info s1(cin);     // <i>initialize </i>s1 <i>from the standard input</i>
+Student_info s2 = s1;     // <i>&quot;copy&quot; that value into </i>s2
+</pre></div>
+<p>the two objects <code>s1</code> and <code>s2</code> would refer to the same underlying object, even though it 
+might appear that <code>s2</code> is a copy of <code>s1</code>. If we do anything to change the value of one of 
+these objects, we change the value of the other as well.</p>
+<p>Our original <code>Handle</code> class defined in &sect;14.1.1/255 provided valuelike behavior because 
+it always copied the associated object by calling <code>clone</code>. It should be easy to see that our 
+new <code>Ref_handle</code> class never calls <code>clone</code> at all. Because <code>Ref_handle</code> never calls 
+<code>clone</code>, handles of this type never copy the objects to which they are attached. On the 
+other hand, this version of <code>Ref_handle</code> certainly has the advantage of avoiding needless 
+copying of data. The trouble is that it does so by avoiding <i>all </i>copying, needless or not. 
+What can we do?</p>
+<div class="prevnext">
+<a href="89.htm"><img src="images/Prev1.gif" /></a>&nbsp;&nbsp;<a href="91.htm"><img src="images/Next1.gif" /></a>
+</div>
+</body>
+</html>

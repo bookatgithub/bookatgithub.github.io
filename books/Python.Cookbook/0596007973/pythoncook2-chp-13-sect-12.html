@@ -1,0 +1,162 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;13.12.&nbsp;Monitoring a Network with HTTP</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-13-sect-11.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-13-sect-13.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-13-SECT-12"></a>
+<h3 class="docSection1Title">Recipe 13.12. Monitoring a Network with HTTP</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Magnus Lyck&aring;</span></p>
+
+<a name="pythoncook2-CHP-13-SECT-12.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-13-ITERM-2869"></a> <a name="pythoncook2-CHP-13-ITERM-2870"></a>You want to implement
+special-purpose HTTP servers to enable you to monitor your
+network.<a name="pythoncook2-CHP-13-ITERM-2871"></a></P>
+
+
+<a name="pythoncook2-CHP-13-SECT-12.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">The Python Standard Library <tt>BaseHTTPServer</tt> module
+makes it easy to implement special-purpose HTTP servers. For example,
+here is a special-purpose HTTP server program that runs local
+commands on the server host to get the data for replies to each
+<tt>GET</tt> request:</p>
+
+<pre>import BaseHTTPServer, shutil, os
+from cStringIO import StringIO
+class MyHTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
+    # HTTP paths we serve, and what commandline-commands we serve them with
+    cmds = {'/ping': 'ping www.thinkware.se',
+            '/netstat' : 'netstat -a',
+            '/tracert': 'tracert www.thinkware.se',
+            '/srvstats': 'net statistics server',
+            '/wsstats': 'net statistics workstation',
+            '/route' : 'route print',
+            }
+    def do_GET(self):
+        """ Serve a GET request. """
+        f = self.send_head( )
+        if f:
+            f = StringIO( )
+            machine = os.popen('hostname').readlines( )[0]
+            if self.path == '/':
+                heading = "Select a command to run on %s" % (machine)
+                body = (self.getMenu( ) +
+                        "&lt;p&gt;The screen won't update until the selected "
+                        "command has finished. Please be patient.")
+            else:
+                heading = "Execution of ``%s'' on %s" % (
+                           self.cmds[self.path], machine)
+                cmd = self.cmds[self.path]
+                body = '&lt;a href="/"&gt;Main Menu&amp;lt;/a&amp;gt;&lt;pre&gt;%s&lt;/pre&gt;\n' % \
+                       os.popen(cmd).read( )
+                # Translation CP437 -&gt; Latin 1 needed for Swedish Windows.
+                body = body.decode('cp437').encode('latin1')
+            f.write("&lt;html&gt;&lt;head&gt;&lt;title&gt;%s&lt;/title&gt;&lt;/head&gt;\n" % heading)
+            f.write('&lt;body&gt;&lt;H1&gt;%s&lt;/H1&gt;\n' % (heading))
+            f.write(body)
+            f.write('&lt;/body&gt;&lt;/html&gt;\n')
+            f.seek(0)
+            self.copyfile(f, self.wfile)
+            f.close( )
+        return f
+    def do_HEAD(self):
+        """ Serve a HEAD request. """
+        f = self.send_head( )
+        if f:
+            f.close( )
+    def send_head(self):
+        path = self.path
+        if not path in ['/'] + self.cmds.keys( ):
+            head = 'Command "%s" not found. Try one of these:&lt;ul&gt;' % path
+            msg = head + self.getMenu( )
+            self.send_error(404, msg)
+            return None
+        self.send_response(200)
+        self.send_header("Content-type", 'text/html')
+        self.end_headers( )
+        f = StringIO( )
+        f.write("A test %s\n" % self.path)
+        f.seek(0)
+        return f
+    def getMenu(self):
+        keys = self.cmds.keys( )
+        keys.sort( )
+        msg = [  ]
+        for k in keys:
+            msg.append('&lt;li&gt;&lt;a href="%s"&gt;%s =&gt; %s&amp;lt;/a&amp;gt;&lt;/li&gt;' %(
+                                     k,  k,    self.cmds[k]))
+        msg.append('&lt;/ul&gt;')
+        return "\n".join(msg)
+    def copyfile(self, source, outputfile):
+        shutil.copyfileobj(source, outputfile)
+def main(HandlerClass = MyHTTPRequestHandler,
+         ServerClass = BaseHTTPServer.HTTPServer):
+    BaseHTTPServer.test(HandlerClass, ServerClass)
+if _ _name_ _ == '_ _main_ _':
+    main( )</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-13-SECT-12.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">The Python Standard Library module <tt>BaseHTTPServer</tt>
+makes it easy to set up custom web servers on an internal network.
+This way, you can run commands on various machines by just visiting
+those servers with a browser. The code in this recipe is
+Windows-specific, indeed specific to the version of Windows normally
+run in Sweden, because it knows about code page 437 providing the
+encoding for the various commands' results. The
+commands themselves are Windows ones, but that's
+just as easy to customize for your own purposes as the encoding
+issuefor example, using <I>traceroute</i> (the
+Unix spelling of the command) instead of <I>tracert</I>
+(the way Windows spells it).</p>
+
+<p class="docText">In this recipe, all substantial work is performed by external
+commands invoked by <tt>os.popen</tt> calls. Of course, it
+would be perfectly feasible to satisfy some or all of the requests by
+running actual Python code within the same process as the web server.
+We would normally not worry about concurrency issues for this kind of
+special-purpose, ad hoc, administrative server (unlike most web
+servers): the scenario it's intended to cover is one
+system administrator sitting at her system and visiting, with her
+browser, various machines on the network being
+administered/monitoredconcurrency is not really needed. If
+your scenario is somewhat different so that you do need concurrency,
+then multithreading and asynchronous operations, shown in several
+other recipes, are your fundamental options.</p>
+
+
+<a name="pythoncook2-CHP-13-SECT-12.4"></a>
+<h4 class="docSection2Title">See Also</h4>
+
+<p class="docText">Documentation for the standard library modules
+<tt>BaseHTTPServer</tt>, <tt>shutil</tt>,
+<tt>os</tt>, and <tt>cStringIO</tt> in the
+<span class="docEmphasis">Library Reference</span> and <span class="docEmphasis">Python in a
+Nutshell</span>.<a name="pythoncook2-CHP-13-ITERM-2872"></a> <a name="pythoncook2-CHP-13-ITERM-2873"></a> <a name="pythoncook2-CHP-13-ITERM-2874"></a></P>
+
+
+
+<ul></ul></TD></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-13-sect-11.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-13-sect-13.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

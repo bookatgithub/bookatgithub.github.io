@@ -1,0 +1,166 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;16.10.&nbsp;Referring to a List Comprehension While Building It</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-16-sect-9.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-16-sect-11.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-16-SECT-10"></a>
+<h3 class="docSection1Title">Recipe 16.10. Referring to a List Comprehension While Building It</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Chris Perkins</span></p>
+
+<a name="pythoncook2-CHP-16-SECT-10.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-16-ITERM-3032"></a>
+<a name="pythoncook2-CHP-16-ITERM-3033"></a>You want to refer, from inside
+a list comprehension, to the same list object you're
+building. However, the object being built by the list comprehension
+doesn't have a name while you're
+building it.</P>
+
+
+<a name="pythoncook2-CHP-16-SECT-10.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">Internally, the Python interpreter does create a
+"secret" name that exists only
+while a list comprehension is being built. In Python 2.3, that name
+is usually '<tt>_[1]</tt>' and refers to the bound method
+<tt>append</tt> of the list object we're
+building. We can use this secret name as a back door to refer to the
+list object as it gets built. For example, say we want to build a
+copy of a list but without duplicates:</p>
+
+<pre>&gt;&gt;&gt; L = [1, 2, 2, 3, 3, 3]
+&gt;&gt;&gt; [x for x in L if x not in locals( )['_[1]']._ _self_ _]
+<B>[1, 2, 3]</b></pre><br>
+
+
+<p class="docText">Python 2.4 uses the same name to indicate the list object being
+built, rather than the bound-method <tt>access</tt>. In the
+case of nested list comprehensions, inner ones are named
+'<tt>_[2]</tt>', '<tt>_[3]</tt>', and so on, as
+nesting goes deeper. Clearly, all of these considerations are best
+wrapped up into a function:</P>
+
+<pre>import inspect
+import sys
+version_23 = sys.version_info &lt; (2, 4)
+def this_list( ):
+    import sys
+    d = inspect.currentframe(1).f_locals
+    nestlevel = 1
+    while '_[%d]' % nestlevel in d: nestlevel += 1
+    result = d['_[%d]' % (nestlevel - 1)]
+    if version_23: return result._ _self_ _
+    else: return result</pre><BR>
+
+
+<p class="docText">Using this function, we can make the preceding snippet more readable,
+as well as making it work properly in Python 2.4 as well as in
+version 2.3:</p>
+
+<pre>&gt;&gt;&gt; [x for x in L if x not in this_list( )]
+<B>[1, 2, 3]</b></pre><BR>
+
+
+
+<a name="pythoncook2-CHP-16-SECT-10.3"></a>
+<h4 class="docSection2Title">Discussion</h4>
+
+<p class="docText">List comprehensions may look a little like magic, but the bytecode
+that Python generates for them is in fact quite mundane: create an
+empty list, give the empty list's bound-method
+<tt>append</tt>, a temporary name in the locals dictionary,
+append items one at a time, and then delete the name. All of this
+happens, conceptually, between the open square bracket (
+<tt>[</tt> ) and the close square bracket ( ]),
+which enclose the list comprehension.</p>
+
+<p class="docText">The temporary name that Python 2.3 assigns to the bound
+<tt>append</tt> method is '<tt>_[1]</tt>' (or
+'<tt>_[2]</tt>', etc., for nested list comprehensions).
+This name is deliberately chosen (to avoid accidental clashes) to
+<span class="docEmphasis">not</span> be a syntactically valid Python identifier,
+so we cannot refer to the bound method directly, by name. However, we
+<span class="docEmphasis">can</span> access it as <tt>locals(
+)['_[1]']</tt>. Once we have a
+reference to the bound method object, we just use the bound
+method's <tt>_ _self_ _</tt> attribute to
+get at the list object itself. In Python 2.4, the same name refers
+directly to the list object, rather than to its bound method, so we
+skip the last step.</p>
+
+<p class="docText">Having a reference to the list object enables us to do all sorts of
+neat party tricks, such as performing <tt>if</tt> tests
+that involve looking at the items that have already been added to the
+list, or even modifying or deleting them. These capabilities are just
+what the doctor ordered for finding primes in a
+"one-liner", for example: for each
+odd number, we need to test whether it is divisible by any prime
+number less than or equal to the square root of the number being
+tested. Since we already have all the smaller primes stored and, with
+our new parlor trick, have access to them, this test is a breeze and
+requires no auxiliary storage:</P>
+
+<pre>import itertools
+def primes_less_than(N):
+    return [ p for p in itertools.chain([2], xrange(3,N,2))
+             if 0 not in itertools.imap(
+                 lambda x: p % x, itertools.takewhile(
+                       lambda v: v*v &lt;= p, this_list( ) ))]</pre><br>
+
+
+<p class="docText">The list comprehension that's the whole body of this
+function <i>primes_less_than</I>, while long enough not to
+fit into a single physical line, <span class="docEmphasis">is</span> all in a
+single logical line (indeed, it must be, since any list comprehension
+is a single expression), and therefore qualifies as a
+"one-liner" if you squint in just
+the right way.</p>
+
+<p class="docText">This simple prime-finding algorithm is nowhere near as fast as the
+Sieve of Eratosthenes shown in <a class="docLink" href="pythoncook2-CHP-18-SECT-10.html#pythoncook2-CHP-18-SECT-10">Recipe 18.10</a>, but the ability to fit the
+entire algorithm inside a single expression is nevertheless kind of
+neat. Part of its neatness comes from the just-in-time evaluation
+that the functions from standard library module
+<tt>itertools</tt> perform so nicely.</P>
+
+<p class="docText">Alas, this neat trick definitely <span class="docEmphasis">cannot</span> be
+recommended for production code. While it works in Python 2.3 and
+2.4, it could easily break in future releases, since it depends on
+undocumented internals; for the same reason, it's
+unlikely to work properly on other implementations of the Python
+language, such as Jython or IronPython. So, I suggest you use it to
+impress friends, but for any real work, stick to clearer, faster, and
+solid good old <tt>for</tt> loops!</p>
+
+
+<a name="pythoncook2-CHP-16-SECT-10.4"></a>
+<H4 class="docSection2Title">See Also</H4>
+
+<p class="docText">Documentation for bound methods,
+<tt>list</tt>s' <tt>append</tt>
+method, and the <tt>itertools</tt> module in the
+<span class="docEmphasis">Library Reference</span> and <span class="docEmphasis">Python in a
+Nutshell</span>.<a name="pythoncook2-CHP-16-ITERM-3034"></a> <a name="pythoncook2-CHP-16-ITERM-3035"></a></p>
+
+
+
+<a href="5991535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-16-sect-9.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-16-sect-11.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

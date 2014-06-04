@@ -1,0 +1,1067 @@
+<html><head>
+<META http-equiv="Content-Type" content="text/html">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="5.5 Visitor: Walking Trees Generically"-->
+<link rel="STYLESHEET" type="text/css" href="FILES/style.css">
+<link rel="STYLESHEET" type="text/css" href="FILES/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+	<a href="0596000855_python2-CHP-5-SECT-4.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+	<a href="0596000855_python2-CHP-5-SECT-6.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr>
+<td valign="top"><A NAME="python2-CHP-5-SECT-5"></A>
+<H3 class="docSection1Title">5.5 Visitor: Walking Trees Generically</H3>
+
+<P class="docText">Armed with the portable <TT>search_all</TT> script from
+<A class="docLink" HREF="0596000855_python2-CHP-5-SECT-4.html#python2-CHP-5-EX-10">Example 5-10</A>, I was able to better pinpoint files to
+be edited, every time I changed the book examples tree structure. At
+least initially, I ran <TT>search_all</TT> to pick out
+suspicious files in one window, and edited each along the way by hand
+in another window.
+</P>
+
+<P class="docText">Pretty soon, though, this became tedious too. Manually typing
+filenames into editor commands is no fun, especially when the number
+of files to edit is large. The search for "Part2" shown
+earlier returned 74 files, for instance. Since there are at least
+occasionally better things to do than manually start 74 editor
+sessions, I looked for a way to <span class="docEmphasis">automatically</span>
+run an editor on each suspicious file.
+</P>
+
+<P class="docText">Unfortunately, <TT>search_all</TT> simply prints results to
+the screen. Although that text could be intercepted and parsed, a
+more direct approach that spawns edit sessions during the search may
+be easier, but may require major changes to the tree search script as
+currently coded. At this point, two thoughts came to mind.
+</P>
+
+<P class="docText">First, I knew it would be easier in the long-run to be able to add
+features to a general directory searcher as <span class="docEmphasis">external
+components</span>, not by changing the original script. Because
+editing files was just one possible extension (what about automating
+text replacements too?), a more generic, customizable, and reusable
+search component seemed the way to go.
+</P>
+
+<P class="docText"><A NAME="IXT-5-336982"></A>Second, after writing a few directory
+walking utilities, it became clear that I was rewriting the same sort
+of code over and over again. Traversals could be even further
+simplified by wrapping common details for easier reuse. The
+<TT>os.path.walk</TT> tool helps, but its use tends to
+foster redundant operations (e.g., directory name joins), and its
+function-object-based interface doesn't quite lend itself to
+customization the way a class can.
+</P>
+
+<P class="docText">Of course, both goals point to using an OO framework for traversals
+and searching. <A class="docLink" HREF="#python2-CHP-5-EX-11">Example 5-11</A> is one concrete
+realization of these goals. It exports a general
+<TT>FileVisitor</TT> class that mostly just wraps
+<TT>os.path.walk</TT> for easier use and extension, as well
+as a generic <TT>SearchVisitor</TT> class that generalizes
+the notion of directory searches. By itself,
+<TT>SearchVisitor</TT> simply does what
+<TT>search_all</TT> did, but it also opens up the search
+process to customization <span class="docEmphasis">--</span> bits of its
+behavior can be modified by overloading its methods in subclasses.
+Moreover, its core search logic can be reused everywhere we need to
+search; simply define a subclass that adds search-specific
+extensions.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-5-EX-11"></A>Example 5-11. PP2E\PyTools\visitor.py </H5>
+<PRE>#############################################################
+# Test: "python ..\..\PyTools\visitor.py testmask [string]".
+# Uses OOP, classes, and subclasses to wrap some of the 
+# details of using os.path.walk to walk and search; testmask 
+# is an integer bitmask with 1 bit per available selftest;
+# see also: visitor_edit/replace/find/fix*/.py subclasses,
+# and the fixsitename.py client script in Internet\Cgi-Web;
+#############################################################
+
+import os, sys, string
+listonly = 0
+
+class FileVisitor:
+    """
+    visits all non-directory files below startDir;
+    override visitfile to provide a file handler
+    """
+    def __init__(self, data=None, listonly=0):
+        self.context  = data
+        self.fcount   = 0
+        self.dcount   = 0
+        self.listonly = listonly
+    def run(self, startDir=os.curdir):                  # default start='.'
+        os.path.walk(startDir, self.visitor, None)    
+    def visitor(self, data, dirName, filesInDir):       # called for each dir 
+        self.visitdir(dirName)                          # do this dir first
+        for fname in filesInDir:                        # do non-dir files 
+            fpath = os.path.join(dirName, fname)        # fnames have no path
+            if not os.path.isdir(fpath):
+                self.visitfile(fpath)
+    def visitdir(self, dirpath):                        # called for each dir
+        self.dcount = self.dcount + 1                   # override or extend me
+        print dirpath, '...'
+    def visitfile(self, filepath):                      # called for each file
+        self.fcount = self.fcount + 1                   # override or extend me
+        print self.fcount, '=&gt;', filepath               # default: print name
+
+class SearchVisitor(FileVisitor):
+    """ 
+    search files at and below startDir for a string
+    """
+    skipexts = ['.gif', '.exe', '.pyc', '.o', '.a']     # skip binary files
+    def __init__(self, key, listonly=0):
+        FileVisitor.__init__(self, key, listonly)
+        self.scount = 0
+    def visitfile(self, fname):                         # test for a match
+        FileVisitor.visitfile(self, fname)
+        if not self.listonly:
+            if os.path.splitext(fname)[1] in self.skipexts:
+                print 'Skipping', fname
+            else:
+                text = open(fname).read(  )
+                if string.find(text, self.context) != -1:
+                    self.visitmatch(fname, text)
+                    self.scount = self.scount + 1
+    def visitmatch(self, fname, text):                     # process a match
+        raw_input('%s has %s' % (fname, self.context))     # override me lower
+
+
+# self-test logic
+dolist   = 1
+dosearch = 2    # 3=do list and search
+donext   = 4    # when next test added
+
+def selftest(testmask):
+    if testmask &amp; dolist:
+       visitor = FileVisitor(  )
+       visitor.run('.')
+       print 'Visited %d files and %d dirs' % (visitor.fcount, visitor.dcount)
+
+    if testmask &amp; dosearch:   
+       visitor = SearchVisitor(sys.argv[2], listonly)
+       visitor.run('.')
+       print 'Found in %d files, visited %d' % (visitor.scount, visitor.fcount)
+
+if __name__ == '__main__':
+    selftest(int(sys.argv[1]))    # e.g., 5 = dolist | dorename</PRE>
+
+
+<P class="docText">This module primarily serves to export classes for external use, but
+it does something useful when run standalone too. If you invoke it as
+a script with a single argument "1", it makes and runs a
+<TT>FileVisitor</TT> object, and prints an exhaustive
+listing of every file and directory at and below the place you are at
+when the script is invoked (i.e., ".", the current
+working directory):
+</P>
+
+<PRE>C:\temp&gt;<B>python %X%\PyTools\visitor.py 1 </B>
+. ...
+1 =&gt; .\autoexec.bat
+2 =&gt; .\cleanall.csh
+3 =&gt; .\echoEnvironment.pyw
+4 =&gt; .\Launcher.py
+5 =&gt; .\Launcher.pyc
+6 =&gt; .\Launch_PyGadgets.py
+7 =&gt; .\Launch_PyDemos.pyw
+<I> ...more deleted...</I>
+479 =&gt; .\Gui\Clock\plotterGui.py
+480 =&gt; .\Gui\Clock\plotterText.py
+481 =&gt; .\Gui\Clock\plotterText1.py
+482 =&gt; .\Gui\Clock\__init__.py
+.\Gui\gifs ...
+483 =&gt; .\Gui\gifs\frank.gif
+484 =&gt; .\Gui\gifs\frank.note
+485 =&gt; .\Gui\gifs\gilligan.gif
+486 =&gt; .\Gui\gifs\gilligan.note
+<I> ...more deleted...</I>
+1352 =&gt; .\PyTools\visitor_fixnames.py
+1353 =&gt; .\PyTools\visitor_find_quiet2.py
+1354 =&gt; .\PyTools\visitor_find.pyc
+1355 =&gt; .\PyTools\visitor_find_quiet1.py
+1356 =&gt; .\PyTools\fixeoln_one.doc.txt
+Visited 1356 files and 119 dirs</PRE>
+
+<P class="docText">If you instead invoke this script with a "2" as its first
+argument, it makes and runs a <TT>SearchVisitor</TT>
+object, using the second argument as the search key. This form is
+equivalent to running the <I>search_all.py</I> script
+we met earlier; it pauses for an Enter key press after each matching
+file is reported (lines in bold font here):
+</P>
+
+<PRE>C:\temp\examples&gt;<B>python %X%\PyTools\visitor.py 2 Part3 </B>
+. ...
+1 =&gt; .\autoexec.bat
+2 =&gt; .\cleanall.csh
+<B>.\cleanall.csh has Part3 </B>
+3 =&gt; .\echoEnvironment.pyw
+4 =&gt; .\Launcher.py
+<B>.\Launcher.py has Part3 </B>
+5 =&gt; .\Launcher.pyc
+Skipping .\Launcher.pyc
+6 =&gt; .\Launch_PyGadgets.py
+7 =&gt; .\Launch_PyDemos.pyw
+8 =&gt; .\LaunchBrowser.out.txt
+9 =&gt; .\LaunchBrowser.py
+10 =&gt; .\Launch_PyGadgets_bar.pyw
+11 =&gt; .\makeall.csh
+<B>.\makeall.csh has Part3 </B>
+...
+<I> ...more deleted</I>
+...
+1353 =&gt; .\PyTools\visitor_find_quiet2.py
+1354 =&gt; .\PyTools\visitor_find.pyc
+Skipping .\PyTools\visitor_find.pyc
+1355 =&gt; .\PyTools\visitor_find_quiet1.py
+1356 =&gt; .\PyTools\fixeoln_one.doc.txt
+Found in 49 files, visited 1356</PRE>
+
+<P class="docText">Technically, passing this script a first argument "3"
+runs <span class="docEmphasis">both</span> a <TT>FileVisitor</TT> and a
+<TT>SearchVisitor</TT> (two separate traversals are
+performed). The first argument is really used as a bitmask to select
+one or more supported self-tests -- if a test's bit is on in
+the binary value of the argument, the test will be run. Because 3 is
+011 in binary, it selects both a search (010) and a listing (001). In
+a more user-friendly system we might want to be more symbolic about
+that (e.g., check for "-search" and "-list"
+arguments), but bitmasks work just as well for this script's
+scope.
+</P>
+
+<P><A NAME="python2-CHP-5-SIDEBAR-2"></A><TABLE CELLSPACING="0" WIDTH="90%" BORDER="1"><TR><TD>
+<H2 class="docSidebarTitle">Text Editor War and Peace</H2>
+
+<P class="docText">In case you don't know, the vi setting used in the
+<I>visitor_edit.py</I> script is a Unix text editor;
+it's available for Windows too, but is not standard there. If
+you run this script, you'll probably want to change its
+<TT>editor</TT> setting on your machine. For instance,
+"emacs" should work on Linux, and "edit" or
+"notepad" should work on all Windows boxes.
+</P>
+
+<P class="docText">These days, I tend to use an editor I coded in Python (PyEdit), so
+I'll leave the editor wars to more politically-minded readers.
+In fact, changing the script to assign <TT>editor</TT>
+either of these ways:
+</P>
+
+<PRE>    editor = r'python Gui\TextEditor\textEditor.pyw'
+    editor = r'start  Gui\TextEditor\textEditor.pyw'</PRE>
+
+<P class="docText">will open the matched file in a pure and portable Python text editor
+GUI -- one coded in Python with the Tkinter interface, which runs
+on all major GUI platforms, and which we'll meet in <A class="docLink" HREF="0596000855_python2-CHP-9.html#python2-CHP-9">Chapter 9</A>. If you read about the
+<I>start</I> command in <A class="docLink" HREF="0596000855_python2-CHP-3.html#python2-CHP-3">Chapter 3</A>, you
+know that the first editor setting pauses the traversal while the
+editor runs, but the second does not (you'll get as many PyEdit
+windows as there are matched files).
+</P>
+
+<P class="docText">This may fail, however, for very long file directory names (remember,
+<TT>os.system</TT> has a length limit unlike
+<TT>os.spawnv</TT>). Moreover, the path to the
+<I>textEditor.pyw</I> program may vary depending on
+where you are when you run <I>visitor_edit.py</I>
+(i.e., the CWD). There are ways around this latter problem:
+</P>
+
+<UL>
+<LI><P class="docList">Prefixing the script's path string with the value of the
+<TT>PP2EHOME</TT> shell variable, fetched with
+<TT>os.environ</TT>; with the standard book setup scripts,
+<TT>PP2EHOME</TT> gives the absolute root directory, from
+which the editor script's path can be found.
+</P></LI>
+</UL>
+<UL>
+<LI><P class="docList">Prefixing the path with <TT>sys.path[0]</TT> and a
+<TT>'../'</TT> to exploit the fact that the first import
+directory is always the script's home directory (see <A class="docLink" HREF="0596000855_python2-CHP-2-SECT-7.html#python2-CHP-2-SECT-7">Section 2.7</A> in <A class="docLink" HREF="0596000855_python2-CHP-2.html#python2-CHP-2">Chapter 2</A>).
+</P></LI>
+</UL>
+<UL>
+<LI><P class="docList">Windows shortcuts or Unix links to the editor script from the CWD.</P></LI>
+</UL>
+<UL>
+<LI><P class="docList">Searching for the script naively with
+<TT>Launcher.findFirst</TT> or
+<TT>guessLocation</TT>, described near the end of <A class="docLink" HREF="0596000855_python2-CHP-4.html#python2-CHP-4">Chapter 4</A>.
+</P></LI>
+</UL>
+<P class="docText">But these are all beyond the scope of a sidebar on text editor
+politics.
+</P>
+</TD></TR></TABLE></P>
+
+<A NAME="python2-CHP-5-SECT-5.1"></A>
+<H4 class="docSection2Title">5.5.1 Editing Files in Directory Trees</H4>
+
+<P class="docText">Now, after genericizing tree traversals and searches, it's an
+easy step to add automatic file editing in a brand-new, separate
+component. <A class="docLink" HREF="#python2-CHP-5-EX-12">Example 5-12</A> defines a new
+<TT>EditVisitor</TT> class that simply customizes the
+<TT>visitmatch</TT> method of the
+<TT>SearchVisitor</TT> class, to open a text editor on the
+matched file. Yes, this is the complete program -- it needs to do
+something special only when visiting matched files, and so need
+provide only that behavior; the rest of the traversal and search
+logic is unchanged and inherited.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-5-EX-12"></A>Example 5-12. PP2E\PyTools\visitor_edit.py </H5>
+<PRE>###############################################################
+# Use: "python PyTools\visitor_edit.py string".
+# add auto-editor start up to SearchVisitor in an external
+# component (subclass), not in-place changes; this version 
+# automatically pops up an editor on each file containing the
+# string as it traverses; you can also use editor='edit' or 
+# 'notepad' on windows; 'vi' and 'edit' run in console window;
+# editor=r'python Gui\TextEditor\textEditor.pyw' may work too;
+# caveat: we might be able to make this smarter by sending
+# a search command to go to the first match in some editors; 
+###############################################################
+
+import os, sys, string
+from visitor import SearchVisitor
+listonly = 0
+
+class EditVisitor(SearchVisitor):
+    """ 
+    edit files at and below startDir having string
+    """
+    editor = 'vi'  # ymmv
+    def visitmatch(self, fname, text):
+        os.system('%s %s' % (self.editor, fname))
+
+if __name__  == '__main__':
+    visitor = EditVisitor(sys.argv[1], listonly)
+    visitor.run('.')
+    print 'Edited %d files, visited %d' % (visitor.scount, visitor.fcount)</PRE>
+
+
+<P class="docText">When we make and run an <TT>EditVisitor</TT>, a text editor
+is started with the <TT>os.system</TT> command-line spawn
+call, which usually blocks its caller until the spawned program
+finishes. On my machines, each time this script finds a matched file
+during the traversal, it starts up the vi text editor within the
+console window where the script was started; exiting the editor
+resumes the tree walk.
+</P>
+
+<P class="docText">Let's find and edit some files. When run as a script, we pass
+this program the search string as a command argument (here, the
+string "-exec" is the search key, not an option flag).
+The root directory is always passed to the <TT>run</TT>
+method as ".", the current run directory. Traversal
+status messages show up in the console as before, but each matched
+file now automatically pops up in a text editor along the way. Here,
+the editor is started eight times:
+</P>
+
+<PRE>C:\...\PP2E&gt;<B>python PyTools\visitor_edit.py -exec </B>
+1 =&gt; .\autoexec.bat
+2 =&gt; .\cleanall.csh
+3 =&gt; .\echoEnvironment.pyw
+4 =&gt; .\Launcher.py
+5 =&gt; .\Launcher.pyc
+Skipping .\Launcher.pyc
+<I> ...more deleted...</I>
+1340 =&gt; .\old_Part2\Basics\unpack2.py
+1341 =&gt; .\old_Part2\Basics\unpack2b.py
+1342 =&gt; .\old_Part2\Basics\unpack3.py
+1343 =&gt; .\old_Part2\Basics\__init__.py
+Edited 8 files, visited 1343</PRE>
+
+<P class="docText">This, finally, is the exact tool I was looking for to simplify global
+book examples tree maintenance. After major changes to things like
+shared modules and file and directory names, I run this script on the
+examples root directory with an appropriate search string, and edit
+any files it pops up as needed. I still need to change files by hand
+in the editor, but that's often safer than blind global
+replacements.
+</P>
+
+
+<A NAME="python2-CHP-5-SECT-5.2"></A>
+<H4 class="docSection2Title">5.5.2 Global Replacements in Directory Trees</H4>
+
+<P class="docText">But since I brought it up: given a general tree traversal class,
+it's easy to code a global search-and-replace subclass too. The
+<TT>FileVisitor</TT> subclass in <A class="docLink" HREF="#python2-CHP-5-EX-13">Example 5-13</A>, <TT>ReplaceVisitor</TT>, customizes
+the <TT>visitfile</TT> method to globally replace any
+appearances of one string with another, in all text files at and
+below a root directory. It also collects the names of all files that
+were changed in a list, just in case you wish to go through and
+verify the automatic edits applied (a text editor could be
+automatically popped up on each changed file, for instance).
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-5-EX-13"></A>Example 5-13. PP2E\PyTools\visitor_replace.py </H5>
+<PRE>################################################################
+# Use: "python PyTools\visitor_replace.py fromStr toStr".
+# does global search-and-replace in all files in a directory
+# tree--replaces fromStr with toStr in all text files; this
+# is powerful but dangerous!! visitor_edit.py runs an editor
+# for you to verify and make changes, and so is much safer;
+# use CollectVisitor to simply collect a list of matched files;
+################################################################
+
+import os, sys, string
+from visitor import SearchVisitor
+listonly = 0
+
+class ReplaceVisitor(SearchVisitor):
+    """ 
+    change fromStr to toStr in files at and below startDir;
+    files changed available in obj.changed list after a run
+    """
+    def __init__(self, fromStr, toStr, listonly=0):
+        self.changed = []
+        self.toStr   = toStr
+        SearchVisitor.__init__(self, fromStr, listonly)
+    def visitmatch(self, fname, text):
+        fromStr, toStr = self.context, self.toStr
+        text = string.replace(text, fromStr, toStr)
+        open(fname, 'w').write(text)
+        self.changed.append(fname)
+
+if __name__  == '__main__':
+    if raw_input('Are you sure?') == 'y':
+        visitor = ReplaceVisitor(sys.argv[1], sys.argv[2], listonly)
+        visitor.run(startDir='.')
+        print 'Visited %d files'  % visitor.fcount
+        print 'Changed %d files:' % len(visitor.changed)
+        for fname in visitor.changed: print fname </PRE>
+
+
+<P class="docText">To run this script over a directory tree, go to the directory to be
+changed and run the following sort of command line, with
+"from" and "to" strings. On my current
+machine, doing this on a 1354-file tree and changing 75 files along
+the way takes roughly six seconds of real clock time when the system
+isn't particularly busy:
+</P>
+
+<PRE>C:\temp\examples&gt;<B>python %X%/PyTools/visitor_replace.py Part2 SPAM2 </B>
+Are you sure?<B>y </B>
+. ...
+1 =&gt; .\autoexec.bat
+2 =&gt; .\cleanall.csh
+3 =&gt; .\echoEnvironment.pyw
+4 =&gt; .\Launcher.py
+5 =&gt; .\Launcher.pyc
+Skipping .\Launcher.pyc
+6 =&gt; .\Launch_PyGadgets.py
+<I> ...more deleted...</I>
+1351 =&gt; .\PyTools\visitor_find_quiet2.py
+1352 =&gt; .\PyTools\visitor_find.pyc
+Skipping .\PyTools\visitor_find.pyc
+1353 =&gt; .\PyTools\visitor_find_quiet1.py
+1354 =&gt; .\PyTools\fixeoln_one.doc.txt
+Visited 1354 files
+Changed 75 files:
+.\Launcher.py
+.\LaunchBrowser.out.txt
+.\LaunchBrowser.py
+.\PyDemos.pyw
+.\PyGadgets.py
+.\README-PP2E.txt
+<I> ...more deleted...</I>
+.\PyTools\search_all.out.txt
+.\PyTools\visitor.out.txt
+.\PyTools\visitor_edit.py
+
+[to delete, use an empty toStr]
+C:\temp\examples&gt;<B>python %X%/PyTools/visitor_replace.py SPAM "" </B></PRE>
+
+<P class="docText">This is both wildly powerful and dangerous. If the string to be
+replaced is something that can show up in places you didn't
+anticipate, you might just ruin an entire tree of files by running
+the <TT>ReplaceVisitor</TT> object defined here. On the
+other hand, if the string is something very specific, this object can
+obviate the need to automatically edit suspicious files. For
+instance, we will use this approach to automatically change web site
+addresses in HTML files in <A class="docLink" HREF="0596000855_python2-CHP-12.html#python2-CHP-12">Chapter 12</A>; the
+addresses are likely too specific to show up in other places by
+chance.
+</P>
+
+
+<A NAME="python2-CHP-5-SECT-5.3"></A>
+<H4 class="docSection2Title">5.5.3 Collecting Matched Files in Trees</H4>
+
+<P class="docText">The scripts so far search and replace in directory trees, using the
+same traversal code base (module <TT>visitor</TT>).
+Suppose, though, that you just want to get a Python
+<span class="docEmphasis">list</span> of files in a directory containing a
+string. You could run a search and parse the output messages for
+"found" messages. Much simpler, simply knock off another
+<TT>SearchVisitor</TT> subclass to collect the list along
+the way, as in <A class="docLink" HREF="#python2-CHP-5-EX-14">Example 5-14</A>.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-5-EX-14"></A>Example 5-14. PP2E\PyTools\visitor_collect.py </H5>
+<PRE>#################################################################
+# Use: "python PyTools\visitor_collect.py searchstring".
+# CollectVisitor simply collects a list of matched files, for
+# display or later processing (e.g., replacement, auto-editing);
+#################################################################
+
+import os, sys, string
+from visitor import SearchVisitor
+
+class CollectVisitor(SearchVisitor):
+    """
+    collect names of files containing a string;
+    run this and then fetch its obj.matches list
+    """
+    def __init__(self, searchstr, listonly=0):
+        self.matches = []
+        SearchVisitor.__init__(self, searchstr, listonly) 
+    def visitmatch(self, fname, text):
+        self.matches.append(fname)
+
+if __name__  == '__main__':
+    visitor = CollectVisitor(sys.argv[1])
+    visitor.run(startDir='.')
+    print 'Found these files:'
+    for fname in visitor.matches: print fname </PRE>
+
+
+<P class="docText"><TT>CollectVisitor</TT> is just tree search again, with a
+new kind of specialization -- collecting files, instead of
+printing messages. This class is useful from other scripts that mean
+to collect a matched files list for later processing; it can be run
+by itself as a script too:
+</P>
+
+<PRE>C:\...\PP2E&gt;<B>python PyTools\visitor_collect.py -exec </B>
+...
+<I> ...more deleted...</I>
+...
+1342 =&gt; .\old_Part2\Basics\unpack2b.py
+1343 =&gt; .\old_Part2\Basics\unpack3.py
+1344 =&gt; .\old_Part2\Basics\__init__.py
+Found these files:
+.\package.csh
+.\README-PP2E.txt
+.\readme-old-pp1E.txt
+.\PyTools\cleanpyc.py
+.\PyTools\fixeoln_all.py
+.\System\Processes\output.txt
+.\Internet\Cgi-Web\fixcgi.py</PRE>
+
+<A NAME="python2-CHP-5-SECT-5.3.1"></A>
+<H5 class="docSection3Title">5.5.3.1 Suppressing status messages</H5>
+
+<P class="docText">Here, the items in the collected list are displayed at the
+end -- all the files containing the string "-exec".
+Notice, though, that traversal status messages are still printed
+along the way (in fact, I deleted about 1600 lines of such messages
+here!). In a tool meant to be called from another script, that may be
+an undesirable side effect; the calling script's output may be
+more important than the traversal's.
+</P>
+
+<P class="docText">We could add mode flags to <TT>SearchVisitor</TT> to turn
+off status messages, but that makes it more complex. Instead, the
+following two files show how we might go about collecting matched
+filenames without letting any traversal messages show up in the
+console, all without changing the original code base. The first,
+shown in <A class="docLink" HREF="#python2-CHP-5-EX-15">Example 5-15</A>, simply takes over and copies
+the search logic, without print statements. It's a bit
+redundant with <TT>SearchVisitor</TT>, but only in a few
+lines of mimicked code.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-5-EX-15"></A>Example 5-15. PP2E\PyTools\visitor_collect_quiet1.py </H5>
+<PRE>##############################################################
+# Like visitor_collect, but avoid traversal status messages
+##############################################################
+
+import os, sys, string
+from visitor import FileVisitor, SearchVisitor
+
+class CollectVisitor(FileVisitor):
+    """
+    collect names of files containing a string, silently;
+    """
+    skipexts = SearchVisitor.skipexts
+    def __init__(self, searchStr):
+        self.matches = []
+        self.context = searchStr
+    def visitdir(self, dname): pass
+    def visitfile(self, fname):
+        if (os.path.splitext(fname)[1] not in self.skipexts and
+            string.find(open(fname).read(  ), self.context) != -1):
+            self.matches.append(fname)
+
+if __name__  == '__main__':
+    visitor = CollectVisitor(sys.argv[1])
+    visitor.run(startDir='.')
+    print 'Found these files:'
+    for fname in visitor.matches: print fname </PRE>
+
+
+<P class="docText">When this class is run, only the contents of the matched filenames
+list show up at the end; no status messages appear during the
+traversal. Because of that, this form may be more useful as a
+general-purpose tool used by other scripts:
+</P>
+
+<PRE>C:\...\PP2E&gt;<B>python PyTools\visitor_collect_quiet1.py -exec</B>
+Found these files:
+.\package.csh
+.\README-PP2E.txt
+.\readme-old-pp1E.txt
+.\PyTools\cleanpyc.py
+.\PyTools\fixeoln_all.py
+.\System\Processes\output.txt
+.\Internet\Cgi-Web\fixcgi.py</PRE>
+
+<P class="docText">A more interesting and less redundant way to suppress printed text
+during a traversal is to apply the stream redirection tricks we met
+in <A class="docLink" HREF="0596000855_python2-CHP-2.html#python2-CHP-2">Chapter 2</A>. <A class="docLink" HREF="#python2-CHP-5-EX-16">Example 5-16</A> sets
+<TT>sys.stdin</TT> to a <TT>NullOut</TT> object
+that throws away all printed text for the duration of the traversal
+(its <TT>write</TT> method does nothing).
+</P>
+
+<P class="docText">The only real complication with this scheme is that there is no good
+place to insert a restoration of <TT>sys.stdout</TT> at the
+end of the traversal; instead, we code the restore in the
+<TT>__del__</TT> destructor method, and require clients to
+delete the visitor to resume printing as usual. An explicitly called
+method would work just as well, if you prefer less magical
+interfaces.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-5-EX-16"></A>Example 5-16. PP2E\PyTools\visitor_collect_quiet2.py </H5>
+<PRE>##############################################################
+# Like visitor_collect, but avoid traversal status messages
+##############################################################
+
+import os, sys, string
+from visitor import SearchVisitor
+
+class NullOut:
+    def write(self, line): pass
+
+class CollectVisitor(SearchVisitor):
+    """
+    collect names of files containing a string, silently
+    """
+    def __init__(self, searchstr, listonly=0):
+        self.matches = []
+        self.saveout, sys.stdout = sys.stdout, NullOut(  )
+        SearchVisitor.__init__(self, searchstr, listonly) 
+    def __del__(self):
+        sys.stdout = self.saveout
+    def visitmatch(self, fname, text):
+        self.matches.append(fname)
+
+if __name__  == '__main__':
+    visitor = CollectVisitor(sys.argv[1])
+    visitor.run(startDir='.')
+    matches = visitor.matches
+    del visitor
+    print 'Found these files:'
+    for fname in matches: print fname </PRE>
+
+
+<P class="docText">When this script is run, output is identical to the prior
+run -- just the matched filenames at the end. Perhaps better
+still, why not code and debug just one verbose
+<TT>CollectVisitor</TT> utility class, and require
+<span class="docEmphasis">clients</span> to wrap calls to its
+<TT>run</TT> method in the
+<TT>redirect.redirect</TT> function we wrote back in <A class="docLink" HREF="0596000855_python2-CHP-2-SECT-10.html#python2-CHP-2-EX-10">Example 2-10</A> ?
+</P>
+
+<PRE>&gt;&gt;&gt; <B>from PP2E.PyTools.visitor_collect import CollectVisitor</B>
+&gt;&gt;&gt; <B>from PP2E.System.Streams.redirect import redirect</B>
+&gt;&gt;&gt; <B>walker = CollectVisitor('-exec')                   </B># object to find '-exec'
+&gt;&gt;&gt; <B>output = redirect(walker.run, ('.',), '') </B>         # function, args, input
+&gt;&gt;&gt; <B>for line in walker.matches: print line             </B># print items in list
+...
+.\package.csh
+.\README-PP2E.txt
+.\readme-old-pp1E.txt
+.\PyTools\cleanpyc.py
+.\PyTools\fixeoln_all.py
+.\System\Processes\output.txt
+.\Internet\Cgi-Web\fixcgi.py</PRE>
+
+<P class="docText">The <TT>redirect</TT> call employed here resets standard
+input and output streams to file-like objects for the duration of
+<span class="docEmphasis">any</span> function call; because of that, it's a
+more general way to suppress output than recoding every outputter.
+Here, it has the effect of intercepting (and hence suppressing)
+printed messages during a <TT>walker.run('.')</TT>
+traversal. They really <span class="docEmphasis">are</span> printed, but show up
+in the string result of the <TT>redirect</TT> call, not on
+the screen:
+</P>
+
+<PRE>&gt;&gt;&gt; <B>output[:60]</B>
+'. ...\0121 =&gt; .\\autoexec.bat\0122 =&gt; .\\cleanall.csh\0123 =&gt; .\\echoEnv'
+
+&gt;&gt;&gt; <B>import string</B>
+&gt;&gt;&gt; <B>len(output), len(string.split(output, '\n'))           </B># bytes, lines
+(67609, 1592)
+
+&gt;&gt;&gt; <B>walker.matches</B>
+['.\\package.csh', '.\\README-PP2E.txt', '.\\readme-old-pp1E.txt', 
+'.\\PyTools\\cleanpyc.py', '.\\PyTools\\fixeoln_all.py',
+'.\\System\\Processes\\output.txt', 
+'.\\Internet\\Cgi-Web\\fixcgi.py']</PRE>
+
+<P class="docText">Because <TT>redirect</TT> saves printed text in a string,
+it may be less appropriate than the two quiet
+<TT>CollectVisitor</TT> variants for functions that
+generate much output. Here, for example, 67,609 bytes of output was
+queued up in an in-memory string (see the <TT>len</TT> call
+results); such a buffer may or may not be significant in some
+applications.
+</P>
+
+<P class="docText">In more general terms, redirecting <TT>sys.stdout</TT> to
+dummy objects as done here is a simple way to turn off outputs (and
+is the equivalent to the Unix notion of redirecting output to file
+<I>/dev/null</I> -- a file that discards everything
+sent to it). For instance, we'll pull this trick out of the bag
+again in the context of server-side Internet scripting, to prevent
+utility status messages from showing up in generated web page output
+streams.<sup class="docFootnote"><A class="docLink" HREF="#">[10]</A></sup>
+</P>
+<blockquote><p class="docFootnote"><sup><A NAME="">[10]</A></sup> For the impatient: see
+<TT>commonhtml.runsilent</TT> in the PyMailCgi system
+presented in <A class="docLink" HREF="0596000855_python2-CHP-13.html#python2-CHP-13">Chapter 13</A>. It's a variation on
+<TT>redirect.redirect</TT> that discards output as it is
+printed (instead of retaining it in a string), returns the return
+value of the function called (not the output string), and lets
+exceptions pass via a
+<TT>try</TT>/<TT>finally</TT> statement (instead
+of catching and reporting them with a
+<TT>try</TT>/<TT>except</TT>). It's still
+redirection at work, though.</p></blockquote>
+
+
+
+<A NAME="python2-CHP-5-SECT-5.4"></A>
+<H4 class="docSection2Title">5.5.4 Recoding Fixers with Visitors</H4>
+
+<P class="docText"><A NAME="IXT-5-336983"></A>Be warned: once you've written and
+debugged a class that knows how to do something useful like walking
+directory trees, it's easy for it to spread throughout your
+system utility libraries. Of course, that's the whole point of
+code reuse. For instance, very soon after writing the visitor classes
+presented in the prior sections, I recoded both the
+<I>fixnames_all.py</I> and
+<I>fixeoln_all.py</I> directory walker scripts listed
+earlier in Examples <A class="docLink" HREF="0596000855_python2-CHP-5-SECT-3.html#python2-CHP-5-EX-6">Example 5-6</A> and <A class="docLink" HREF="0596000855_python2-CHP-5-SECT-2.html#python2-CHP-5-EX-4">Example 5-4</A>, respectively, to use visitor instead of
+proprietary tree-walk logic (they both originally used
+<TT>find.find</TT>). <A class="docLink" HREF="#python2-CHP-5-EX-17">Example 5-17</A> combines
+the original <TT>convertLines</TT> function (to fix
+end-of-lines in a single file) with visitor's tree walker
+class, to yield an alternative implementation of the line-end
+converter for directory trees.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-5-EX-17"></A>Example 5-17. PP2E\PyTools\visitor_fixeoln.py </H5>
+<PRE>##############################################################
+# Use: "python visitor_fixeoln.py todos|tounix".
+# recode fixeoln_all.py as a visitor subclass: this version
+# uses os.path.walk, not find.find to collext all names first;
+# limited but fast: if os.path.splitext(fname)[1] in patts:
+##############################################################
+
+import visitor, sys, fnmatch, os
+from fixeoln_dir import patts
+from fixeoln_one import convertEndlines
+
+class EolnFixer(visitor.FileVisitor):
+    def visitfile(self, fullname):                        # match on basename
+        basename = os.path.basename(fullname)             # to make result same
+        for patt in patts:                                # else visits fewer 
+            if fnmatch.fnmatch(basename, patt):
+                convertEndlines(self.context, fullname)
+                self.fcount = self.fcount + 1             # could break here
+                                                          # but results differ
+if __name__ == '__main__':
+    walker = EolnFixer(sys.argv[1])
+    walker.run(  )
+    print 'Files matched (converted or not):', walker.fcount</PRE>
+
+
+<P class="docText">As we saw in <A class="docLink" HREF="0596000855_python2-CHP-2.html#python2-CHP-2">Chapter 2</A>, the built-in
+<TT>fnmatch</TT> module performs Unix shell-like filename
+matching; this script uses it to match names to the previous
+version's filename patterns (simply looking for filename
+extensions after a "." is simpler, but not as general):
+</P>
+
+<PRE>C:\temp\examples&gt;<B>python %X%/PyTools/visitor_fixeoln.py tounix </B>
+. ...
+Changing .\echoEnvironment.pyw
+Changing .\Launcher.py
+Changing .\Launch_PyGadgets.py
+Changing .\Launch_PyDemos.pyw
+<I> ...more deleted...</I>
+Changing .\PyTools\visitor_find.py
+Changing .\PyTools\visitor_fixnames.py
+Changing .\PyTools\visitor_find_quiet2.py
+Changing .\PyTools\visitor_find_quiet1.py
+Changing .\PyTools\fixeoln_one.doc.txt
+Files matched (converted or not): 1065
+
+C:\temp\examples&gt;<B>python %X%/PyTools/visitor_fixeoln.py tounix </B>
+<I> ...more deleted...</I>
+.\Extend\Swig\Shadow ...
+.\ ...
+.\EmbExt\Exports ...
+.\EmbExt\Exports\ClassAndMod ...
+.\EmbExt\Regist ...
+.\PyTools ...
+Files matched (converted or not): 1065</PRE>
+
+<P class="docText">If you run this script and the original
+<I>fixeoln_all.py</I> on the book examples tree,
+you'll notice that this version visits two fewer matched files.
+This simply reflects the fact that <TT>fixeoln_all</TT>
+also collects and skips over two directory names for its patterns in
+the <TT>find.find</TT> result (both called
+"Output"). In all other ways, this version works the same
+way even when it could do better -- adding a break statement after
+the <TT>convertEndlines</TT> call here avoids visiting
+files that appear redundantly in the original's find results
+lists.
+</P>
+
+<P class="docText">The first command here takes roughly six seconds on my computer, and
+the second takes about four (there are no files to be converted).
+That's faster than the eight- and six-second figures for the
+original <TT>find.find</TT>-based version of this script,
+but they differ in amount of output, and benchmarks are usually much
+more subtle than you imagine. Most of the real clock time is likely
+spent scrolling text in the console, not doing any real directory
+processing. Since both are plenty fast for their intended purposes,
+finer-grained performance figures are left as exercises.
+</P>
+
+<P class="docText">The script in <A class="docLink" HREF="#python2-CHP-5-EX-18">Example 5-18</A> combines the original
+<TT>convertOne</TT> function (to rename a single file or
+directory) with the visitor's tree walker class, to create a
+directory tree-wide fix for uppercase filenames. Notice that we
+redefine both file and directory visitation methods here, as we need
+to rename both.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-5-EX-18"></A>Example 5-18. PP2E\PyTools\visitor_fixnames.py </H5>
+<PRE>###############################################################
+# recode fixnames_all.py name case fixer with the Visitor class
+# note: "from fixnames_all import convertOne" doesn't help at 
+# top-level of the fixnames class, since it is assumed to be a
+# method and called with extra self argument (an exception);
+###############################################################
+
+from visitor import FileVisitor
+
+class FixnamesVisitor(FileVisitor):
+    """
+    check filenames at and below startDir for uppercase
+    """
+    import fixnames_all
+    def __init__(self, listonly=0):
+        FileVisitor.__init__(self, listonly=listonly)
+        self.ccount = 0
+    def rename(self, pathname):
+        if not self.listonly:
+            convertflag = self.fixnames_all.convertOne(pathname)
+            self.ccount = self.ccount + convertflag
+    def visitdir(self, dirname):
+        FileVisitor.visitdir(self, dirname)
+        self.rename(dirname)
+    def visitfile(self, filename):
+        FileVisitor.visitfile(self, filename)
+        self.rename(filename)
+
+if __name__ == '__main__': 
+    walker = FixnamesVisitor(  )
+    walker.run(  )
+    allnames = walker.fcount + walker.dcount
+    print 'Converted %d files, visited %d' % (walker.ccount, allnames)</PRE>
+
+
+<P class="docText"><A NAME="IXT-5-336984"></A>
+<A NAME="IXT-5-336985"></A>This version is run like the original
+<TT>find.find</TT> based version,
+<TT>fixnames_all</TT>, but visits one more name (the
+top-level root directory), and there is no initial delay while
+filenames are collected on a list -- we're using
+<TT>os.path.walk</TT> again, not
+<TT>find.find</TT>. It's also close to the original
+<TT>os.path.walk</TT> version of this script, but is based
+on a class hierarchy, not direct function callbacks:
+</P>
+
+<PRE>C:\temp\examples&gt;<B>python %X%/PyTools/visitor_fixnames.py </B>
+<I> ...more deleted...</I>
+303 =&gt; .\__init__.py
+304 =&gt; .\__init__.pyc
+305 =&gt; .\Ai\ExpertSystem\holmes.tar
+306 =&gt; .\Ai\ExpertSystem\TODO
+<B>Convert dir=.\Ai\ExpertSystem file=TODO? (y|Y) </B>
+307 =&gt; .\Ai\ExpertSystem\__init__.py
+308 =&gt; .\Ai\ExpertSystem\holmes\cnv
+309 =&gt; .\Ai\ExpertSystem\holmes\README.1ST
+<B>Convert dir=.\Ai\ExpertSystem\holmes file=README.1ST? (y|Y) </B>
+<I> ...more deleted...</I>
+1353 =&gt; .\PyTools\visitor_find.pyc
+1354 =&gt; .\PyTools\visitor_find_quiet1.py
+1355 =&gt; .\PyTools\fixeoln_one.doc.txt
+Converted 1 files, visited 1474</PRE>
+
+<P class="docText">Both of these fixer scripts work roughly the same as the originals,
+but because the directory walking logic lives in just one file
+(<I>visitor.py</I>), it only needs to be debugged once.
+Moreover, improvements in that file will automatically be inherited
+by every directory-processing tool derived from its classes. Even
+when coding system-level scripts, reuse and reduced redundancy pay
+off in the end.
+</P>
+
+
+<A NAME="python2-CHP-5-SECT-5.5"></A>
+<H4 class="docSection2Title">5.5.5 Fixing File Permissions in Trees</H4>
+
+<P class="docText">Just in case the preceding visitor-client sections weren't
+quite enough to convince you of the power of code reuse, another
+piece of evidence surfaced very late in this book project. It turns
+out that copying files off a CD using Windows drag-and-drop makes
+them <span class="docEmphasis">read-only</span> in the copy. That's less
+than ideal for the book examples directory on the enclosed
+CD (see <A class="docLink" target="_blank" HREF="http://examples.oreilly.com/python2">http://examples.oreilly.com/python2</A>) -- you must copy the directory tree onto your hard drive to be
+able to experiment with program changes (naturally, files on CD
+can't be changed in place). But if you copy with drag-and-drop,
+you may wind up with a tree of over 1000 read-only files.
+</P>
+
+<P class="docText">Since drag-and-drop is perhaps the most common way to copy off a CD
+on Windows, I needed a portable and easy-to-use way to undo the
+read-only setting. Asking readers to make these all writable by hand
+would be impolite to say the least. Writing a full-blown install
+system seemed like overkill. Providing different fixes for different
+platforms doubles or triples the complexity of the task.
+</P>
+
+<P class="docText">Much better, the Python script in <A class="docLink" HREF="#python2-CHP-5-EX-19">Example 5-19</A> can be
+run in the root of the copied examples directory to repair the damage
+of a read-only drag-and-drop operation. It specializes the traversal
+implemented by the <TT>FileVisitor</TT> class
+again -- this time to run an <TT>os.chmod</TT> call on
+every file and directory visited along the way.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-5-EX-19"></A>Example 5-19. PP2E\PyTools\fixreadonly-all.py </H5>
+<PRE>#!/usr/bin/env python
+###############################################################
+# Use: python PyTools\fixreadonly-all.py 
+# run this script in the top-level examples directory after
+# copying all examples off the book's CD-ROM, to make all 
+# files writeable again--by default, copying files off the 
+# CD with Windows drag-and-drop (at least) creates them as 
+# read-only on your hard drive; this script traverses entire 
+# dir tree at and below the dir it is run in (all subdirs);
+###############################################################
+
+import os, string
+from PP2E.PyTools.visitor import FileVisitor          # os.path.walk wrapper
+listonly = 0
+
+class FixReadOnly(FileVisitor):
+    def __init__(self, listonly=0):    
+        FileVisitor.__init__(self, listonly=listonly) 
+    def visitDir(self, dname):
+        FileVisitor.visitfile(self, fname)
+        if self.listonly:
+            return
+        os.chmod(dname, 0777)
+    def visitfile(self, fname):                     
+        FileVisitor.visitfile(self, fname)
+        if self.listonly:
+            return
+        os.chmod(fname, 0777)
+
+if __name__ == '__main__':
+    # don't run auto if clicked
+    go = raw_input('This script makes all files writeable; continue?') 
+    if go != 'y':
+        raw_input('Canceled - hit enter key')
+    else:
+        walker = FixReadOnly(listonly)
+        walker.run(  )
+        print 'Visited %d files and %d dirs' % (walker.fcount, walker.dcount)</PRE>
+
+
+<P class="docText">As we saw in <A class="docLink" HREF="0596000855_python2-CHP-2.html#python2-CHP-2">Chapter 2</A>, the built-in
+<TT>os.chmod</TT> call changes the permission settings on
+an external file (here, to 0777 -- global read, write, and execute
+permissions). Because <TT>os.chmod</TT> and the
+<TT>FileVisitor</TT>'s operations are portable, this
+same script will work to set permissions in an entire tree on both
+Windows and Unix-like platforms. Notice that it asks whether you
+really want to proceed when it first starts up, just in case someone
+accidentally clicks the file's name in an explorer GUI. Also
+note that Python must be installed before this script can be run to
+make files writable; that seems a fair assumption to make of users
+about to change Python scripts.
+</P>
+
+<PRE>C:\temp\examples&gt;<B>python PyTools\fixreadonly-all.py </B>
+This script makes all files writeable; continue?<B>y </B>
+. ...
+1 =&gt; .\autoexec.bat
+2 =&gt; .\cleanall.csh
+3 =&gt; .\echoEnvironment.pyw
+<I> ...more deleted...</I>
+1352 =&gt; .\PyTools\visitor_find.pyc
+1353 =&gt; .\PyTools\visitor_find_quiet1.py
+1354 =&gt; .\PyTools\fixeoln_one.doc.txt
+Visited 1354 files and 119 dirs</PRE>
+
+
+
+<ul></ul>
+</td>
+</tr>
+</table>
+<td></td>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+          <a href="0596000855_python2-CHP-5-SECT-4.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+          <a href="0596000855_python2-CHP-5-SECT-6.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+</body></html>

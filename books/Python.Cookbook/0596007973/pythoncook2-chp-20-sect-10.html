@@ -1,0 +1,169 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;20.10.&nbsp;Using _ _new_ _ and _ _init_ _ Appropriately in Custom Metaclasses</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-20-sect-9.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-20-sect-11.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-20-SECT-10"></a>
+<h3 class="docSection1Title" id="409771-980">Recipe 20.10. Using _ _new_ _ and _ _init_ _ Appropriately in Custom Metaclasses</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Michele Simionato, Stephan Diehl, Alex
+Martelli</span></p>
+
+<a name="pythoncook2-CHP-20-SECT-10.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText">You are writing a custom metaclass, and you are not sure which tasks
+your metaclass should perform in its <tt>_ _new_ _</tt>
+method, and which ones it should perform in its <tt>_ _init_
+_</tt> method instead.</P>
+
+
+<a name="pythoncook2-CHP-20-SECT-10.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">Any preliminary processing that your custom metaclass performs on the
+name, bases, or dict of the class being built, can affect the way in
+which the class object gets built only if it occurs in the
+metaclass' <tt>_ _new_ _</tt> method,
+<span class="docEmphasis">before</span> your code calls the
+metaclass' superclass' <tt>_
+_new_ _</tt>. For example, that's the only time
+when you can usefully affect the new class'
+<tt>_ _slots_ _</tt>, if any:</p>
+
+<pre>class MetaEnsure_foo(type):
+    def _ _new_ _(mcl, cname, cbases, cdict):
+        # ensure instances of the new class can have a '_foo' attribute
+        if '_ _slots_ _' in cdict and '_foo' not in cdict['_ _slots_ _']:
+            cdict['_ _slots_ _'] = tuple(cdict['_ _slots_ _']) + ('_foo',)
+        return super(MetaEnsure_foo, mcl)._ _new_ _(mcl, cname, cbases, cdict)</pre><BR>
+
+
+<p class="docText">Metaclass method <tt>_ _init_ _</tt> is generally the most
+appropriate one for any changes that your custom metaclass makes to
+the class object <span class="docEmphasis">after</span> the class object is
+builtfor example, continuing the example code for metaclass
+<i>MetaEnsure_foo</I>:</P>
+
+<pre>    def _ _init_ _(cls, cname, cbases, cdict):
+        super(MetaEnsure_foo, cls)._ _init_ _(cls, cname, cbases, cdict)
+        cls._foo = 23</pre><br>
+
+
+
+<a name="pythoncook2-CHP-20-SECT-10.3"></a>
+<H4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">The custom metaclass <i>MetaEnsure_foo</i> performs a
+definitely "toy" task presented
+strictly as an example: if the class object being built defines a
+<tt>_ _slots_ _</tt> attribute (to save memory),
+<i>MetaEnsure_foo</i> ensures that the class object
+includes a slot <tt>_foo</tt>, so that instances of that
+class can have an attribute thus named. Further, the custom metaclass
+sets an attribute with name <tt>_foo</tt> and value 23 on
+each new class object. The point of the recipe isn't
+really this toy task, but rather, a clarification on how <tt>_
+_new_ _</tt> and <tt>_ _init_ _</tt> methods of a
+custom metaclass are best coded, and which tasks are most appropriate
+for each.</P>
+
+<p class="docText">Whenever you instantiate any class <tt><i>x</i></tt>
+(whether <tt><I>x</i></tt> is a custom metaclass or an
+ordinary class) with or without arguments (we can employ the usual
+Python notation <tt>*a</tt>, <tt>**k</tt> to mean
+arbitrary positional and named arguments), Python internally performs
+the equivalent of the following snippet of code:</P>
+
+<pre>    new_thing = X._ _new_ _(X, *a, **k)
+    if isinstance(new_thing, X):
+        X._ _init_ _(new_thing, *a, **k)</pre><br>
+
+
+<p class="docText">The <tt>new_thing</tt> thus built and initialized is the
+result of instantiating <tt><I>x</I></tt>. If
+<tt><i>x</i></tt> is a custom metaclass, in particular,
+this snippet occurs at the end of the execution of a
+<tt>class</tt> statement, and the arguments (all
+positional) are the name, bases, and dictionary of the new class that
+is being built.</p>
+
+<p class="docText">So, your custom metaclass' <tt>_ _new_
+_</tt> method is the code that has dibsit executes first.
+That's the moment in which you can adjust the name,
+bases, and dictionary that you receive as arguments, to affect the
+way the new class object is built. Most characteristics of the class
+object, but not all, can also be changed later. An example of an
+attribute that you have to set <span class="docEmphasis">before</span> building
+the class object is <tt>_ _slots_ _</tt>. Once the class
+object is built, the slots, if any, are defined, and any further
+change to <tt>_ _slots_ _</tt> has no effect.</p>
+
+<p class="docText">The custom metaclass in this recipe carefully uses
+<tt>super</tt> to delegate work to its superclass, rather
+than carelessly calling <tt>type._ _new_ _</tt> or
+<tt>type._ _init_ _</tt> directly: the latter usage would
+be a subtle mistake, impeding the proper working of multiple
+inheritance among metaclasses. Further, this recipe is careful in
+naming the first parameters to both methods: <i>cls</i> to
+mean an ordinary class (the object that is the first argument to a
+custom metaclass' <tt>_ _init_ _</tt>),
+<i>mcl</i> to mean a metaclass (the object that is the
+first argument to a custom metaclass' <tt>_
+_new_ _</tt>). The common usage of <i>self</i> should
+be reserved to mean normal instances, not classes nor metaclasses,
+and therefore it doesn't normally occur in the body
+of a custom metaclass. All of these names are a matter of mere
+convention, but using appropriate conventions promotes clarity, and
+this use of <i>cls</i> and <i>mcl</I> was blessed
+by Guido van Rossum himself, albeit only verbally.</P>
+
+<p class="docText">The usage distinction between <tt>_ _new_ _</tt> and
+<tt>_ _init_ _</tt> that this recipe advocates for custom
+metaclasses is basically the same criterion that
+<span class="docEmphasis">any</span> class should always follow: use <tt>_
+_new_ _</tt> when you must, only for jobs that cannot be done
+later; use <tt>_ _init_ _</tt> for all jobs that can be
+left until <tt>_ _init_ _</tt> time. Following these
+conventions makes life easiest for anybody who must tweak your custom
+metaclass or make it work well in a multiple inheritance situation,
+and thus enhances the reusability of your code. <tt>_ _new_
+_</tt> should contain only the <span class="docEmphasis">essence</span> of
+your metaclass: stuff that anybody using your metaclass in any way at
+all <span class="docEmphasis">must</span> surely want (or else he
+wouldn't be using your metaclass!) because
+it's stuff that's not easy to
+tweak, modify, or override. <tt>_ _init_ _</tt> is
+"softer", so most of what your
+metaclass is doing to the class objects you generate, should be
+there, exactly because it will be easier for reusers to tweak or
+avoid.</p>
+
+
+<a name="pythoncook2-CHP-20-SECT-10.4"></a>
+<h4 class="docSection2Title">See Also</H4>
+
+<p class="docText"><span class="docEmphasis">Library Reference</span> and <span class="docEmphasis">Python in a
+Nutshell</span> docs on built-ins <tt>super</tt> and
+<tt>_ _slots_ _</tt>, and special methods <tt>_ _init_
+_</tt> and <tt>_ _new_ _</tt>.</p>
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-20-sect-9.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-20-sect-11.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

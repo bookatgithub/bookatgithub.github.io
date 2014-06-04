@@ -1,0 +1,719 @@
+<HTML><HEAD><META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=iso-8859-1">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="10.2 Automating Word"-->
+<LINK REL="stylesheet" href="FILES/sbolM.css">
+</HEAD>
+<BODY link="#354278" vlink="#000066" alink="#000080" topmargin="0">
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right"><a href="pythonwin32_snode76.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a> <a href="pythonwin32_snode78.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a></td></table>
+<FONT>
+<h3>10.2
+Automating Word</h3>
+
+
+<p>
+<a NAME="idx920"></a>
+<a naME="idx921"></A>As noted
+previously, Word is an appealing alternative for many reasons. It has
+a powerful printing and formatting engine. It's on a lot of
+desktops; indeed it may be a standard throughout your company. A free
+Word viewer is also available from Microsoft. Finally, it's
+possible to post-process a document written in Word; you can generate
+a set of management accounts or a stack of letters, and users can add
+annotations as they wish.</P>
+
+
+
+<p>As discussed with Excel, there are two options: use Python to take
+control of Word, or have Word VB grab data from Python and format it.
+In <a href="pythonwin32_cnode66.html">Chapter 9</A>, we mentioned some guidelines for
+choosing which application was on top. We've shown Python
+automating Word for the following reasons:</P>
+
+
+
+<ul>
+<li><p>There is a good chance that report production would be an automated
+step in the middle of the night; people won't be using Word as
+an interactive query engine in the same way as Excel.</p>
+</li>
+<li><p>Python excels at formatting text and getting data into the right
+shape.</p>
+</li>
+<li><p>The Word document model is easy to automate. We'll be adding
+chunks to the end of a document, and the details can be wrapped
+easily in reusable Python code.</p>
+</li>
+<lI><P>Reports change and evolve rapidly. It's easier to change a
+generic Python script than customize a Python COM server with new
+special-purpose methods.</P>
+</LI>
+</Ul>
+<P>However, there's absolutely no technical barrier to doing it
+the other way around, and that may work for you in some
+circumstances.</P>
+
+
+
+<p>As with Excel, make sure you have the Word VB reference installed to
+document the object model, and install MakePy<I>
+</I>support for the Word object model.</p>
+
+
+
+
+<H4>10.2.1
+A Simple Example</h4>
+
+
+<P>Let's start with the simplest possible example:</P>
+
+
+
+<PRe claSS="monofont">from win32com.client import Dispatch
+MYDIR = 'c:\\data\\project\\oreilly\\examples\\ch12_print'
+
+def simple():
+    myWord = Dispatch('Word.Application')
+    myWord.Visible = 1  # comment out for production
+    
+    myDoc = myWord.Documents.Add()
+    myRange = myDoc.Range(0,0)
+    myRange.InsertBefore('Hello from Python!')
+    
+    # uncomment these for a full script
+    #myDoc.SaveAs(MYDIR + '\\python01.doc')
+    #myDoc.PrintOut()
+    #myDoc.Close()</PRe>
+
+
+<p>
+<a nAME="idx922"></A>When you execute this
+function, Word starts, and your message is displayed. We've
+commented out the lines at the bottom, but you can choose to print,
+save, or close the document. It's fun to arrange the Python
+console and Word side-by-side and watch your text appearing, and a
+great way to learn the Word object model.</p>
+
+
+
+
+
+
+
+<h4>10.2.2
+Using a Template</h4>
+
+
+<p>
+<A NAMe="idx923"></a>
+<a name="idx924"></a>You
+could hand-build a document and automate all the formatting, but that
+would be tedious. Far better to use a Word template and just put in
+what you need from your Python code. For the next example,
+we've created a template called
+<i>Pythonics.dot</i>. This has a fancy header, page
+numbers, and borders. It could also contain section headings, a table
+of contents, standard text, or whatever you want. Using a template is
+a huge leap forward in productivity. <a href="pythonwin32_snode77.html#5">Figure 10.1</a>
+shows ours.</p>
+
+
+
+<centER>
+<H5>
+<A NAmE="5"></A>Figure 10.1. A Word template</h5>
+
+<IMg BoRDER="0" widtH="502" HEIght="243" src="FILES/ppw.1001.gif" ALt="figs/ppw.1001.gif"></cenTER>
+
+
+<P>More important, a template allows you to separate the software
+development from the page layout. An artistically challenged
+developer could provide a basic template with the required elements,
+and turn it over to the marketing department to define the styles and
+boilerplate text. If she also delivers a Python test script
+containing example data, the marketing person can regularly test
+whether the program still runs while he is modifying the template.</p>
+
+
+
+<p>To create a
+<a name="idx925"></a>document based on a template, you
+need to modify only one line:</p>
+
+
+
+<pre class="monofont">&gt;&gt;&gt; myDoc = myWord.Documents.Add(template=MYDIR + '\\pythonics.dot')</pre>
+
+
+<p>Note the use of keyword arguments. Many of the Office functions (like
+<TT CLASs="monofont">Documents.Add</TT>) take literally dozens of arguments,
+and entering them every time would be tedious. Fortunately, Python
+also supports named arguments. However, you need to watch the
+<a NAmE="idx926"></a>case: most Word arguments have
+initial capitals.</P>
+
+
+
+
+
+
+
+<H4>10.2.3
+A Document Wrapper</H4>
+
+
+<P>
+<a namE="idx927"></A>
+<A Name="idx928"></a>Word
+offers too many choices for building a document: you can loop over a
+document's contents, search for elements such as words or
+paragraphs, and select any portion of the text to work with.
+We'll assume you want to build a document in order from
+beginning to end.</P>
+
+
+
+<P>Let's start with a <A Name="idx929"></a>Python class to help automate the
+production of documents. First we'll construct an object that
+has a pointer to a Word document, then add the desired methods one at
+a time. The class is called
+<TT CLass="monofont">WordWrap</tt>
+<a name="idx930"></a> and can be found in the module
+<i>easyword.py</i>
+<a name="idx931"></a>. Here are some of its methods:</p>
+
+
+
+<pRE CLASs="monofont">class WordWrap:
+    """Wrapper around Word 8 documents to make them easy to build.
+    Has variables for the Applications, Document and Selection; 
+    most methods add things at the end of the document"""
+    def __init__(self, templatefile=None):
+        self.wordApp = Dispatch('Word.Application')
+        if templatefile == None:
+            self.wordDoc = self.wordApp.Documents.Add()
+        else:
+            self.wordDoc = self.wordApp.Documents.Add(Template=templatefile)
+        
+        #set up the selection
+        self.wordDoc.Range(0,0).Select()
+        self.wordSel = self.wordApp.Selection
+        #fetch the styles in the document - see below
+        self.getStyleDictionary()
+        
+    def show(self):
+        # convenience when developing
+        self.wordApp.Visible = 1  
+
+    def saveAs(self, filename):
+        self.wordDoc.SaveAs(filename)
+       
+    def printout(self):
+        self.wordDoc.PrintOut()
+
+    def selectEnd(self):
+        # ensures insertion point is at the end of the document
+        self.wordSel.Collapse(0)
+        # 0 is the constant wdCollapseEnd; don't want to depend
+        # on makepy support.
+
+    def addText(self, text):
+        self.wordSel.InsertAfter(text)
+        self.selectEnd()</PRe>
+
+
+<P>You work with the
+<Tt ClASS="monofont">Selection</Tt>
+<a naME="idx932"></A> object, which provides several methods
+for inserting text. When you call
+<Tt claSS="monofont">Selection.InsertAfter(</TT><tt clASS="monofont"><I>text</i></tt><tt class="monofont">)</tt>,
+the selection expands to include whatever you add; it also provides a
+<tt class="monofont">Collapse</tt>
+<A NAME="idx933"></A> method that can take various parameters;
+the one you need,
+<tT ClASs="monofont">wdCollapseEnd</Tt>
+<A NAMe="idx934"></a>, happens to have a value of zero, and
+collapses the <tt CLASs="monofont">Selection</tt> to an insertion point at
+the end of whatever you've just inserted. If you are using
+MakePy, you can access the constant by name; since this is the only
+constant we'll use in this application, we looked up the value
+and used it directly to produce a script that works on all PythonWin
+installations.</p>
+
+
+
+
+
+
+
+<H4>10.2.4
+Adding Paragraphs and Styles</H4>
+
+
+<P>
+<A name="idx935"></A>
+<A NAme="idx936"></a>
+<a name="idx937"></a>You can explicitly
+format text with precise font names and sizes by assigning them to
+the many properties of the <tt class="monofont">Selection</tt> object, but
+it is less work and a better design to use predefined styles.
+It's far easier to change a style than to adjust 20 different
+reporting scripts.</p>
+
+
+
+<p>The first thing to do is add a paragraph in a named style. Word has
+constants for all the standard styles. If you used MakePy to build
+the support for Word, you could access the built-in styles like this:</p>
+
+
+
+<PRE CLAsS="monofont">&gt;&gt;&gt; from win32com.client import constants
+&gt;&gt;&gt; mySelection.Style = constants.wdStyleHeading1
+&gt;&gt;&gt;</PrE>
+
+
+<P>Note that we set the <tT cLASS="monofont">Style</tt> property of the current
+<tt CLASs="monofont">Range</tt> to the correct style constant. This
+doesn't work if you use dynamic dispatch, or if you have your
+own custom template with styles that aren't built into Word.
+However, you can query a document at runtime. The following method
+gets and keeps a list of all styles actually present in a document:</p>
+
+
+
+<PRE Class="monofont">def getStyleList(self):
+    # returns a dictionary of the styles in a document
+    self.styles = []
+    stylecount = self.wordDoc.Styles.Count
+    for i in range(1, stylecount + 1):
+        styleObject = self.wordDoc.Styles(i)
+        self.styles.append(styleObject.NameLocal)</PRE>
+
+
+<P>The <tt class="monofont">Style</tt> property of a <tt class="monofont">Range</tt>
+or <tt cLASS="monofont">Selection</TT> in Word accepts either a constant or
+a string value, so you might as well use the names. Here's a
+useful method:</p>
+
+
+
+<PRe CLaSs="monofont">def addStyledPara(self, text, stylename):
+      if text[-1] &lt;&gt; '\n':
+          text = text + '\n'</PRE>
+
+
+<P>Let's try:</p>
+
+
+
+<pre CLASs="monofont">&gt;&gt;&gt; import easyword
+&gt;&gt;&gt; w = easyword.WordWrap()
+&gt;&gt;&gt; w.show()
+&gt;&gt;&gt; w.addStyledPara('What I did on Holiday', 'Heading 1')
+&gt;&gt;&gt; w.addStyledPara('blah ' * 50, 'Normal')
+&gt;&gt;&gt;</pre>
+
+
+<P>This should give you something that looks like <A href="pythonwin32_snode77.html#8">Figure 10.2</a>.</p>
+
+
+
+<CENTer>
+<h5>
+<a name="8"></a>Figure 10.2. Inserting paragraphs with styles</h5>
+
+<img border="0" wiDTH="502" HEIgHT="298" src="FILES/ppw.1002.gif" aLt="figs/ppw.1002.gif"></CENTer>
+
+
+<p>Our wrapper class and Word's style features combine to make it
+easy to build a document.</p>
+
+
+
+
+
+
+
+<H4>10.2.5
+Tables</H4>
+
+
+<P>
+<A name="idx938"></A>
+<A NAme="idx939"></a>Word tables are
+sophisticated object hierarchies in their own right, and you can
+manipulate them to any level of detail. However, there's also
+an <tT CLAss="monofont">AutoFormat</tt>
+<a name="idx940"></a> option for tables that works in a
+similar way to styles. Here's the full declaration:</p>
+
+
+
+<pre class="monofont">Table.AutoFormat(<tt CLASS="monofont"><I>Format</i></TT>, <tT ClAsS="monofont"><I>ApplyBorders</I></Tt>, <tt cLASS="monofont"><i>ApplyShading</i></tt>, <TT CLass="monofont"><i>ApplyFont</I></TT>, <Tt class="monofont"><i>ApplyColor</i></tt>,
+<tt class="monofont"><i>ApplyHeadingRows</i></tt>, <TT CLASs="monofont"><I>ApplyLastRow</I></tT>, <Tt ClASS="monofont"><I>ApplyFirstColumn</i></tt>, <tT CLAss="monofont"><i>ApplyLastColumn</i></TT>, <TT clasS="monofont"><I>AutoFit</I></Tt>)</pre>
+
+
+<p>All you have to do is insert a block of tab-delimited text with the
+table contents, and call the method to convert text to a table, then
+call the table's
+<tt class="monofont">AutoFormat</tt>
+<a name="idx941"></a> method. Fortunately, almost all the
+arguments are optional:</p>
+
+
+
+<PRE CLAsS="monofont">def addTable(self, table, styleid=None):
+     # Takes a 'list of lists' of data.
+     # first we format the text.  You might want to preformat
+     # numbers with the right decimal places etc. first.
+     textlines = []
+     for row in table:
+         textrow = map(str, row)   #convert to strings
+         textline = string.join(textrow, '\t')
+         textlines.append(textline)
+     text = string.join(textlines, '\n')
+  
+     # add the text, which remains selected
+     self.wordSel.InsertAfter(text)
+  
+     #convert to a table
+     wordTable = self.wordSel.ConvertToTable(Separator='\t')
+     #and format
+     if styleid:
+         wordTable.AutoFormat(Format=styleid)</PrE>
+
+
+<P>Unfortunately, to specify a style, you need to supply a numeric
+format constant instead of a name. If you are using MakePy, this is
+easy; an alternate approach is to use Word's VB editor to look
+up the constants. Be warned: some constants vary across different
+language editions of Word.</p>
+
+
+
+<P>Tables can be accessed through the
+<tT CLAss="monofont">Document.Tables</tt>
+<A NAMe="idx942"></a> collection.</p>
+
+
+
+
+
+
+
+<h4>10.2.6
+Adding a Chart</H4>
+
+
+<P>
+<A Name="idx943"></a>Adding a
+chart proved quite a challenge. There's a promising-sounding
+Microsoft <A NAMe="idx944"></a>Chart COM library, but it turned out
+not to allow automation in the same way as Word and Excel. Finally we
+decided to just make up an Excel chart, which is probably easier for
+users as well. A spreadsheet and chart can be easily designed by
+hand, and you can update the numbers, recalculate, and save using the
+tools in <a href="pythonwin32_cnode66.html">Chapter 9</a>. However, the problem remained
+of how to add a new object and position it correctly within the
+document. The problem took us several hours to solve and into some
+dark and surprising corners of Word's object model. Since the
+same techniques apply to positioning any OLE object or even a bitmap
+from a file, it's worth going over the objects in question.</p>
+
+
+
+<p>A little reading of the Word help file turned up the
+<tt class="monofont">Shapes</tt>
+<a nAME="idx945"></A> collection, which claims to represent
+all the nontext objects in the document: OLE objects, WordArt,
+graphic files, text boxes, and Word drawing objects. The collection
+has a number of <TT cLAsS="monofont">Add</Tt> methods, including one called
+<Tt CLASs="monofont">AddOLEObject</tt>
+<a NAME="idx946"></a>. <tt cLASS="monofont">AddOLEObject</tt> has a
+multitude of arguments, but allows you to specify a class and a file;
+thus
+<tt CLASs="monofont">Document.Shapes.Add(ClassType='Excel.Chart',FileName='mychart.xls')</tt>
+inserts the chart somewhere in the document and creates a new
+<tt class="monofont">Shape</tt>
+<a name="idx947"></a> object to refer to it. The
+<tt cLASS="monofont">Shapes</TT> collection lives somewhere called the
+<i>drawing</I>
+<A nAMe="idx948"></A> <i>layer</I>, which floats
+above each page and isn't part of the document. The
+<TT Class="monofont">Shape</TT>
+<A Name="idx949"></a> object has an
+<TT CLass="monofont">Anchor</tT>
+<A NAme="idx950"></a> property that should be set to a valid
+range in the document, and it's then constrained to stay on the
+same page as the first paragraph in that range. You then have to
+choose a coordinate system with the
+<tt class="monofont">RelativeHorizontalPosition</tt>
+<a name="idx951"></a> and
+<tt cLASS="monofont">RelativeVerticalPosition</TT>
+<a NAmE="idx952"></A> properties, which say whether the
+location is measured relative to the current page, column or
+paragraph. Finally, you set the <tT cLASS="monofont">Left</tt> and
+<tt CLASs="monofont">Top</tt> properties to define the location in the given
+coordinate system.</p>
+
+
+
+<P>We managed to write some VBA code to position charts using these
+objects and properties, but found the behavior inconsistent. If
+you've ever struggled to position a screen shot in a document
+while it jumps around at random, imagine what it is like doing it in
+code from another application! With a large shape, Word would decide
+that the initial location or page was impossible before you had
+finished setting properties and give different behavior from Python
+and from VBA.<FONt sizE="1"><SUP><a href="#FOOTNOTE-2">[2]</a></sup></font>
+</p>
+
+
+<blockquOTE><FONt SIzE="1">
+<P cLaSS="footnote">
+<SUp><a naME="FOOTNOTE-2">[2]</A></Sup>
+We did get to the bottom of this. Word
+is badly behaved in its use of two COM variant types that are used to
+denote empty and missing arguments. This explained a number of other
+obscure COM bugs. The fix is complex, so we've stuck with our
+simple workaround.</p>
+</fONT></BlockQUOTe>
+
+
+
+
+
+<p>Finally we discovered the
+<tt class="monofont">InlineShapes</tt>
+<a name="idx953"></a> collection (not a name you
+would look for) that filled the bill. An
+<tt clASS="monofont">InlineShape</TT> is conceptually part of the document;
+put it between two paragraphs, and it stays between them forever. The
+arguments to its constructor didn't work as advertised; the
+shapes always seemed to appear at the beginning of the document, but
+it was possible to cut and paste them into position. The following
+code finally did the job:</P>
+
+
+
+<pRE cLAsS="monofont">def  addInlineExcelChart(self, filename, caption='', 
+                 height=216, width=432):
+    # adds a chart inline within the text, caption below.
+    
+    # add an InlineShape to the InlineShapes collection 
+    #- could appear anywhere
+    shape = self.wordDoc.InlineShapes.AddOLEObject(
+        ClassType='Excel.Chart',
+        FileName=filename
+        )
+    # set height and width in points
+    shape.Height = height
+    shape.Width = width
+    
+    # put it where we want
+    shape.Range.Cut()
+
+    self.wordSel.InsertAfter('chart will replace this')
+    self.wordSel.Range.Paste()  # goes in selection
+    self.addStyledPara(caption, 'Normal')</pRE>
+
+
+<P>The same routine can be easily adapted to place bitmaps. If you have
+a simpler solution, drop us a line!</P>
+
+
+
+
+
+
+
+<h4>10.2.7
+Putting It Together</h4>
+
+
+<p>Now we can build a set of management accounts. The example
+applications include a Word template, an Excel spreadsheet with a
+prebuilt chart, and a test routine in
+<i>easyword.py</I>. Thanks to helper methods, this is
+simple:</P>
+
+
+
+<PRe claSS="monofont">def test():
+    outfilename = MYDIR + '\\pythonics_mgt_accounts.doc'
+    
+    w = WordWrap(MYDIR + '\\pythonics.dot')
+    w.show()  # leave on screen for fun
+    w.addStyledPara('Accounts for April', 'Title')
+    
+    #first some text
+    w.addStyledPara("Chairman's Introduction", 'Heading 1')
+    w.addStyledPara(randomText(), 'Normal')
+    
+    # now a table sections
+    w.addStyledPara("Sales Figures for Year To Date", 'Heading 1')
+    data = randomData()
+    w.addTable(data, 37) # style wdTableStyleProfessional
+    w.addText('\n\n')
+    
+    # finally a chart, on the first page of a ready-made spreadsheet
+    w.addStyledPara("Cash Flow Projections", 'Heading 1')
+    w.addInlineExcelChart(MYDIR + '\\wordchart.xls', 'Cash Flow Forecast')
+       
+    w.saveAs(outfilename)
+    print 'saved in', outfilename</PRe>
+
+
+<p>This runs visibly for fun, but would be much faster if kept
+off-screen. It produces the document in <a href="pythonwin32_snode77.html#12">Figure 10.3</A>.</p>
+
+
+
+<center>
+<h5>
+<a name="12"></a>Figure 10.3. The finished document</h5>
+
+<img borDER="0" WIDtH="502" HeIGhT="445" src="FILES/ppw.1003.gif" ALt="figs/ppw.1003.gif"></cenTER>
+
+
+
+
+
+
+
+<H4>10.2.8
+Inserting HTML and Other Formats</h4>
+
+
+<p>
+<a nAME="idx954"></A>
+<a namE="idx955"></A>Word
+can import and export HTML. The following line inserts an entire file
+into the current document:</P>
+
+
+
+<Pre class="monofont">&gt;&gt;&gt; wordSelection.InsertFile(MYDIR + '\\tutorial.html')
+&gt;&gt;&gt;</pre>
+
+
+<p>Furthermore, some experiments revealed that you don't even need
+a full HTML document, just tagged text saved with the extension HTML.</p>
+
+
+
+<p>So if you want an easy way to pump large amounts of text into a Word
+document, generate the HTML and insert it. Python has an excellent
+package, <tt class="monofont">HTMLgen</tT><I>, </I>for
+generating sophisticated markup from code. Word can import HTML
+tables with reasonable success, and all of the standard HTML styles
+are marked as styles in Word.</P>
+
+
+
+<P>
+<A nAMe="idx956"></A>These days there is a need to
+produce both printed and online versions of documents. If you write
+code to generate the HTML, and then import it into a smart Word
+template with the right corporate header and footer, you have a
+complete solution.</P>
+
+
+
+
+
+
+
+<h4>10.2.9
+Using Python COM Objects From Word</H4>
+
+
+<p>
+<A NAMe="idx957"></a>There is another approach for
+incorporating Word. You can use Python as the COM server and Word as
+the client. We discussed the pros and cons of this approach with
+Excel at the end of <a href="pythonwin32_cnode66.html">Chapter 9</A>; the same design
+considerations apply.</p>
+
+
+
+<p>Using Word as a client, use <a nAME="idx958"></A> <a namE="idx959"></A>Visual Basic for
+Applications to initialize a Python server and fetch the data. The
+most natural way to package this is to build a Word template that
+includes the code and the desired document elements. When a new
+document is created from the template, it connects to the Doubletalk
+COM server we built earlier, instructs it to load the data, fetches
+the tables of information it needs, and uses VBA code to place the
+data into the document. This approach has two advantages:</P>
+
+
+
+<Ul>
+<li><p>VBA offers nice editing features like drop-down auto-completion,
+helping you to learn the Word object model quickly. Debugging is also
+easier (assuming you have separately tested your Python server, and
+the Word object model is what is giving you trouble).</p>
+</li>
+<li><p>You can safely tie functions in your template to regions of text or
+tables in your template without needing to be too generic. Data
+preparation is Python's job; formatting is Word's.</p>
+</li>
+</ul>
+
+
+
+
+
+
+<h4>10.2.10
+The Last Word</h4>
+
+
+<p>
+<a naME="idx960"></A>Please note: Word is hard to work
+with. Even if you plan to write a controlling program in Python, you
+should sort the code you need in VBA and check that it all runs first
+to save time. The manuals and the product itself are buggy in places.
+It is also somewhat unstable during development; if you make lots of
+COM calls that cause errors, it tends to crash frequently. Once the
+code is correct, it seems to keep working without problems. Some
+other Python users have worked with very large documents and reported
+stability problems in making thousands of COM calls in a row while
+creating large documents.</P>
+
+
+
+<P>However, we do expect this situation to improve; Word 8.0 is the
+first version with VBA, whereas people have been automating Excel in
+real-time systems for years. Furthermore, we expect Word to handle
+XML in the future, which will allow more options for pumping in lots
+of data quickly.</P>
+
+
+
+<p>In conclusion, you have the technology to do almost anything with
+Word. However, it's a heavyweight solution. Whether it's
+the right format for you depends on several factors:</P>
+
+
+
+<Ul>
+<LI><p>Word documents are the output format you want.</P>
+</lI>
+<LI><P>Your users have Word.</p>
+</li>
+<lI><P>Your reports fit a word-processor flow model.</P>
+</Li>
+<li><p>Whether it's important to protect the integrity of a finished
+report or let users tweak it afterwards.<A NAMe="idx961"></a></p>
+</lI>
+</UL>
+
+</Font>
+ 
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right"><a href="pythonwin32_snode76.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a> <a href="pythonwin32_snode78.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a></td></table>
+</BODY></HTML>

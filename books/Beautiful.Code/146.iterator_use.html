@@ -1,0 +1,87 @@
+<html><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<link href="styles/globalstyle.css" type="text/css" rel="stylesheet"/>
+<link title="medium" href="styles/two.css" type="text/css" rel="stylesheet"/>
+<script src="scripts/main.js" type="text/javascript" language="javascript"></script>
+<title>Section 19.6. Iterator Use</title>
+</head><body>
+<DIV class=h3 style="MARGIN-TOP: 0px; PADDING-BOTTOM: 1em; WIDTH: 100%; PADDING-TOP: 0px"><SPAN>Multidimensional Iterators in NumPy</SPAN><SPAN> &gt; Iterator Use</SPAN></DIV>
+<DIV></DIV>
+<DIV>
+<DIV><A name=iterator_use></A>
+<H3 class=docSection1Title id=-100000>19.6. Iterator Use</H3>
+<P class=docText><A name="A good"></A>A good abstraction proves its worth when it makes coding simpler under diverse conditions, or when it ends up being useful in ways that were originally unintended. Both of these affirmations of value are definitely true of the NumPy iterator object. With only slight modifications, the original simple NumPy iterator has become a workhorse for implementing other NumPy features, such as iteration over all but one dimension and iteration over multiple arrays at the same time. In addition, when we had to quickly <A name=idx-CHP-19-1591></A>add</P>
+<P class=docText><A name="the code"></A>some enhancements to the code for generating random numbers and for broadcast-based copying, the existence of the <A name=idx-CHP-19-1592></A><A name="extensions made"></A>iterator and its extensions made implementation much easier.</P><A name=iteration_over_all_but_one_dimension></A>
+<H4 class=docSection2Title id=title-ID0ERXDK>19.6.1. Iteration Over All But One Dimension</H4>
+<P class=docText><A name="motif in"></A>A common motif in <A name=idx-CHP-19-1593></A><A name="gain speed"></A>NumPy is to gain speed by concentrating optimizations on the loop over a single dimension where simple striding can be assumed. Then an iteration strategy that iterates over all but the last dimension is <A name=idx-CHP-19-1594></A>used. This was the approach introduced by <A name=idx-CHP-19-1595></A>NumPy's predecessor, Numeric, to implement the math functionality.<A name=idx-CHP-19-1596></A></P>
+<P class=docText><A name="possible to"></A>In NumPy, a slight modification to the NumPy iterator makes it possible to use this basic strategy in any code. The modified iterator is returned from the constructor as follows:</P><PRE>	it = PyArray_IterAllButAxis(array, &amp;dim).
+</PRE><BR>
+<P class=docText>The <TT>PyArray_IterAllButAxis</TT><A name="a NumPy"></A> function takes a NumPy array and the address of an integer representing the dimension to remove from the iteration. The integer is passed by reference (the <TT>&amp;</TT><A name="is specified"></A> operator) because if the dimension is specified as -1, the function determines which dimension to remove from iteration and places the number of that dimension in the argument. When the input dimension is -1, the routine chooses the dimension with the smallest nonzero stride.</P>
+<P class=docText><A name="to remove"></A>Another choice for the dimension to remove might have been the dimension with the largest number of elements. That choice would minimize the number of outer loop iterations and reserve the most elements for the presumably fast inner loop. The problem with that choice is that getting information in and out of memory is often the slowest part of an algorithm on general-purpose processors.</P>
+<P class=docText><A name="As a"></A>As a result, the choice made by NumPy is to make sure that the inner loop is proceeding with data that is as close together as possible. Such data is more likely to be accessed more quickly during the speed-critical inner loop.</P>
+<P class=docText><A name="modified by"></A>The iterator is modified by:</P>
+<DIV style="FONT-WEIGHT: bold">
+<OL class=docList type=1>
+<LI>
+<DIV style="FONT-WEIGHT: normal">
+<P class=docList><A name="size by"></A>Dividing the iteration size by the length of the dimension being removed.</P></DIV></LI>
+<LI>
+<DIV style="FONT-WEIGHT: normal">
+<P class=docList><A name="number of"></A>Setting the number of elements in the selected dimension to 1 (so the array storing one less than the total number is set to 0): <TT>dims_m1[i]=0</TT>.</P></DIV></LI>
+<LI>
+<DIV style="FONT-WEIGHT: normal">
+<P class=docList><A name="entry for"></A>Setting the backstrides entry for that dimension to 0 so that the continual rewrapping of the counter in the given dimension back to 0 will never alter the data pointer.</P></DIV></LI>
+<LI>
+<DIV style="FONT-WEIGHT: normal">
+<P class=docList><A name="contiguous in"></A>Resetting the contiguous flag to 0 because processing will not be contiguous in memory (each iteration has to skip an entire dimension of the array).</P></DIV></LI></OL></DIV>
+<P class=docText><A name="iterator is"></A>The altered iterator is returned by the function. It can now be used everywhere an iterator was previously used. Each time through the loop, the iterator will point to the first element of the selected dimension of the array.</P><A name=multiple_iterations></A>
+<H4 class=docSection2Title id=title-ID0EF1DK>19.6.2. Multiple Iterations</H4>
+<P class=docText>Another common task in <A name=idx-CHP-19-1597></A><A name="over several"></A>NumPy is to iterate over several arrays in concert. For example, the implementation of array addition requires iterating over both arrays using a connected <A name=idx-CHP-19-1598></A><A name="array is"></A>iterator so that the output array is the sum of each element of the first array multiplied by each element of the second array. This can be accomplished using a different iterator for each of the input elements and an iterator for the output array in the normal fashion.<A name=idx-CHP-19-1599></A></P>
+<P class=docText>Alternatively, <A name=idx-CHP-19-1600></A><A name="NumPy provides"></A>NumPy provides a multi-iterator object that can simplify dealing with several iterators at once. This multi-iterator object also handles the <A name=idx-CHP-19-1601></A><A name="NumPy automatically"></A>broadcasting functionality of NumPy automatically. <SPAN class=docEmphasis>Broadcasting</SPAN><A name="given to"></A> is the name given to the feature in NumPy that allows arrays with different shapes to be <A name=idx-CHP-19-1602></A><A name="in operations"></A>used together in operations that are supposed to work element-by-element. For example, broadcasting allows a (4,1)-shaped array to be added to a (3)-shaped array resulting in a (4,3)-shaped array. Broadcasting also allows simultaneous iteration over a (4,1)-shaped array, a (3)-shaped array, and a (5,1,1)-shaped array to produce a broadcasted iteration covering the elements of a (5,4,3)-shaped array.</P>
+<P class=docText><A name="broadcasting are"></A>The rules of broadcasting are:</P>
+<UL>
+<LI>
+<P class=docList><A name="dimensions of"></A>Arrays with fewer dimensions are treated as occupying the last dimensions of an array that has the full number of dimensions, so that all arrays have the same number of dimensions. The new, initial dimensions are filled in with 1s.</P></LI>
+<LI>
+<P class=docList><A name="of each"></A>The length of each dimension in the final broadcast shape is the greatest length of that dimension in any of the arrays.</P></LI>
+<LI>
+<P class=docList><A name="must either"></A>For each dimension, all inputs must either have the same number of elements as the broadcast result or a 1 as the number of elements.</P></LI>
+<LI>
+<P class=docList><A name="in a"></A>Arrays with a single element in a particular dimension act as if that element were virtually copied to all positions during the iteration. In effect, the element is "broadcast" to the additional positions.</P></LI></UL>
+<P class=docText><A name="The key"></A>The key to the implementation of broadcasting consists of surprisingly simple modifications to the array iterators. With these alterations, standard iterator loops can be used to implement the resulting calculations in a straightforward way. The modifications needed are changes to the shape of the iterators (not the underlying array) and changes to the strides and backstrides. The shape stored in the iterator is changed to match the broadcast shape. The strides and backstrides for broadcast dimensions are changed to 0. With a stride of 0, the standard iterator does not actually move the data pointer to the element in memory as the index in that dimension proceeds. This creates the desired effect of broadcasting without actually copying the memory.</P>
+<P class=docText><A name="illustrates usage"></A>The following code illustrates usage of the multi-iterator object:</P>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedHeight>	PyObject *multi;
+	PyObject *in1, *in2;
+	double *i1p, *i2p, *op;
+	/* get in1 and in2 (assumed to be arrays of NPY_DOUBLE) */
+	/* first argument is the number of input arrays; the
+	   next (variable number of) arguments are the
+	   array objects */
+	multi = PyArray_MultiNew(2, in1, in2);
+	/* construct output array */
+	out = PyArray_SimpleNew(PyArray_MultiIter_NDIM(multi),
+	                        PyArray_MultiIter_DIMS(multi),
+	                        NPY_DOUBLE);
+	op = PyArray_DATA(out);
+	while(PyArray_MultiIter_NOTDONE(multi)) {
+	    /* get (pointers to) the current value in each array */
+	    i1p = PyArray_MultiIter_DATA(multi, 0);
+	    i2p = PyArray_MultiIter_DATA(multi, 1);
+	    /* perform the operation for this element */
+	    *op = *ip1 + *ip2
+	    op += 1; /* Advance output array pointer */
+	    /* Advance all the input <A name=idx-CHP-19-1603></A>iterators */
+	    PyArray_MultiIter_NEXT(multi);
+	}
+
+
+					    </PRE><BR>
+<P class=docText><A name="very similar"></A>The code is very similar to a standard iterator loop, except the multi-iterator handles adjustments of the input iterators to accomplish <A name=idx-CHP-19-1604></A><A name="as incrementing"></A>broadcasting, as well as incrementing all the other input iterators. This code handles the broadcasting automatically as part of the iterator processing, so that the addition of a (3,1)-shaped array to a (4)-shaped one will produce a (3,4)-shaped output array.</P><A name=anecdotes></A>
+<H4 class=docSection2Title id=title-ID0EO4DK>19.6.3. Anecdotes</H4>
+<P class=docText>The <A name=idx-CHP-19-1605></A>NumPy iterator is <A name=idx-CHP-19-1606></A>used throughout the <A name=idx-CHP-19-1607></A><A name="to simplify"></A>NumPy code base to simplify the construction of <SPAN class=docEmphasis>N</SPAN><A name="more general"></A>-dimensional loops. Having the iterator available allowed me to code algorithms for more general (noncontiguous) arrays. Normally, the difficulty of thinking about how to handle the noncontiguous arrays would have convinced me to just force an array to be contiguous (by making a new copy if necessary) and then use an easy looping algorithm. The existence of the NumPy iterator allowed me to write much more general code that is still as readable, with a very minor cost in speed for arrays that are actually contiguous. This slight disadvantage is offset by the very great decrease in memory requirements for arrays that are noncontiguous. The improved productivity in writing such loops is sufficient to justify the existence of the NumPy iterator.<A name=idx-CHP-19-1608></A><A name=idx-CHP-19-1609></A></P>
+<P class=docText><A name="encapsulation for"></A>However, it is NumPy's encapsulation for broadcasting where the utility of the abstraction really shines. It shone particularly bright when the multi-iterator allowed me to enhance the random-number generators of NumPy to deal with arrays of parameters pertaining to the random number generators. The change took about two hours with only a few lines of code.</P>
+<P class=docText>The <A name=idx-CHP-19-1610></A><A name="was written"></A>random-number generator facility of NumPy was written by Robert Kern. He was not familiar with the C broadcasting API that had only been recently added. As a result, the original implementation required all parameters used to specify the random numbers to be scalar values (i.e., the value of for an exponential distribution).</P>
+<P class=docText><A name="is quite"></A>This was an unfortunate restriction. It is quite common to need an array of random numbers drawn from a particular distribution where different parts of the array should have different parameters. For instance, a programmer might need a matrix of random numbers drawn from the exponential distribution where each row of numbers should be sampled using a different value of . To allow arrays of parameters, the bulk of the change was to use the multi-iterator loop (with its built-in broadcasting facility) and fill in the output array with the random samples.</P>
+<P class=docText><A name="Another opportunity"></A>Another opportunity to use the iterator surfaced when the code that copied data from one array to another needed to be altered to copy in a manner consistent with NumPy's definition of broadcasting. Previously, an array was copied over to another using the standard iterator. The only shape checking done was to ensure that the destination array got filled only once. If the destination ran out of elements, its iterator started over again. Eventually, it became clear that this was not the desired copying behavior because it basically implemented a different kind of "broadcasting" (as long as the total number of elements of one array was a multiple of another, any array could be copied into any other array regardless of shape). The kind of data replication that resulted from this copy command was inconsistent with the definition of broadcasting used in other places in NumPy. It became clear that it needed to be changed. Again, the multi-iterators and its built-in concept of iterator broadcasting was a useful abstraction because it allowed me to write the code to accomplish the copy (including size checking) very quickly with only very few lines of actual new code.</P></DIV></DIV>
+<p>&nbsp;</p><p>&nbsp;</p><!-- 仁·义 -->
+</body></html>

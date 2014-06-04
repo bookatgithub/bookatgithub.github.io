@@ -1,0 +1,72 @@
+<html><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<link href="styles/globalstyle.css" type="text/css" rel="stylesheet"/>
+<link title="medium" href="styles/two.css" type="text/css" rel="stylesheet"/>
+<script src="scripts/main.js" type="text/javascript" language="javascript"></script>
+<title>Section 17.3. From Filesystems to Filesystem Layers</title>
+</head><body>
+<DIV class=h3 style="MARGIN-TOP: 0px; PADDING-BOTTOM: 1em; WIDTH: 100%; PADDING-TOP: 0px"><SPAN>Another Level of Indirection</SPAN><SPAN> &gt; From Filesystems to Filesystem Layers</SPAN></DIV>
+<DIV></DIV>
+<DIV>
+<DIV><A name=from_filesystems_to_filesystem_layers></A>
+<H3 class=docSection1Title id=-100000>17.3. From Filesystems to Filesystem Layers</H3>
+<P class=docText><A name="For a"></A>For a concrete example of filesystem <A name=idx-CHP-17-1405></A><A name="where you"></A>layering, consider the case where you mount on your computer a remote filesystem <A name=idx-CHP-17-1406></A>using the <A name=idx-CHP-17-1407></A><A name="your case"></A>NFS (Network File System) protocol. Unfortunately, in your case, the user and group identifiers on the remote system don't match those used on your computer. However, by <A name=idx-CHP-17-1408></A>interposing a <SPAN class=docEmphasis>umapfs</SPAN><A name="the actual"></A> filesystem over the actual NFS implementation, we can specify through external files the correct user and group mappings. <A class=docLink href="127.from_function_arguments_to_argument_pointers.html#routing_system_calls_through_a_bypass_function">Figure 17-3</A><A name="operating system"></A> illustrates how some operating system kernel function calls first get routed through the bypass function of <SPAN class=docEmphasis>umpafs</SPAN>—<TT>umap_bypass</TT>—before continuing their journey to the corresponding NFS client functions.<A name=idx-CHP-17-1409></A><A name=I_indexterm17_tt373></A><A name=I_indexterm17_tt374></A><A name=I_indexterm17_tt375></A></P>
+<P class=docText>In contrast to the <TT>null_bypass</TT> function, the implementation <A name=idx-CHP-17-1410></A>of <TT>umap_bypass</TT><A name="underlying layer"></A> actually does some work before making a call to the underlying layer. The <TT>vop_generic_args</TT><A name="as its"></A> structure passed as its argument contains a description of the actual arguments for each <SPAN class=docEmphasis>vnode</SPAN> operation:<A name=idx-CHP-17-1411></A></P>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedHeight>	/*
+	 * A generic structure.
+	 * This can be used by bypass routines to identify generic arguments.
+	 */
+	struct vop_generic_args {
+	       struct <A name=idx-CHP-17-1412></A>vnodeop_desc *a_desc;
+	       /* other random data follows, presumably */
+	};
+
+	/*
+	 * This structure describes the vnode operation taking place.
+	 */
+	struct vnodeop_desc {
+	       char    *vdesc_name;            /* a readable name for debugging */
+	       int      vdesc_flags;           /* VDESC_* flags */
+	       vop_bypass_t    *vdesc_call;    /* Function to call */
+
+	       /*
+	        * These ops are used by bypass routines to map and locate arguments.
+	        * Creds and procs are not needed in bypass routines, but sometimes
+	        * they are useful to (for example) transport layers.
+	        * Nameidata is useful because it has a cred in it.
+	        */
+	       int     *vdesc_vp_offsets;     /* list ended by VDESC_NO_OFFSET */
+	       int      vdesc_vpp_offset      /* return vpp location */
+	       int      vdesc_cred_offset;    /* cred location, if any */
+	       int      vdesc_thread_offset   /* thread location, if any *
+	       int      vdesc_componentname_offset; /* if any */ 
+	};
+
+
+					    </PRE><BR>
+<P class=docText>For instance, the <TT>vnodeop_desc</TT><A name="passed to"></A> structure for the arguments passed to the <TT>vop_read</TT> operation is the following:</P><PRE>	struct vnodeop_desc vop_read_desc = {
+	        "vop_read",
+	        0,
+	        (vop_bypass_t *)VOP_READ_AP,
+	        vop_read_vp_offsets,
+	        VDESC_NO_OFFSET,
+	        VOPARG_OFFSETOF(struct vop_read_args,a_cred),
+	        VDESC_NO_OFFSET,
+	        VDESC_NO_OFFSET,
+	};
+</PRE><BR>
+<P class=docText><A name="the function"></A>Importantly, apart from the name of the function (used for debugging purposes) and the underlying function to call (<TT>VOP_READ_AP</TT><A name="the structure"></A>), the structure contains in its <TT>vdesc_cred_offset</TT><A name="of the"></A> field the location of the user credential data field (<TT>a_cred</TT><A name="By using"></A>) within the read call's arguments. By using this field, <TT>umap_bypass</TT><A name="the credentials"></A>can map the credentials of <SPAN class=docEmphasis>any</SPAN><A name="the following"></A> vnode operation with the following code:</P><PRE>	if (descp-&gt;vdesc_cred_<A name=idx-CHP-17-1413></A>offset != VDESC_NO_OFFSET) {
+	        credpp = VOPARG_OFFSETTO(struct ucred**,
+	            descp-&gt;vdesc_cred_offset, ap);
+	        /* Save old values */
+	        savecredp = (*credpp);
+	        if (savecredp != NOCRED)
+	               (*credpp) = crdup(savecredp);
+	        credp = *credpp;
+	        /* Map all ids in the credential structure. */
+	        umap_mapids(vp1-&gt;v_mount, credp);
+	}
+</PRE><BR>
+<P class=docText><A name="the format"></A>What we have here is a case of data describing the format of other data: a redirection in terms of data abstraction. This <SPAN class=docEmphasis>metadata</SPAN><A name="credential mapping"></A> allows the credential mapping code to manipulate the arguments of arbitrary system calls.<A name=idx-CHP-17-1414></A></P></DIV></DIV>
+<p>&nbsp;</p><p>&nbsp;</p><!-- 仁·义 -->
+</body></html>

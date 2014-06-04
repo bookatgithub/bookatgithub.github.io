@@ -1,0 +1,1266 @@
+<html><head>
+<META http-equiv="Content-Type" content="text/html">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="16.7 PyForm: A Persistent Object Viewer"-->
+<link rel="STYLESHEET" type="text/css" href="FILES/style.css">
+<link rel="STYLESHEET" type="text/css" href="FILES/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+	<a href="0596000855_python2-CHP-16-SECT-6.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+	<a href="0596000855_python2-CHP-17.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr>
+<td valign="top"><A NAME="python2-CHP-16-SECT-7"></A>
+<H3 class="docSection1Title">16.7 PyForm: A Persistent Object Viewer</H3>
+
+<P class="docText"><A NAME="python2-IDXTERM-1945"></A> <A NAME="python2-IDXTERM-1946"></A>Rather than going into additional
+database interface details that are freely available at <A class="docLink" target="_blank" HREF="http://python.org/default.htm">python.org</A>, I'm going to close out this
+chapter by showing you one way to combine the GUI technology we met
+earlier in the text with the persistence techniques introduced in
+this chapter. This section presents
+<span class="docEmphasis">PyForm</span>,a Tkinter GUI
+designed to let you browse and edit tables of records:
+</P>
+
+<UL>
+<LI><P class="docList"><span class="docEmphasis">Tables</span> browsed are shelves, DBM files, in-memory
+dictionaries, or any other object that looks and feels like a
+dictionary.
+</P></LI>
+<LI><P class="docList"><span class="docEmphasis">Records</span> within tables browsed can be class
+instances, simple dictionaries, strings, or any other object that can
+be translated to and from a dictionary.
+</P></LI>
+</UL>
+<P class="docText">Although this example is about GUIs and persistence, it also
+illustrates Python design techniques. To keep its implementation both
+simple and type-independent, the PyForm GUI is coded to expect tables
+to look like <span class="docEmphasis">dictionaries of dictionaries</span>. To
+support a variety of table and record types, PyForm relies on
+separate wrapper classes to translate tables and records to the
+expected protocol:
+</P>
+
+<UL>
+<LI><P class="docList">At the top table level, the translation is easy -- shelves, DBM
+files, and in-memory dictionaries all have the same key-based
+interface.
+</P></LI>
+<LI><P class="docList">At the nested record level, the GUI is coded to assume that stored
+items have a dictionary-like interface, too, but classes intercept
+dictionary operations to make records compatible with the PyForm
+protocol. Records stored as strings are converted to and from the
+dictionary objects on fetches and stores; records stored as class
+instances are translated to and from attribute dictionaries. More
+specialized translations can be added in new table wrapper classes.
+</P></LI>
+</UL>
+<P class="docText">The net effect is that PyForm can be used to browse and edit a wide
+variety of table types, despite its dictionary interface
+expectations. When PyForm browses shelves and DBM files, table
+changes made within the GUI are persistent -- they are saved in
+the underlying files. When used to browse a shelve of class
+instances, PyForm essentially becomes a GUI frontend to a simple
+object database, one built using standard Python persistence tools.
+</P>
+
+<A NAME="python2-CHP-16-SECT-7.1"></A>
+<H4 class="docSection2Title">16.7.1 Doing It the Hard Way</H4>
+
+<P class="docText">Before we get to the GUI, though, let's see why you'd
+want one in the first place. To experiment with shelves in general, I
+first coded a canned test data file. The script in <A class="docLink" HREF="#python2-CHP-16-EX-4">Example 16-4</A> hardcodes a dictionary used to populate
+databases (<TT>cast</TT>), as well as a class used to
+populate shelves of class instances (<TT>Actor</TT>).
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-16-EX-4"></A>Example 16-4. PP2E\Dbase\testdata.py </H5>
+<PRE># definitions for testing shelves, dbm, and formgui
+
+cast = {
+    'rob':   {'name': ('Rob', 'P'),   'job': 'writer', 'spouse': 'Laura'},
+    'buddy': {'name': ('Buddy', 'S'), 'job': 'writer', 'spouse': 'Pickles'},
+    'sally': {'name': ('Sally', 'R'), 'job': 'writer'},
+    'laura': {'name': ('Laura', 'P'), 'spouse': 'Rob',   'kids':1},
+    'milly': {'name': ('Milly', '?'), 'spouse': 'Jerry', 'kids':2},
+    'mel':   {'name': ('Mel', 'C'),   'job': 'producer'},
+    'alan':  {'name': ('Alan', 'B'),  'job': 'comedian'}
+}
+
+class Actor:                                       # unnested file-level class
+    def __init__(self, name=(  ), job=''):           # no need for arg defaults, 
+        self.name = name                           # for new pickler or formgui 
+        self.job  = job                       
+    def __setattr__(self, attr, value):            # on setattr(  ): validate
+        if attr == 'kids' and value &gt; 10:          # but set it regardless
+            print 'validation error: kids =', value
+        if attr == 'name' and type(value) != type((  )):
+            print 'validation error: name type =', type(value)
+        self.__dict__[attr] = value                # don't trigger __setattr__</PRE>
+
+
+<P class="docText">The <TT>cast</TT> object here is intended to represent a
+table of records (it's really a dictionary of dictionaries when
+written out in Python syntax like this). Now, given this test data,
+it's easy to populate a shelve with <TT>cast</TT>
+dictionaries. Simply open a shelve and copy over
+<TT>cast</TT>, key for key, as shown in <A class="docLink" HREF="#python2-CHP-16-EX-5">Example 16-5</A>.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-16-EX-5"></A>Example 16-5. PP2E\Dbase\castinit.py </H5>
+<PRE>import shelve 
+from testdata import cast
+db = shelve.open('data/castfile')      # create a new shelve
+for key in cast.keys(  ):
+    db[key] = cast[key]                # store dictionaries in shelve</PRE>
+
+
+<P class="docText">Once you've done that, it's almost as easy to verify your
+work with a script that prints the contents of the shelve, as shown
+in <A class="docLink" HREF="#python2-CHP-16-EX-6">Example 16-6</A>.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-16-EX-6"></A>Example 16-6. PP2E\Dbase\castdump.py </H5>
+<PRE>import shelve
+db = shelve.open('data/castfile')      # reopen shelve
+for key in db.keys(  ):                  # show each key,value
+    print key, db[key]</PRE>
+
+
+<P class="docText">Here are these two scripts in action, populating and displaying a
+shelve of dictionaries:
+</P>
+
+<PRE>C:\...\PP2E\Dbase&gt;<B>python castinit.py</B>
+C:\...\PP2E\Dbase&gt;<B>python castdump.py</B>
+alan {'job': 'comedian', 'name': ('Alan', 'B')}
+mel {'job': 'producer', 'name': ('Mel', 'C')}
+buddy {'spouse': 'Pickles', 'job': 'writer', 'name': ('Buddy', 'S')}
+sally {'job': 'writer', 'name': ('Sally', 'R')}
+rob {'spouse': 'Laura', 'job': 'writer', 'name': ('Rob', 'P')}
+milly {'spouse': 'Jerry', 'name': ('Milly', '?'), 'kids': 2}
+laura {'spouse': 'Rob', 'name': ('Laura', 'P'), 'kids': 1}</PRE>
+
+<P class="docText">So far, so good. But here is where you reach the limitations of
+manual shelve processing: to modify a shelve, you need much more
+general tools. You could write little Python scripts that each
+perform very specific updates. Or you might even get by for awhile
+typing such update commands by hand in the interactive interpreter:
+</P>
+
+<PRE>&gt;&gt;&gt; <B>import shelve</B>
+&gt;&gt;&gt; <B>db  = shelve.open('data/castfile')</B> 
+&gt;&gt;&gt; <B>rec = db['rob']</B>
+&gt;&gt;&gt; <B>rec['job'] = 'hacker'</B>
+&gt;&gt;&gt; <B>db['rob'] = rec</B></PRE>
+
+<P class="docText">For all but the most trivial databases, though, this will get tedious
+in a hurry -- especially for a system's end users. What
+you'd really like is a GUI that lets you view and edit shelves
+arbitrarily, and can be started up easily from other programs and
+scripts, as shown in <A class="docLink" HREF="#python2-CHP-16-EX-7">Example 16-7</A>.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-16-EX-7"></A>Example 16-7. PP2E\Dbase\castview.py </H5>
+<PRE>import shelve
+from TableBrowser.formgui import FormGui    # after initcast
+db = shelve.open('data/castfile')           # reopen shelve file
+FormGui(db).mainloop(  )                      # browse existing shelve-of-dicts</PRE>
+
+
+<P class="docText">To make this particular script work, we need to move on to the next
+section.
+</P>
+
+
+<A NAME="python2-CHP-16-SECT-7.2"></A>
+<H4 class="docSection2Title">16.7.2 Doing It the Graphical Way</H4>
+
+<P class="docText"><A NAME="python2-IDXTERM-1947"></A>
+<A NAME="python2-IDXTERM-1948"></A>
+<A NAME="python2-IDXTERM-1949"></A>The
+path traced in the last section really is what led me to write
+PyForm<span class="docEmphasis">,</span> a GUI tool for editing arbitrary tables
+of records. When those tables are shelves and DBM files, the data
+PyForm displays is persistent; it lives beyond the GUI's
+lifetime. Because of that, PyForm can be seen as a simple database
+browser.
+</P>
+
+<A NAME="python2-CHP-16-SECT-7.2.1"></A>
+<H5 class="docSection3Title">16.7.2.1 PyForm GUI code</H5>
+
+<P class="docText"><A NAME="python2-IDXTERM-1950"></A>We've already met all the GUI
+interfaces PyForm uses earlier in this book, so I won't go into
+all of its implementation details here (see the chapters in <A class="docLink" HREF="0596000855_python2-PART-II.html#python2-PART-II">Part II</A>, for background details). Before we see the
+code at all, though, let's see what it does. <A class="docLink" HREF="#python2-CHP-16-FIG-1">Figure 16-1</A> shows PyForm in action on Windows, browsing a
+shelve of persistent instance objects, created from the
+<TT>testdata</TT> module's <TT>Actor</TT>
+class. It looks slightly different but works the same on Linux and
+Macs.
+</P>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="python2-CHP-16-FIG-1"></A>Figure 16-1. PyForm displaying a shelf of Actor objects</H5>
+<IMG BORDER="0" WIDTH="281" HEIGHT="248" src="FILES/ppy2_1601.gif" ALT="figs/ppy2_1601.gif"></CENTER>
+
+<P class="docText">PyForm uses a three-window interface to the table being browsed; all
+windows are packed for proper window expansion and clipping, as set
+by the rules we studied earlier in this book. The window in the upper
+left of <A class="docLink" HREF="#python2-CHP-16-FIG-1">Figure 16-1</A> is the main window, created when
+PyForm starts; it has buttons for navigating through a table, finding
+items by key, and updating, creating, and deleting records (more
+useful when browsing tables that persist between runs). The table
+(dictionary) key of the record currently displayed shows up in the
+input field in the middle of this window.
+</P>
+
+<P class="docText">The "index" button pops up the listbox window in the
+upper right, and selecting a record in either window at the top
+creates the form window at the bottom. The form window is used both
+to display a record and to edit it -- if you change field values
+and press "store," the record is updated. Pressing
+"new" clears the form for input of new values (fill in
+the "Key=&gt;" field and press "store" to
+save the new record).
+</P>
+
+<P class="docText">Field values are typed with Python syntax, so strings are quoted
+(more on this later). When browsing a table with records that contain
+different sets of field names, PyForm erases and redraws the form
+window for new field sets as new records are selected; to avoid
+seeing the window recreated, use the same format for all records
+within a given table.
+</P>
+
+<P class="docText">On to the code. The first thing I did when writing PyForm was to code
+utility functions to hide some of the details of widget creation. By
+making a few simplifying assumptions (e.g., packing protocol), the
+module in <A class="docLink" HREF="#python2-CHP-16-EX-8">Example 16-8</A> helps keep some GUI coding
+details out of the rest of the PyForm implementation.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-16-EX-8"></A>Example 16-8. PP2E\Dbase\guitools.py </H5>
+<PRE># added extras for entry width, calcgui font/color
+
+from Tkinter import *
+
+def frame(root, side, **extras): 
+    widget = Frame(root)
+    widget.pack(side=side, expand=YES, fill=BOTH)
+    if extras: apply(widget.config, (  ), extras)
+    return widget
+
+def label(root, side, text, **extras):
+    widget = Label(root, text=text, relief=RIDGE) 
+    widget.pack(side=side, expand=YES, fill=BOTH)
+    if extras: apply(widget.config, (  ), extras)
+    return widget
+
+def button(root, side, text, command, **extras): 
+    widget = Button(root, text=text, command=command) 
+    widget.pack(side=side, expand=YES, fill=BOTH)
+    if extras: apply(widget.config, (  ), extras)
+    return widget
+
+def entry(root, side, linkvar, **extras):
+    widget = Entry(root, relief=SUNKEN, textvariable=linkvar)
+    widget.pack(side=side, expand=YES, fill=BOTH)
+    if extras: apply(widget.config, (  ), extras)
+    return widget</PRE>
+
+
+<P class="docText">Armed with this utility module, the file in <A class="docLink" HREF="#python2-CHP-16-EX-9">Example 16-9</A> implements the rest of the PyForm GUI. It uses
+the <TT>GuiMixin</TT> module we wrote in <A class="docLink" HREF="0596000855_python2-CHP-9.html#python2-CHP-9">Chapter 9</A>, for simple access to standard popup dialogs.
+It's also coded as a class that can be specialized in
+subclasses, or attached to a larger GUI. I run PyForm as a standalone
+program. Attaching its <TT>FormGui</TT> class really
+attaches its main window only, but it can be used to provide a
+pre-coded table browser widget for other GUIs.
+</P>
+
+<P class="docText">This file's <TT>FormGui</TT> class creates the GUI
+shown in <A class="docLink" HREF="#python2-CHP-16-FIG-1">Figure 16-1</A>, and responds to user
+interaction in all three of the interface's windows. Because
+we've already covered all the GUI tools that PyForm uses, you
+should study this module's source code listing for additional
+implementation details. Notice, though, that this file knows almost
+nothing about the table being browsed, other than that it looks and
+feels like a dictionary of dictionaries. To understand how PyForm
+supports browsing things like shelves of class instances, you will
+need to look elsewhere (or at least wait for the next module).
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-16-EX-9"></A>Example 16-9. PP2E\Dbase\TableBrowser\formgui.py </H5>
+<PRE>#!/usr/local/bin/python
+#############################################################################
+# PyForm: a persistent table viewer GUI. Uses guimixin for std dialogs.
+# Assumes the browsed table has a dictionary-of-dictionary interface, and
+# relies on table wrapper classes to convert other structures as needed.
+# Store an initial record with dbinit script to start a dbase from scratch.
+# Caveat: doesn't do object method calls, shows complex field values poorly.
+#############################################################################
+
+from Tkinter  import *                                 # Tk widgets
+from guitools import frame, label, button, entry       # widget builders
+from PP2E.Gui.Tools.guimixin import GuiMixin           # common methods
+
+class FormGui(GuiMixin, Frame):
+    def __init__(self, mapping):                       # an extended frame
+        Frame.__init__(self)                           # on default top-level
+        self.pack(expand=YES, fill=BOTH)               # all parts expandable
+        self.master.title('PyForm 2.0 - Table browser')       
+        self.master.iconname("PyForm")
+        self.makeMainBox(  )
+        self.table     = mapping               # a dict, dbm, shelve, Table,..
+        self.index     = mapping.keys(  )        # list of table keys
+        self.cursor    = -1                    # current index position
+        self.currslots = []                    # current form's (key,text)s
+        self.currform  = None                  # current form window
+        self.listbox   = None                  # index listbox window
+
+    def makeMainBox(self):
+        frm = frame(self, TOP)
+        frm.config(bd=2)
+        button(frm, LEFT, 'next',  self.onNext)       # next in list
+        button(frm, LEFT, 'prev',  self.onPrev)       # backup in list
+        button(frm, LEFT, 'find',  self.onFind)       # find from key
+        frm = frame(self, TOP)
+        self.keytext = StringVar(  )                    # current record's key
+        label(frm, LEFT, 'KEY=&gt;')                     # change before 'find'
+        entry(frm, LEFT,  self.keytext)             
+        frm = frame(self, TOP)
+        frm.config(bd=2)
+        button(frm,  LEFT,  'store',  self.onStore)     # updated entry data
+        button(frm,  LEFT,  'new',    self.onNew)       # clear fields
+        button(frm,  LEFT,  'index',  self.onMakeList)  # show key list
+        button(frm,  LEFT,  'delete', self.onDelete)    # show key list
+        button(self, BOTTOM,'quit',   self.quit)        # from guimixin
+
+    def onPrev(self):
+        if self.cursor &lt;= 0:
+            self.infobox('Backup', "Front of table")
+        else:
+            self.cursor = self.cursor - 1
+            self.display(  )
+
+    def onNext(self):
+        if self.cursor &gt;= len(self.index)-1:
+            self.infobox('Advance', "End of table")
+        else:
+            self.cursor = self.cursor + 1
+            self.display(  )
+
+    def sameKeys(self, record):                 # can we reuse the same form?
+        keys1 = record.keys(  )
+        keys2 = map(lambda x:x[0], self.currslots)
+        keys1.sort(); keys2.sort(  )              # keys list order differs
+        return keys1 == keys2                   # if insertion-order differs
+
+    def display(self):
+        key = self.index[self.cursor]           # show record at index cursor
+        self.keytext.set(key)                   # change key in main box 
+        record = self.table[key]                # in dict, dbm, shelf, class
+        if self.sameKeys(record): 
+            self.currform.title('PyForm - Key=' + `key`)  
+            for (field, text) in self.currslots:
+                text.set(`record[field]`)       # same fields? reuse form
+        else:                                   # expr `x` works like repr(x)
+            if self.currform:
+                self.currform.destroy(  )         # different fields?  
+            new = Toplevel(  )                    # replace current box
+            new.title('PyForm - Key=' + `key`)  # new resizable window
+            new.iconname("pform")
+            left  = frame(new, LEFT)
+            right = frame(new, RIGHT)
+            self.currslots = []                 # list of (field, entry)
+            for field in record.keys(  ):
+                label(left, TOP, `field`)       # key,value to strings
+                text = StringVar(  )              # we could sort keys here
+                text.set( `record[field]` )
+                entry(right, TOP, text, width=40)
+                self.currslots.append((field, text))
+            self.currform = new
+            new.protocol('WM_DELETE_WINDOW', lambda:0)   # ignore destroy's
+        self.selectlist(  )                                # update listbox
+
+    def onStore(self):
+        if not self.currform: return
+        key = self.keytext.get(  )
+        if key in self.index:                    # change existing record
+            record = self.table[key]             # not: self.table[key][field]=
+        else:
+            record = {}                          # create a new record
+            self.index.append(key)               # add to index and listbox
+            if self.listbox:
+                self.listbox.insert(END, key)    # or at len(self.index)-1 
+        for (field, text) in self.currslots:
+            try:                                 # fill out dictionary rec
+                record[field] = eval(text.get(  )) # convert back from string
+            except:
+                self.errorbox('Bad data: "%s" = "%s"' % (field, text.get(  )))
+                record[field] = None
+        self.table[key] = record                 # add to dict, dbm, shelf,...
+        self.onFind(key)                         # readback: set cursor,listbox
+
+    def onNew(self):
+        if not self.currform: return               # clear input form and key
+        self.keytext.set('?%d' % len(self.index))  # default key unless typed
+        for (field, text) in self.currslots:       # clear key/fields for entry
+            text.set('') 
+        self.currform.title('Key: ?')  
+ 
+    def onFind(self, key=None):
+        target = key or self.keytext.get(  )            # passed in, or entered
+        try:
+            self.cursor = self.index.index(target)    # find label in keys list
+            self.display(  )
+        except:
+            self.infobox('Not found', "Key doesn't exist", 'info')
+
+    def onDelete(self):
+        if not self.currform or not self.index: return
+        currkey = self.index[self.cursor]
+        del self.table[currkey]                      # table, index, listbox
+        del self.index[self.cursor:self.cursor+1]    # like "list[i:i+1] = []"
+        if self.listbox: 
+            self.listbox.delete(self.cursor)         # delete from listbox 
+        if self.cursor &lt; len(self.index):
+            self.display(  )                           # show next record if any 
+        elif self.cursor &gt; 0:
+            self.cursor = self.cursor-1              # show prior if delete end
+            self.display(  )
+        else:                                        # leave box if delete last
+            self.onNew(  ) 
+
+    def onList(self,evnt):
+        if not self.index: return                  # on listbox double-click
+        index = self.listbox.curselection(  )        # fetch selected key text
+        label = self.listbox.get(index)            # or use listbox.get(ACTIVE)
+        self.onFind(label)                         # and call method here
+
+    def onMakeList(self):
+        if self.listbox: return                    # already up?
+        new = Toplevel(  )                           # new resizable window
+        new.title("PyForm - Key Index")            # select keys from a listbox
+        new.iconname("pindex")
+        frm    = frame(new, TOP)
+        scroll = Scrollbar(frm)
+        list   = Listbox(frm, bg='white')
+        scroll.config(command=list.yview, relief=SUNKEN)
+        list.config(yscrollcommand=scroll.set, relief=SUNKEN)
+        scroll.pack(side=RIGHT, fill=BOTH)
+        list.pack(side=LEFT, expand=YES, fill=BOTH)    # pack last, clip first
+        for key in self.index:                         # add to list-box
+            list.insert(END, key)                      # or: sort list first
+        list.config(selectmode=SINGLE, setgrid=1)      # select,resize modes
+        list.bind('&lt;Double-1&gt;', self.onList)           # on double-clicks
+        self.listbox = list
+        if self.index and self.cursor &gt;= 0:            # highlight position
+            self.selectlist(  )
+        new.protocol('WM_DELETE_WINDOW', lambda:0)     # ignore destroy's
+
+    def selectlist(self):                              # listbox tracks cursor
+        if self.listbox:         
+            self.listbox.select_clear(0, self.listbox.size(  ))
+            self.listbox.select_set(self.cursor)
+
+if __name__ == '__main__': 
+    from PP2E.Dbase.testdata import cast        # self-test code
+    for k in cast.keys(  ): print k, cast[k]      # view in-memory dict-of-dicts
+    FormGui(cast).mainloop(  )
+    for k in cast.keys(  ): print k, cast[k]      # show modified table on exit</PRE>
+
+
+<P class="docText">The file's self-test code starts up the PyForm GUI to browse
+the in-memory dictionary of dictionaries called
+<TT>cast</TT> in the <TT>testdata</TT> module
+listed earlier. To start PyForm, you simply make and run the
+<TT>FormGui</TT> class object this file defines, passing in
+the table to be browsed. Here are the messages that show up in
+<TT>stdout</TT> after running this file and editing a few
+entries displayed in the GUI; the dictionary is displayed on GUI
+startup and exit:
+</P>
+
+<PRE>C:\...\PP2E\Dbase\TableBrowser&gt;<B>python formgui.py</B>
+alan {'job': 'comedian', 'name': ('Alan', 'B')}
+sally {'job': 'writer', 'name': ('Sally', 'R')}
+rob {'spouse': 'Laura', 'job': 'writer', 'name': ('Rob', 'P')}
+mel {'job': 'producer', 'name': ('Mel', 'C')}
+milly {'spouse': 'Jerry', 'name': ('Milly', '?'), 'kids': 2}
+buddy {'spouse': 'Pickles', 'job': 'writer', 'name': ('Buddy', 'S')}
+laura {'spouse': 'Rob', 'name': ('Laura', 'P'), 'kids': 1}
+
+alan {'job': 'comedian', 'name': ('Alan', 'B')}
+<B>jerry {'spouse': 'Milly', 'name': 'Jerry', 'kids': 0}</B>
+sally {'job': 'writer', 'name': ('Sally', 'R')}
+rob {'spouse': 'Laura', 'job': 'writer', 'name': ('Rob', 'P')}
+mel {'job': 'producer', 'name': ('Mel', 'C')}
+milly {'spouse': 'Jerry', 'name': ('Milly', '?'), 'kids': 2}
+buddy {'spouse': 'Pickles', 'job': 'writer', 'name': ('Buddy', 'S')}
+<B>laura {'name': ('Laura', 'P'), 'kids': 3, 'spouse': 'bob'}</B></PRE>
+
+<P class="docText">The last line (in bold) represents a change made in the GUI. Since
+this is an in-memory table, changes made in the GUI are not retained
+(dictionaries are not persistent by themselves). To see how to use
+the PyForm GUI on persistent stores like DBM files and shelves, we
+need to move on to the next topic.
+</P>
+
+
+
+<A NAME="python2-CHP-16-SECT-7.2.2"></A>
+<H5 class="docSection3Title">16.7.2.2 PyForm table wrappers</H5>
+
+<P class="docText">The following file defines generic classes that "wrap"
+(interface with) various kinds of tables for use in PyForm.
+It's what makes PyForm useful for a variety of table types.
+</P>
+
+<P class="docText">The prior module was coded to handle GUI chores, and assumes that
+tables expose a dictionary-of-dictionaries interface. Conversely,
+this next module knows nothing about the GUI, but provides the
+translations necessary to browse non-dictionary objects in PyForm. In
+fact, this module doesn't even import Tkinter at all -- it
+strictly deals in object protocol conversions and nothing else.
+Because PyForm's implementation is divided into functionally
+distinct modules like this, it's easier to focus on each
+module's task in isolation.
+</P>
+
+<P class="docText">Here is the hook between the two modules: for special kinds of
+tables, PyForm's <TT>FormGui</TT> is passed an
+instance of the <TT>Table</TT> class coded here. The
+<TT>Table</TT> class intercepts table index fetch and
+assignment operations, and uses an embedded record wrapper class to
+convert records to and from dictionary format as needed.
+</P>
+
+<P class="docText">For example, because DBM files can store only strings,
+<TT>Table</TT> converts real dictionaries to and from their
+printable string representation on table stores and fetches. For
+class instances, <TT>Table</TT> extracts the object's
+<TT>__dict__</TT> attribute dictionary on fetches, and
+copies a dictionary's fields to attributes of a newly generated
+class instance on stores.<sup class="docFootnote"><A class="docLink" HREF="#">[3]</A></sup> The end result is that the GUI thinks the
+table is all dictionaries, even if it is really something very
+different here.
+</P>
+<blockquote><p class="docFootnote"><sup><A NAME="">[3]</A></sup> Subtle thing revisited:
+like the new <TT>pickle</TT> module, PyForm tries to
+generate a new class instance on store operations by simply setting a
+generic instance object's <TT>__class__</TT> pointer
+to the original class; only if this fails does PyForm fall back on
+calling the class with no arguments (in which case the class must
+have defaults for any constructor arguments other than
+"self"). Assignment to <TT>__class__</TT> can
+fail in restricted execution mode. See class
+<TT>InstanceRecord</TT> in the source listing for further
+details.</p></blockquote>
+
+<P class="docText">While you study this module's listing, shown in <A class="docLink" HREF="#python2-CHP-16-EX-10">Example 16-10</A>, notice that there is nothing here about the
+record formats of any particular database. In fact, there was none in
+the GUI-related <TT>formgui</TT> module either. Because
+neither module cares about the structure of fields used for database
+records, both can be used to browse arbitrary
+records<span class="docEmphasis">.</span>
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-16-EX-10"></A>Example 16-10. PP2E\Dbase\formtable.py </H5>
+<PRE>#############################################################################
+# PyForm table wrapper classes and tests
+# Because PyForm assumes a dictionary-of-dictionary interface, this module 
+# converts strings and class instance records to and from dicts.  PyForm 
+# contains the table mapping--Table is not a PyForm subclass.  Note that 
+# some of the wrapper classes may be useful outside PyForm--DmbOfString can
+# wrap a dbm containing arbitrary datatypes.  Run the dbinit scripts to
+# start a new database from scratch, and run the dbview script to browse
+# a database other than the one tested here.  No longer requires classes to 
+# have defaults in constructor args, and auto picks up record class from the 
+# first one fetched if not passed in to class-record wrapper.  Caveat: still
+# assumes that all instances in a table are instances of the same class.
+############################################################################
+
+#############################################################################
+# records within tables
+#############################################################################
+
+class DictionaryRecord:
+    def todict(self, value):
+        return value                   # to dictionary: no need to convert 
+    def fromdict(self, value):
+        return value                   # from dictionary: no need to convert
+
+class StringRecord:
+    def todict(self, value):
+        return eval(value)             # convert string to dictionary (or any)
+    def fromdict(self, value):
+        return str(value)              # convert dictionary (or any) to string
+
+class InstanceRecord:
+    def __init__(self, Class=None):    # need class object to make instances
+        self.Class = Class
+    def todict(self, value):           # convert instance to attr dictionary
+        if not self.Class:             # get class from obj if not yet known
+            self.Class = value.__class__
+        return value.__dict__ 
+    def fromdict(self, value):         # convert attr dictionary to instance
+        try:
+            class Dummy: pass                       # try what new pickle does
+            instance = Dummy(  )                      # fails in restricted mode
+            instance.__class__ = self.Class
+        except:                                     # else call class, no args
+            instance = self.Class(  )                 # init args need defaults
+        for attr in value.keys(  ):
+            setattr(instance, attr, value[attr])    # set instance attributes
+        return instance                             # may run Class.__setattr__
+
+#############################################################################
+# table containing records
+#############################################################################
+
+class Table:
+    def __init__(self, mapping, converter):    # table object, record converter
+        self.table  = mapping                  # wrap arbitrary table mapping
+        self.record = converter                # wrap arbitrary record types
+
+    def storeItems(self, items):               # initialize from dictionary
+        for key in items.keys(  ):               # do __setitem__ to xlate, store 
+            self[key] = items[key]
+
+    def printItems(self):                      # print wrapped mapping
+        for key in self.keys(  ):                # do self.keys to get table keys
+            print key, self[key]               # do __getitem__ to fetch, xlate
+
+    def __getitem__(self, key):                # on tbl[key] index fetch
+        rawval = self.table[key]               # fetch from table mapping 
+        return self.record.todict(rawval)      # translate to dictionary
+
+    def __setitem__(self, key, value):         # on tbl[key]=val index assign
+        rawval = self.record.fromdict(value)   # translate from dictionary
+        self.table[key] = rawval               # store in table mapping
+
+    def __delitem__(self, key):                # delete from table mapping
+        del self.table[key]    
+
+    def keys(self):                            # get table mapping keys index
+        return self.table.keys(  )
+
+    def close(self):
+        if hasattr(self.table, 'close'):       # call table close if has one
+            self.table.close(  )                 # may need for shelves, dbm 
+
+#############################################################################
+# table/record combinations
+#############################################################################
+
+import shelve, anydbm
+
+def ShelveOfInstance(filename, Class=None):
+    return Table(shelve.open(filename), InstanceRecord(Class))
+def ShelveOfDictionary(filename):
+    return Table(shelve.open(filename), DictionaryRecord(  ))
+def ShelveOfString(filename):
+    return Table(shelve.open(filename), StringRecord(  ))
+
+def DbmOfString(filename):
+    return Table(anydbm.open(filename, 'c'), StringRecord(  ))
+
+def DictOfInstance(dict, Class=None):
+    return Table(dict, InstanceRecord(Class))
+def DictOfDictionary(dict):
+    return Table(dict, DictionaryRecord(  ))
+def DictOfString(filename):
+    return Table(dict, StringRecord(  ))
+
+ObjectOfInstance   = DictOfInstance           # other mapping objects
+ObjectOfDictionary = DictOfDictionary         # classes that look like dicts
+ObjectOfString     = DictOfString
+
+#############################################################################
+# test common applications
+#############################################################################
+
+if __name__ == '__main__':
+    from sys import argv
+    from formgui import FormGui                    # get dict-based gui
+    from PP2E.Dbase.testdata import Actor, cast    # get class, dict-of-dicts
+
+    TestType   = 'shelve'                          # shelve, dbm, dict
+    TestInit   = 0                                 # init file on startup?
+    TestFile   = '../data/shelve1'                 # external filename
+    if len(argv) &gt; 1: TestType = argv[1]
+    if len(argv) &gt; 2: TestInit = int(argv[2])
+    if len(argv) &gt; 3: TestFile = argv[3]
+
+    if TestType == 'shelve':                       # python formtbl.py shelve?
+        print 'shelve-of-instance test'
+        table = ShelveOfInstance(TestFile, Actor)  # wrap shelf in Table object
+        if TestInit:
+            table.storeItems(cast)                 # python formtbl.py shelve 1
+        FormGui(table).mainloop(  )
+        table.close(  )
+        ShelveOfInstance(TestFile).printItems(  )    # class picked up on fetch
+
+    elif TestType == 'dbm':                        # python formtbl.py dbm
+        print 'dbm-of-dictstring test'
+        table = DbmOfString(TestFile)              # wrap dbm in Table object   
+        if TestInit:                               
+            table.storeItems(cast)                 # python formtbl.py dbm 1
+        FormGui(table).mainloop(  )
+        table.close(  )
+        DbmOfString(TestFile).printItems(  )         # dump new table contents</PRE>
+
+
+<P class="docText">Besides the <TT>Table</TT> and record-wrapper classes, the
+module defines generator functions (e.g.,
+<TT>ShelveOfInstance</TT>) that create a
+<TT>Table</TT> for all reasonable table and record
+combinations. Not all combinations are valid; DBM files, for example,
+can only contain dictionaries coded as strings, because class
+instances don't easily map to the string value format expected
+by DBM. However, these classes are flexible enough to allow
+additional <TT>Table</TT> configurations to be introduced.
+</P>
+
+<P class="docText">The only thing that is GUI-related about this file at all is its
+self-test code at the end. When run as a script, this module starts a
+PyForm GUI to browse and edit either a shelve of persistent
+<TT>Actor</TT> class instances or a DBM file of
+dictionaries, by passing in the right kind of
+<TT>Table</TT> object. The GUI looks like the one we saw in
+<A class="docLink" HREF="#python2-CHP-16-FIG-1">Figure 16-1</A> earlier; when run without arguments, the
+self-test code lets you browse a shelve of class instances:
+</P>
+
+<PRE>C:\...\PP2E\Dbase\TableBrowser&gt;<B>python formtable.py </B>
+shelve-of-instance test
+<I> ...display of contents on exit...</I></PRE>
+
+<P class="docText">Because PyForm displays a shelve this time, any changes you make are
+retained after the GUI exits. To reinitialize the shelve from the
+cast dictionary in <TT>testdata</TT>, pass a second
+argument of "1" ("0" means don't
+reinitialize the shelve). To override the script's default
+shelve filename, pass a different name as a third argument:
+</P>
+
+<PRE>C:\...\PP2E\Dbase\TableBrowser&gt;<B>python formtable.py shelve 1</B>
+C:\...\PP2E\Dbase\TableBrowser&gt;<B>python formtable.py shelve 0 ../data/shelve1</B></PRE>
+
+<P class="docText">To instead test PyForm on a DBM file of dictionaries mapped to
+strings, pass a <TT>dbm</TT> in the first command-line
+argument; the next two arguments work the same:
+</P>
+
+<PRE>C:\...\PP2E\Dbase\TableBrowser&gt;<B>python formtable.py dbm 1 ..\data\dbm1 </B>
+dbm-of-dictstring test
+<I> ...display of contents on exit...</I></PRE>
+
+<P class="docText">Finally, because these self-tests ultimately process concrete shelve
+and DBM files, you can manually open and inspect their contents using
+normal library calls. Here is what they look like when opened in an
+interactive session:
+</P>
+
+<PRE>C:\...\PP2E\Dbase\data&gt;<B>ls</B>
+dbm1        myfile         shelve1
+
+C:\...\PP2E\Dbase\data&gt;<B>python</B>
+&gt;&gt;&gt; <B>import shelve</B>
+&gt;&gt;&gt; <B>db = shelve.open('shelve1')</B>
+&gt;&gt;&gt; <B>db.keys(  )</B>
+['alan', 'buddy', 'sally', 'rob', 'milly', 'laura', 'mel']
+&gt;&gt;&gt; <B>db['laura']</B>
+&lt;PP2E.Dbase.testdata.Actor instance at 799850&gt;
+
+&gt;&gt;&gt; <B>import anydbm</B>
+&gt;&gt;&gt; <B>db = anydbm.open('dbm1')</B>
+&gt;&gt;&gt; <B>db.keys(  )</B>
+['alan', 'mel', 'buddy', 'sally', 'rob', 'milly', 'laura']
+&gt;&gt;&gt; <B>db['laura']</B>
+"{'name': ('Laura', 'P'), 'kids': 2, 'spouse': 'Rob'}"</PRE>
+
+<P class="docText">The shelve file contains real <TT>Actor</TT> class instance
+objects, and the DBM file holds dictionaries converted to strings.
+Both formats are retained in these files between GUI runs and are
+converted back to dictionaries for later redisplay.<sup class="docFootnote"><A class="docLink" HREF="#">[4]</A></sup>
+</P>
+<blockquote><p class="docFootnote"><sup><A NAME="">[4]</A></sup> Note that DBM files of dictionaries use <TT>str</TT>
+and <TT>eval</TT> to convert to and from strings, but could
+also simply store the pickled representations of record dictionaries
+in DBM files instead using <TT>pickle</TT>. But since this
+is exactly what a <TT>shelve</TT> of dictionaries does, the
+<TT>str/eval</TT> scheme was chosen for illustration
+purposes here instead. Suggested exercise: add a new
+<TT>PickleRecord</TT> record class based upon the
+<TT>pickle</TT> module's <TT>loads</TT> and
+<TT>dumps</TT> functions described earlier in this chapter,
+and compare its performance to <TT>StringRecord</TT>. See
+also the <TT>pickle</TT> file database structure in <A class="docLink" HREF="0596000855_python2-CHP-14.html#python2-CHP-14">Chapter 14</A>; its directory scheme with one flat-file per
+record could be used to implement a "table" here, too,
+with appropriate <TT>Table</TT> subclassing.</p></blockquote>
+
+
+
+<A NAME="python2-CHP-16-SECT-7.2.3"></A>
+<H5 class="docSection3Title">16.7.2.3 PyForm creation and view utility scripts</H5>
+
+<P class="docText">The <TT>formtable</TT> module's self-test code proves
+that it works, but it is limited to canned test case files and
+classes. What about using PyForm for other kinds of databases that
+store more useful kinds of data?
+</P>
+
+<P class="docText">Luckily, both the <TT>formgui</TT> and
+<TT>formtable</TT> modules are written to be
+generic <span class="docEmphasis">--</span> they are independent of a
+particular database's record format. Because of that,
+it's easy to point PyForm to databases of your own; simply
+import and run the <TT>FormGui</TT> object with the
+(possibly wrapped) table you wish to browse.
+</P>
+
+<P class="docText">The required startup calls are not too complex, and you could type
+them at the interactive prompt every time you want to browse a
+database; but it's usually easier to store them in scripts so
+they can be reused. The script in <A class="docLink" HREF="#python2-CHP-16-EX-11">Example 16-11</A>, for
+example, can be run to open PyForm on <span class="docEmphasis">any</span> shelve
+containing records stored in class instance or dictionary format.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-16-EX-11"></A>Example 16-11. PP2E\Dbase\dbview.py </H5>
+<PRE>##################################################################
+# view any existing shelve directly; this is more general than a
+# "formtable.py shelve 1 filename" cmdline--only works for Actor;
+# pass in a filename (and mode) to use this to browse any shelve:
+# formtable auto picks up class from the first instance fetched;
+# run dbinit1 to (re)initialize dbase shelve with a template.
+##################################################################
+
+from sys import argv
+from formtable import *
+from formgui import FormGui
+
+mode = 'class'
+file = '../data/mydbase-' + mode
+if len(argv) &gt; 1: file = argv[1]                  # dbview.py file? mode??
+if len(argv) &gt; 2: mode = argv[2]
+
+if mode == 'dict':
+    table = ShelveOfDictionary(file)              # view dictionaries
+else:
+    table = ShelveOfInstance(file)                # view class objects
+
+FormGui(table).mainloop(  )
+table.close(  )                                     # close needed for some dbm</PRE>
+
+
+<P class="docText">The only catch here is that PyForm doesn't handle completely
+<span class="docEmphasis">empty</span> tables very well; there is no way to add
+new records within the GUI unless a record is already present. That
+is, PyForm has no record layout design tool; its "new"
+button simply clears an existing input form.
+</P>
+
+<P class="docText">Because of that, to start a new database from scratch, you need to
+add an initial record that gives PyForm the field layout. Again, this
+requires only a few lines of code that could be typed interactively,
+but why not instead put it in generalized scripts for reuse? The file
+in <A class="docLink" HREF="#python2-CHP-16-EX-12">Example 16-12</A>, shows one way to go about
+initializing a PyForm database with a first empty record.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-16-EX-12"></A>Example 16-12. PP2E\Dbase\dbinit1.py </H5>
+<PRE>######################################################################
+# store a first record in a new shelve to give initial fields list;
+# PyForm GUI requires an existing record before you can more records;
+# delete the '?' key template record after real records are added;
+# change mode, file, template to use this for other kinds of data;
+# if you populate shelves from other data files you don't need this;
+# see dbinit2 for object-based version, and dbview to browse shelves.
+######################################################################
+
+import os
+from sys import argv
+mode = 'class'
+file = '../data/mydbase-' + mode
+if len(argv) &gt; 1: file = argv[1]                  # dbinit1.py file? mode??
+if len(argv) &gt; 2: mode = argv[2]
+try:
+    os.remove(file)                                       # delete if present
+except: pass
+
+if mode == 'dict':
+    template = {'name': None, 'age': None, 'job': None}   # start dict shelve
+else:
+    from PP2E.Dbase.person import Person                  # one arg defaulted
+    template = Person(None, None)                         # start object shelve
+
+import shelve
+dbase = shelve.open(file)                                 # create it now
+dbase['?empty?'] = template 
+dbase.close(  )</PRE>
+
+
+<P class="docText">Now, simply change some of this script's settings or pass in
+command-line arguments to generate a new shelve-based database for
+use in PyForm. You can substitute any fields list or class name in
+this script to maintain a simple object database with PyForm that
+keeps track of real-world information (we'll see two such
+databases in action in a moment). The empty record shows up with key
+"?empty?" when you first browse the database with
+<TT>dbview</TT>; replace it with a first real record using
+the PyForm "store" key, and you are in business. As long
+as you don't change the database's shelve outside of the
+GUI, all its records will have the same fields format, as defined in
+the initialization script.
+</P>
+
+<P class="docText">But notice that the <TT>dbinit1</TT> script goes straight
+to the shelve file to store the first record; that's fine
+today, but might break if PyForm is ever changed to do something more
+custom with its stored data representation. Perhaps a better way to
+populate tables outside the GUI is to use the
+<TT>Table</TT> wrapper classes it employs. The following
+alternative script, for instance, initializes a PyForm database with
+generated <TT>Table</TT> objects, not direct shelve
+operations (see <A class="docLink" HREF="#python2-CHP-16-EX-13">Example 16-13</A>).
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-16-EX-13"></A>Example 16-13. PP2E\Dbase\dbinit2.py </H5>
+<PRE>#################################################################
+# this works too--based on Table objects not manual shelve ops;
+# store a first record in shelve, as required by PyForm GUI.
+#################################################################
+
+from formtable import *
+import sys, os
+
+mode = 'dict'
+file = '../data/mydbase-' + mode
+if len(sys.argv) &gt; 1: file = sys.argv[1]        
+if len(sys.argv) &gt; 2: mode = sys.argv[2]
+try:    
+    os.remove(file)
+except: pass
+
+if mode == 'dict':
+    table    = ShelveOfDictionary(file)
+    template = {'name': None, 'shoesize': None, 'language': 'Python'}
+else:
+    from PP2E.Dbase.person import Person
+    table    = ShelveOfInstance(file, Person)
+    template = Person(None, None).__dict__
+
+table.storeItems({'?empty?': template})
+table.close(  )</PRE>
+
+
+<P class="docText">Let's put these scripts to work to initialize and edit a couple
+of custom databases. <A class="docLink" HREF="#python2-CHP-16-FIG-2">Figure 16-2</A> shows one being
+browsed after initializing the database with a script, and adding a
+handful of real records within the GUI.
+</P>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="python2-CHP-16-FIG-2"></A>Figure 16-2. A shelf of Person objects (dbinit1, dbview)</H5>
+<IMG BORDER="0" WIDTH="367" HEIGHT="189" src="FILES/ppy2_1602.gif" ALT="figs/ppy2_1602.gif"></CENTER>
+
+<P class="docText">The listbox here shows the record I added to the shelve within the
+GUI. I ran the following commands to initialize the database with a
+starter record and open it in PyForm to add records (that is,
+<TT>Person</TT> class instances):
+</P>
+
+<PRE>C:\...\PP2E\Dbase\TableBrowser&gt;<B>python dbinit1.py</B>
+
+C:\...\PP2E\Dbase\TableBrowser&gt;<B>python dbview.py</B></PRE>
+
+<P class="docText">You can tweak the class name or fields dictionary in the
+<TT>dbinit</TT> scripts to initialize records for any sort
+of database you care to maintain with PyForm; use dictionaries if you
+don't want to represent persistent objects with classes (but
+classes let you add other sorts of behavior as methods not visible
+under PyForm). Be sure to use a distinct filename for each database;
+the initial "?empty?" record can be deleted as soon as
+you add a real entry (later, simply select an entry from the listbox
+and press "new" to clear the form for input of a new
+record's values).
+</P>
+
+<P class="docText">The data displayed in the GUI represents a true shelve of persistent
+<TT>Person</TT> class instance objects -- changes and
+additions made in the GUI will be retained for the next time you view
+this shelve with PyForm. If you like to type, though, you can still
+open the shelve directly to check PyForm's work:
+</P>
+
+<PRE>C:\...\PP2E\Dbase\data&gt;<B>ls</B>
+mydbase-class  myfile         shelve1
+
+C:\...\PP2E\Dbase\data&gt;<B>python</B>
+&gt;&gt;&gt; <B>import shelve</B>
+&gt;&gt;&gt; <B>db = shelve.open('mydbase-class')</B>
+&gt;&gt;&gt; <B>db.keys(  )</B>
+['emily', 'jerry', '?empty?', 'bob', 'howard']
+&gt;&gt;&gt; <B>db['bob']</B>
+&lt;PP2E.Dbase.person.Person instance at 798d70&gt;
+&gt;&gt;&gt; <B>db['emily'].job</B>
+'teacher'
+&gt;&gt;&gt; <B>db['bob'].tax</B>
+30000.0</PRE>
+
+<P class="docText">Notice that "bob" is an instance of the
+<TT>Person</TT> class we met earlier in this chapter (see
+the shelve section). Assuming that the <TT>person</TT>
+module is still the version that introduced a
+<TT>__getattr__</TT> method, asking for a shelved
+object's <TT>tax</TT> attribute computes a value on
+the fly, because this really invokes a class
+<span class="docEmphasis">method</span>. Also note that this works even though
+<TT>Person</TT> was never imported here -- Python loads
+the class internally when recreating its shelved instances.
+</P>
+
+<P class="docText">You can just as easily base a PyForm-compatible database on an
+internal dictionary structure, instead of classes. <A class="docLink" HREF="#python2-CHP-16-FIG-3">Figure 16-3</A> shows one being browsed, after being
+initialized with a script and populated with the GUI.
+</P>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="python2-CHP-16-FIG-3"></A>Figure 16-3. A shelf of dictionaries (dbinit2, dbview)</H5>
+<IMG BORDER="0" WIDTH="386" HEIGHT="196" src="FILES/ppy2_1603.gif" ALT="figs/ppy2_1603.gif"></CENTER>
+
+<P class="docText">Besides its different internal format, this database has a different
+record structure (its record's field names differ from the last
+example), and it is stored in a shelve file of its own. Here are the
+commands I used to initialize and edit this database:
+</P>
+
+<PRE>C:\...\PP2E\Dbase\TableBrowser&gt;<B>python dbinit2.py ../data/mydbase-dict dict</B>
+
+C:\...\PP2E\Dbase\TableBrowser&gt;<B>python dbview.py ../data/mydbase-dict dict</B></PRE>
+
+<P class="docText">After adding a few records (that is,
+<span class="docEmphasis">dictionaries</span>) to the shelve, you can either view
+them again in PyForm or open the shelve manually to verify
+PyForm's work:
+</P>
+
+<PRE>C:\...\PP2E\Dbase\data&gt;<B>ls</B>
+mydbase-class  mydbase-dict   myfile         shelve1
+
+C:\...\PP2E\Dbase\data&gt;<B>python</B>
+&gt;&gt;&gt; <B>db = shelve.open('mydbase-dict')</B>
+&gt;&gt;&gt; <B>db.keys(  )</B>
+['tom', 'guido', '?empty?', 'larry', 'randal', 'mel']
+&gt;&gt;&gt; <B>db['guido']</B>
+{'shoesize': 42, 'name': 'benevolent dictator', 'language': 'Python'}
+&gt;&gt;&gt; <B>db['mel']['shoesize']</B>
+{'left': 7.5, 'right': 7L}</PRE>
+
+<P class="docText">This time, shelve entries are really dictionaries, not instances of a
+class or converted strings. PyForm doesn't care,
+though -- because all tables are wrapped to conform to
+PyForm's interface, both formats look the same when browsed in
+the GUI.
+</P>
+
+<P class="docText">Notice that the "shoe size" and "language"
+fields in this screen shot really are a dictionary and list. You can
+type any Python expression syntax into this GUI's form fields
+to give values (that's why strings are quoted there). PyForm
+uses the Python backquotes expression to convert value objects for
+display (<TT>`x`</TT> is like <TT>repr(x)</TT>,
+which is like <TT>str(x)</TT>, but quotes are added around
+strings). To convert from a string back to value objects, PyForm uses
+the Python <TT>eval</TT> function to parse and evaluate the
+code typed in fields. The key entry/display field in the main window
+does not add or accept quotes around the key string, because keys
+must still be strings in things like shelves (even though fields can
+be arbitrary types).
+</P>
+
+<P><table border="0" bgcolor="black" cellspacing="0" cellpadding="1" width="90%" align="center"><tr><td>
+<table bgcolor="white" width="100%" border="0" cellspacing="0" cellpadding="6"><tr>
+<td width="60" valign="top"><img src="FILES/tip_yellow.gif" width="50" height="54"></td>
+<td valign="top">
+<P class="docText"><A NAME="IXT-16-338019"></A> <A NAME="IXT-16-338020"></A>As
+we've seen at various points in this book,
+<TT>eval</TT> (and its statement cousin,
+<TT>exec</TT>) is powerful but dangerous -- you never
+know when a user might type something that removes files, hangs the
+system, emails your boss, and so on. If you can't be sure that
+field values won't contain harmful code (whether malicious or
+otherwise), use the <TT>rexec</TT> restricted execution
+mode tools we met in <A class="docLink" HREF="0596000855_python2-CHP-15.html#python2-CHP-15">Chapter 15</A> to evaluate
+strings. Alternatively, you can simply limit the kinds of expressions
+allowed and evaluate them with simpler tools (e.g.,
+<TT>int</TT>, <TT>str</TT>,
+<TT>string.atoi</TT>).
+</P>
+</td>
+</tr></table></td></tr></table></P>
+
+<P class="docText">Although PyForm expects to find a dictionary-of-dictionary interface
+(protocol) in the tables it browses, a surprising number of objects
+fit this mold because dictionaries are so pervasive in Python object
+internals. In fact, PyForm can be used to browse things that have
+nothing to do with the notion of database tables of records at all,
+as long as they can be made to conform to the protocol.
+</P>
+
+<P class="docText">For instance, the Python <TT>sys.modules</TT> table we met
+in <A class="docLink" HREF="0596000855_python2-CHP-2.html#python2-CHP-2">Chapter 2</A> is a built-in dictionary of loaded
+module objects. With an appropriate wrapper class to make modules
+look like dictionaries, there's no reason we can't browse
+the in-memory <TT>sys.modules</TT> with PyForm too, as
+shown in <A class="docLink" HREF="#python2-CHP-16-EX-14">Example 16-14</A>.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-16-EX-14"></A>Example 16-14. PP2E\Dbase\TableBrowser\viewsysmod.py </H5>
+<PRE># view the sys.modules table in FormGui
+
+class modrec:
+    def todict(self, value):
+        return value.__dict__     # not dir(value): need dict
+    def fromdict(self, value):
+        assert 0, 'Module updates not supported'
+
+import sys
+from formgui import FormGui
+from formtable import Table
+FormGui(Table(sys.modules, modrec())).mainloop(  )</PRE>
+
+
+<P class="docText">This script defines a class to pull out a module's
+<TT>__dict__</TT> attribute dictionary
+(<TT>formtable</TT>'s
+<TT>InstanceRecord</TT> won't do, because it also
+looks for a <TT>__class__</TT> ). The rest of it simply
+passes <TT>sys.modules</TT> to PyForm
+(<TT>FormGui</TT>) wrapped in a <TT>Table</TT>
+object; the result appears in <A class="docLink" HREF="#python2-CHP-16-FIG-4">Figure 16-4</A>.
+</P>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="python2-CHP-16-FIG-4"></A>Figure 16-4. FormGui browsing sys.modules (viewsysmod)</H5>
+<IMG BORDER="0" WIDTH="446" HEIGHT="328" src="FILES/ppy2_1604.gif" ALT="figs/ppy2_1604.gif"></CENTER>
+
+<P class="docText">With similar record and table wrappers, all sorts of objects could be
+viewed in PyForm. As usual in Python, all that matters is that they
+provide a compatible interface.
+</P>
+
+
+
+<A NAME="python2-CHP-16-SECT-7.2.4"></A>
+<H5 class="docSection3Title">16.7.2.4 PyForm limitations</H5>
+
+<P class="docText"><A NAME="IXT-16-338021"></A>Although
+the <TT>sys.modules</TT> viewer script works, it also
+highlights a few limitations of PyForm's current design:
+</P>
+
+<DL class="docList">
+<DT><span class="docPubcolor"><span class="docEmphasis">Two levels only</span></span></DT>
+<DD>
+<P class="docList">PyForm is set up to handle a two-dimensional table/record mapping
+structure only. You can't descend further into fields shown in
+the form, large data structures in fields print as long strings, and
+complex objects like nested modules, classes, and functions that
+contain attributes of their own simply show their default print
+representation. We could add object viewers to inspect nested objects
+interactively, but they might be complex to code.
+</P>
+</DD><DT><span class="docPubcolor"><span class="docEmphasis">No big (giant) forms</span></span></DT>
+<DD>
+<P class="docList">PyForm is not equipped to handle a large number of record
+fields -- if you select the <TT>os</TT> module's
+entry in the index listbox in <A class="docLink" HREF="#python2-CHP-16-FIG-4">Figure 16-4</A>,
+you'll get a huge form that is likely too big to even fit on
+your screen (the <TT>os</TT> module has lots and lots of
+attributes; it goes off my screen after about 40). We could fix this
+with a scrollbar, but it's unlikely that records in the
+databases that PyForm was designed to view will have many dozens of
+fields.
+</P>
+</DD><DT><span class="docPubcolor"><span class="docEmphasis">Data attributes only</span></span></DT>
+<DD>
+<P class="docList">PyForm displays record attribute values, but does not support calling
+method functions of objects being browsed, and cannot display
+dynamically computed attributes (e.g., the <TT>tax</TT>
+attribute in <TT>Person</TT> objects).
+</P>
+</DD><DT><span class="docPubcolor"><span class="docEmphasis">One class per table</span></span></DT>
+<DD>
+<P class="docList">PyForm currently assumes all instances in a table are of the same
+class, even though that's not a requirement for shelves in
+general.
+</P>
+</DD>
+</DL>
+
+<P class="docText">In other words, there is room for improvement if you care to
+experiment. There are other coding styles you might wish to explore,
+as well. For instance, PyForm current overloads
+<span class="docEmphasis">table</span> index fetch and assignment, and the GUI
+uses dictionaries to represent records internally. It would be almost
+as easy to overload <span class="docEmphasis">record</span> field index fetch and
+assignment instead, and add a <TT>Table</TT> method for
+creating a new empty record. In this scheme, records held in PyForm
+would be whatever object the table stores (not dictionaries), and
+each field fetch or assignment in PyForm would be routed back to
+record wrapper classes. The downside of this approach is that PyForm
+could not browse any object unless it is wrapped in a
+<TT>Table</TT>. Raw dictionaries would not work, because
+they have no method for making new empties. Moreover, DBM files that
+map whole records to strings might need extra logic to handle
+field-at-a-time requests.
+</P>
+
+<P class="docText">On the other hand, extensions in this domain are somewhat open-ended,
+so we'll leave them as suggested exercises. PyForm was never
+meant to be a general Python object viewer. But as a simple GUI
+interface to tables of persistent objects, it meets its design goals
+as planned. Python's shelves and classes make such systems both
+easy to code and powerful to use. Complex data can be stored and
+fetched in a single step, and augmented with methods that provide
+dynamic record behavior. As an added bonus, by programming such
+programs in Python and Tkinter, they are automatically portable among
+all major GUI platforms. When you mix Python persistence and GUIs,
+you get a lot of features "for free."<A NAME="IXTR3-455"></A> <A NAME="IXTR3-456"></A> <A NAME="IXTR3-457"></A> <A NAME="IXTR3-458"></A> <A NAME="IXTR3-459"></A> <A NAME="IXTR3-460"></A>
+</P>
+
+
+
+
+<ul></ul>
+</td>
+</tr>
+</table>
+<td></td>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+          <a href="0596000855_python2-CHP-16-SECT-6.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+          <a href="0596000855_python2-CHP-17.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+</body></html>

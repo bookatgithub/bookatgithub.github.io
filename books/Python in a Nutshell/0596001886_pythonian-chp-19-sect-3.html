@@ -1,0 +1,1032 @@
+<html><head>
+<META http-equiv="Content-Type" content="text/html">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="19.3 Event-Driven Socket Programs"-->
+<link rel="STYLESHEET" type="text/css" href="FILES/style.css">
+<link rel="STYLESHEET" type="text/css" href="FILES/docsafari.css">
+<style type="text/css">	.tt1    {font-size: 10pt;}</style>
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<td class="tt1"><a href="NFO/lib.html">[ Team LiB ]</a></td><td valign="top" class="tt1" align="right">
+	<a href="0596001886_pythonian-chp-19-sect-2.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+	<a href="0596001886_pythonian-chp-20.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr>
+<td valign="top"><A NAME="pythonian-CHP-19-SECT-3"></A>
+<H3 class="docSection1Title">19.3 Event-Driven Socket Programs</H3>
+
+<P class="docText"><A NAME="pythonian-CHP-19-ITERM-8460"></A> <A NAME="pythonian-CHP-19-ITERM-8461"></A>Socket programs, particularly
+servers, must often be ready to perform many tasks at once. <A class="docLink" HREF="0596001886_pythonian-chp-19-sect-1.html#pythonian-CHP-19-EX-1">Example 19-1</A> accepts a connection request, then serves a
+single client until that client has finished—other connection
+requests must wait. This is not acceptable for servers in production
+use. Clients cannot wait too long: the server must be able to service
+multiple clients at once.<A NAME="pythonian-CHP-19-ITERM-8462"></A></P>
+
+<P class="docText">One approach that lets your program perform several tasks at once is
+threading, covered in <A class="docLink" HREF="0596001886_pythonian-chp-14.html#pythonian-CHP-14">Chapter 14</A>. Module
+<TT>SocketServer</TT> optionally supports threading, as
+covered earlier in this chapter. An alternative to threading that can
+offer better performance and scalability is
+<I>event-driven</I> (also known as
+<I>asynchronous</I>) programming.</P>
+
+<P class="docText">An event-driven program sits in an event loop, where it waits for
+events. In networking, typical events are "a client
+requests connection," "data arrived
+on a socket," and "a socket is
+available for writing." The program responds to each
+event by executing a small slice of work to service that event, then
+goes back to the event loop to wait for the next event. The Python
+library supports event-driven network programming with low-level
+<TT>select</TT> module and higher-level
+<TT>asyncore</TT> and <TT>asynchat</TT> modules.
+Even more complete support for event-driven programming is in the
+Twisted package (available at <A class="docLink" target="_blank" HREF="http://www.twistedmatrix.com/default.htm">http://www.twistedmatrix.com</A>), particularly
+in subpackage
+<TT>twisted.internet</TT>.<A NAME="pythonian-CHP-19-ITERM-8463"></A></P>
+
+<A NAME="pythonian-CHP-19-SECT-3.1"></A>
+<H4 class="docSection2Title">19.3.1 The select Module</H4>
+
+<P class="docText"><A NAME="pythonian-CHP-19-ITERM-8464"></A>
+<A NAME="pythonian-CHP-19-ITERM-8465"></A>The <TT>select</TT> module
+exposes a cross-platform low-level function that lets you implement
+high-performance asynchronous network servers and clients. Module
+<TT>select</TT> offers additional platform-dependent
+functionality on Unix-like platforms, but I cover only cross-platform
+functionality in this book.</P>
+
+<A NAME="ch19-58-fm2xml"></A><A NAME="pythonian-CHP-19-ITERM-8466"></A><A NAME="pythonian-CHP-19-ITERM-8467"></A><table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left"><b><i>select</i></b></td>
+<td align="right"></td>
+</tr>
+</table>
+<hr width="515" size="3" noshade="true" align="left" color="black">
+<table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left">
+<pre>select(<TT><I>inputs</I></TT>,<TT><I>outputs</I></TT>,<TT><I>excepts</I></TT>,<TT><I>timeout</I></TT>=None)</pre>
+</td>
+<td align="right"></td>
+</tr>
+</table>
+<P class="docText"><TT><I>inputs</I></TT>,
+<TT><I>outputs</I></TT>, and
+<TT><I>excepts</I></TT> are lists of socket objects
+waiting for input events, output events, and exceptional conditions,
+respectively. <TT><I>timeout</I></TT> is a float, the
+maximum time to wait in seconds. When
+<TT><I>timeout</I></TT> is <TT>None</TT>, there
+is no maximum wait: <TT>select</TT> waits until one or more
+objects receive events. When <TT><I>timeout</I></TT> is
+<TT>0</TT>, <TT>select</TT> returns at once,
+without waiting.</P>
+<P class="docText"><TT>select</TT> returns a tuple with three items
+<TT>(</TT><TT><I>i</I></TT>,<TT><I>o</I></TT>,<TT><I>e</I></TT><TT>)</TT>.
+<TT><I>i</I></TT> is a list of zero or more of the items
+of <TT><I>inputs</I></TT>, those that received input
+events. <TT><I>o</I></TT> is a list of zero or more of the
+items of <TT><I>outputs</I></TT>, those that received
+output events. <TT><I>e</I></TT> is a list of zero or more
+of the items of <TT><I>excepts</I></TT>, those that
+received exceptional conditions (i.e., out-of-band data). Any or all
+of <TT><I>i</I></TT>, <TT><I>o</I></TT>, and
+<TT><I>e</I></TT> can be empty, but at least one of them
+is non-empty if <TT><I>timeout</I></TT> is
+<TT>None</TT>.</P>
+<P class="docText">In addition to sockets, you can have in lists
+<TT><I>inputs</I></TT>,
+<TT><I>outputs</I></TT>, and
+<TT><I>excepts</I></TT> other objects that supply a method
+<TT>fileno</TT>, callable without arguments, returning a
+socket's file descriptor. For example, the server
+classes of module <TT>SocketServer</TT>, covered earlier in
+this chapter, follow this protocol. Therefore, you can have instances
+of those classes in the lists. On Unix-like platforms,
+<TT>select.select</TT> has wider applicability, since it
+can also accept file descriptors that do not refer to sockets. On
+Windows, however, <TT>select.select</TT> can accept only
+file descriptors that do refer to sockets.</P>
+
+<P class="docText"><A class="docLink" HREF="#pythonian-CHP-19-EX-6">Example 19-6</A> uses module <TT>select</TT> to
+reimplement the server of <A class="docLink" HREF="0596001886_pythonian-chp-19-sect-1.html#pythonian-CHP-19-EX-1">Example 19-1</A> with the added
+ability to serve any number of clients simultaneously.</P>
+
+
+<H5 class="docExampleTitle"><A NAME="pythonian-CHP-19-EX-6"></A>Example 19-6. Asynchronous TCP echo server using select</H5>
+<PRE>import socket
+import select
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock.bind(('', 8881))
+sock.listen(5)
+
+# lists of sockets to watch for input and output events
+ins = [sock]
+ous = []
+# mapping socket -&gt; data to send on that socket when feasible
+data = {}
+# mapping socket -&gt; (host, port) on which the client is running
+adrs = {}
+
+try:
+    while True:
+        i, o, e = select.select(ins, ous, [])  # no excepts nor timeout
+        for x in i:
+            if x is sock:
+                # input event on sock means client trying to connect
+                newSocket, address = sock.accept(  )
+                print "Connected from", address
+                ins.append(newSocket)
+                adrs[newSocket] = address
+            else:
+                # other input events mean data arrived, or disconnections
+                newdata = x.recv(8192)
+                if newdata:
+                    # data arrived, prepare and queue the response to it
+                    print "%d bytes from %s" % (len(newdata), adrs[x])
+                    data[x] = data.get(x, '') + newdata
+                    if x not in ous: ous.append(x)
+                else:
+                    # a disconnect, give a message and clean up
+                    print "disconnected from", adrs[x]
+                    del adrs[x]
+                    try: ous.remove(x)
+                    except ValueError: pass
+                    x.close(  )
+        for x in o:
+            # output events always mean we can send some data
+            tosend = data.get(x)
+            if tosend:
+                nsent = x.send(tosend)
+                print "%d bytes to %s" % (nsent, adrs[x])
+                # remember data still to be sent, if any
+                tosend = tosend[nsent:]
+            if tosend: 
+                print "%d bytes remain for %s" % (len(tosend), adrs[x])
+                data[x] = tosend
+            else:
+                try: del data[x]
+                except KeyError: pass
+                ous.remove(x)
+                print "No data currently remain for", adrs[x]
+finally:
+    sock.close(  )</PRE>
+
+
+<P class="docText">Programming at such a low level incurs substantial complications, as
+shown by the complexity of <A class="docLink" HREF="#pythonian-CHP-19-EX-6">Example 19-6</A> and its data
+structures. Run the server of <A class="docLink" HREF="#pythonian-CHP-19-EX-6">Example 19-6</A> on a
+terminal window and try a few runs of <A class="docLink" HREF="0596001886_pythonian-chp-19-sect-1.html#pythonian-CHP-19-EX-2">Example 19-2</A>
+while the server is running. You should also try <I>telnet
+localhost 8881 </I>on other terminal windows (or other
+platform-dependent Telnet-like programs) to verify the behavior of
+longer-term connections.<A NAME="pythonian-CHP-19-ITERM-8468"></A> <A NAME="pythonian-CHP-19-ITERM-8469"></A></P>
+
+
+<A NAME="pythonian-CHP-19-SECT-3.2"></A>
+<H4 class="docSection2Title">19.3.2 The asyncore and asynchat Modules</H4>
+
+<P class="docText">The <TT>asyncore</TT> and <TT>asynchat</TT>
+modules help you implement high-performance asynchronous network
+servers and clients at a higher, more productive level than module
+<TT>select</TT> affords.</P>
+
+<A NAME="pythonian-CHP-19-SECT-3.2.1"></A>
+<H5 class="docSection3Title">19.3.2.1 The asyncore module</H5>
+
+<P class="docText"><A NAME="pythonian-CHP-19-ITERM-8470"></A>
+<A NAME="pythonian-CHP-19-ITERM-8471"></A>
+<A NAME="pythonian-CHP-19-ITERM-8472"></A> <A NAME="pythonian-CHP-19-ITERM-8473"></A>
+<A NAME="pythonian-CHP-19-ITERM-8474"></A> <A NAME="pythonian-CHP-19-ITERM-8475"></A>Module <TT>asyncore</TT>
+supplies one function.</P>
+
+<A NAME="ch19-61-fm2xml"></A><table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left"><b><i>loop</i></b></td>
+<td align="right"></td>
+</tr>
+</table>
+<hr width="515" size="3" noshade="true" align="left" color="black">
+<table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left">
+<pre>loop(  )</pre>
+</td>
+<td align="right"></td>
+</tr>
+</table>
+<P class="docText">Implements the asynchronous event loop, dispatching all network
+events to previously instantiated dispatcher objects.
+<TT>loop</TT> terminates when all dispatcher objects (i.e.,
+all communication channels) are closed.</P>
+
+<P class="docText"><A NAME="pythonian-CHP-19-ITERM-8476"></A> <A NAME="pythonian-CHP-19-ITERM-8477"></A>Module <TT>asyncore</TT> also
+supplies class <TT>dispatcher</TT>, which supplies all
+methods of socket objects, plus specific methods for event-driven
+programming, with names starting with '<TT>handle_</TT>'.
+Your class <TT><I>X</I></TT> subclasses
+<TT>dispatcher</TT> and overrides the
+<TT>handle_</TT> methods for all events you need to handle.
+To initialize an instance <TT><I>d</I></TT> of
+<TT>dispatcher</TT>, you can pass an argument
+<TT><I>s</I></TT>, an already connected socket object.
+Otherwise, you must call:</P>
+
+<PRE><TT><I>d</I></TT>.create_socket(socket.AF_INET,socket.SOCK_STREAM)</PRE>
+
+<P class="docText">and then call on <TT><I>d</I></TT> either
+<TT>connect</TT>, to connect to a server, or
+<TT>bind</TT> and <TT>listen</TT>, to have
+<TT><I>d</I></TT> itself be a server. The most frequently
+used methods of an instance <TT><I>d</I></TT> of a
+subclass <TT><I>X</I></TT> of
+<TT>dispatcher</TT> are the following.</P>
+
+<A NAME="ch19-62-fm2xml"></A><table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left"><b><i>create_socket</i></b></td>
+<td align="right"></td>
+</tr>
+</table>
+<hr width="515" size="3" noshade="true" align="left" color="black">
+<table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left">
+<pre><TT><I>d</I></TT>.create_socket(<TT><I>family</I></TT>,<TT><I>type</I></TT>)</pre>
+</td>
+<td align="right"></td>
+</tr>
+</table>
+<P class="docText">Creates <TT><I>d</I></TT>'s socket with
+the given family and type. <TT><I>family</I></TT> is
+generally <TT>socket.AF_INET</TT>.
+<TT><I>type</I></TT> is generally
+<TT>socket.SOCK_STREAM</TT>, since class
+<TT>dispatcher</TT> normally uses a TCP (i.e.,
+connection-based) socket.</P>
+
+<A NAME="ch19-63-fm2xml"></A><A NAME="pythonian-CHP-19-ITERM-8478"></A><A NAME="pythonian-CHP-19-ITERM-8479"></A><table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left"><b><i>handle_accept</i></b></td>
+<td align="right"></td>
+</tr>
+</table>
+<hr width="515" size="3" noshade="true" align="left" color="black">
+<table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left">
+<pre><TT><I>d</I></TT>.handle_accept(  )</pre>
+</td>
+<td align="right"></td>
+</tr>
+</table>
+<P class="docText"><A NAME="pythonian-CHP-19-ITERM-8478"></A> <A NAME="pythonian-CHP-19-ITERM-8479"></A>Called when a new client has connected.
+Your class <TT><I>X</I></TT> normally responds by calling
+<TT>self.accept</TT>, then instantiating another subclass
+<TT><I>Y</I></TT> of <TT>dispatcher</TT> with
+the resulting new socket, in order to handle the new client
+connection.</P>
+<P class="docText">Your implementation of <TT>handle_accept</TT> need not
+return the resulting instance of <TT><I>Y</I></TT>: all
+instances of subclasses of <TT>dispatcher</TT> register
+themselves with the <TT>asyncore</TT> framework in method
+<TT>dispatcher._ _init_ _</TT>, so that
+<TT>asyncore</TT> calls back to their methods as
+appropriate.</P>
+
+<A NAME="ch19-64-fm2xml"></A><A NAME="pythonian-CHP-19-ITERM-8480"></A><A NAME="pythonian-CHP-19-ITERM-8481"></A><table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left"><b><i>handle_close</i></b></td>
+<td align="right"></td>
+</tr>
+</table>
+<hr width="515" size="3" noshade="true" align="left" color="black">
+<table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left">
+<pre><TT><I>d</I></TT>.handle_close(  )</pre>
+</td>
+<td align="right"></td>
+</tr>
+</table>
+<P class="docText">Called when the connection is closing.</P>
+
+<A NAME="ch19-65-fm2xml"></A><A NAME="pythonian-CHP-19-ITERM-8482"></A><A NAME="pythonian-CHP-19-ITERM-8483"></A><table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left"><b><i>handle_connect</i></b></td>
+<td align="right"></td>
+</tr>
+</table>
+<hr width="515" size="3" noshade="true" align="left" color="black">
+<table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left">
+<pre><TT><I>d</I></TT>.handle_connect(  )</pre>
+</td>
+<td align="right"></td>
+</tr>
+</table>
+<P class="docText">Called when the connection is starting.</P>
+
+<A NAME="ch19-66-fm2xml"></A><A NAME="pythonian-CHP-19-ITERM-8484"></A><A NAME="pythonian-CHP-19-ITERM-8485"></A><table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left"><b><i>handle_read</i></b></td>
+<td align="right"></td>
+</tr>
+</table>
+<hr width="515" size="3" noshade="true" align="left" color="black">
+<table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left">
+<pre><TT><I>d</I></TT>.handle_read(  )</pre>
+</td>
+<td align="right"></td>
+</tr>
+</table>
+<P class="docText">Called when the socket has new data that you can read without
+blocking.</P>
+
+<A NAME="ch19-67-fm2xml"></A><A NAME="pythonian-CHP-19-ITERM-8486"></A><A NAME="pythonian-CHP-19-ITERM-8487"></A><table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left"><b><i>handle_write</i></b></td>
+<td align="right"></td>
+</tr>
+</table>
+<hr width="515" size="3" noshade="true" align="left" color="black">
+<table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left">
+<pre><TT><I>d</I></TT>.handle_write(  )</pre>
+</td>
+<td align="right"></td>
+</tr>
+</table>
+<P class="docText">Called when the socket has buffer space, so you can write without
+blocking.</P>
+
+<P class="docText">Module <TT>asyncore</TT> also supplies class
+<TT>dispatcher_with_send</TT>, a subclass of
+<TT>dispatcher</TT> that overrides one method.</P>
+
+<A NAME="ch19-68-fm2xml"></A><table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left"><b><i>send</i></b></td>
+<td align="right"></td>
+</tr>
+</table>
+<hr width="515" size="3" noshade="true" align="left" color="black">
+<table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left">
+<pre><TT><I>d</I></TT>.send(<TT><I>data</I></TT>)</pre>
+</td>
+<td align="right"></td>
+</tr>
+</table>
+<P class="docText">In class <TT>dispatcher_with_send</TT>, method
+<TT><I>d</I></TT><TT>.send</TT> is equivalent to
+a socket object's method <TT>send_all</TT>
+in that it sends all the data. However,
+<TT><I>d</I></TT><TT>.send</TT> does not send
+all the data at once and does not block; rather,
+<TT><I>d</I></TT> sends the data in small packets of 512
+bytes each in response to <TT>handle_write</TT> events
+(callbacks). This strategy ensures good performance in simple cases.</P>
+
+<P class="docText"><A class="docLink" HREF="#pythonian-CHP-19-EX-7">Example 19-7</A> uses module <TT>asyncore</TT>
+to reimplement the server of <A class="docLink" HREF="0596001886_pythonian-chp-19-sect-1.html#pythonian-CHP-19-EX-1">Example 19-1</A>, with the
+added ability to serve any number of clients simultaneously.</P>
+
+
+<H5 class="docExampleTitle"><A NAME="pythonian-CHP-19-EX-7"></A>Example 19-7. Asynchronous TCP echo server using asyncore</H5>
+<PRE>import asyncore
+import socket
+
+class MainServerSocket(asyncore.dispatcher):
+    def __init_  _(self, port):
+        asyncore.dispatcher.__init_  _(self)
+        self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.bind(('',port))
+        self.listen(5)
+    def handle_accept(self):
+        newSocket, address = self.accept(  )
+        print "Connected from", address
+        SecondaryServerSocket(newSocket)
+
+class SecondaryServerSocket(asyncore.dispatcher_with_send):
+    def handle_read(self):
+        receivedData = self.recv(8192)
+        if receivedData: self.send(receivedData)
+        else: self.close(  )
+    def handle_close(self):
+        print "Disconnected from", self.getpeername(  )
+
+MainServerSocket(8881)
+asyncore.loop(  )</PRE>
+
+
+<P class="docText">The complexity of <A class="docLink" HREF="#pythonian-CHP-19-EX-7">Example 19-7</A> is modest, comparable
+with that of <A class="docLink" HREF="0596001886_pythonian-chp-19-sect-1.html#pythonian-CHP-19-EX-1">Example 19-1</A>. The additional
+functionality of serving multiple clients simultaneously, with the
+high performance and scalability of asynchronous event-driven
+programming, comes quite cheaply thanks to
+<TT>asyncore</TT>'s power.</P>
+
+<P class="docText">Note that method <TT>handle_read</TT> of
+<TT>SecondaryServerSocket</TT> can freely use
+<TT>self.send</TT> without precautions because
+<TT>SecondaryServerSocket</TT> subclasses
+<TT>dispatcher_with_send</TT>, which overrides method
+<TT>send</TT> to ensure that it sends all data passed to
+it. We could not do that if we had instead chosen to subclass
+<TT>asyncore.dispatcher</TT> directly.</P>
+
+
+
+<A NAME="pythonian-CHP-19-SECT-3.2.2"></A>
+<H5 class="docSection3Title">19.3.2.2 The asynchat module</H5>
+
+<P class="docText"><A NAME="pythonian-CHP-19-ITERM-8488"></A>
+<A NAME="pythonian-CHP-19-ITERM-8489"></A>
+<A NAME="pythonian-CHP-19-ITERM-8490"></A>The <TT>asynchat</TT> module
+supplies class <TT>async_chat</TT>, which subclasses
+<TT>asyncore.dispatcher</TT> and adds methods to support
+data buffering and line-oriented protocols. You subclass
+<TT>async_chat</TT> with your class
+<TT><I>X</I></TT> and override some methods. The most
+frequently used additional methods of an instance
+<TT><I>x</I></TT> of a subclass of
+<TT>async_chat</TT> are the following.</P>
+
+<A NAME="ch19-70-fm2xml"></A><A NAME="pythonian-CHP-19-ITERM-8491"></A><A NAME="pythonian-CHP-19-ITERM-8492"></A><table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left"><b><i>collect_incoming_data</i></b></td>
+<td align="right"></td>
+</tr>
+</table>
+<hr width="515" size="3" noshade="true" align="left" color="black">
+<table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left">
+<pre><TT><I>x</I></TT>.collect_incoming_data(<TT><I>data</I></TT>)</pre>
+</td>
+<td align="right"></td>
+</tr>
+</table>
+<P class="docText"><A NAME="pythonian-CHP-19-ITERM-8491"></A> <A NAME="pythonian-CHP-19-ITERM-8492"></A>Called whenever a byte string
+<TT><I>data</I></TT> of data arrives. Normally,
+<TT><I>x</I></TT> adds <TT><I>data</I></TT> to
+some buffer that <TT><I>x</I></TT> keeps, most often a
+list using the list's <TT>append</TT>
+method.</P>
+
+<A NAME="ch19-71-fm2xml"></A><A NAME="pythonian-CHP-19-ITERM-8493"></A><A NAME="pythonian-CHP-19-ITERM-8494"></A><table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left"><b><i>found_terminator</i></b></td>
+<td align="right"></td>
+</tr>
+</table>
+<hr width="515" size="3" noshade="true" align="left" color="black">
+<table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left">
+<pre><TT><I>x</I></TT>.found_terminator(  )</pre>
+</td>
+<td align="right"></td>
+</tr>
+</table>
+<P class="docText">Called whenever the terminator, set by method
+<TT>set_terminator</TT>, is found. Normally,
+<TT><I>x</I></TT> processes the buffer it keeps, then
+clears the buffer.</P>
+
+<A NAME="ch19-72-fm2xml"></A><A NAME="pythonian-CHP-19-ITERM-8495"></A><A NAME="pythonian-CHP-19-ITERM-8496"></A><table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left"><b><i>push</i></b></td>
+<td align="right"></td>
+</tr>
+</table>
+<hr width="515" size="3" noshade="true" align="left" color="black">
+<table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left">
+<pre><TT><I>x</I></TT>.push(<TT><I>data</I></TT>)</pre>
+</td>
+<td align="right"></td>
+</tr>
+</table>
+<P class="docText">Your class <TT><I>X</I></TT> normally
+doesn't override this method. The implementation in
+base class <TT>async_chat</TT> adds string
+<TT><I>data</I></TT> to an output buffer that it sends as
+appropriate. Method <TT>push</TT> is therefore quite
+similar to method <TT>send</TT> of class
+<TT>asyncore.dispatcher_with_send</TT>, but method
+<TT>push</TT> has a more sophisticated implementation to
+ensure good performance in more cases.</P>
+
+<A NAME="ch19-73-fm2xml"></A><A NAME="pythonian-CHP-19-ITERM-8497"></A><A NAME="pythonian-CHP-19-ITERM-8498"></A><table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left"><b><i>set_terminator</i></b></td>
+<td align="right"></td>
+</tr>
+</table>
+<hr width="515" size="3" noshade="true" align="left" color="black">
+<table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left">
+<pre><TT><I>x</I></TT>.set_terminator(<TT><I>terminator</I></TT>)</pre>
+</td>
+<td align="right"></td>
+</tr>
+</table>
+<P class="docText">Your class <TT><I>X</I></TT> normally
+doesn't override this method.
+<TT><I>terminator</I></TT> is normally
+'<TT>\r\n</TT>', the line terminator specified by most
+Internet protocols. <TT><I>terminator</I></TT> can also be
+<TT>None</TT>, to disable calls to
+<TT>found_terminator</TT>.</P>
+
+<P class="docText"><A class="docLink" HREF="#pythonian-CHP-19-EX-8">Example 19-8</A> uses module <TT>asynchat</TT>
+to reimplement the server of <A class="docLink" HREF="#pythonian-CHP-19-EX-7">Example 19-7</A>, with small
+differences due to using class <TT>asynchat.async_chat</TT>
+instead of class <TT>asyncore.dispatcher_with_send</TT>. To
+highlight <TT>async_chat</TT>'s typical
+use, <A class="docLink" HREF="#pythonian-CHP-19-EX-8">Example 19-8</A> responds (by echoing the received
+data back to the client, like all other server examples in this
+chapter) only when it has received a complete line (i.e., one ending
+with <TT>\n</TT>).</P>
+
+
+<H5 class="docExampleTitle"><A NAME="pythonian-CHP-19-EX-8"></A>Example 19-8. Asynchronous TCP echo server using asynchat</H5>
+<PRE>import asyncore, asynchat, socket
+
+class MainServerSocket(asyncore.dispatcher):
+    def __init_  _(self, port):
+        print 'initing MSS'
+        asyncore.dispatcher.__init_  _(self)
+        self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.bind(('',port))
+        self.listen(5)
+    def handle_accept(self):
+        newSocket, address = self.accept(  )
+        print "Connected from", address
+        SecondaryServerSocket(newSocket)
+
+class SecondaryServerSocket(asynchat.async_chat):
+    def __init_  _(self, *args):
+        print 'initing SSS'
+        asynchat.async_chat.__init_  _(self, *args)
+        self.set_terminator('\n')
+        self.data = []
+    def collect_incoming_data(self, data):
+        self.data.append(data)
+    def found_terminator(self):
+        self.push(''.join(self.data))
+        self.data = []
+    def handle_close(self):
+        print "Disconnected from", self.getpeername(  )
+        self.close(  )
+
+MainServerSocket(8881)
+asyncore.loop(  )</PRE>
+
+
+<P class="docText">To try out <A class="docLink" HREF="#pythonian-CHP-19-EX-8">Example 19-8</A>, we cannot use <A class="docLink" HREF="0596001886_pythonian-chp-19-sect-1.html#pythonian-CHP-19-EX-2">Example 19-2</A> as it stands because it does not ensure that
+it sends only entire lines terminated with <TT>\n</TT>. It
+doesn't take much to fix that, however. The
+following client program, for example, is quite suitable for testing
+<A class="docLink" HREF="#pythonian-CHP-19-EX-8">Example 19-8</A>, as well as any of the other server
+examples in this chapter:</P>
+
+<PRE>import socket
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock.connect(('localhost', 8881))
+print "Connected to server"
+data = """A few lines of data
+to test the operation
+of both server and client."""
+for line in data.splitlines(  ):
+    sock.sendall(line+'\n')
+    print "Sent:", line
+    response = sock.recv(8192)
+    print "Received:", response
+sock.close(  )</PRE>
+
+<P class="docText">The only difference in this code with respect to <A class="docLink" HREF="0596001886_pythonian-chp-19-sect-1.html#pythonian-CHP-19-EX-2">Example 19-2</A> is the change to the argument in the call to
+<TT>sock.sendall</TT>, in the first line of the loop body.
+This code simply adds a line terminator '<TT>\n</TT>', to
+ensure it interoperates with <A class="docLink" HREF="#pythonian-CHP-19-EX-8">Example 19-8</A>.</P>
+
+
+
+<A NAME="pythonian-CHP-19-SECT-3.3"></A>
+<H4 class="docSection2Title">19.3.3 The Twisted Framework</H4>
+
+<P class="docText"><A NAME="pythonian-CHP-19-ITERM-8499"></A>
+<A NAME="pythonian-CHP-19-ITERM-8500"></A>The Twisted package (available at
+<A class="docLink" target="_blank" HREF="http://www.twistedmatrix.com/default.htm">http://www.twistedmatrix.com</A>) is
+a freely available framework for network clients and servers. Twisted
+includes powerful, high-level components such as a web server, a user
+authentication system, a mail server, instant messaging, and so on.
+Each is highly scalable and easily customizable, and all are
+integrated to interoperate smoothly. It's a tribute
+to the power of Python and to the ingenuity of
+Twisted's developers that so much can be
+accomplished within the small compass of half a
+megabyte's worth of
+download.<A NAME="pythonian-CHP-19-ITERM-8501"></A></P>
+
+<A NAME="pythonian-CHP-19-SECT-3.3.1"></A>
+<H5 class="docSection3Title">19.3.3.1 The twisted.internet and twisted.protocols packages</H5>
+
+<P class="docText"><A NAME="pythonian-CHP-19-ITERM-8502"></A> <A NAME="pythonian-CHP-19-ITERM-8503"></A> <A NAME="pythonian-CHP-19-ITERM-8504"></A>The <TT>twisted.internet</TT>
+package is the low-level, highly stable part of Twisted that supports
+event-driven clients and servers. <TT>twisted.internet</TT>
+supplies module <TT>protocol</TT>, supporting protocol
+handlers and factories, and object <TT>reactor</TT>,
+embodying the concept of an event loop. Note that to make fully
+productive use of <TT>twisted.internet</TT>, you need a
+good understanding of the design patterns used in distributed
+computing. Douglas Schmidt, of the Center for Distributed Object
+Computing of Washington University, documents such design patterns at
+<A class="docLink" target="_blank" HREF="http://www.cs.wustl.edu/~schmidt/patterns-ace.html">http://www.cs.wustl.edu/~schmidt/patterns-ace.html</A>.
+<A NAME="pythonian-CHP-19-ITERM-8505"></A></P>
+
+<P class="docText"><TT>twisted.protocols</TT><A NAME="pythonian-CHP-19-ITERM-8506"></A> <A NAME="pythonian-CHP-19-ITERM-8507"></A> <A NAME="pythonian-CHP-19-ITERM-8508"></A> <A NAME="pythonian-CHP-19-ITERM-8509"></A> <A NAME="pythonian-CHP-19-ITERM-8510"></A> implements many protocols that use
+<TT>twisted.internet</TT>'s
+infrastructure, including SSH, DNS, FTP, HTTP, IRC, NNTP, POP3, SMTP,
+SocksV4, and Telnet.</P>
+
+
+
+<A NAME="pythonian-CHP-19-SECT-3.3.2"></A>
+<H5 class="docSection3Title">19.3.3.2 Reactors</H5>
+
+<P class="docText"><A NAME="pythonian-CHP-19-ITERM-8511"></A>A reactor object allows you to
+establish protocol factories as listeners (servers) on given TCP/IP
+ports (or other transports, such as SSL), and to connect protocol
+handlers as clients. You can choose different reactor
+implementations. The default reactor uses the
+<TT>select</TT> module covered earlier in this chapter.
+Other specialized reactors integrate with GUI
+toolkits' event loops, or use platform-specific
+techniques such as the Windows event loop or the
+<TT>poll</TT> system call support available in the
+<TT>select</TT> module on some Unix-like systems. The
+default reactor is often sufficient, but the extra flexibility of
+being able to use other implementations can help you to integrate
+GUIs or other platform-specific capabilities, or to achieve even
+higher performance and scalability.</P>
+
+<P class="docText">A reactor object <TT><I>r</I></TT> supplies many methods.
+Client TCP APIs should be finalized by the time you read this book,
+but they're not definitive yet, so I do not cover
+them. The reactor methods most frequently used for programs that
+implement TCP/IP servers with <TT>twisted.internet</TT> are
+the following.</P>
+
+<A NAME="ch19-77-fm2xml"></A><A NAME="pythonian-CHP-19-ITERM-8512"></A><A NAME="pythonian-CHP-19-ITERM-8513"></A><table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left"><b><i>callLater</i></b></td>
+<td align="right"></td>
+</tr>
+</table>
+<hr width="515" size="3" noshade="true" align="left" color="black">
+<table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left">
+<pre><TT><I>r</I></TT>.callLater(<TT><I>delay</I></TT>,<TT><I>callable</I></TT>,*<TT><I>args</I></TT>,**<TT><I>kwds</I></TT>)</pre>
+</td>
+<td align="right"></td>
+</tr>
+</table>
+<P class="docText">Schedules a call to
+<TT><I>callable</I></TT><TT>(*</TT><TT><I>args</I></TT><TT>,**</TT><TT><I>kwds</I></TT><TT>)</TT>
+to happen <TT><I>delay</I></TT> seconds from now.
+<TT><I>delay</I></TT> is a float, so it can also express
+fractions of a second. Returns an ID that you may pass to method
+<TT>cancelCallLater</TT>.</P>
+
+<A NAME="ch19-78-fm2xml"></A><A NAME="pythonian-CHP-19-ITERM-8514"></A><A NAME="pythonian-CHP-19-ITERM-8515"></A><table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left"><b><i>cancelCallLater</i></b></td>
+<td align="right"></td>
+</tr>
+</table>
+<hr width="515" size="3" noshade="true" align="left" color="black">
+<table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left">
+<pre><TT><I>r</I></TT>.cancelCallLater(<TT><I>ID</I></TT>)</pre>
+</td>
+<td align="right"></td>
+</tr>
+</table>
+<P class="docText">Cancels a call scheduled by method <TT>callLater</TT>.
+<TT><I>ID</I></TT> must be the result of a previous call
+to <TT><I>r</I></TT><TT>.callLater</TT>.</P>
+
+<A NAME="ch19-79-fm2xml"></A><A NAME="pythonian-CHP-19-ITERM-8516"></A><A NAME="pythonian-CHP-19-ITERM-8517"></A><table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left"><b><i>listenTCP</i></b></td>
+<td align="right"></td>
+</tr>
+</table>
+<hr width="515" size="3" noshade="true" align="left" color="black">
+<table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left">
+<pre><TT><I>r</I></TT>.listenTCP(<TT><I>port</I></TT>,<TT><I>factory</I></TT>,<TT><I>backlog</I></TT>=5)</pre>
+</td>
+<td align="right"></td>
+</tr>
+</table>
+<P class="docText">Establishes <TT><I>factory</I></TT>, which must be an
+instance of class <TT>Factory</TT> (or any subclass of
+<TT>Factory</TT>), as the protocol handler for a TCP server
+on the given <TT><I>port</I></TT>. No more than
+<TT><I>backlog</I></TT> clients can be kept waiting for
+connection at any given time.</P>
+
+<A NAME="ch19-80-fm2xml"></A><A NAME="pythonian-CHP-19-ITERM-8518"></A><A NAME="pythonian-CHP-19-ITERM-8519"></A><table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left"><b><i>run</i></b></td>
+<td align="right"></td>
+</tr>
+</table>
+<hr width="515" size="3" noshade="true" align="left" color="black">
+<table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left">
+<pre><TT><I>r</I></TT>.run(  )</pre>
+</td>
+<td align="right"></td>
+</tr>
+</table>
+<P class="docText">Runs the event loop until <TT><I>r</I></TT><TT>.stop(
+)</TT> is called.</P>
+
+<A NAME="ch19-81-fm2xml"></A><A NAME="pythonian-CHP-19-ITERM-8520"></A><A NAME="pythonian-CHP-19-ITERM-8521"></A><table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left"><b><i>stop</i></b></td>
+<td align="right"></td>
+</tr>
+</table>
+<hr width="515" size="3" noshade="true" align="left" color="black">
+<table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left">
+<pre><TT><I>r</I></TT>.stop(  )</pre>
+</td>
+<td align="right"></td>
+</tr>
+</table>
+<P class="docText">Stops the event loop started by calling
+<TT><I>r</I></TT><TT>.run( )</TT>.</P>
+
+
+
+<A NAME="pythonian-CHP-19-SECT-3.3.3"></A>
+<H5 class="docSection3Title">19.3.3.3 Transports</H5>
+
+<P class="docText"><A NAME="pythonian-CHP-19-ITERM-8522"></A>A transport object embodies a network
+connection. Each protocol object calls methods on
+<TT>self.transport</TT> to write data to its counterpart
+and to disconnect. A transport object <TT><I>t</I></TT>
+supplies the following methods.</P>
+
+<A NAME="ch19-83-fm2xml"></A><A NAME="pythonian-CHP-19-ITERM-8523"></A><A NAME="pythonian-CHP-19-ITERM-8524"></A><table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left"><b><i>getHost</i></b></td>
+<td align="right"></td>
+</tr>
+</table>
+<hr width="515" size="3" noshade="true" align="left" color="black">
+<table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left">
+<pre><TT><I>t</I></TT>.getHost(  )</pre>
+</td>
+<td align="right"></td>
+</tr>
+</table>
+<P class="docText"><A NAME="pythonian-CHP-19-ITERM-8523"></A> <A NAME="pythonian-CHP-19-ITERM-8524"></A>Returns a tuple identifying this side
+of the connection. The first item indicates the kind of connection,
+while other items depend on the kind of connection. For a TCP
+connection, returns <TT>('INET'</TT>,
+<TT><I>host</I></TT>,
+<TT><I>port</I></TT><TT>)</TT>.</P>
+
+<A NAME="ch19-84-fm2xml"></A><A NAME="pythonian-CHP-19-ITERM-8525"></A><A NAME="pythonian-CHP-19-ITERM-8526"></A><table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left"><b><i>getPeer</i></b></td>
+<td align="right"></td>
+</tr>
+</table>
+<hr width="515" size="3" noshade="true" align="left" color="black">
+<table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left">
+<pre><TT><I>t</I></TT>.getPeer(  )</pre>
+</td>
+<td align="right"></td>
+</tr>
+</table>
+<P class="docText"><A NAME="pythonian-CHP-19-ITERM-8525"></A> <A NAME="pythonian-CHP-19-ITERM-8526"></A>Returns a tuple identifying the other
+side of the connection (easily confused by proxies, masquerading,
+firewalls, and so on), just like
+<TT>getHost</TT>'s result.</P>
+
+<A NAME="ch19-85-fm2xml"></A><A NAME="pythonian-CHP-19-ITERM-8527"></A><A NAME="pythonian-CHP-19-ITERM-8528"></A><table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left"><b><i>loseConnection</i></b></td>
+<td align="right"></td>
+</tr>
+</table>
+<hr width="515" size="3" noshade="true" align="left" color="black">
+<table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left">
+<pre><TT><I>t</I></TT>.loseConnection(  )</pre>
+</td>
+<td align="right"></td>
+</tr>
+</table>
+<P class="docText">Tells <TT><I>t</I></TT> to disconnect as soon as
+<TT><I>t</I></TT> has finished writing all pending data.</P>
+
+<A NAME="ch19-86-fm2xml"></A><A NAME="pythonian-CHP-19-ITERM-8529"></A><A NAME="pythonian-CHP-19-ITERM-8530"></A><table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left"><b><i>write</i></b></td>
+<td align="right"></td>
+</tr>
+</table>
+<hr width="515" size="3" noshade="true" align="left" color="black">
+<table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left">
+<pre><TT><I>t</I></TT>.write(<TT><I>data</I></TT>)</pre>
+</td>
+<td align="right"></td>
+</tr>
+</table>
+<P class="docText">Transmits string <TT><I>data</I></TT> to the counterpart,
+or queues it up for transmission. <TT><I>t</I></TT> tries
+its best to ensure that all data you pass to <TT>write</TT>
+is eventually sent.</P>
+
+
+
+<A NAME="pythonian-CHP-19-SECT-3.3.4"></A>
+<H5 class="docSection3Title">19.3.3.4 Protocol handlers and factories</H5>
+
+<P class="docText"><A NAME="pythonian-CHP-19-ITERM-8531"></A> <A NAME="pythonian-CHP-19-ITERM-8532"></A>The reactor instantiates protocol handlers
+using a factory, and calls methods on protocol handler instances when
+events occur. A protocol handler subclasses class
+<TT>Protocol</TT> and overrides some methods. A protocol
+handler may use its factory, available as
+<TT>self.factory</TT>, as a repository for state that needs
+to be shared among handlers or persist across multiple
+instantiations. A protocol factory may subclass class
+<TT>Factory</TT>, but this subclassing is not always
+necessary since in many cases the stock <TT>Factory</TT>
+supplies all you need. Just set the <TT>protocol</TT>
+attribute of a <TT>Factory</TT> instance
+<TT><I>f</I></TT> to a class object that is an appropriate
+subclass of <TT>Protocol</TT>, then pass
+<TT><I>f</I></TT> to the reactor.</P>
+
+<P class="docText">An instance <TT><I>p</I></TT> of a subclass of
+<TT>Protocol</TT> supplies the following methods.</P>
+
+<A NAME="ch19-88-fm2xml"></A><A NAME="pythonian-CHP-19-ITERM-8533"></A><A NAME="pythonian-CHP-19-ITERM-8534"></A><table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left"><b><i>connectionLost</i></b></td>
+<td align="right"></td>
+</tr>
+</table>
+<hr width="515" size="3" noshade="true" align="left" color="black">
+<table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left">
+<pre><TT><I>p</I></TT>.connectionLost(<TT><I>reason</I></TT>)</pre>
+</td>
+<td align="right"></td>
+</tr>
+</table>
+<P class="docText">Called when the connection to the counterpart has been closed.
+Argument <TT><I>reason</I></TT> is an object explaining
+why the connection has been closed. <TT><I>reason</I></TT>
+is not an instance of a Python exception, but has an attribute
+<TT><I>reason</I></TT><TT>.value</TT> that
+normally is such an instance. You can use
+<TT>str(</TT><TT><I>reason</I></TT><TT>)</TT>
+to get an explanation string, including a brief traceback, or
+<TT>str(</TT><TT><I>reason</I></TT><TT>.value)</TT>
+to get just the explanation string without any traceback.</P>
+
+<A NAME="ch19-89-fm2xml"></A><A NAME="pythonian-CHP-19-ITERM-8535"></A><A NAME="pythonian-CHP-19-ITERM-8536"></A><table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left"><b><i>connectionMade</i></b></td>
+<td align="right"></td>
+</tr>
+</table>
+<hr width="515" size="3" noshade="true" align="left" color="black">
+<table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left">
+<pre><TT><I>p</I></TT>.connectionMade(  )</pre>
+</td>
+<td align="right"></td>
+</tr>
+</table>
+<P class="docText"><A NAME="pythonian-CHP-19-ITERM-8535"></A> <A NAME="pythonian-CHP-19-ITERM-8536"></A>Called when the connection to the
+counterpart has just succeeded.</P>
+
+<A NAME="ch19-90-fm2xml"></A><A NAME="pythonian-CHP-19-ITERM-8537"></A><A NAME="pythonian-CHP-19-ITERM-8538"></A><table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left"><b><i>dataReceived</i></b></td>
+<td align="right"></td>
+</tr>
+</table>
+<hr width="515" size="3" noshade="true" align="left" color="black">
+<table width="515" border="0" cellpadding="5">
+<tr>
+<td align="left">
+<pre><TT><I>p</I></TT>.dataReceived(<TT><I>data</I></TT>)</pre>
+</td>
+<td align="right"></td>
+</tr>
+</table>
+<P class="docText"><A NAME="pythonian-CHP-19-ITERM-8537"></A> <A NAME="pythonian-CHP-19-ITERM-8538"></A>Called when string
+<TT><I>data</I></TT> has just been received from the
+counterpart.</P>
+
+
+
+<A NAME="pythonian-CHP-19-SECT-3.3.5"></A>
+<H5 class="docSection3Title">19.3.3.5 Echo server using twisted</H5>
+
+<P class="docText"><A class="docLink" HREF="#pythonian-CHP-19-EX-9">Example 19-9</A> uses <TT>twisted.internet</TT>
+to implement an echo server with the ability to serve any number of
+clients simultaneously.</P>
+
+
+<H5 class="docExampleTitle"><A NAME="pythonian-CHP-19-EX-9"></A>Example 19-9. Asynchronous TCP echo server using twisted</H5>
+<PRE>import twisted.internet.protocol
+import twisted.internet.reactor
+
+class EchoProtocol(twisted.internet.protocol.Protocol):
+    def connectionMade(self):
+        self.peer = self.transport.getPeer(  )[1:]
+        print "Connected from", self.peer
+    def dataReceived(self, data):
+        self.transport.write(data)
+    def connectionLost(self, reason):
+        print "Disconnected from", self.peer, reason.value
+
+factory = twisted.internet.protocol.Factory(  )
+factory.protocol = EchoProtocol
+
+twisted.internet.reactor.listenTCP(8881, factory)
+twisted.internet.reactor.run(  )</PRE>
+
+
+<P class="docText"><A class="docLink" HREF="#pythonian-CHP-19-EX-9">Example 19-9</A> exhibits scalability at least as good as
+<A class="docLink" HREF="#pythonian-CHP-19-EX-7">Example 19-7</A>, yet it's easily the
+simplest of the echo server examples in this chapter—a good
+indication of Twisted's power and simplicity. Note
+the statement:</P>
+
+<A NAME="pythonian-CHP-19-ITERM-8539"></A><A NAME="pythonian-CHP-19-ITERM-8540"></A><PRE>factory.protocol = EchoProtocol</PRE>
+
+<P class="docText">This binds the class object <TT>EchoProtocol</TT> as the
+attribute <TT>protocol</TT> of object
+<TT>factory</TT>. The right-hand side of the assignment
+must not be <TT>EchoProtocol( )</TT>, with parentheses
+after the class name. Such a right-hand side would call, and
+therefore instantiate, class <TT>EchoProtocol</TT>, and
+therefore the statement would bind to
+<TT>factory.protocol</TT> a protocol instance object rather
+than a protocol class object. Such a mistake would make the server
+fail pretty quickly.<A NAME="pythonian-CHP-19-ITERM-8541"></A> <A NAME="pythonian-CHP-19-ITERM-8542"></A> <A NAME="pythonian-CHP-19-ITERM-8543"></A></P>
+
+
+
+
+<a href="0596001886_"><img src="FILES/pixel.gif" width="1" height="1" border="0"></a><ul></ul>
+</td>
+</tr>
+</table>
+<td></td>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<td class="tt1"><a href="NFO/lib.html">[ Team LiB ]</a></td><td valign="top" class="tt1" align="right">
+          <a href="0596001886_pythonian-chp-19-sect-2.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+          <a href="0596001886_pythonian-chp-20.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+</body></html>

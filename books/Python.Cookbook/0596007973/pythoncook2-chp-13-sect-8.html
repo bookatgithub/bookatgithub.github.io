@@ -1,0 +1,165 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;13.8.&nbsp;Removing Attachments from an Email Message</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-13-sect-7.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-13-sect-9.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-13-SECT-8"></a>
+<h3 class="docSection1Title">Recipe 13.8. Removing Attachments from an Email Message</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Anthony Baxter</span></p>
+
+<a name="pythoncook2-CHP-13-SECT-8.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-13-ITERM-2844"></a> <a name="pythoncook2-CHP-13-ITERM-2845"></a>You're handling email
+in Python and need to remove from email messages any attachments that
+might be dangerous.</P>
+
+
+<a name="pythoncook2-CHP-13-SECT-8.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">Regular expressions can help us identify dangerous content types and
+file extensions, and thus code a function to remove any potentially
+dangerous attachments:</p>
+
+<pre>ReplFormat = """
+This message contained an attachment that was stripped out.
+The filename was: %(filename)s,
+The original type was: %(content_type)s
+(and it had additional parameters of:
+%(params)s)
+"""
+import re
+BAD_CONTENT_RE = re.compile('application/(msword|msexcel)', re.I)
+BAD_FILEEXT_RE = re.compile(r'(\.exe|\.zip|\.pif|\.scr|\.ps)$')
+def sanitise(msg):
+    ''' Strip out all potentially dangerous payloads from a message '''
+    ct = msg.get_content_type( )
+    fn = msg.get_filename( )
+    if BAD_CONTENT_RE.search(ct) or (fn and BAD_FILEEXT_RE.search(fn)):
+        # bad message-part, pull out info for reporting then destroy it
+        # present the parameters to the content-type, list of key, value
+        # pairs, as key=value forms joined by comma-space
+        params = msg.get_params( )[1:]
+        params = ', '.join([ '='.join(p) for p in params ])
+        # put informative message text as new payload
+        replace = ReplFormat % dict(content_type=ct, filename=fn, params=params)
+        msg.set_payload(replace)
+        # now remove parameters and set contents in content-type header
+        for k, v in msg.get_params( )[1:]:
+            msg.del_param(k)
+        msg.set_type('text/plain')
+        # Also remove headers that make no sense without content-type
+        del msg['Content-Transfer-Encoding']
+        del msg['Content-Disposition']
+    else:
+        # Now we check for any sub-parts to the message
+        if msg.is_multipart( ):
+            # Call sanitise recursively on any subparts
+            payload = [ sanitise(x) for x in msg.get_payload( ) ]
+            # Replace the payload with our list of sanitised parts
+            msg.set_payload(payload)
+    # Return the sanitised message
+    return msg
+# Add a simple driver/example to show how to use this function
+if _ _name_ _ == '_ _main_ _':
+    import email, sys
+    m = email.message_from_file(open(sys.argv[1]))
+    print sanitise(m)</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-13-SECT-8.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">This issue has come up a few times on the newsgroup <a class="docLink" target="_blank" href="comp.lang.python">comp.lang.python</a>, so I decided to post
+a cookbook entry to show how easy it is to deal
+with this kind of task. Specifically, this recipe shows how to read
+in an email message, strip out any dangerous or suspicious
+attachments, and replace them with a harmless text message informing
+the user of the alterations that we're performed.</P>
+
+<p class="docText">This kind of task is particularly important when end users are using
+something like Microsoft Outlook, which is targeted by harmful virus
+and worm messages (collectively known as
+<i>malware</I>) on a daily basis.</P>
+
+<p class="docText"><a name="pythoncook2-CHP-13-ITERM-2846"></a>
+<a name="pythoncook2-CHP-13-ITERM-2847"></a>The email parser in
+Python 2.4 has been completely rewritten to be robust first, correct
+second. Prior to that version, the parser was written for correctness
+first. But focusing on correctness was a problem because many
+virus/worm messages and other malware routinely send email messages
+that are broken and nonconformantmalformed to the point that
+the old email parser chokes and dies. The new parser is designed to
+never actually break when reading a message. Instead, it tries its
+best to fix whatever it can fix in the message. (If you have a
+message that causes the parser to crash, please let us, the core
+Python developers, know. It's a bug, and
+we'll fix it. Please include a copy of the message
+that makes the parser crash, or else it's very
+unlikely that we can reproduce your problem!)</p>
+
+<p class="docText">The recipe's code itself is fairly well commented
+and should be easy enough to follow. A mail message consists of one
+or more parts; each of these parts can contain nested parts. We call
+the <i>sanitise</i> function on the top-level
+<tt>Message</tt> object, and it calls itself recursively on
+the subobjects if and as needed.</p>
+
+<p class="docText"><a name="pythoncook2-CHP-13-ITERM-2848"></a>The
+<tt>sanitise</tt> function first checks the
+<tt>Content-Type</tt> of the part, and if
+there's a filename, it also checks that
+filename's extension against a known-to-be-bad list.
+If the message part is bad, we replace the message itself with a
+short text description describing the now-removed part and clean out
+the headers that are relevant. We set this message
+part's <tt>Content-Type</tt> to
+'<tt>text/plain</tt>' and remove other headers related to
+the now-removed message.</P>
+
+<p class="docText">Finally, we check whether the message is a multipart message. If so,
+it means the message has subparts, so we recursively call the
+<i>sanitise</i> function on each of them. We then replace
+the payload with our list of sanitized subparts.</P>
+
+<p class="docText">If you're interested in working further on this
+recipe, the most important extra functionality, which is easy to add
+with a small amount of work, might be to store the attached file in
+some directory (instead of destroying all suspect attachments), and
+give the user a link to that file. Also consider extending the check
+in <i>sanitise</I> that filters dangerous attachments to
+have it verify more than just the content type and file extension;
+other headers may be able to carry known signs of worm or virus
+messages.</p>
+
+
+<a name="pythoncook2-CHP-13-SECT-8.4"></a>
+<H4 class="docSection2Title">See Also</H4>
+
+<p class="docText">Documentation for the standard library modules
+<tt>email</tt> and <tt>re</tt> in the
+<span class="docEmphasis">Library Reference</span> and <span class="docEmphasis">Python in a
+Nutshell</span>.<a name="pythoncook2-CHP-13-ITERM-2849"></a> <a name="pythoncook2-CHP-13-ITERM-2850"></a></p>
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-13-sect-7.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-13-sect-9.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

@@ -1,0 +1,169 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;15.6.&nbsp;Giving an XML-RPC Server a wxPython GUI</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-15-sect-5.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-15-sect-7.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-15-SECT-6"></a>
+<h3 class="docSection1Title" id="409771-824">Recipe 15.6. Giving an XML-RPC Server a wxPython GUI</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Peter Arwanitis, Alex Martelli</span></p>
+
+<a name="pythoncook2-CHP-15-SECT-6.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText">You are writing an XML-RPC server and want to add a GUI to it, or
+you're writing a GUI application that you want to be
+able to interact as an XML-RPC server too.</P>
+
+
+<a name="pythoncook2-CHP-15-SECT-6.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">As long as you use Twisted for the network interaction, and wxPython
+for the GUI, this task is reasonably easy, since these packages can
+cooperate through the <tt>twisted.internet.wxreactor</tt>
+module. You do need to have specific incantations at the start of
+your program, as follows:</p>
+
+<pre># To use wxPython and Twisted together, do the following, in exact order:
+import wx
+from twisted.internet import wxreactor
+wxreactor.install( )
+from twisted.internet import reactor
+# Then, have whatever other imports as may be necessary to your program
+from twisted.web import xmlrpc, server
+class MyFrame(wx.Frame):
+    ''' Main window for this wx application. '''
+    def _ _init_ _(self, parent, ID, title, pos=wx.DefaultPosition,
+                 size=(200, 100), style=wx.DEFAULT_FRAME_STYLE):
+        wx.Frame._ _init_ _(self, parent, ID, title, pos, size, style)
+        wx.EVT_CLOSE(self, self.OnCloseWindow)
+    def OnCloseWindow(self, event):
+        self.Destroy( )
+        reactor.stop( )
+class MyXMLRPCApp(wx.App, xmlrpc.XMLRPC):
+    ''' We're a wx Application _AND_ an XML-RPC server too. '''
+    def OnInit(self):
+        ''' wx-related startup code: builds the GUI. '''
+        self.frame = MyFrame(None, -1, 'Hello')
+        self.frame.Show(True)
+        self.SetTopWindow(self.frame)
+        return True
+    # methods exposed to XML-RPC clients:
+    def xmlrpc_stop(self):
+        """ Closes the wx application. """
+        self.frame.Close( )
+        return 'Shutdown initiated'
+    def xmlrpc_title(self, x):
+        """ Change the wx application's window's caption. """
+        self.frame.SetTitle(x)
+        return 'Title set to %r' % x
+    def xmlrpc_add(self, x, y):
+        """ Provide some computational services to clients. """
+        return x + y
+if _ _name_ _ == '_ _main_ _':
+    # pass False to emit stdout/stderr to shell, not an additional wx window
+    app = MyXMLRPCApp(False)
+    # Make the wx application twisted-aware
+    reactor.registerWxApp(app)
+    # Make a XML-RPC Server listening to port 7080
+    reactor.listenTCP(7080, server.Site(app))
+    # Start both reactor parts (wx MainLoop and XML-RPC server)
+    reactor.run( )</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-15-SECT-6.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText"><a name="pythoncook2-CHP-15-ITERM-2983"></a> <a name="pythoncook2-CHP-15-ITERM-2984"></a>It is
+often useful to give an XML-RPC server a GUI, for example, to display
+the current status to an operator or administrator. Conversely, it is
+often useful to give a GUI application the ability to accept remote
+requests from other programs, and making the application an XML-RPC
+server is an excellent, simple way to accomplish that purpose.</P>
+
+<p class="docText">Either way, if you use Twisted for the networking part,
+you're off to a good start, because Twisted offers
+specialized <tt>reactor</tt> implementations to ease
+cooperation with several GUI toolkits. In particular, this recipe
+shows how a Twisted-based XML-RPC server can sport a wxPython GUI
+thanks to the <tt>twisted.internet.wxreactor</tt> module.</p>
+
+<p class="docText">To try this recipe, save the code from the
+"Solution" as a Python script and
+start it from a shell. If you run some kind of
+"personal firewall"
+that's normally set to impede TCP/IP communication
+between programs running on your machine, ensure
+it's set to let such communication happen on TCP
+port <tt>7080</tt>. Then, from any interactive Python
+interpreter session on the same machine, do:</P>
+
+<pre>&gt;&gt;&gt; import xmlrpclib
+&gt;&gt;&gt; s = xmlrpclib.ServerProxy('http://localhost:7080')
+&gt;&gt;&gt; s.add(23, 42)
+<B>65</b>
+&gt;&gt;&gt; s.title('Changed Title')
+<b>Title set to 'Changed Title'</b></pre><br>
+
+
+<p class="docText">Observe that the title of the <span class="docEmphasis">wx</span>
+application's window has changed. Now, you can close
+the application, either by whatever GUI means you normally use on
+your platform (it is a totally cross-platform application, after
+all), or by calling <tt>s.stop( )</tt> from the same Python
+interpreter interactive session that we just showed. You can also run
+such a client on any other machine, as long as it has open TCP/IP
+connectivity on port <tt>7080</tt> with the machine running
+the server. (In particular, make sure you open port
+<tt>7080</tt> on any firewall that would normally block
+that port, whether the firewall is on either of the machines, or on
+any other network apparatus that may lie between them.)</p>
+
+<p class="docText">Both Twisted and wxPython, while already rich and solid frameworks,
+are still growing and changing, so it may be important to ensure you
+have the right releases installed properly on your machine. This
+recipe should run on any platform that is equipped with Python 2.3 or
+better, wxPython 2.4.2.4 or better, and Twisted 1.3.0 or better. Of
+course, we don't have access to every platform in
+the world, nor to all future releases of these tools, so we tested
+the recipe only under Windows/XP, Mac OS X 10.3.6, and Linux, with
+Python 2.3 and 2.4, wxPython 2.4.2.4, and some
+2.5.<tt><i>x.y</I></tt> releases, and Twisted 1.3.0
+specifically.</p>
+
+<p class="docText">Since the recipe relies only on published, supported aspects of the
+various tools, one can hope that the recipe will also work elsewhere,
+and will work with future releases of the tools. However, if this
+recipe's approach does not prove satisfactory for
+your purposes, you may want to try a different approach based on
+threads, shown at <a class="docLink" target="_blank" href="http://aspn.activestate.com/ASPN/Cookbook/Python/Recipe/286201">http://aspn.activestate.com/ASPN/Cookbook/Python/Recipe/286201</a>.</p>
+
+
+<a name="pythoncook2-CHP-15-SECT-6.4"></a>
+<H4 class="docSection2Title">See Also</h4>
+
+<p class="docText">Twisted's home page is <a class="docLink" target="_blank" href="http://www.twistedmatrix.com">http://www.twistedmatrix.com</a>; documentation
+on Twisted XML-RPC support is at <a class="docLink" target="_blank" href="http://www.twistedmatrix.com/documents/current/howto/xmlrpc">http://www.twistedmatrix.com/documents/current/howto/xmlrpc</a>;
+wxPython's home page is <a class="docLink" target="_blank" href="http://www.wxpython.org">http://www.wxpython.org</a>.</P>
+
+
+
+<ul></UL></TD></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-15-sect-5.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-15-sect-7.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

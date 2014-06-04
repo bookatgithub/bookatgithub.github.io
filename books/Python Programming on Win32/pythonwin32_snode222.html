@@ -1,0 +1,576 @@
+<HTML><HEAD><META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=iso-8859-1">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="D.4 What Apartment Do I Live in?"-->
+<LINK REL="stylesheet" href="FILES/sbolM.css">
+</HEAD>
+<BODY link="#354278" vlink="#000066" alink="#000080" topmargin="0">
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right"><a href="pythonwin32_snode221.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a> <a href="pythonwin32_snode223.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a></td></table>
+<FONT>
+<h3>D.4
+What Apartment Do I Live in?</h3>
+
+
+<p>The obvious question to arise from this is "How do I control
+the apartment for my threads or objects?" There is no simple
+answer.</p>
+
+
+
+<P>Fortunately, the rules for threads are quite simple. Before a thread
+can use COM, it must call one of the
+<TT Class="monofont">CoInitialize()</TT>
+<A Name="idx2265"></a> or
+<TT CLass="monofont">CoInitializeEx()</tt>
+<a name="idx2266"></a> functions and when it's done
+with COM, it must call <tt class="monofont">CoUninitialize()</tt>; these
+functions are exposed to Python by the
+<tT CLASS="monofont">pythoncom</tT>
+<A nAMe="idx2267"></A> module.
+<tT CLAss="monofont">CoInitialize()</tt> predates the COM threading models,
+so it initializes a new single-threaded apartment for the thread.
+<TT CLass="monofont">CoInitializeEx()</tT> takes an additional parameter
+that allows you to specify the threading model; thus, you must use
+this function to have your thread in the free-threading apartment.
+The first single-threaded apartment created (that is, the first
+thread that calls either <TT Class="monofont">CoInitialize()</TT> or
+<TT class="monofont">CoInitializeEx()</tt> with the
+<tt class="monofont">COINIT_APARTMENTTHREADED</tt> flag) is given special
+significance as we discuss later, and is known as the main
+single-threaded apartment.</p>
+
+
+
+<p>To hide some of this complexity, Python calls
+<tt cLASS="monofont">CoInitializeEx()</TT> automatically as soon as the
+<tT ClASs="monofont">pythoncom</Tt> module is imported, and this is
+significant for the following reasons:</P>
+
+
+
+<UL>
+<Li><p>The threading apartment for the first Python thread that imports the
+<tt CLASs="monofont">pythoncom</tt> module is controlled by this automatic
+process. By default, this thread is initialized in a single-threaded
+apartment, but this can be controlled by adding a
+<tT CLAss="monofont">co_initflags</tt> attribute to the
+<TT CLass="monofont">sys</tt> module before importing
+<tt class="monofont">pythoncom</tt> (see the final sample in this appendix).
+If this attribute exists, it's passed unchanged to the
+<tt class="monofont">CoInitializeEx()</TT> function by the PythonCOM
+framework. For example, you could execute the following code to
+ensure the main thread is initialized in the multithreaded apartment:</P>
+
+<PRE cLAsS="monofont">import sys
+sys.coinit_flags = 0 # pythoncom.COINIT_MULTITHREADED = 0
+import pythoncom</PrE>
+</lI>
+</UL>
+
+<Ul>
+<li><p>As the default behavior is to initialize a single-threaded apartment,
+this Python thread may also become the main single-threaded
+apartment, as discussed previously. The implications for the main
+single-threaded apartment are discussed later in this appendix.</P>
+</LI>
+<Li><p>Only this main thread has <tt CLASs="monofont">CoInitializeEx()</tt> called
+automatically.<fONT Size="1"><sup><a href="#FOOTNOTE-A">[A]</a></sup></font>
+ Any
+other threads you create need to call
+<tt CLASS="monofont">pythoncom.CoInitializeEx()</Tt> explicitly before using
+COM and <TT cLAsS="monofont">pythoncom.CoUninitialize()</tT> when complete.</P>
+
+
+<BLockqUOTE><font SIZE="1">
+<p claSS="footnote">
+<SUp><a name="FOOTNOTE-A">[A]</a></sup>
+<tt class="monofont">CoUninitialize()</tt>
+isn't called for the main Python thread automatically, as doing
+so can often cause more problems than it solves. This function can
+still be called manually from the main thread.</p>
+</fONT></BLOcKQuOTe>
+
+
+</Li>
+</UL>
+<P>The rules for which object an apartment lives in are slightly more
+complex. If the COM object in question is implemented in any way
+other than an <Tt claSS="monofont">InProc</TT> DLL (for example, a
+LocalServer or RemoteServer EXE-based object), the question becomes
+moot, as the object is running in a separate process, and therefore
+can not be in the same apartment. For DLL-implemented objects, the
+apartment is determined both by the apartment of the thread creating
+the object and the threading models actually supported by the object.</p>
+
+
+
+<p>When an <tt CLASs="monofont">InProc</tt> object is registered, part of the
+information written to the registry is the threading models supported
+by the object. This can be either <tT CLAss="monofont">Apartment</tt>, to
+indicate the object must live in a single-threaded apartment,
+<tt class="monofont">Free</tt> to indicate the object must live in the
+multithreaded apartment, or <tt class="monofont">Both</tT> if the object
+supports either technique. As discussed in <A href="pythonwin32_cnode91.html">Chapter 12</a>, this is controlled for Python objects via the
+<TT cLAsS="monofont">_reg_threading_</tT> attribute, with the default for
+Python objects being <TT Class="monofont">Both</TT>.</P>
+
+
+
+<P>If the thread creating the object and the object itself have
+compatible threading models, the object is created in the
+thread's apartment. If the object is an old COM object
+(indicated by the lack of threading information in the object's
+registration information) the object may be created in the main
+single-threaded apartment. If a multithreaded apartment needs to
+create a single-threaded object, COM automatically creates a new
+single-threaded apartment for the new object.</p>
+
+
+
+
+<h4>D.4.1
+What Are the Apartment Rules?</h4>
+
+
+<p>
+<A NAMe="idx2268"></a>For all this complicated machinery to
+work, there are a number of rules COM imposes on programs that use
+COM.</p>
+
+
+
+<p>The synchronization of calls between different threads is achieved
+using Windows messages. This means that all threads in a
+single-threaded apartment must run a message loop to allow this
+mechanism to work. If the program is a GUI (such as PythonWin) this
+is no problem, but for most other applications, including Windows
+Services, this may not be an existing requirement. In practice, this
+means if any of your threads that exist in a single-threaded COM
+apartment need to wait on some synchronization object, you may need
+to use either the
+<TT CLass="monofont">win32event.MsgWaitForSingleObject()</tt> or
+<tt class="monofont">win32event.MsgWaitForMultipleObjects()</tt> calls so
+you can still process messages at the appropriate time. If you have
+no other message requirements, calling
+<tt class="monofont">pythoncom.PumpWaitingMessages()</TT> processes all
+messages currently in the thread's queue. This technique is
+demonstrated in the example in the next section.</P>
+
+
+
+<P>The other major rule imposed by the COM threading models is that
+it's illegal to pass COM interface pointers (and therefore the
+Python wrappers) between threads. As you may be passing the pointer
+from the same apartment to a different apartment, you may be avoiding
+or violating the synchronization mechanisms (and other optimizations)
+provided by COM. To pass interface objects between threads, you must
+use the
+<TT cLAsS="monofont">pythoncom.CoMarshalInterThreadInterface-InStream()</Tt>
+and <Tt CLASs="monofont">pythoncom.CoGetInterfaceAndReleaseStream()</tt>
+functions to transfer objects between threads. These functions are
+demonstrated next.</p>
+
+
+
+
+
+
+
+<H4>D.4.2
+Apartments Open for Inspection</H4>
+
+
+<P>It's time to demonstrate some of these concepts. To do this, we
+develop three COM objects, each of which support one of the various
+threading models discussed previously. These COM objects are quite
+simple and expose only two methods:
+<Tt claSS="monofont">GetCreatedThreadId()</TT>
+<a namE="idx2269"></A> to return the thread ID of the thread
+that created the object, and
+<TT class="monofont">GetCurrentThreadId()</tt>
+<a name="idx2270"></a> to return the thread ID of the current
+thread (that is, the thread receiving the call). If you have read
+<a href="pythonwin32_cnode91.html">Chapter 12</a>, there will be nothing new in this
+example. The only points worth mentioning are that we use
+<tt CLASS="monofont">win32api.GetCurrentThreadId()</Tt> to obtain the Win32
+Thread ID, and that we use a Python base class for the raw COM
+functionality, and subclasses for the object-specific registration
+information. The COM objects are implemented in
+<I>ThreadingModelsServer.py</I>
+<a NAmE="idx2271"></a>
+:</P>
+
+
+
+<PRE clasS="monofont"># ThreadingModelsServer.py
+# Python COM objects that demonstrate COM threading models.
+#
+# Exposes 3 Python objects, all of which have identical functionality,
+# but each indicate they support different threading models.
+
+import win32api
+# A Base class for our 2 trivial objects.
+class ThreadDemoObject:
+    _public_methods_ = [ 'GetCurrentThreadId', 'GetCreatedThreadId' ]
+    def __init__(self):
+        self.created_id = win32api.GetCurrentThreadId()
+    def GetCreatedThreadId(self):
+        return self.created_id
+    def GetCurrentThreadId(self):
+        # Simply return an integer with the Win32 thread ID.
+        return win32api.GetCurrentThreadId()
+
+class ThreadApartmentObject(ThreadDemoObject):
+    _reg_threading_ = "Apartment" # Tell COM to synchronize
+    _reg_progid_ = "PythonThreadDemo.Apartment"
+    _reg_clsid_ = "{511BB541-4625-11D3-855B-204C4F4F5020}"
+
+class ThreadFreeObject(ThreadDemoObject):
+    _reg_threading_ = "Free"
+    _reg_progid_ = "PythonThreadDemo.Free"
+    _reg_clsid_ = "{511BB542-4625-11D3-855B-204C4F4F5020}"
+
+class ThreadBothObject(ThreadDemoObject):
+    _reg_threading_ = "Both"
+    _reg_progid_ = "PythonThreadDemo.Both"
+    _reg_clsid_ = "{511BB543-4625-11D3-855B-204C4F4F5020}"
+
+if __name__=='__main__':
+    import win32com.server.register
+    win32com.server.register.UseCommandLine(
+                       ThreadApartmentObject,
+                       ThreadFreeObject,
+                       ThreadBothObject)</PRE>
+
+
+<p>Before moving to the client sample code, these objects must be
+registered in the normal way.</p>
+
+
+
+<p>The code that uses these COM objects is considerably more complex
+because it's here the COM object, and the threads that use it,
+are created. The general intent of the code is to create the
+single-threaded object we defined and then create three threads that
+use this object. The code confirms that so long as you follow the COM
+rules, COM ensures that regardless of the thread actually calling the
+object, the object will see the call on its single thread (i.e., the
+thread that created it.) You then execute the same code but create
+the free-threaded version of the object, and observe the differences.</p>
+
+
+
+<P>Before launching into the code, there are some points to discuss:</P>
+
+
+
+<UL>
+<li><p>The main thread needs to wait for the subthreads to complete, but as
+you will be running single-threaded objects in the apartment, you
+need to process Windows messages. Therefore use the
+<tT CLAss="monofont">win32process.beginthreadex()</tt> function to create
+the thread, so that you can use the thread handles with
+<tt class="monofont">win32event.MsgWaitForMultipleObjects()</tt>.</p>
+</li>
+<li><p>All the threads exist in separate single-threaded apartments; the
+main thread because we haven't overridden the default Python
+initialization by setting <tt CLASS="monofont">sys.coinit_flags</Tt>, and
+each worker thread because each calls
+<TT cLAsS="monofont">pythoncom.CoInitialize()</tT> rather than
+<TT Class="monofont">pythoncom.CoInitializeEx()</TT>. Because all the
+threads are in different apartments, you must use the
+<TT clasS="monofont">CoMarshalInterThreadInterfaceInStream()</TT> and
+<Tt claSS="monofont">CoGetInterfaceAnd-ReleaseStream()</TT> functions to
+transfer the COM object between threads.</p>
+</li>
+<li><p><tt class="monofont">MsgWaitForMultipleObjects()</tt> has a quirk that
+usually prevents effective use of the <tt clasS="monofont">bWaitAll</TT>
+parameter. If set to <TT ClASs="monofont">true</TT>, the function waits
+until all objects have been signaled, and input is available.
+Generally, you need to know when all objects are signaled, or input
+is available. You can avoid this restriction by setting
+<tT cLASS="monofont">bWaitAll</tt> to <tt CLASs="monofont">false</tt>, and each
+time a thread completes remove its handle from the list before
+waiting again.</p>
+</LI>
+<LI><p>The main body of the sample code accepts the name of the COM object
+as a parameter. This lets you run the same code with both the
+single-threaded and free-threaded versions of the COM object.</p>
+</li>
+</UL>
+<P>The code is presented in <I>SingleThreadedApartment.py
+</i>:</p>
+
+
+
+<pre class="monofont"># SingleThreadedApartment.py
+# Demonstrate the use of multiple threads, each in their own
+# single-threaded apartment.
+
+# As we do not set sys.coinit_flags=0
+# before the Pythoncom import, Python
+# initializes the main thread for single threading.
+from pythoncom import \
+     CoInitialize, CoUninitialize, IID_IDispatch,\
+     CoMarshalInterThreadInterfaceInStream, \
+     CoGetInterfaceAndReleaseStream, \
+     PumpWaitingMessages
+
+from win32event import \
+     MsgWaitForMultipleObjects, \
+     QS_ALLINPUT, WAIT_TIMEOUT, WAIT_OBJECT_0
+
+from win32com.client import Dispatch
+from win32process import beginthreadex
+from win32api import GetCurrentThreadId
+
+def Demo( prog_id ):
+    # First create the object
+    object = Dispatch(prog_id)
+    print "Thread", GetCurrentThreadId(), "creating object"
+    created_id = object.GetCreatedThreadId()
+    print "Object reports it was created on thread", created_id
+    # Now create the threads, remembering the handles.
+    handles = []
+    for i in range(3):
+        # As we are not allowed to pass the object directly between
+        # apartments, we need to marshal it.
+        object_stream = CoMarshalInterThreadInterfaceInStream(
+                          IID_IDispatch, object )
+        # Build an argument tuple for the thread.
+        args = (object_stream,)
+        handle, id = beginthreadex(None, 0, WorkerThread, args, 0)
+        handles.append(handle)
+    # Now we have all the threads running, wait for them to terminate.
+    # also remember how many times we are asked to pump messages.
+    num_pumps = 0
+    while handles:
+        # A quirk in MsgWaitForMultipleObjects means we must wait
+# for each event one at a time
+        rc = MsgWaitForMultipleObjects(handles, 0, 5000, QS_ALLINPUT)
+        if rc &gt;= WAIT_OBJECT_0 and rc &lt; WAIT_OBJECT_0+len(handles):
+            # A thread finished - remove its handle.
+            del handles[rc-WAIT_OBJECT_0]
+        elif rc==WAIT_OBJECT_0 + len(handles):
+            # Waiting message
+            num_pumps = num_pumps + 1
+            PumpWaitingMessages()
+        else:
+            print "Nothing seems to be happening",
+            print "but I will keep waiting anyway..."
+    print "Pumped messages", num_pumps, "times"
+    print "Demo of", prog_id, "finished."
+
+def WorkerThread(object_stream):
+    # First step - initialize COM
+    CoInitialize() # Single-threaded.
+    # Unmarshal the IDispatch object.
+    object = CoGetInterfaceAndReleaseStream(
+        object_stream, IID_IDispatch)
+    # The object we get back is a PyIDispatch, rather
+    # than a friendly Dispatch instance, so we convert
+    # to a usable object.
+    object = Dispatch(object)
+    this_id = GetCurrentThreadId()
+    that_id = object.GetCurrentThreadId()
+    message = "Thread is %d, and object is on thread %d" % \
+                                     (this_id, that_id)
+    print message
+    # Be a good citizen and finalize COM, but
+    # first remove our object references.
+    object = None
+    CoUninitialize()
+
+if __name__=='__main__':
+    print "Running with Apartment Threaded object"
+    Demo("PythonThreadDemo.Apartment")
+    print
+    print "Running with Free Threaded object"
+    Demo("PythonThreadDemo.Free")</pre>
+
+
+<p>You should run this code from a command prompt rather than PythonWin
+or IDLE, just to ensure that the threading doesn't interfere
+with these applications. When run, the output from this script should
+be similar to:</p>
+
+
+
+<pre claSS="monofont">Running with Apartment Threaded object
+Thread 355 creating object
+Object reports it was created on thread 355
+Thread is 354, and object is on thread 355
+Thread is 314, and object is on thread 355
+Thread is 306, and object is on thread 355
+Pumped messages 9 times
+Demo of PythonThreadDemo.Apartment finished.
+
+Running with Free Threaded object
+Thread 355 creating object
+Object reports it was created on thread 318
+Thread is 326, and object is on thread 433
+Thread is 399, and object is on thread 433
+Thread is 362, and object is on thread 318
+Pumped messages 0 times
+Demo of PythonThreadDemo.Free finished.</PRE>
+
+
+<P>The output before the blank line represents the single-threaded
+object, so let's examine that first. The main Python thread
+reports itself as thread 355, and the object itself was also created
+on thread 355, as expected. Each of the three threads that started to
+use the object does indeed get a unique thread ID, but regardless of
+the thread making the call, the object always sees the call on thread
+355, the thread that created the object. You can also see that while
+this simple test was running, and the main thread was waiting for the
+threads to terminate, you were called upon nine times to process
+Windows messages.</p>
+
+
+
+<P>The output after the blank line represents the same test code, but
+uses the free-threaded object. As you can see, the same main thread
+is creating the COM object, but this time the object reports it was
+created on thread 318. As this thread is in a single-threaded
+apartment, and the COM object insists on a free-threading apartment,
+COM has spun up a new thread to host the object. As each thread calls
+the object, the object itself isn't restricted to receiving the
+call on a single thread. Because you're in different apartments
+the threads are still different, but the same single-threaded
+restrictions don't apply. Also notice that in this scenario,
+it's not strictly necessary to run a message pump, as there are
+no single-threaded COM objects being hosted on the main thread.</P>
+
+
+
+<p>To help complete the picture, we now present a fully multithreaded
+example. It's almost identical to the one just presented, with
+the following changes:</P>
+
+
+
+<Ul>
+<Li><P>The main thread is forced into the free-threaded apartment by setting
+<TT Class="monofont">sys.coinit_flags</TT> to zero before importing
+<TT clasS="monofont">pythoncom</TT>. Each worker thread is forced by calling
+<Tt claSS="monofont">pythoncom.CoInitializeEx()</TT>.</p>
+</li>
+<li><p>Since all the threads are in the free-threading apartment, you can
+freely pass COM objects between threads and avoid those functions
+with the huge names!</p>
+</li>
+<li><p>Since you don't need to process messages, replace the
+convoluted <tt class="monofont">MsgWaitForMultipleObjects()</tt> call with a
+single <TT CLASs="monofont">WaitForMultiple-Objects()</TT> call. Ideally
+this code would use the Python threading model, but we've kept
+the basic code layout so it's easy to compare the differences.</p>
+</LI>
+</uL>
+<p>The code is presented in <I>FreeThreadedApartment.py
+</I>:</P>
+
+
+
+<Pre clASS="monofont"># FreeThreadedApartment.py
+# Demonstrate the use of multiple threads all in the same
+# multithreading apartment.
+
+# before the Pythoncom import, we specify free-threading.
+import sys
+sys.coinit_flags=0
+
+from pythoncom import \
+     CoInitializeEx, CoUninitialize, \
+     COINIT_MULTITHREADED
+
+from win32event import \
+     WaitForMultipleObjects, \
+     WAIT_ABANDONED
+
+from win32com.client import Dispatch
+from win32process import beginthreadex
+from win32api import GetCurrentThreadId
+
+def Demo( prog_id ):
+    # First create the object
+    object = Dispatch(prog_id)
+    print "Thread", GetCurrentThreadId(), "creating object"
+    created_id = object.GetCreatedThreadId()
+    print "Object reports it was created on thread", created_id
+    # Now create the threads, remembering the handles.
+    handles = []
+    for i in range(3):
+        # Multi-threaded - just pass the objects directly to the thread.
+        args = (object,)
+        handle, id = beginthreadex(None, 0, WorkerThread, args, 0)
+        handles.append(handle)
+    # Now we have all the threads running, wait for them to terminate.
+    # No need for message pump, so we can simply wait for all objects
+    # in one call.
+    rc = WaitForMultipleObjects(handles, 1, 5000)
+    if rc == WAIT_ABANDONED:
+        print "Gave up waiting for the threads to finish!"
+    print "Demo of", prog_id, "finished."
+
+def WorkerThread(object):
+    # First step - initialize COM
+    CoInitializeEx(COINIT_MULTITHREADED)
+    this_id = GetCurrentThreadId()
+    that_id = object.GetCurrentThreadId()
+    message = "Thread is %d, and object is on thread %d" % \
+                                     (this_id, that_id)
+    print message
+    # Be a good citizen and finalize COM, but
+    # first remove our object references.
+    object = None
+    CoUninitialize()
+
+if __name__=='__main__':
+    print "Running Free threaded with Free Threaded object"
+    Demo("PythonThreadDemo.Free")</Pre>
+
+
+<p>When you run this script, the output should be similar to:</p>
+
+
+
+<PRE Class="monofont">Running Free threaded with Free Threaded object
+Thread 329 creating object
+Object reports it was created on thread 329
+Thread is 340, and object is on thread 340
+Thread is 324, and object is on thread 324
+Thread is 444, and object is on thread 444
+Demo of PythonThreadDemo.Free finished.</PRE>
+
+
+<P>This is exactly as expected: each call to the object is completely
+transparent, just like a regular function call, and always occurs on
+the thread that initiated the call. If you wish to get your hands
+even dirtier, you may wish to modify these examples to demonstrate
+every other possible combination of threads, objects, and threading
+apartments!<a name="idx2272"></a></p>
+
+
+
+
+
+
+
+<h4>D.4.3
+More Information on COM Threading</h4>
+
+
+<p>There are a number of technical articles and snippets from books
+available from Microsoft, from MSDN, or online at
+<a target="_blank" href="http://../msdn.microsoft.com/default.htm">http://msdn.microsoft.com/</A>. A good starting
+point for more information is Knowledge Base Article Q150777 (online
+at
+<A TARGeT="_blank" HrEF="http://../support.microsoft.com/support/kb/articles/q150/7/77.asp">http://support.microsoft.com/support/kb/articles/q150/7/77.asp</a>).<A nAME="idx2273"></A></p>
+
+
+</fonT>
+ 
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right"><a href="pythonwin32_snode221.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a> <a href="pythonwin32_snode223.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a></td></table>
+</BODY></HTML>

@@ -1,0 +1,161 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;12.9.&nbsp;Filtering Elements and Attributes Belonging to a Given Namespace</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-12-sect-8.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-12-sect-10.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-12-SECT-9"></a>
+<h3 class="docSection1Title">Recipe 12.9. Filtering Elements and Attributes Belonging to a Given Namespace</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: A.M. Kuchling</span></p>
+
+<a name="pythoncook2-CHP-12-SECT-9.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-12-ITERM-2789"></a>While parsing an XML document with
+SAX, you need to filter out all of the elements and attributes that
+belong to a particular namespace.</P>
+
+
+<a name="pythoncook2-CHP-12-SECT-9.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">The SAX filter concept is just what we need here:</p>
+
+<pre>from xml import sax
+from xml.sax import handler, saxutils, xmlreader
+# the namespace we want to remove in our filter
+RDF_NS = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#'
+class RDFFilter(saxutils.XMLFilterBase):
+    def _ _init_ _ (self, *args):
+        saxutils.XMLFilterBase._ _init_ _(self, *args)
+        # initially, we're not in RDF, and just one stack level is needed
+        self.in_rdf_stack = [False]
+    def startElementNS(self, (uri, localname), qname, attrs):
+        if uri == RDF_NS or self.in_rdf_stack[-1] == True:
+            # skip elements with namespace, if that namespace is RDF or
+            # the element is nested in an RDF one -- and grow the stack
+            self.in_rdf_stack.append(True)
+            return
+        # Make a dict of attributes that DON'T belong to the RDF namespace
+        keep_attrs = {  }
+        for key, value in attrs.items( ):
+            uri, localname = key
+            if uri != RDF_NS:
+                keep_attrs[key] = value
+        # prepare the cleaned-up bunch of non-RDF-namespace attributes
+        attrs = xmlreader.AttributesNSImpl(keep_attrs, attrs.getQNames( ))
+        # grow the stack by replicating the latest entry
+        self.in_rdf_stack.append(self.in_rdf_stack[-1])
+        # finally delegate the rest of the operation to our base class
+        saxutils.XMLFilterBase.startElementNS(self,
+                 (uri, localname), qname, attrs)
+    def characters(self, content):
+        # skip characters that are inside an RDF-namespaced tag being skipped
+        if self.in_rdf_stack[-1]:
+            return
+        # delegate the rest of the operation to our base class
+        saxutils.XMLFilterBase.characters(self, content)
+    def endElementNS (self, (uri, localname), qname):
+        # pop the stack -- nothing else to be done, if we were skipping
+        if self.in_rdf_stack.pop( ) == True:
+            return
+        # delegate the rest of the operation to our base class
+        saxutils.XMLFilterBase.endElementNS(self, (uri, localname), qname)
+def filter_rdf(input, output):
+    """ filter_rdf(input=some_input_filename, output=some_output_filename)
+        Parses the XML input from the input stream, filtering out all
+        elements and attributes that are in the RDF namespace.
+    """
+    output_gen = saxutils.XMLGenerator(output)
+    parser = sax.make_parser( )
+    filter = RDFFilter(parser)
+    filter.setFeature(handler.feature_namespaces, True)
+    filter.setContentHandler(output_gen)
+    filter.setErrorHandler(handler.ErrorHandler( ))
+    filter.parse(input)
+if _ _name_ _ == '_ _main_ _':
+    import StringIO, sys
+    TEST_RDF = '''&lt;?xml version="1.0"?&gt;
+&lt;metadata xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:dc="http://purl.org/dc/elements/1.1/"&gt;
+   &lt;title&gt;  This is non-RDF content &lt;/title&gt;
+   &lt;rdf:RDF&gt;
+     &lt;rdf:Description rdf:about="%s"&gt;
+       &lt;dc:Creator&gt;%s&lt;/dc:Creator&gt;
+     &lt;/rdf:Description&gt;
+   &lt;/rdf:RDF&gt;
+  &lt;element /&gt;
+&lt;/metadata&gt;
+'''
+    input = StringIO.StringIO(TEST_RDF)
+    filter_rdf(input, sys.stdout)</pre><BR>
+
+
+<p class="docText">This module, when run as a main script, emits something like:</p>
+
+<pre>&lt;?xml version="1.0" encoding="iso-8859-1"?&gt;
+&lt;metadata xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+          xmlns:dc="http://purl.org/dc/elements/1.1/"&gt;
+   &lt;title&gt;  This is non-RDF content &lt;/title&gt;
+  &lt;element&gt;&lt;/element&gt;
+&lt;/metadata&gt;</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-12-SECT-9.3"></a>
+<H4 class="docSection2Title">Discussion</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-12-ITERM-2790"></a>My
+motivation for originally writing this recipe came from processing
+files of metadata, containing RDF mixed with other elements. I wanted
+to generate a version of the metadata with the RDF filtered out.</P>
+
+<p class="docText"><a name="pythoncook2-CHP-12-ITERM-2791"></a>The
+<I>filter_rdf</i> function does the job, reading XML input
+from the input stream and writing it to the output stream. The
+standard <tt>XMLGenerator</tt> class in
+<tt>xml.sax.saxutils</tt> is used to produce the output.
+Function <i>filter_rdf</i> internally uses a filtering
+class called <i>RDFFilter</I>, also shown in this
+recipe's Solution, pushing that filter on top of the
+XML parser to suppress elements and attributes belonging to the
+RDF_NS namespace.</p>
+
+<p class="docText">Non-RDF elements contained within an RDF element are also removed. To
+modify this behavior, change the first line of the
+<tt>startElementNS</tt> method to use just <tt>if uri
+= = RDF_NS</tt> as the guard.</p>
+
+<p class="docText">This code doesn't delete the
+<tt>xmlns</tt> declaration for the RDF namespace;
+I'm willing to live with a little unnecessary but
+harmless cruft in the output rather than go to huge trouble to remove
+it.</P>
+
+
+<a name="pythoncook2-CHP-12-SECT-9.4"></a>
+<h4 class="docSection2Title">See Also</H4>
+
+<p class="docText"><span class="docEmphasis">Library Reference</span> and <span class="docEmphasis">Python in a
+Nutshell</span> document the built-in XML support in the Python
+Standard Library.<a name="pythoncook2-CHP-12-ITERM-2792"></a></p>
+
+
+
+<UL></UL></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-12-sect-8.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-12-sect-10.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

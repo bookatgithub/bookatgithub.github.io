@@ -1,0 +1,342 @@
+<html><head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="3.2 Some Common Tasks"-->
+<link rel="STYLESHEET" type="text/css" href="FILES/style.css">
+<link rel="STYLESHEET" type="text/css" href="FILES/docsafari.css">
+<style type="text/css">	.tt1    {font-size: 10pt;}</style>
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<td class="tt1"><a href="NFO/lib.html">[ Team LiB ]</a></td><td valign="top" class="tt1" align="right">
+	<a href="0321112547_ch03lev1sec1.html"><img src="FILES/btn_prev.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+	<a href="0321112547_ch03lev1sec3.html"><img src="FILES/btn_next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="ch03lev1sec2"></A><H3 class="docSection1Title" id="162609-951">3.2 Some Common Tasks</H3>
+<A NAME="ch03lev2sec5"></A><H4 class="docSection2Title">3.2.1 Problem: Making a text block flush left</H4>
+<P class="docText">For visual clarity or to identify the role of text, blocks of text are often indented—especially in prose-oriented documents (but log files, configuration files, and the like might also have unused initial fields). For downstream purposes, indentation is often irrelevant, or even outright incorrect, since the indentation is not part of the text itself but only a decoration of the text. However, it often makes matters even worse to perform the very most naive transformation of indented text—simply remove leading whitespace from every line. While block indentation may be decoration, the relative indentations of lines within blocks may serve important or essential functions (for example, the blocks of text might be Python source code).</P>
+<P class="docText">The general procedure you need to take in maximally unindenting a block of text is fairly simple. But it is easy to throw more code at it than is needed, and arrive at some inelegant and slow nested loops of <span class="docEmphasis"><TT>string.find()</TT></span> and <span class="docEmphasis"><TT>string.replace()</TT></span> operations. A bit of cleverness in the use of regular expressions—combined with the conciseness of a functional programming (FP) style—can give you a quick, short, and direct transformation.</P>
+<H5 class="docExampleTitle"><A NAME="ch03list03"></A> flush_left.py</H5>
+
+<PRE>
+# Remove as many leading spaces as possible from whole block
+from re import findall,sub
+# What is the minimum line indentation of a block?
+indent = lambda s: reduce(min,map(len,findall('(?m)^ *(?=\S)',s)))
+# Remove the block-minimum indentation from each line?
+flush_left = lambda s: sub('(?m)^ {%d}' % indent(s),'',s)
+
+if __name__ == '__main__':
+    import sys
+    print flush_left(sys.stdin.read())
+</PRE>
+<P class="docText">The <TT>flush_left()</TT> function assumes that blocks are indented with spaces. If tabs are used—or used combined with spaces—an initial pass through the utility <TT>untabify.py</TT> (which can be found at <TT>$PYTHONPATH/tools/scripts/</TT>) can convert blocks to space-only indentation.</P>
+<P class="docText">A helpful adjunct to <TT>flush_left()</TT> is likely to be the <TT>reformat_para()</TT> function that was presented in <A class="docLink" HREF="0321112547_ch02.html#ch02">Chapter 2</A>, Problem 2. Between the two of these, you could get a good part of the way towards a "batch-oriented word processor." (What other capabilities would be most useful?)</P>
+<A NAME="ch03lev2sec6"></A><H4 class="docSection2Title">3.2.2 Problem: Summarizing command-line option documentation</H4>
+<P class="docText">Documentation of command-line options to programs is usually in semi-standard formats in places like manpages, docstrings, READMEs and the like. In general, within documentation you expect to see command-line options indented a bit, followed by a bit more indentation, followed by one or more lines of description, and usually ended by a blank line. This style is readable for users browsing documentation, but is of sufficiently complexity and variability that regular expressions are well suited to finding the right descriptions (simple string methods fall short).</P>
+<P class="docText">A specific scenario where you might want a summary of command-line options is as an aid to understanding configuration files that call multiple child commands. The file <TT>/etc/inetd.conf</TT> on Unix-like systems is a good example of such a configuration file. Moreover, configuration files themselves often have enough complexity and variability within them that simple string methods have difficulty parsing them.</P>
+<P class="docText">The utility below will look for every service launched by <TT>/etc/inetd.conf</TT> and present to STDOUT summary documentation of all the options used when the services are started.</P>
+<H5 class="docExampleTitle"><A NAME="ch03list04"></A> show_services.py</H5>
+
+<PRE>
+import re, os, string, sys
+
+def show_opts(cmdline):
+    args = string.split(cmdline)
+    cmd = args[0]
+    if len(args) &gt; 1:
+        opts = args[1:]
+    # might want to check error output, so use popen3()
+    (in_, out_, err) = os.popen3('man %s | col -b' % cmd)
+    manpage = out_.read()
+    if len(manpage) &gt; 2:      # found actual documentation
+        print '\n%s' % cmd
+        for opt in opts:
+            pat_opt = r'(?sm)^\s*'+opt+r'.*?(?=\n\n)'
+            opt_doc = re.search(pat_opt, manpage)
+            if opt_doc is not None:
+                print opt_doc.group()
+            else:             # try harder for something relevant
+                mentions = []
+                for para in string.split(manpage,'\n\n'):
+                   if re.search(opt, para):
+                       mentions.append('\n%s' % para)
+                if not mentions:
+                   print '\n    ',opt,' '*9,'Option docs not found'
+                else:
+                   print '\n    ',opt,' '*9,'Mentioned in below para:'
+                   print '\n'.join(mentions)
+     else:                    # no manpage available
+         print cmdline
+         print '    No documentation available'
+
+def services(fname):
+    conf = open(fname).read()
+    pat_srv = r'''(?xm)(?=^[^#])       # lns that are not commented out
+                  (?:(?:[\w/]+\s+){6}) # first six fields ignored
+                  (.*$)                # to end of ln is servc launch'''
+    return re.findall(pat_srv, conf)
+
+if __name__ == '__main__':
+    for service in services(sys.argv[1]):
+        show_opts(service)
+</PRE>
+<P class="docText">The particular tasks performed by <TT>show_opts()</TT> and <TT>services()</TT> are somewhat specific to Unix-like systems, but the general techniques are more broadly applicable. For example, the particular comment character and number of fields in <TT>/etc/inetd. conf</TT> might be different for other launch scripts, but the use of regular expressions to find the launch commands would apply elsewhere. If the <TT>man</TT> and <TT>col</TT> utilities are not on the relevant system, you might do something equivalent, such as reading in the docstrings from Python modules with similar option descriptions (most of the samples in <TT>$PYTHONPATH/tools/</TT> use compatible documentation, for example).</P>
+<P class="docText">Another thing worth noting is that even where regular expressions are used in parsing some data, you need not do everything with regular expressions. The simple <span class="docEmphasis"><TT>string.split()</TT></span> operation to identify paragraphs in <TT>show_opts()</TT> is still the quickest and easiest technique, even though <span class="docEmphasis"><TT>re.split()</TT></span> could do the same thing.</P>
+<P class="docText">Note: Along the lines of paragraph splitting, here is a thought problem. What is a regular expression that matches every whole paragraph that contains within it some smaller pattern <TT>pat</TT>? For purposes of the puzzle, assume that a paragraph is some text that both starts and ends with doubled newlines ("\n\n").</P>
+<A NAME="ch03lev2sec7"></A><H4 class="docSection2Title">3.2.3 Problem: Detecting duplicate words</H4>
+<P class="docText">A common typo in prose texts is doubled words (hopefully they have been edited out of this book except in those few cases where they are intended). The same error occurs to a lesser extent in programming language code, configuration files, or data feeds. Regular expressions are well-suited to detecting this occurrence, which just amounts to a backreference to a word pattern. It's easy to wrap the regex in a small utility with a few extra features:</P>
+<H5 class="docExampleTitle"><A NAME="ch03list05"></A> dupwords.py</H5>
+
+<PRE>
+# Detect doubled words and display with context
+# Include words doubled across lines but within paras
+
+import sys, re, glob
+for pat in sys.argv[1:]:
+    for file in glob.glob(pat):
+        newfile = 1
+        for para in open(file).read().split('\n\n'):
+            dups = re.findall(r'(?m)(^.*(\b\w+\b)\s*\b\2\b.*$)', para)
+            if dups:
+                if newfile:
+                    print '%s\n%s\n' % ('-'*70,file)
+                    newfile = 0
+                for dup in dups:
+                    print '[%s] --&gt;' % dup[1], dup[0]
+</PRE>
+<P class="docText">This particular version grabs the line or lines on which duplicates occur and prints them for context (along with a prompt for the duplicate itself). Variations are straightforward. The assumption made by <TT>dupwords.py</TT> is that a doubled word that spans a line (from the end of one to the beginning of another, ignoring whitespace) is a real doubling; but a duplicate that spans paragraphs is not likewise noteworthy.</P>
+<A NAME="ch03lev2sec8"></A><H4 class="docSection2Title">3.2.4 Problem: Checking for server errors</H4>
+<P class="docText">Web servers are a ubiquitous source of information nowadays. But finding URLs that lead to real documents is largely hit-or-miss. Every Web maintainer seems to reorganize her site every month or two, thereby breaking bookmarks and hyperlinks. As bad as the chaos is for plain Web surfers, it is worse for robots faced with the difficult task of recognizing the difference between content and errors. By-the-by, it is easy to accumulate downloaded Web pages that consist of error messages rather than desired content.</P>
+<P class="docText">In principle, Web servers can and should return error codes indicating server errors. But in practice, Web servers almost always return dynamically generated results pages for erroneous requests. Such pages are basically perfectly normal HTML pages that just happen to contain text like "Error 404: File not found!" Most of the time these pages are a bit fancier than this, containing custom graphics and layout, links to site homepages, JavaScript code, cookies, meta tags, and all sorts of other stuff. It is actually quite amazing just how much many Web servers send in response to requests for nonexistent URLs.</P>
+<P class="docText">Below is a very simple Python script to examine just what Web servers return on valid or invalid requests. Getting an error page is usually as simple as asking for a page called <TT>http://somewebsite.com/phony-url</TT> or the like (anything that doesn't really exist). <span class="docEmphasis"><TT>urllib</TT></span> is discussed in <A class="docLink" HREF="0321112547_ch05.html#ch05">Chapter 5</A>, but its details are not important here.</P>
+<H5 class="docExampleTitle"><A NAME="ch03list06"></A> url_examine.py</H5>
+
+<PRE>
+import sys
+from urllib import urlopen
+
+if len(sys.argv) &gt; 1:
+    fpin = urlopen(sys.argv[1])
+    print fpin.geturl()
+    print fpin.info()
+    print fpin.read()
+else:
+    print "No specified URL"
+</PRE>
+<P class="docText">Given the diversity of error pages you might receive, it is difficult or impossible to create a regular expression (or any program) that determines with certainty whether a given HTML document is an error page. Furthermore, some sites choose to generate pages that are not really quite errors, but not really quite content either (e.g, generic directories of site information with suggestions on how to get to content). But some heuristics come quite close to separating content from errors. One noteworthy heuristic is that the interesting errors are almost always 404 or 403 (not a sure thing, but good enough to make smart guesses). Below is a utility to rate the "error probability" of HTML documents:</P>
+<H5 class="docExampleTitle"><A NAME="ch03list07"></A> error_page.py</H5>
+
+<PRE>
+import re, sys
+page = sys.stdin.read()
+
+# Mapping from patterns to probability contribution of pattern
+err_pats = {r'(?is)&lt;TITLE&gt;.*?(404|403).*?ERROR.*?&lt;/TITLE&gt;': 0.95,
+            r'(?is)&lt;TITLE&gt;.*?ERROR.*?(404|403).*?&lt;/TITLE&gt;': 0.95,
+            r'(?is)&lt;TITLE&gt;ERROR&lt;/TITLE&gt;': 0.30,
+            r'(?is)&lt;TITLE&gt;.*?ERROR.*?&lt;/TITLE&gt;': 0.10,
+            r'(?is)&lt;META .*?(404|403).*?ERROR.*?&gt;': 0.80,
+            r'(?is)&lt;META .*?ERROR.*?(404|403).*?&gt;': 0.80,
+            r'(?is)&lt;TITLE&gt;.*?File Not Found.*?&lt;/TITLE&gt;': 0.80,
+            r'(?is)&lt;TITLE&gt;.*?Not Found.*?&lt;/TITLE&gt;': 0.40,
+            r'(?is)&lt;BODY.*(404|403).*&lt;/BODY&gt;': 0.10,
+            r'(?is)&lt;H1&gt;.*?(404|403).*?&lt;/H1&gt;': 0.15,
+            r'(?is)&lt;BODY.*not found.*&lt;/BODY&gt;': 0.10,
+            r'(?is)&lt;H1&gt;.*?not found.*?&lt;/H1&gt;': 0.15,
+            r'(?is)&lt;BODY.*the requested URL.*&lt;/BODY&gt;': 0.10,
+            r'(?is)&lt;BODY.*the page you requested.*&lt;/BODY&gt;': 0.10,
+            r'(?is)&lt;BODY.*page.{1,50}unavailable.*&lt;/BODY&gt;': 0.10,
+            r'(?is)&lt;BODY.*request.{1,50}unavailable.*&lt;/BODY&gt;': 0.10,
+            r'(?i)does not exist': 0.10,
+           }
+err_score = 0
+for pat, prob in err_pats.items():
+    if err_score &gt; 0.9: break
+    if re.search(pat, page):
+        # print pat, prob
+        err_score += prob
+
+if err_score &gt; 0.90:   print 'Page is almost surely an error report'
+elif err_score &gt; 0.75: print 'It is highly likely page is an error report'
+elif err_score &gt; 0.50: print 'Better-than-even odds page is error report'
+elif err_score &gt; 0.25: print 'Fair indication page is an error report'
+else:                 print 'Page is probably real content'
+</PRE>
+<P class="docText">Tested against a fair number of sites, a collection like this of regular expression searches and threshold confidences works quite well. Within the author's own judgment of just what is really an error page, <TT>erro_page.py</TT> has gotten no false positives and always arrived at at least the lowest warning level for every true error page.</P>
+<P class="docText">The patterns chosen are all fairly simple, and both the patterns and their weightings were determined entirely subjectively by the author. But something like this weighted hit-or-miss technique can be used to solve many "fuzzy logic" matching problems (most having nothing to do with Web server errors).</P>
+<P class="docText">Code like that above can form a general approach to more complete applications. But for what it is worth, the scripts <TT>url_examine.py</TT> and <TT>error_page.py</TT> may be used directly together by piping from the first to the second. For example:</P>
+<pre>
+% python urlopen.py http://gnosis.cx/nonesuch | python ex_error_page.py
+Page is almost surely an error report
+</pre>
+<A NAME="ch03lev2sec9"></A><H4 class="docSection2Title">3.2.5 Problem: Reading lines with continuation characters</H4>
+<P class="docText">Many configuration files and other types of computer code are line oriented, but also have a facility to treat multiple lines as if they were a single logical line. In processing such a file it is usually desirable as a first step to turn all these logical lines into actual newline-delimited lines (or more likely, to transform both single and continued lines as homogeneous list elements to iterate through later). A continuation character is generally required to be the <span class="docEmphasis">last</span> thing on a line before a newline, or possibly the last thing other than some whitespace. A small (and very partial) table of continuation characters used by some common and uncommon formats is listed below:</P>
+<pre>
+\ Python, JavaScript, C/C++, Bash, TCL, Unix config
+_ Visual Basic, PAW
+&amp; Lyris, COBOL, IBIS
+; Clipper, TOP
+- XSPEC, NetREXX
+= Oracle Express
+</pre>
+<P class="docText">Most of the formats listed are programming languages, and parsing them takes quite a bit more than just identifying the lines. More often, it is configuration files of various sorts that are of interest in simple parsing, and most of the time these files use a common Unix-style convention of using trailing backslashes for continuation lines.</P>
+<P class="docText">One <span class="docEmphasis">could</span> manage to parse logical lines with a <span class="docEmphasis"><TT>string</TT></span> module approach that looped through lines and performed concatenations when needed. But a greater elegance is served by reducing the problem to a single regular expression. The module below provides this:</P>
+<H5 class="docExampleTitle"><A NAME="ch03list08"></A> logical_lines.py</H5>
+
+<PRE>
+# Determine the logical lines in a file that might have
+# continuation characters.  'logical_lines()' returns a
+# list.  The self-test prints the logical lines as
+# physical lines (for all specified files and options).
+
+import re
+
+def logical_lines(s, continuation='\\', strip_trailing_space=0):
+    c = continuation
+    if strip_trailing_space:
+        s = re.sub(r'(?m)(%s)(\s+)$'%[c], r'\1', s)
+    pat_log = r'(?sm)^.*?$(?&lt;!%s)'%[c]  # e.g. (?sm)^.*?$(?&lt;!\\)
+    return [t.replace(c+'\n','') for t in re.findall(pat_log, s)]
+
+if  __name__ == '__main__':
+     import sys
+     files, strip, contin = ([], 0, '\\')
+     for arg in sys.argv[1:]:
+         if arg[:-1] == '--continue=': contin = arg[-1]
+         elif arg[:-1] == '-c': contin = arg[-1]
+         elif arg in ('--string','-s'): strip =  1
+         else: files.append(arg)
+     if not files: files.append(sys.stdin)
+     for file in files:
+         s = open(sys.argv[1]).read()
+         print '\n'.join(logical_lines(s, contin, strip))
+</PRE>
+<P class="docText">The comment in the <TT>pat_log</TT> definition shows a bit just how cryptic regular expressions can be at times. The comment is the pattern that is used for the default value of <TT>continuation</TT>. But as dense as it is with symbols, you can still read it by proceeding slowly, left to right. Let us try a version of the same line with the verbose modifier and comments:</P>
+<pre>
+&gt;&gt;&gt; pat = r'''
+... (?x)    # This is the verbose version
+... (?s)    # In the pattern, let "." match newlines, if needed
+... (?m)    # Allow ^ and $ to match every begin- and end-of-line
+... ^       # Start the match at the beginning of a line
+.... *?     # Non-greedily grab everything until the first place
+...         # where the rest of the pattern matches (if possible)
+... $       # End the match at an end-of-line
+... (?&lt;!    # Only count as a match if the enclosed pattern was not
+...         # the immediately last thing seen (negative lookbehind)
+... \\)     # It wasn't an (escaped) backslash'''
+</pre>
+<A NAME="ch03lev2sec10"></A><H4 class="docSection2Title">3.2.6 Problem: Identifying URLs and email addresses in texts</H4>
+<P class="docText">A neat feature of many Internet and news clients is their automatic identification of resources that the applications can act upon. For URL resources, this usually means making the links "clickable"; for an email address it usually means launching a new letter to the person at the address. Depending on the nature of an application, you could perform other sorts of actions for each identified resource. For a text processing application, the use of a resource is likely to be something more batch-oriented: extraction, transformation, indexing, or the like.</P>
+<P class="docText">Fully and precisely implementing RFC1822 (for email addresses) or RFC1738 (for URLs) is possible within regular expressions. But doing so is probably even more work than is really needed to identify 99% of resources. Moreover, a significant number of resources in the "real world" are not strictly compliant with the relevant RFCs—most applications give a certain leeway to "almost correct" resource identifiers. The utility below tries to strike approximately the same balance of other well-implemented and practical applications: get <span class="docEmphasis">almost</span> everything that was intended to look like a resource, and <span class="docEmphasis">almost</span> nothing that was intended not to:</P>
+<H5 class="docExampleTitle"><A NAME="ch03list09"></A> find_urls.py</H5>
+
+<PRE>
+# Functions to identify and extract URLs and email addresses
+
+import re, fileinput
+
+pat_url = re.compile(  r'''
+                 (?x)( # verbose identify URLs within text
+     (http|ftp|gopher) # make sure we find a resource type
+                   :// # ...needs to be followed by colon-slash-slash
+        (\w+[:.]?){2,} # at least two domain groups, e.g. (gnosis.)(cx)
+                  (/?| # could be just the domain name (maybe w/ slash)
+            [^ \n\r"]+ # or stuff then space, newline, tab, quote
+                [\w/]) # resource name ends in alphanumeric or slash
+     (?=[\s\.,&gt;)'"\]]) # assert: followed by white or clause ending
+                     ) # end of match group
+                       ''')
+pat_email = re.compile(r'''
+                (?xm)  # verbose identify URLs in text (and multiline)
+             (?=^.{11} # Mail header matcher
+     (?&lt;!Message-ID:|  # rule out Message-ID's as best possible
+        In-Reply-To))  # ...and also In-Reply-To
+               (.*?)(  # must grab to email to allow prior lookbehind
+   ([A-Za-z0-9-]+\.)?  # maybe an initial part: DAVID.mertz@gnosis.cx
+        [A-Za-z0-9-]+  # definitely some local user: MERTZ@gnosis.cx
+                    @  # ...needs an at sign in the middle
+         (\w+\.?){2,}  # at least two domain groups, e.g. (gnosis.)(cx)
+    (?=[\s\.,&gt;)'"\]])  # assert: followed by white or clause ending
+                     ) # end of match group
+                       ''')
+extract_urls = lambda s: [u[0] for u in re.findall(pat_url, s)]
+extract_email = lambda s: [(e[1]) for e in re.findall(pat_email, s)]
+
+if __name__ == '__main__':
+    for line in fileinput.input():
+        urls = extract_urls(line)
+        if urls:
+            for url in urls:
+                print fileinput.filename(),'=&gt;',url
+        emails = extract_email(line)
+        if emails:
+            for email in emails:
+                print fileinput.filename(),'-&gt;',email
+</PRE>
+<P class="docText">A number of features are notable in the utility above. One point is that everything interesting is done within the regular expressions themselves. The actual functions <TT>extract_urls()</TT> and <TT>extract_email()</TT> are each a single line, using the conciseness of functional-style programming, especially list comprehensions (four or five lines of more procedural code could be used, but this style helps emphasize where the work is done). The utility itself prints located resources to STDOUT, but you could do something else with them just as easily.</P>
+<P class="docText">A bit of testing of preliminary versions of the regular expressions led me to add a few complications to them. In part this lets readers see some more exotic features in action; but in greater part, this helps weed out what I would consider "false positives." For URLs we demand at least two domain groups—this rules out LOCALHOST addresses, if present. However, by allowing a colon to end a domain group, we allow for specified ports such as <TT>http://gnosis.cx:8080/resource/</TT>.</P>
+<P class="docText">Email addresses have one particular special consideration. If the files you are scanning for email addresses happen to be actual mail archives, you will also find Message-ID strings. The form of these headers is very similar to that of email addresses <TT>(In-Reply-To:</TT> headers also contain Message-IDs). By combining a negative look-behind assertion with some throwaway groups, we can make sure that everything that gets extracted is not a <TT>Message-ID:</TT> header line. It gets a little complicated to combine these things correctly, but the power of it is quite remarkable.</P>
+<A NAME="ch03lev2sec11"></A><H4 class="docSection2Title">3.2.7 Problem: Pretty-printing numbers</H4>
+<P class="docText">In producing human-readable documents, Python's default string representation of numbers leaves something to be desired. Specifically, the delimiters that normally occur between powers of 1,000 in written large numerals are not produced by the <span class="docEmphasis"><TT>str()</TT></span> or <span class="docEmphasis"><TT>repr()</TT></span> functions—which makes reading large numbers difficult. For example:</P>
+<pre>
+&gt;&gt;&gt; budget = 12345678.90
+&gt;&gt;&gt; print 'The company budget is $%s' % str(budget)
+The company budget is $12345678.9
+&gt;&gt;&gt; print 'The company budget is %10.2f' % budget
+The company budget is 12345678.90
+</pre>
+<P class="docText">Regular expressions can be used to transform numbers that are already "stringified" (an alternative would be to process numeric values by repeated division/remainder operations, stringifying the chunks). A few basic utility functions are contained in the module below.</P>
+<H5 class="docExampleTitle"><A NAME="ch03list10"></A> pretty_nums.py</H5>
+
+<PRE>
+# Create/manipulate grouped string versions of numbers
+
+import re
+
+def commify(f, digits=2, maxgroups=5, european=0):
+    template = '%%1.%df' % digits
+    s = template % f
+    pat = re.compile(r'(\d+)(\d{3})([.,]|$)([.,\d]*)')
+    if european:
+        repl = r'\1.\2\3\4'
+    else:   # could also use locale.localeconv()['decimal_point']
+        repl = r'\1,\2\3\4'
+    for i in range(maxgroups):
+        s = re.sub(pat,repl,s)
+    return s
+
+def uncommify(s):
+    return s.replace(',','')
+
+def eurify(s):
+    s = s.replace('.','\000')   # place holder
+    s = s.replace(',','.')      # change group delimiter
+    s = s.replace('\000',',')   # decimal delimiter
+    return s
+
+def anglofy(s):
+    s = s.replace(',','\000')   # place holder
+    s = s.replace('.',',')      # change group delimiter
+    s = s.replace('\000','.')   # decimal delimiter
+    return s
+
+vals = (12345678.90, 23456789.01, 34567890.12)
+sample = '''The company budget is $%s.
+Its debt is $%s, against assets
+of $%s'''
+
+if  __name__ == '__main__':
+     print sample % vals, '\n-----'
+     print sample % tuple(map(commify, vals)), '\n-----'
+     print eurify(sample % tuple(map(commify, vals))), '\n-----'
+</PRE>
+<P class="docText">The technique used in <TT>commify()</TT> has virtues and vices. It is quick, simple, and it works. It is also slightly kludgey inasmuch as it loops through the substitution (and with the default <TT>maxgroups</TT> argument, it is no good for numbers bigger than a quintillion; most numbers you encounter are smaller than this). If purity is a goal—and it probably should not be—you could probably come up with a single regular expression to do the whole job. Another quick and convenient technique is the "place holder" idea that was mentioned in the introductory discussion of the <span class="docEmphasis"><TT>string</TT></span> module.</P>
+<ul></ul></td></tr></table>
+<td></td>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<td class="tt1"><a href="NFO/lib.html">[ Team LiB ]</a></td><td valign="top" class="tt1" align="right">
+          <a href="0321112547_ch03lev1sec1.html"><img src="FILES/btn_prev.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+          <a href="0321112547_ch03lev1sec3.html"><img src="FILES/btn_next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+</body></html>

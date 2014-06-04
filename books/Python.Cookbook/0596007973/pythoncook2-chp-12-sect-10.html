@@ -1,0 +1,208 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;12.10.&nbsp;Merging Continuous Text Events with a SAX Filter</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-12-sect-9.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-12-sect-11.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-12-SECT-10"></a>
+<h3 class="docSection1Title">Recipe 12.10. Merging Continuous Text Events with a SAX Filter</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Uche Ogbuji, James Kew, Peter Cogolo</span></p>
+
+<a name="pythoncook2-CHP-12-SECT-10.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-12-ITERM-2793"></a>A
+SAX parser can report contiguous text using multiple
+<I>characters event</i>s (meaning, in practice,
+multiple calls to the <tt>characters</tt> method), and this
+multiplicity of events for a single text string may give problems to
+SAX handlers. You want to insert a filter into the SAX handler chain
+to ensure that each text node in the document is reported as a single
+SAX characters event (meaning, in practice, that it calls
+<tt>character</tt> just once).</P>
+
+
+<a name="pythoncook2-CHP-12-SECT-10.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText"><a name="pythoncook2-CHP-12-ITERM-2794"></a>
+<a name="pythoncook2-CHP-12-ITERM-2795"></a>Module
+<tt>xml.sax.saxutils</tt> in the standard Python library
+includes a class <tt>XMLFilterBase</tt> that we can
+subclass to implement any XML filter we may need:</p>
+
+<pre>from xml.sax.saxutils import XMLFilterBase
+class text_normalize_filter(XMLFilterBase):
+    """ SAX filter to ensure that contiguous text nodes are merged into one
+    """
+    def _ _init_ _(self, upstream, downstream):
+        XMLFilterBase._ _init_ _(self, upstream)
+        self._downstream = downstream
+        self._accumulator = [  ]
+    def _complete_text_node(self):
+        if self._accumulator:
+            self._downstream.characters(''.join(self._accumulator))
+            self._accumulator = [  ]
+    def characters(self, text):
+        self._accumulator.append(text)
+    def ignorableWhitespace(self, ws):
+        self._accumulator.append(text)
+def _wrap_complete(method_name):
+    def method(self, *a, **k):
+        self._complete_text_node( )
+        getattr(self._downstream, method_name)(*a, **k)
+    # 2.4 only: method._ _name_ _ = method_name
+    setattr(text_normalize_filter, method_name, method)
+for n in '''startElement startElementNS endElement endElementNS
+            processingInstruction comment'''.split( ):
+    _wrap_complete(n)
+if _ _name_ _ == "_ _main_ _":
+    import sys
+    from xml import sax
+    from xml.sax.saxutils import XMLGenerator
+    parser = sax.make_parser( )
+    # XMLGenerator is a special predefined SAX handler that merely writes
+    # SAX events back into an XML document
+    downstream_handler = XMLGenerator( )
+    # upstream, the parser; downstream, the next handler in the chain
+    filter_handler = text_normalize_filter(parser, downstream_handler)
+    # The SAX filter base is designed so that the filter takes on much of the
+    # interface of the parser itself, including the "parse" method
+    filter_handler.parse(sys.argv[1])</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-12-SECT-10.3"></a>
+<H4 class="docSection2Title">Discussion</h4>
+
+<p class="docText">A SAX parser can report contiguous text using multiple characters
+events (meaning, in practice, multiple calls to the
+<tt>characters</tt> method of the downstream handler). In
+other words, given an XML document whose content is
+'<tt>abc</tt>', the text could technically be reported as
+up to three character events: one for the '<tt>a</tt>'
+character, one for the 'b', and
+a third for the 'c'. Such an
+extreme case of "fragmentation" of
+a text string into multiple events is unlikely in real life, but it
+is not impossible.</P>
+
+<p class="docText">A typical reason that might cause a parser to report text nodes a bit
+at a time would be buffering of the XML input source. Most low-level
+parsers use a buffer of a certain number of characters that are read
+and parsed at a time. If a text node straddles such a buffer
+boundary, many parsers will just wrap up the current text event and
+start a new one to send characters from the next buffer. If you
+don't account for this behavior in your SAX
+handlers, you may run into very obscure and hard-to-reproduce bugs.
+Even if the parser you usually use does combine text nodes for you,
+you never know when you may want to run your code in a situation
+where a different parser is selected. You'd need to
+write logic to accommodate the possibility, which can be rather
+cumbersome when mixed into typical SAX-style state machine logic.</P>
+
+<p class="docText">The class <i>text_normalize_filter</i> presented in this
+recipe ensures that all text events are reported to downstream SAX
+handlers in the contiguous manner that most developers would expect.
+In this recipe's example case, the filter would
+consolidate the three characters events into a single one for the
+entire text node '<tt>abc</tt>'.</p>
+
+
+<p><table border="0" bgcolor="black" cellspacing="0" cellpadding="1" width="90%" align="center"><TR><td><table bgcolor="white" width="100%" border="0" cellspacing="0" cellpadding="6"><tr><TD width="60" valign="top"><img src="images/tip_yellow.gif" width="50" height="54" alt=""></td><TD valign="top">
+<p class="docText">For more information on SAX filters in general, see my article
+"Tip: SAX filters for flexible
+processing," <a class="docLink" target="_blank" href="http://www-106.ibm.com/developerworks/xml/library/x-tipsaxflex.html">http://www-106.ibm.com/developerworks/xml/library/x-tipsaxflex.html</a>.</p>
+</TD></TR></table></td></tr></table></p><br>
+
+<p class="docText">Python's <tt>XMLGenerator</tt> does not do
+anything with processing instructions, so, if you run the main code
+presented in this recipe on an XML document that uses them,
+you'll have a gap in the output, along with other
+minor deviations between input and output. Comments are similar but
+worse, because <tt>XMLFilterBase</tt> does not even filter
+them; if you do need to get comments, your
+<i>test_normalize_filter</i> class must multiply inherit
+from <tt>xml.sax.saxlib.LexicalHandler</tt>, as well as
+from <tt>xml.sax.saxutils.XMLFilterBase</tt>, and it must
+override the <tt>parse</tt> method as follows:</p>
+
+<pre>    def parse(self, source):
+        # force connection of self as the lexical handler
+        self._parent.setProperty(property_lexical_handler, self)
+        # Delegate to XMLFilterBase for the rest
+        XMLFilterBase.parse(self, source)</pre><br>
+
+
+<p class="docText">This code is hairy enough, using the
+"internal" attribute
+<tt>self._parent</tt>, and the need to deal properly with
+XML comments is rare enough, to make this addition somewhat doubtful,
+which is why it is not part of this recipe's
+Solution.</p>
+
+<p class="docText">If you need ease of chaining to other filters, you may prefer not to
+take both upstream and downstream parameters in <tt>_ _init_
+_</tt>. In this case, keep the same signature as
+<tt>XMLFilterBase._ _init_ _</tt>:</p>
+
+<pre>    def _ _init_ _(self, parent):
+        XMLFilterBase._ _init_ _(self, parent)
+        self._accumulator = [  ]</pre><br>
+
+
+<p class="docText">and change the <i>_wrap_complete</i> factory function so
+that the wrapper, rather than calling methods on the downstream
+handler directly, delegates to the default implementations in
+<tt>XMLFilterBase</tt>, which in turn call out to handlers
+that have been set on the filter with such methods as
+<tt>setContentHandler</tt> and the like:</P>
+
+<pre>def _wrap_complete(method_name):
+    def method(self, *a, **k):
+        self._complete_text_node( )
+        getattr(XMLFilterBase, method_name)(self, *a, **k)
+    # 2.4 only: method._ _name_ _ = method_name
+    setattr(text_normalize_filter, method_name, method)</pre><BR>
+
+
+<p class="docText">This is slightly less convenient for the typical simple case, but it
+pays back this inconvenience by letting you easily chain filters:</p>
+
+<pre>parser = sax.make_parser( )
+filtered_parser = text_normalise_filter(some_other_filter(parser))</pre><br>
+
+
+<p class="docText">as well as letting you use a filter in contexts that call the
+<tt>parse</tt> method on your behalf:</P>
+
+<pre>doc = xml.dom.minidom.parse(input_file, parser=filtered_parser)</pre><br>
+
+
+
+<a name="pythoncook2-CHP-12-SECT-10.4"></a>
+<h4 class="docSection2Title">See Also</h4>
+
+<p class="docText"><span class="docEmphasis">Library Reference</span> and <span class="docEmphasis">Python in a
+Nutshell</span> document the built-in XML support in the Python
+Standard Library.<a name="pythoncook2-CHP-12-ITERM-2796"></a></p>
+
+
+
+<ul></ul></TD></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-12-sect-9.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-12-sect-11.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

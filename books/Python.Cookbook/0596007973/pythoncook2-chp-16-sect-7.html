@@ -1,0 +1,155 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;16.7.&nbsp;Merging and Splitting Tokens</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-16-sect-6.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-16-sect-8.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-16-SECT-7"></a>
+<h3 class="docSection1Title">Recipe 16.7. Merging and Splitting Tokens</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Peter Cogolo</span></p>
+
+<a name="pythoncook2-CHP-16-SECT-7.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-16-ITERM-3024"></a>You
+need to tokenize an input language whose tokens are almost the same
+as Python's, with a few exceptions that need token
+merging and splitting.</P>
+
+
+<a name="pythoncook2-CHP-16-SECT-7.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">Standard library module <tt>tokenize</tt> is very handy; we
+need to wrap it with a generator to do the post-processing for a
+little splitting and merging of tokens. The merging requires the
+ability to "peek ahead" in an
+iterator. We can get that ability by wrapping any iterator into a
+small dedicated iterator class:</p>
+
+<pre>class peek_ahead(object):
+    sentinel = object( )
+    def _ _init_ _(self, it):
+        self._nit = iter(it).next
+        self.preview = None
+        self._step( )
+    def _ _iter_ _(self):
+        return self
+    def next(self):
+        result = self._step( )
+        if result is self.sentinel: raise StopIteration
+        else: return result
+    def _step(self):
+        result = self.preview
+        try: self.preview = self._nit( )
+        except StopIteration: self.preview = self.sentinel
+        return result</pre><BR>
+
+
+<p class="docText">Armed with this tool, we can easily split and merge tokens. Say, for
+example, by the rules of the language we're lexing,
+that we must consider each of '<tt>:=</tt>' and
+'<tt>:+</tt>' to be a single token, but a floating-point
+token that is a '<tt>.</tt>' with digits on both sides,
+such as '<tt>31.17</tt>', must be given as a sequence of
+three tokens, '<tt>31</tt>', '<tt>.</tt>',
+'<tt>17</tt>' in this case. Here's how
+(using Python 2.4 code with comments on how to change it if
+you're stuck with version 2.3):</p>
+
+<pre>import tokenize, cStringIO
+# in 2.3, also do 'from sets import Set as set'
+mergers = {':' : set('=+'), }
+def tokens_of(x):
+    it = peek_ahead(toktuple[1] for toktuple in
+            tokenize.generate_tokens(cStringIO.StringIO(x).readline)
+         )
+    # in 2.3, you need to add brackets [ ] around the arg to peek_ahead
+    for tok in it:
+        if it.preview in mergers.get(tok, ( )):
+            # merge with next token, as required
+            yield tok+it.next( )
+        elif tok[:1].isdigit( ) and '.' in tok:
+            # split if digits on BOTH sides of the '.'
+            before, after = tok.split('.', 1)
+            if after:
+                # both sides -&gt; yield as 3 separate tokens
+                yield before
+                yield '.'
+                yield after
+            else:
+                # nope -&gt; yield as one token
+                yield tok
+        else:
+            # not a merge or split case, just yield the token
+            yield tok</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-16-SECT-7.3"></a>
+<H4 class="docSection2Title">Discussion</h4>
+
+<p class="docText">Here's an example of use of this
+recipe's code:</P>
+
+<pre>&gt;&gt;&gt; x = 'p{z:=23,  w:+7}: m :+ 23.4'
+&gt;&gt;&gt; print ' / '.join(tokens_of(x))
+<B>p / { / z / := / 23 / , / w / :+ / 7 / } / : / m / :+ / 23 / . / 4 / </b></pre><br>
+
+
+<p class="docText">In this recipe, I yield tokens only as substrings of the string
+I'm lexing, rather than the whole
+<tt>tuple</tt> yielded by
+<tt>tokenize.generate_tokens</tt>, including such items as
+token position within the overall string (by line and column). If
+your needs are more sophisticated than mine, you should simply
+<i>peek_ahead</i> on whole token tuples (while
+I'm simplifying things by picking up just the
+substring, item 1, out of each token tuple, by passing to
+<i>peek_ahead</I> a generator expression), and compute
+start and end positions appropriately when splitting or merging. For
+example, if you're merging two adjacent tokens, the
+overall token has the same start position as the first, and the same
+end position as the second, of the two tokens you're
+merging.</p>
+
+<p class="docText">The <i>peek_ahead</I> iterator wrapper class can often be
+useful in many kinds of lexing and parsing tasks, exactly because
+such tasks are well suited to operating on streams (which are well
+represented by iterators) but often require a level of peek-ahead
+and/or push-back ability. You can often get by with just one level;
+if you need more than one level, consider having your wrapper hold a
+container of peeked-ahead or pushed-back tokens. Python
+2.4's <tt>collections.deque</tt> container
+implements a double-ended queue, which is particularly well suited
+for such tasks. For a more powerful look-ahead iterator wrapper, see
+<a class="docLink" href="pythoncook2-CHP-19-SECT-18.html#pythoncook2-CHP-19-SECT-18">Recipe 19.18</a>.</p>
+
+
+<a name="pythoncook2-CHP-16-SECT-7.4"></a>
+<H4 class="docSection2Title">See Also</h4>
+
+<p class="docText"><span class="docEmphasis">Library Reference</span> and <span class="docEmphasis">Python in a
+Nutshell</span> sections on the Python Standard Library modules
+<tt>tokenize</tt> and <tt>cStringIO</tt>; <a class="docLink" href="pythoncook2-CHP-19-SECT-18.html#pythoncook2-CHP-19-SECT-18">Recipe 19.18</a> for a more powerful
+look-ahead iterator wrapper.<a name="pythoncook2-CHP-16-ITERM-3025"></a></P>
+
+
+
+<a href="5991535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><UL></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-16-sect-6.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-16-sect-8.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

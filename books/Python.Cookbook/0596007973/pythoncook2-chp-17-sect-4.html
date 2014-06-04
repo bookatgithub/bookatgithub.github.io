@@ -1,0 +1,153 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;17.4.&nbsp;Calling Functions from a Windows DLL</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-17-sect-3.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-17-sect-5.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-17-SECT-4"></a>
+<h3 class="docSection1Title" id="409771-832">Recipe 17.4. Calling Functions from a Windows DLL</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Stefano Spinucci</span></p>
+
+<a name="pythoncook2-CHP-17-SECT-4.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-17-ITERM-3062"></a> <a name="pythoncook2-CHP-17-ITERM-3063"></a>You want to avoid writing a Python
+extension in C, by directly calling from Python functions that
+already exist in a Windows DLL.</P>
+
+
+<a name="pythoncook2-CHP-17-SECT-4.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">The third-party <tt>ctypes</tt> extension makes this task
+pretty easy:</p>
+
+<pre>from ctypes import windll, c_int, c_string, byref
+# load 'Ehllapi.dll' (from current dir), and function 'hllapi' from the DLL
+Ehllap32 = windll.ehllapi
+hllapi = Ehllap32.hllapi
+# prepare the arguments with types and initial values
+h_func = c_int(1)
+h_text = c_string('A')
+h_len = c_int(1)
+h_ret = c_int(999)
+# call the function
+hllapi(byref(h_func), h_text, byref(h_len), byref(h_ret))
+# print the resulting values of all arguments after the call
+print h_func.value, h_text.value, h_len.value, h_ret.value</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-17-SECT-4.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">I needed the code in this recipe specifically to call a C function
+whose prototype is:<a name="pythoncook2-CHP-17-ITERM-3064"></a></P>
+
+<pre>void FAR PASCAL hllapi(int FAR *, char FAR *, int FAR *, int FAR *);</pre><br>
+
+
+<p class="docText">from a DLL named <I>Ehllapi.DLL</I> (an implementation
+of the IBM 3270 HLLAPI for an Italian 3270 terminal emulator, as it
+happens). Thomas Heller's <tt>ctypes</tt>
+extension, found at <a class="docLink" target="_blank" href="http://sourceforge.net/projects/ctypes">http://sourceforge.net/projects/ctypes</a>, made
+the task very easy. In particular, <tt>ctypes</tt> makes
+mincemeat of problems related to representing function arguments that
+must belong to a certain C type and possibly get passed
+"by reference" (i.e., via a
+pointer).</p>
+
+<p class="docText">In the past, I used another extension, known as
+<tt>calldll</tt>, which was (and still is) available from
+<a class="docLink" target="_blank" href="http://www.nightmare.com/software.html">http://www.nightmare.com/software.html</a>. While
+once very useful, <tt>calldll</tt> cannot rely on some of
+the modern techniques that <tt>ctypes</tt> uses internally,
+because these possibilities were introduced only in relatively recent
+versions of Python. <tt>calldll</tt>, using a single
+<tt>membuf</tt> Python type to represent all possible C
+types, tends to be much more cumbersome than
+<tt>ctypes</tt> when they are both used to perform the same
+tasks.</p>
+
+<p class="docText">Judge for yourself: here is a working <tt>calldll</tt>
+version of the same script that I just showed how to code with
+<tt>ctypes</tt>:</p>
+
+<pre>import calldll, struct
+# some helpful auxiliary functions
+def myPrintLong(vVar):
+    ''' print a long contained in a membuf '''
+    print calldll.read_long(vVar.address( ))
+def myPrintString(vVar):
+    ''' print a string contained in a membuf '''
+    a = calldll.read_string(vVar.address( ))
+    print a, len(a)
+def mySetLong(vMemBuf, vValueToSet):
+    ''' set to an unsigned long the value of a membuf with len == 4 '''
+    vMemBuf.write(struct.pack('L', vValueToSet))
+def mySetString(vMemBuf, vValueToSet):
+    ''' set to a string (with \0 terminator) the value of a membuf '''
+    pack_format = "%ds" % 1+len(vValueToSet)              # +1 for the \0
+    string_packed = struct.pack(pack_format, vValueToSet) # pack( ) adds the \0
+    vMemBuf.write(string_packed)
+# load 'Ehllapi.dll' (from current dir), and function 'hllapi' from the DLL
+dll_handle = calldll.load_library ('.\\Ehllapi')
+function_address = calldll.get_proc_address (dll_handle, 'HLLAPI')
+# allocate and init three membufs with the size to hold an unsigned long
+Lsize = struct.calcsize('L')
+vFunction = calldll.membuf(Lsize)
+mySetLong(vFunction, 1)
+vTextLen = calldll.membuf(Lsize)
+vResult = calldll.membuf(Lsize)
+mySetLong(vResult, 1)
+# allocate a membuf as large as the DLL requires; in this case, space
+# for 24 x 80 characters + 1 for a \0 terminator
+vText = calldll.membuf(1921)
+# init the text and text-length variables based on string of interest
+string_value_to_write = 'A'
+mySetString(vText, string_value_to_write)
+mySetLong(vTextLen, len(string_value_to_write))
+# call the function, print the results, and clean up
+calldll.call_foreign_function(function_address, 'llll', 'l',
+  (vFunction.address( ), vText.address( ), vTextLen.address( ), vResult.address( )))
+myPrintLong(vResult)
+myPrintString(vText)
+calldll.free_library(dll_handle)</pre><br>
+
+
+<p class="docText">To be honest, I can't quite be sure whether all of
+these gyrations are truly indispensable to making this
+<tt>calldll</tt>-based version work. Whenever I try to
+simplify this version a bit, something or other always breaks
+noisily, so I've stopped messing with it. One reason
+the <tt>ctypes</tt>-based version is cleaner and simpler is
+that <tt>ctypes</tt> has never given me trouble, so
+I've been encouraged to continue working on that
+version to improve it.</P>
+
+
+<a name="pythoncook2-CHP-17-SECT-4.4"></a>
+<h4 class="docSection2Title">See Also</h4>
+
+<p class="docText"><tt>ctypes</tt> is at <a class="docLink" target="_blank" href="http://sourceforge.net/projects/ctypes">http://sourceforge.net/projects/ctypes</a>;
+<tt>calldll</tt> is at <a class="docLink" target="_blank" href="http://www.nightmare.com/software.html">http://www.nightmare.com/software.html</a>.<a name="pythoncook2-CHP-17-ITERM-3065"></a> <a name="pythoncook2-CHP-17-ITERM-3066"></a></P>
+
+
+
+<ul></UL></td></TR></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-17-sect-3.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-17-sect-5.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

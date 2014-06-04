@@ -1,0 +1,195 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;7.7.&nbsp;Mutating Objects with shelve</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-7-sect-6.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-7-sect-8.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-7-SECT-7"></a>
+<h3 class="docSection1Title">Recipe 7.7. Mutating Objects with shelve</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Luther Blissett</span></p>
+
+<a name="pythoncook2-CHP-7-SECT-7.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-7-ITERM-2337"></a> <a name="pythoncook2-CHP-7-ITERM-2338"></a>You are using the standard
+module <tt>shelve</tt>. Some of the values you have shelved
+are mutable objects, and you need to mutate these objects.</P>
+
+
+<a name="pythoncook2-CHP-7-SECT-7.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">The <tt>shelve</tt> module offers a kind of persistent
+dictionaryan important niche between the power of
+relational-database engines and the simplicity of
+<tt>marshal</tt>, <tt>pickle</tt>,
+<tt>dbm</tt>, and similar file formats. However, you should
+be aware of a typical trap you need to avoid when using
+<tt>shelve</tt>. Consider the following interactive Python
+session:</p>
+
+<pre>&gt;&gt;&gt; import shelve
+&gt;&gt;&gt; # Build a simple sample shelf
+&gt;&gt;&gt; she = shelve.open('try.she', 'c')
+&gt;&gt;&gt; for c in 'spam': she[c] = {c:23}
+...
+&gt;&gt;&gt; for c in she.keys( ): print c, she[c]
+...
+<B>p {'p': 23}</b>
+<b>s {'s': 23}</b>
+<B>a {'a': 23}</b>
+<B>m {'m': 23}</b>
+&gt;&gt;&gt; she.close( )</pre><br>
+
+
+<p class="docText">We've created the <tt>shelve</tt> file,
+added some data to it, and closed it. Goodnow we can reopen it
+and work with it:</P>
+
+<pre>&gt;&gt;&gt; she=shelve.open('try.she', 'c')
+&gt;&gt;&gt; she['p']
+<span class="docEmphBold">{'p': 23}</span>
+&gt;&gt;&gt; she['p']['p'] = 42
+&gt;&gt;&gt; she['p']
+<span class="docEmphBold">{'p': 23}</span></pre><BR>
+
+
+<p class="docText">What's going on here? We just set the value to 42,
+but our setting didn't <span class="docEmphasis">take</span> in
+the <tt>shelve</tt> object! The problem is that we were
+working with a temporary object that <tt>shelve</tt> gave
+us, not with the "real thing".
+<tt>shelve</tt>, when we open it with default options, like
+here, doesn't track changes to such temporary
+objects. One reasonable solution is to bind a name to this temporary
+object, do our mutation, and then assign the mutated object back to
+the appropriate item of <tt>shelve</tt>:</p>
+
+<pre>&gt;&gt;&gt; a = she['p']
+&gt;&gt;&gt; a['p'] = 42
+&gt;&gt;&gt; she['p'] = a
+&gt;&gt;&gt; she['p']
+<span class="docEmphBold">{'p': 42}</span>
+&gt;&gt;&gt; she.close( )</pre><br>
+
+
+<p class="docText">We can verify that the change was properly persisted:</p>
+
+<pre>&gt;&gt;&gt; she=shelve.open('try.she','c')
+&gt;&gt;&gt; for c in she.keys( ): print c,she[c]
+...
+<span class="docEmphBold">p {'p': 42}</span>
+<span class="docEmphBold">s {'s': 23}</span>
+<span class="docEmphBold">a {'a': 23}</span>
+<span class="docEmphBold">m {'m': 23}</span></pre><br>
+
+
+<p class="docText">A simpler solution is to open the <tt>shelve</tt> object
+with the <tt>writeback</tt> option set to
+<tt>TRue</tt>:</p>
+
+<pre>&gt;&gt;&gt; she = shelve.open('try.she', 'c', writeback=True)</pre><br>
+
+
+<p class="docText">The <tt>writeback</tt> option instructs
+<tt>shelve</tt> to keep track of all the objects it gets
+from the file and write them all back to the file before closing it,
+just in case they have been modified in the meantime. While simple,
+this approach can be quite expensive, particularly in terms of memory
+consumption. Specifically, if we read many objects from a
+<tt>shelve</tt> object opened with
+<tt>writeback=True</tt>, even if we only modify a few of
+them, <tt>shelve</tt> is going to keep them
+<span class="docEmphasis">all</span> in memory, since it can't
+tell in advance which one we may be about to modify. The previous
+approach, where we explicitly take responsibility to notify
+<tt>shelve</tt> of any changes (by assigning the changed
+objects back to the place they came from), requires more care on our
+part, but repays that care by giving us much better performance.</P>
+
+
+<a name="pythoncook2-CHP-7-SECT-7.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">The standard Python module <tt>shelve</tt> can be quite
+convenient in many cases, but it hides a potentially nasty trap,
+admittedly well documented in Python's online docs
+but still easy to miss. Suppose you're shelving
+mutable objects, such as dictionaries or lists. Naturally, you are
+quite likely to want to mutate some of those objectsfor
+example, by calling mutating methods (<tt>append</tt> on a
+list, <tt>update</tt> on a dictionary, etc.) or by
+assigning a new value to an item or attribute of the object. However,
+when you do this, the change doesn't occur in the
+<tt>shelve</tt> object. This is because we actually mutate
+a temporary object that the <tt>shelve</tt> object has
+given us as the result of
+<tt>shelve</tt>'s own <tt>_ _getitem_
+_</tt> method, but the <tt>shelve</tt> object, by
+default, does not keep track of that temporary object, nor does it
+care about it once it returns it to us.</p>
+
+<p class="docText">As shown in the recipe, one solution is to bind a name to the
+temporary object obtained by keying into the shelf, doing whatever
+mutations are needed to the object via the name, then assigning the
+newly mutated object back to the appropriate item of the
+<tt>shelve</tt> object. When you assign to a
+<tt>shelve</tt> object's item, the
+<tt>shelve</tt> object's <tt>_
+_setitem_ _</tt> method gets invoked, and it appropriately
+updates the <tt>shelve</tt> object itself, so that the
+change does occur.</P>
+
+<p class="docText">Alternatively, you can add the flag <tt>writeback=True</tt>
+at the time you open the <tt>shelve</tt> object, and then
+<tt>shelve</tt> keeps track of every object it hands you,
+saving them all back to disk at the end. This approach may save you
+quite a bit of fussy and laborious coding, but take care: if you read
+many items of the <tt>shelve</tt> object and only modify a
+few of them, the <tt>writeback</tt> approach can be
+exceedingly costly, particularly in terms of memory consumption. When
+opened with <tt>writeback=True</tt>,
+<tt>shelve</tt> <span class="docEmphasis">will</span> keep in memory
+any item it has ever handed you, and save them all to disk at the
+end, since it doesn't have a reliable way to tell
+which items you may be about to modify, nor, in general, even which
+items you <span class="docEmphasis">have</span> actually modified by the time you
+<tt>close</tt> the <tt>shelve</tt> object. The
+recommended approach, unless you're going to modify
+just about every item you read (or unless the
+<tt>shelve</tt> object in question is small enough compared
+with your available memory that you don't really
+care), is the previous one: bind a name to the items that you get
+from a <tt>shelve</tt> object with intent to modify them,
+and assign each item back into the <tt>shelve</tt> object
+once you're done mutating that item.</P>
+
+
+<a name="pythoncook2-CHP-7-SECT-7.4"></a>
+<h4 class="docSection2Title">See Also</h4>
+
+<p class="docText"><a class="docLink" href="pythoncook2-CHP-7-SECT-1.html#pythoncook2-CHP-7-SECT-1">Recipe 7.1</a> and <a class="docLink" href="pythoncook2-CHP-7-SECT-2.html#pythoncook2-CHP-7-SECT-2">Recipe 7.2</a> for alternative
+serialization approaches; documentation for the
+<tt>shelve</tt> standard library module in the
+<span class="docEmphasis">Library Reference</span> and <span class="docEmphasis">Python in a
+Nutshell</span>.<a name="pythoncook2-CHP-7-ITERM-2339"></a> <a name="pythoncook2-CHP-7-ITERM-2340"></a> <a name="pythoncook2-CHP-7-ITERM-2341"></a></p>
+
+
+
+<a href="5991535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-7-sect-6.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-7-sect-8.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

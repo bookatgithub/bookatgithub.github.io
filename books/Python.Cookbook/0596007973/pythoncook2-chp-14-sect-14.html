@@ -1,0 +1,215 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;14.14.&nbsp;Rendering Arbitrary Objects with Nevow</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-14-sect-13.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-15.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-14-SECT-14"></a>
+<h3 class="docSection1Title" id="409771-842">Recipe 14.14. Rendering Arbitrary Objects with Nevow</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Valentino Volonghi, Matt Goodall</span></p>
+
+<a name="pythoncook2-CHP-14-SECT-14.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText">You're writing a web application that uses the
+Twisted networking framework and the Nevow subsystem for web
+rendering. You need to be able to render some arbitrary Python
+objects to a web page.</P>
+
+
+<a name="pythoncook2-CHP-14-SECT-14.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">Interfaces and adapters are the Twisted and Nevow approach to this
+task. Here is a toy example web server script to show how they work:</p>
+
+<pre>from twisted.application import internet, service
+from nevow import appserver, compy, inevow, loaders, rend
+from nevow import tags as T
+# Define some simple classes to be the example's "application data"
+class Person(object):
+    def _ _init_ _(self, firstName, lastName, nickname):
+        self.firstName = firstName
+        self.lastName = lastName
+        self.nickname = nickname
+class Bookmark(object):
+    def _ _init_ _(self, name, url):
+        self.name = name
+        self.url = url
+# Adapter subclasses are the right way to join application data to the web:
+class PersonView(compy.Adapter):
+    """ Render a full view of a Person. """
+    _ _implements_ _ = inevow.IRenderer
+    attrs = 'firstName', 'lastName', 'nickname'
+    def rend(self, data):
+        return T.div(_class="View person") [
+            T.p['Person'],
+            T.dl[ [(T.dt[attr], T.dd[getattr(self.original, attr)])
+                    for attr in self.attrs]
+                ]
+            ]
+class BookmarkView(compy.Adapter):
+    """ Render a full view of a Bookmark. """
+    _ _implements_ _ = inevow.IRenderer
+    attrs = 'name', 'url'
+    def rend(self, data):
+        return T.div(_class="View bookmark") [
+            T.p['Bookmark'],
+            T.dl[ [(T.dt[attr], T.dd[getattr(self.original, attr)])
+                    for attr in self.attrs]
+                ]
+            ]
+# register the rendering adapters (could be done from a config textfile)
+<span class="docEmphBold">compy.registerAdapter(PersonView, Person, inevow.IRenderer)</span>
+<span class="docEmphBold">compy.registerAdapter(BookmarkView, Bookmark, inevow.IRenderer)</span>
+# some example data instances for the 'application'
+objs = [
+    Person('Valentino', 'Volonghi', 'dialtone'),
+    Person('Matt', 'Goodall', 'mg'),
+    Bookmark('Nevow', 'http://www.nevow.com'),
+    Person('Alex', 'Martelli', 'aleax'),
+    Bookmark('Alex', 'http://www.aleax.it/'),
+    Bookmark('Twisted', 'http://twistedmatrix.com/'),
+    Bookmark('Python', 'http://www.python.org'),
+    ]
+# a simple Page that renders a list of objects
+class Page(rend.Page):
+    def render_item(self, ctx, data):
+        return inevow.IRenderer(data)
+    docFactory = loaders.stan(
+        T.html[
+            T.body[
+                T.ul(data=objs, render=rend.sequence)[
+                    T.li(pattern='item')[render_item],
+                    ],
+                ],
+            ]
+        )
+# start this very-special-purpose tiny toy webserver:
+application = service.Application('irenderer')
+httpd = internet.TCPServer(8000, appserver.NevowSite(Page( )))
+httpd.setServiceParent(application)</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-14-SECT-14.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">This recipe's purpose is to provide an example of
+how to get Nevow to render instances of application classes directly
+to a web page. To supply this example, the recipe shows two classes,
+Person and Bookmark, whose instances contain information which, one
+can suppose, is coming from a database, or from a file, or from some
+other site on the web, wherever.</P>
+
+<p class="docText">A key point is that the application classes do not get altered in any
+way to allow their instances to be rendered onto web pages: rather,
+<i>adaptation</I> is used to allow instances of such
+classes to be rendered through separate renderer-adapter classes.</P>
+
+<p class="docText">We need two different adapters, one each for <i>Person</i>
+and <i>Bookmark</i>. We code the two adapters as classes
+<I>PersonView</i> and <i>BookmarkView</I>, each
+inheriting from <tt>compy.Adapter</tt> and overriding the
+<tt>rend</tt> method.</p>
+
+<p class="docText"><tt>compy.Adapter</tt> is an abstract superclass intended
+just for this purpose: it accepts as its constructor argument an
+object that must be adapted to another interface, and holds that
+object as <tt>self.original</tt> for its
+subclasses' benefit. Each subclass asserts that it
+implements <tt>inevow.IRenderer</tt> by listing that
+interface in its class-level <tt>_ _implements_ _</tt>
+attribute.</P>
+
+<p class="docText"><tt>inevow.IRenderer</tt> is an interface that supplies a
+<tt>rend</tt> method. The Nevow rendering pipeline knows
+about <tt>IRenderer</tt> and calls the
+<tt>rend</tt> method of the interface to serialize objects
+to HTML. Objects that implement the interface (on their own behalf or
+as adapters of other objects) can directly become part of the
+rendering pipeline.</p>
+
+<p class="docText">The two key statements of this recipe are the two calls to the
+<tt>registerAdapter</tt> function of
+Nevow's module <tt>compy</tt>:</P>
+
+<pre>compy.registerAdapter(PersonView, Person, inevow.IRenderer)
+compy.registerAdapter(BookmarkView, Bookmark, inevow.IRenderer)</pre><BR>
+
+
+<p class="docText">These calls tell Nevow that <i>PersonView</i> is the class
+to use to adapt any instance of <i>Person</i> to interface
+<tt>IRenderer</tt>, and similarly for
+<i>BookmarkView</i> and <i>Bookmark</i>. So, when
+the <tt>IRenderer</tt> interface is called with an instance
+<tt><i>p</i></tt> of <i>Person</i> as its
+argument, it automatically returns an adapter that is an instance of
+<i>PersonView</I> with <tt><I>p</i></tt> as its
+<tt>self.original</tt> (and, again, similarly for
+<i>Bookmark</I>).</p>
+
+<p class="docText">Note how accurately this approach distributes appropriate knowledge
+to the various parts of the software and minimizes coupling among
+them while strengthening cohesion within each. Nevow itself has no
+built-in knowledge of any application class nor of any specific
+adapter: nor does it need any such knowledge. Nevow just specifies
+the <tt>IRenderer</tt> interface it needs for rendering and
+the <tt>registerAdapter</tt> function used to inform the
+framework about adaptation connections. Application-level classes
+neither have nor need any knowledge of the framework at all. Each
+adapter class knows about the application level class
+it's adapting, the interface it's
+implementing, and utilities such as the <tt>Adapter</tt>
+base class that the framework supplies (just to factor out a little
+repetitive coding that would be needed otherwise), and the
+<tt>tags</tt> mechanism. (The tags mechanism eases dynamic
+generation of HTML output. However, you could code adapters to return
+strings with HTML markup directly, if that suited the needs of your
+specific application better than the <tt>tags</tt>
+mechanism does.)</p>
+
+<p class="docText">Finally, the recipe includes an example <i>Page</i> class
+which ties everything togetheragain, for convenience, using
+<tt>tags</tt> to generate the output. <i>Page</i>
+uses (explicitly) the <tt>rend.sequence</tt> renderer
+provided by Nevow to loop over a sequence and render each item, and
+(implicitly) the various adapters, by
+"casting" each item to the
+<tt>IRenderer</tt> interface. The recipe ends with three
+lines to build Twisted application and service objects and to put
+them together, so that running this recipe's script
+with Twisted's <tt>twistd</tt>
+general-purpose daemon provides a small demonstration one-page web
+site running on the local host at port 8000.</P>
+
+<p class="docText">A more complete (and complicated) version of this recipe can be found
+as part of the Nevow 0.3 distribution, downloadable from <a class="docLink" target="_blank" href="http://www.nevow.com">http://www.nevow.com</a>, as
+<i>examples/irenderer.tac</I>.</p>
+
+
+<a name="pythoncook2-CHP-14-SECT-14.4"></a>
+<H4 class="docSection2Title">See Also</h4>
+
+<p class="docText">Nevow is at <a class="docLink" target="_blank" href="http://www.nevow.com">http://www.nevow.com</a>;
+Twisted is at <a class="docLink" target="_blank" href="http://twistedmatrix.com/">http://twistedmatrix.com/</a>.<a name="pythoncook2-CHP-14-ITERM-2944"></a></P>
+
+
+
+<UL></ul></TD></TR></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-14-sect-13.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-15.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

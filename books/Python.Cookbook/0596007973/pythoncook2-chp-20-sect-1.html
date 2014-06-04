@@ -1,0 +1,181 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;20.1.&nbsp;Getting Fresh Default Values at Each Function Call</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=ch20-77003.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-20-sect-2.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-20-SECT-1"></a>
+<h3 class="docSection1Title" id="409771-981">Recipe 20.1. Getting Fresh Default Values at Each Function Call</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Sean Ross</span></p>
+
+<a name="pythoncook2-CHP-20-SECT-1.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText">Python computes the default values for a function's
+optional arguments just once, when the function's
+<tt>def</tt> statement executes. However, for some of your
+functions, you'd like to ensure that the default
+values are <span class="docEmphasis">fresh</span> ones (i.e., new and independent
+copies) each time a function gets called.</P>
+
+
+<a name="pythoncook2-CHP-20-SECT-1.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">A Python 2.4 decorator offers an elegant solution, and, with a
+slightly less terse syntax, it's a solution you can
+apply in version 2.3 too:</p>
+
+<pre>import copy
+def freshdefaults(f):
+    "a decorator to wrap f and keep its default values fresh between calls"
+    fdefaults = f.func_defaults
+    def refresher(*args, **kwds):
+        f.func_defaults = deepcopy(fdefaults)
+        return f(*args, **kwds)
+    # in 2.4, only: refresher._ _name_ _ = f._ _name_ _
+    return refresher
+# usage as a decorator, in python 2.4:
+@freshdefaults
+def packitem(item, pkg=[  ]):
+    pkg.append(item)
+    return pkg
+# usage in python 2.3: after the function definition, explicitly assign:
+# f = freshdefaults(f)</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-20-SECT-1.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">A function's default values are evaluated once, and
+only once, at the time the function is defined (i.e., when the
+<tt>def</tt> statement executes). Beginning Python
+programmers are sometimes surprised by this fact; they try to use
+mutable default values and yet expect that the values will somehow be
+regenerated afresh each time they're needed.</P>
+
+<p class="docText">Recommended Python practice is to not use mutable default values.
+Instead, you should use idioms such as:</p>
+
+<pre>def packitem(item, pkg=None):
+    if pkg is None:
+        pkg = [  ]
+    pkg.append(item)
+    return pkg</pre><BR>
+
+
+<p class="docText">The <I>freshdefaults</i> decorator presented in this recipe
+provides another way to accomplish the same task. It eliminates the
+need to set as your default value anything but the value you intend
+that optional argument to have by default. In particular, you
+don't have to use <tt>None</tt> as the
+default value, rather than (say) square brackets <tt>[
+]</tt>, as you do in the recommended idiom.</p>
+
+<p class="docText"><i>freshdefaults</i> also removes the need to test each
+argument against the stand-in value (e.g., <tt>None</tt>)
+before assigning the intended value: this could be an important
+simplification in your code, where your functions need to have
+several optional arguments with mutable default values, as long as
+all of those default values can be deep-copied.</P>
+
+<p class="docText">On the other hand, the implementation of
+<i>freshdefaults</i> needs several reasonably advanced
+concepts: decorators, closures, function attributes, and deep
+copying. All in all, this implementation is no doubt more difficult
+to explain to beginning Python programmers than the recommended
+idiom. Therefore, this recipe cannot really be recommended to
+beginners. However, advanced Pythonistas may find it useful.</P>
+
+<a name="pythoncook2-CHP-20-SIDEBAR-1"></a><p><table cellspacing="0" width="90%" border="1" cellpadding="5"><TR><td>
+<H2 class="docSidebarTitle">Setting the Name of a Function</H2>
+
+<p class="docText">If an outer function just returns an inner function (often a
+closure), the name of the returned function object is fixed, which
+can be confusing when the name is shown during introspection or
+debugging:</p>
+
+<pre>&gt;&gt;&gt; def make_adder(addend):
+...   def adder(augend): return augend+addend
+...   return adder
+...
+&gt;&gt;&gt; plus100 = make_adder(100)
+&gt;&gt;&gt; plus_23 = make_adder(23)
+&gt;&gt;&gt; print plus100(1000), plus_23(1000)
+<b>1100 1023</b>
+&gt;&gt;&gt; print plus100, plus_23
+<b>&lt;function adder at 0x386530&gt; &lt;function adder at 0x3825f0&gt;</b></pre><br>
+
+
+<p class="docText">As you see, the functionality of <i>plus100</i> and
+<i>plus_23</i> is correct (they add 100 and 23 to their
+argument, respectively). Confusingly, however, their names are both
+'<tt>adder</tt>', even though they are different functions.
+In Python 2.4, you can solve the problem by setting the <tt>_
+_name_ _</tt> attribute of the inner function right after the
+end of the inner function's <tt>def</tt>
+statement, and before the <tt>return</tt> statement from
+the outer function:</p>
+
+<pre>def make_adder(addend):
+    def adder(augend):
+        return augend+addend
+    adder._ _name_ _ = 'add_%s' % (addend,)
+    return adder</pre><br>
+
+
+<p class="docText">With this change in <i>make_adder</i>, the previous snippet
+would now produce more useful output:</p>
+
+<pre>&gt;&gt;&gt; print plus100, plus_23
+<B>&lt;function add_100 at 0x386530&gt; &lt;function add_23 at 0x3825f0&gt;</b></pre><BR>
+
+
+<p class="docText">Unfortunately, in Python 2.3, you cannot assign to the <tt>_
+_name_ _</tt> attribute of a function object; in that release,
+the attribute is read-only. If you want to obtain the same effect in
+Python 2.3, you must follow a more roundabout route, making and
+returning a new function object that differs from the other only in
+name:</p>
+
+<pre>import new
+def make_adder(addend):
+  def adder(augend): return augend+addend
+  return new.function(adder.func_code, adder.func_globals, 'add_%s' % (addend,),
+                      adder.func_defaults, adder.func_closure)</pre><br>
+
+</TD></tr></table></p><br>
+
+
+<a name="pythoncook2-CHP-20-SECT-1.4"></a>
+<h4 class="docSection2Title">See Also</h4>
+
+<p class="docText">Python <span class="docEmphasis">Language Reference</span> documentation about
+decorators; <span class="docEmphasis">Python</span> <span class="docEmphasis">Language
+Reference</span> and <span class="docEmphasis">Python in a Nutshell</span>
+documentation about closures and function attributes;
+<span class="docEmphasis">Python</span> <span class="docEmphasis">Library Reference</span>
+and <span class="docEmphasis">Python in a Nutshell</span> documentation about
+standard library module <tt>copy</tt>, specifically
+function <tt>deepcopy</tt>.</p>
+
+
+
+<UL></ul></TD></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=ch20-77003.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-20-sect-2.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

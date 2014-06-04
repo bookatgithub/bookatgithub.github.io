@@ -1,0 +1,349 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
+<title>6.2 Comparing grading schemes</title>
+<link rel="stylesheet" type="text/css" href="./acc.css" />
+</head>
+
+<body>
+<div class="prevnext">
+<a href="33.htm"><img src="images/Prev1.gif" /></a>&nbsp;&nbsp;<a href="35.htm"><img src="images/Next1.gif" /></a>
+</div>
+<h3>6.2 Comparing grading schemes</h3>
+<p>In &sect;4.2/61, we presented a grading scheme that based students' final grades, in part, on 
+their median homework scores. Devious students can exploit this scheme by deliberately 
+not turning in all their homework assignments. After all, the bottom half of their homework 
+grades has no effect on their final grade. If they've done enough homework to 
+ensure a good grade, why not stop doing homework altogether?</p>
+<p>In our experience, most students do not exploit this particular loophole. However, we 
+did have occasion to teach one class that gleefully and openly did so. We wondered 
+whether the students who skipped homework had, on average, different final grades than 
+those who did all the homework. While we were thinking about how to answer that 
+question, we decided that it might be interesting to see what the answer would be if we 
+used one of two alternative grading schemes:</p>
+<ul>
+<li>Using the average instead of the median, and treating those assignments that the student failed to turn in as zero</li>
+<li>Using the median of only the assignments that the student actually submitted</li>
+</ul>
+<p>For each of these grading schemes, we wanted to compare the median grade of the students 
+who turned in all their homework with the median grade of the students who 
+missed one or more assignments. We wound up with a program that had to solve two 
+distinct subproblems:</p>
+<ol>
+<li>Read all the student records, separating the students who did all the homework from the others.</li>
+<li>Apply each of the grading schemes to all the students in each group, and report the median grade of each group.</li>
+</ol>
+<h4>6.2.1 Working with student records</h4>
+<p>Our first subproblem is to read and classify the student records. Fortunately, we already 
+have some code we can use in solving this part of the problem: We can use the 
+<code>Student_info</code> type from &sect;4.2.1/61 and the associated <code>read</code> function from &sect;4.2.2/62 to 
+read the student data records. What we don't have yet is a function that checks whether a 
+student has done all the homework. Writing such a function is easy:</p>
+<div class="prebox"><pre>
+bool did_all_hw(const Student_info&amp; s)
+{
+return ((find(s.homework.begin(), s.homework.end(), 0))
+     ==  s.homework.end());
+}
+</pre></div>
+<p>This function looks in <code>s.homework</code> to see whether any of the values stored there is 0. 
+Because we give at least partial credit for any assignment that is turned in, a 0 grade 
+means that the assignment was not submitted. We compare the return from <code>find</code> with 
+homework.end(). As usual, <code>find</code> returns its second argument if it fails to find the value 
+that it seeks.</p>
+<p>With these two functions, writing code to read and separate the student records is simplicity 
+itself. We'll read each student record, check whether the student did all the homework, 
+and append the record to one of two <code>vector</code>s, which, for want of a better idea, 
+we'll name <code>did</code> and <code>didnt</code>. While we're at it, we'll check that neither vector is empty, so 
+that we'll know that our analysis will actually tell us something useful:</p>
+<div class="prebox"><pre>
+vector&lt;Student_info&gt; did, didnt;
+Student_info student;
+
+// <i>read all the records, separating them based on whether all homework was done </i>
+while (read(cin, student)) {
+    if (did_all_hw(student))
+        did.push_back(student);
+    else
+        didnt.push_back(student);
+}
+
+// <i>check that both groups contain data </i>
+if (did.empty()) {
+    cout << "No student did all the homework!" << endl;
+    return 1;
+}
+if (didnt.empty()) {
+    cout << "Every student did all the homework!" << endl;
+    return 1;
+}
+</pre></div>
+<p>The only new idea here is the <code>empty</code> member function, which yields <code>true</code> if the container 
+is empty and <code>false</code> otherwise. It is a better idea to use this function to check for an 
+empty container than it is to compare the <code>size</code> with 0, because for some kinds of containers, 
+it might be more efficient to check whether the container has any elements than to figure 
+out exactly how many elements there are.</p>
+<h4>6.2.2 Analyzing the grades</h4>
+<p>We now know how to read and classify student records into the <code>did</code> and <code>didnt</code> vectors. 
+The next step is to analyze them, which means we need to think a little about how to 
+structure the analysis.</p>
+<p>We know that we have three analyses to perform, and each analysis has two parts, 
+which analyze separately the students who did and who didn't do all the homework. 
+Because we will do each analysis on two sets of data, we certainly want to make each 
+analysis its own function. However, there are some operations, such as reporting in a 
+common format, that we are going to want to do on pairs of analyses, rather than on individual 
+analyses. Evidently, we'll want to make writing the results of each pair of analyses 
+into a function as well.</p>
+<p>The tricky part is that we want to call the function that writes the analysis results three 
+times, once for each kind of analysis. We want that function to call the appropriate analysis 
+function twice, once each for the <code>did</code> and <code>didnt</code> objects. However, we want the 
+function that generates the reports to call a different analysis function each time we call it! 
+How do we arrange that?</p>
+<p>The easiest solution is to define three analysis functions and pass each one as an argument 
+to the reporting function. Remember that we've used such arguments already, such 
+as when we passed the <code>compare</code> function to the library <code>sort</code> routine in &sect;4.2.2/64. In this 
+case, we want our output routine to take five arguments:</p>
+<ul>
+<li>The stream on which to write the output</li>
+<li>A <code>string</code> that represents the name of the analysis</li>
+<li>The function to use for the analysis</li>
+<li>Two arguments, each of which is one of the <code>vector</code>s that we want to analyze</li>
+</ul>
+<p>For example, let's assume that the first analysis, which looks at the medians, is done by a 
+function called <code>median_analysis</code>. Then, we'd like to report the results for each group 
+of students by executing</p>
+<div class="prebox"><pre>
+write_analysis(cout, &quot;median&quot;, median_analysis, did, didnt);
+</pre></div>
+<p>Before we define <code>write_analysis</code>, let's define <code>median_analysis</code>. We would like to 
+give that function a <code>vector</code> of student records, and we would like it to compute the students' 
+grades according to the normal grading scheme and to return the median of those 
+grades. We can define that function as follows:</p>
+<div class="prebox"><pre>
+// <i>this function doesn't quite work</i>
+double median_analysis(const vector&lt;Student_info&gt;&amp; students)
+{
+    vector&lt;double&gt; grades;
+
+    transform(students.begin(), students.end(),
+              back_inserter(grades), grade);
+    return median(grades);
+}
+</pre></div>
+<p>Although this function might appear difficult at first glance, it introduces only one new 
+idea, namely the <code>transform</code> function. This function takes three iterators and a function. 
+The first two iterators specify a range of elements to transform; the third iterator is the 
+destination into which to put the result of running the function.</p>
+<p>When we call <code>transform</code>, we are responsible for ensuring that the destination has 
+room for the values from the input sequence. In this case, there is no problem, because we 
+obtain the destination by calling <code>back_inserter</code> (&sect;6.1/102), thereby arranging that 
+<code>transform</code>'s results will be appended to <code>grades</code>, which will automatically grow as necessary 
+to accommodate the results.</p>
+<p>The fourth argument to <code>transform</code> is a function that <code>transform</code> applies to each element 
+of the input sequence to obtain the corresponding element of the output sequence. 
+Therefore, when we call <code>transform</code> in this example, the effect is to apply the <code>grade</code> 
+function to each element of <code>students</code>, and to append each grade to the <code>vector</code> named 
+<code>grades</code>. When we have all these students' grades, we call <code>median</code>, which we defined in 
+&sect;4.1.1/53, to compute their median.</p>
+<p>There's only one problem: As the comment notes, this function doesn't quite work.</p>
+<p>One reason that it doesn't work is that there are several overloaded versions of the 
+<code>grade</code> function. The compiler doesn't know which version to call, because we haven't 
+given <code>grade</code> any arguments. We know that we want to call the version from &sect;4.2.2/63, 
+but we need a way to tell the compiler to do so.</p>
+<p>The other reason is that the <code>grade</code> function will <code>throw</code> an exception if any student did 
+no homework at all, and the <code>transform</code> function does nothing about exceptions. If an 
+exception occurs, the <code>transform</code> function will be stopped at the point of the exception, 
+and control will return to <code>median_analysis</code>. Because <code>median_analysis</code> doesn't handle 
+the exception either, the exception will continue to propagate outward. The effect will 
+be that this function will also exit prematurely, passing control to its caller, and so on, 
+until control reaches an appropriate <code>catch</code>. If there is no such <code>catch</code>, as would be likely 
+in this case, the program itself is terminated, and the message that was thrown is printed 
+(or not, depending on the implementation).</p>
+<p>We can solve both problems by writing an auxiliary function that will <code>try</code> the <code>grade</code> 
+function and handle the exception. Because we are calling the <code>grade</code> function explicitly, 
+rather than passing it as an argument, the compiler will be able to figure out which version 
+we mean:</p>
+<div class="prebox"><pre>
+double grade_aux(const Student_info&amp; s)
+{
+    try {
+         return grade(s);
+    } catch (domain_error) {
+        return grade(s.midterm, s.final, 0) ;
+    }
+}
+</pre></div>
+<p>This function will call the version of <code>grade</code> from &sect;4.2.2/63. If an exception occurs, we 
+will <code>catch</code> it and call the version of <code>grade</code>, from &sect;4.1/52, that takes three <code>double</code>s that 
+represent the exam scores and overall homework grade. Thus, we'll assume that students 
+who did no homework at all got a 0 grade on their homework, but their exams still count. 
+Now, we can rewrite the analysis function to use <code>grade_aux</code>:</p>
+<div class="prebox"><pre>
+// <i>this version works fine</i>
+double median_analysis(const vector&lt;Student_info&gt;&amp; students)
+{
+    vector&lt;double&gt; grades;
+
+    transform(students.begin(), students.end(),
+              back_inserter(grades), grade_aux);
+    return median(grades);
+}
+</pre></div>
+<p>Having seen what an analysis routine looks like, we are now in a position to define 
+<code>write_analysis</code>, which uses an analysis routine to compare two sets of students:</p>
+<div class="prebox"><pre>
+void write_analysis(ostream&amp; out, const string&amp; name,
+                    double analysis(const vector&lt;Student_info&gt;&amp;),
+                    const vector&lt;Student_info&gt;&amp; did,
+                    const vector&lt;Student_info&gt;&amp; didnt)
+{
+    out &lt;&lt; name &lt;&lt; &quot;: median(did) = &quot; &lt;&lt; analysis(did) &lt;&lt;
+                   &quot;, median(didnt) = &quot; &lt;&lt; analysis(didnt) &lt;&lt; endl;
+}
+</pre></div>
+<p>Again, this function is surprisingly small, although it does introduce two new ideas. The 
+first is how to define a parameter that represents a function. The parameter definition for 
+<code>analysis</code> looks just like the function declaration that we wrote in &sect;4.3/67. (Actually, as 
+we shall learn in &sect;10.1.2/172, there is slightly more going on here than meets the eye. The 
+additional detail doesn't affect the current discussion directly.)</p>
+<p>The other new idea is the return type, <b>void. </b>The built-in type <code>void</code> can be used only 
+in a few restricted ways, one of which is to name a return type. When we say a function 
+&quot;returns&quot; a <code>void</code>, we're really saying that it has no return value. We can exit from such a 
+function by executing a <code>return</code> statement with no value, such as</p>
+<div class="prebox"><pre>
+return;
+</pre></div>
+<p>or, as we do here, by falling off the end of the function. Ordinarily, we cannot just fall off 
+the end of a function, but the language allows functions that return <code>void</code> to do so. 
+At this point, we can write the rest of our program:</p>
+<div class="prebox"><pre>
+int main()
+{
+    // <i>students who did and didn't do all their homework</i>
+    vector&lt;Student_info&gt; did, didnt;
+
+    //<i> read the student records and partition them</i>
+    Student_info student;
+    while (read(cin, student)) {
+        if (did_all_hw(student))
+            did.push_back(student);
+       else
+           didnt.push_back(student);
+    }
+
+    // <i>verify that the analyses will show us something</i>
+    if (did.empty()) {
+        cout << "No student did all the homework!" << endl;
+        return 1;
+    }
+    if (didnt.empty()) {
+        cout << "Every student did all the homework!" << endl;
+        return 1;
+    }
+
+    // <i>do the analyses</i>
+    write_analysis(cout, "median", median_analysis, did, didnt);
+    write_analysis(cout, "average", average_analysis, did, didnt);
+    write_analysis(cout, "median of homework turned in",
+                   optimistic_median_analysis, did, didnt);
+
+    return 0;
+}
+</pre></div>
+<p>All that remains is to write <code>average_analysis</code> and <code>optimistic_median_analysis</code>.</p>
+<h4>6.2.3 Grading based on average homework grade</h4>
+<p>We would like the <code>average_analysis</code> function to compute the students' grades by 
+using the average homework grade, rather than the median. Therefore, the logical first 
+step is to write a function to compute the average of a <code>vector</code>, with the aim of using it 
+instead of <code>median</code> for grade computation:</p>
+<div class="prebox"><pre>
+double average(const vector&lt;double&gt;&amp; v)
+{
+    return accumulate(v.begin(), v.end(), 0.0) / v.size();
+}
+</pre></div>
+<p>This function uses <code>accumulate</code>, which, unlike the other library algorithms we've used, is 
+declared in <code>&lt;numeric&gt;</code>. As this header's name implies, it offers tools for numeric computation. 
+The <code>accumulate</code> function adds the values in the range denoted by its first two 
+arguments, starting the summation with the value given by its third argument.</p>
+<p>The type of the sum is the type of the third argument, so it is crucially important for us 
+to use <code>0.0</code>, as we did here, instead of 0. Otherwise, the result would be an <code>int</code>, and any 
+fractional part would be lost.</p>
+<p>Having used <code>accumulate</code> to generate the sum of all the elements in the range, we 
+divide that sum by <code>v.size()</code>, which is the number of elements in the range. The result 
+of that division, of course, is the average, which we return to our caller.</p>
+<p>Once we have the <code>average</code> function, we can use it to implement the <code>average_grade</code> 
+function to reflect this alternative grading policy:</p>
+<div class="prebox"><pre>
+double average_grade(const Student_info&amp; s)
+{
+    return grade(s.midterm, s.final, average(s.homework));
+}
+</pre></div>
+<p>This function uses the <code>average</code> function to compute an overall homework grade, which it 
+then gives to the <code>grade</code> function from &sect;4.1/52 to use in computing the final grade.</p>
+<p>With this infrastructure in place, the <code>average_analysis</code> function is simplicity itself:</p>
+<div class="prebox"><pre>
+double average_analysis(const vector&lt;Student_info&gt;&amp; students)
+{
+    vector&lt;double&gt; grades;
+
+    transform(students.begin(), students.end(),
+              back_inserter(grades), average_grade);
+    return median(grades);
+}
+</pre></div>
+<p>The only difference between this function and <code>median_analysis</code> (&sect;6.2.2/113) is its 
+name and its use of <code>average_grade</code> instead of <code>grade_aux</code>.</p>
+<h4>6.2.4 Median of the completed homework</h4>
+<p>The last analysis scheme, <code>optimistic_median_analysis</code>, gets its name from the optimistic 
+assumption that the students' grades on the homework that they didn't turn in 
+would have been the same as the homework that they did turn in. With that assumption, 
+we would like to compute the median of just the homework that each student submitted. 
+We'll call this computation an <i>optimistic </i>median, and we'll begin by writing a function to 
+compute it. Of course, we have to contend with the possibility that a student did no 
+homework at all, in which case we'll use 0 as the overall homework grade:</p>
+<div class="prebox"><pre>
+// <i>median of the nonzero elements of </i>s.homework, <i>or </i>0 <i>if no such elements exist </i>
+double optimistic_median(const Student_info&amp; s)
+{
+    vector&lt;double&gt; nonzero;
+    remove_copy(s.homework.begin(), s.homework.end(),
+                back_inserter(nonzero), 0);
+    
+    if (nonzero.empty())
+        return grade(s.midterm, s.final, 0);
+    else
+        return grade(s.midterm, s.final, median(nonzero));
+}
+</pre></div>
+<p>This function works by extracting the nonzero elements from the <code>homework</code> vector and 
+putting them into a new vector, called <code>nonzero</code>. Once we have the nonzero homework 
+grades, we call the version of <code>grade</code> defined in &sect;4.1/52 to compute the final score based 
+on the <code>median</code> of the homework assignments that were actually submitted.</p>
+<p>The only new idea in this function is how we get values into <code>nonzero</code>, which we do 
+by calling the <code>remove_copy</code> algorithm. To understand the call to <code>remove_copy</code>, you 
+may find it useful to know that the library provides &quot;copying&quot; versions of many of the 
+algorithms. So, for example, <code>remove_copy</code> does what <code>remove</code> does, but copies its results 
+to an indicated destination.</p>
+<p>The <code>remove</code> function finds all values that match a given value and &quot;removes&quot; those 
+values from the container. All the values in the input sequence that are not &quot;removed&quot; 
+will be copied into the destination. We'll have more to say shortly about what &quot;remove&quot; 
+means in this context.</p>
+<p>The <code>remove_copy</code> function takes three iterators and a value. As with most algorithms, 
+the first two iterators denote the input sequence. The third denotes the beginning 
+of the destination for the copy. As with <code>copy</code>, the <code>remove_copy</code> algorithm assumes that 
+there is enough space in the destination to hold all the elements that are copied. We call 
+<code>back_inserter</code> to grow nonzero as needed.</p>
+<p>We should now be able to see that the effect of the <code>remove_copy</code> call is to copy into 
+nonzero all the nonzero elements in <code>s.homework</code>. We then check whether <code>v</code> is empty, and if not, we 
+do the normal <code>grade</code> calculation based on the <code>median</code> of the <code>nonzero</code> grades. If <code>v</code> is 
+empty, then we use 0 as the homework grade.</p>
+<p>Of course, to complete our analysis, we need to write an analysis function to call our 
+<code>optimistic_median</code> function. We leave doing so as an exercise.</p>
+<div class="prevnext">
+<a href="33.htm"><img src="images/Prev1.gif" /></a>&nbsp;&nbsp;<a href="35.htm"><img src="images/Next1.gif" /></a>
+</div>
+</body>
+</html>

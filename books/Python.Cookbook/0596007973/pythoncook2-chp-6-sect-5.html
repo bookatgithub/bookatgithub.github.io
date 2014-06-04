@@ -1,0 +1,241 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;6.5.&nbsp;Delegating Automatically as an Alternative to Inheritance</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-6-sect-4.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-6-sect-6.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-6-SECT-5"></a>
+<h3 class="docSection1Title">Recipe 6.5. Delegating Automatically as an Alternative to Inheritance</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Alex Martelli, Raymond Hettinger</span></p>
+
+<a name="pythoncook2-CHP-6-SECT-5.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-6-ITERM-2090"></a> <a name="pythoncook2-CHP-6-ITERM-2091"></a>You'd like to
+inherit from a class or type, but you need some tweak that
+inheritance does not provide. For example, you want to selectively
+hide some of the base class' methods, which
+inheritance doesn't
+allow.<a name="pythoncook2-CHP-6-ITERM-2092"></a></P>
+
+
+<a name="pythoncook2-CHP-6-SECT-5.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText"><a name="pythoncook2-CHP-6-ITERM-2093"></a>Inheritance
+is quite handy, but it's not all-powerful. For
+example, it doesn't let you hide methods or other
+attributes supplied by a base class. Containment with automatic
+delegation is often a good alternative. Say, for example, you need to
+wrap some objects to make them read-only; thus preventing accidental
+alterations. Therefore, besides stopping attribute-setting, you also
+need to hide mutating methods. Here's a way:</p>
+
+<pre># support 2.3 as well as 2.4
+try: set
+except NameError: from sets import Set as set
+class ROError(AttributeError): pass
+class Readonly: # there IS a reason to NOT subclass object, see Discussion
+    mutators = {
+        list: set('''_ _delitem_ _ _ _delslice_ _ _ _iadd_ _ _ _imul_ _
+                 _ _setitem_ _ _ _setslice_ _ append extend insert
+                 pop remove sort'''.split( )),
+        dict: set('''_ _delitem_ _ _ _setitem_ _ clear pop popitem
+                 setdefault update'''.split( )),
+        }
+    def _ _init_ _(self, o):
+        object._ _setattr_ _(self, '_o', o)
+        object._ _setattr_ _(self, '_no', self.mutators.get(type(o), ( )))
+    def _ _setattr_ _(self, n, v):
+        raise ROError, "Can't set attr %r on RO object" % n
+    def _ _delattr_ _(self, n):
+        raise ROError, "Can't del attr %r from RO object" % n
+    def _ _getattr_ _(self, n):
+        if n in self._no:
+            raise ROError, "Can't get attr %r from RO object" % n
+        return getattr(self._o, n)</pre><BR>
+
+
+<p class="docText">Code using this class <i>Readonly</I> can easily add other
+wrappable types with <tt>Readonly.mutators[sometype] =
+the_mutators</tt>.</P>
+
+
+<a name="pythoncook2-CHP-6-SECT-5.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText"><a name="pythoncook2-CHP-6-ITERM-2094"></a> <a name="pythoncook2-CHP-6-ITERM-2095"></a>
+<a name="pythoncook2-CHP-6-ITERM-2096"></a>Automatic delegation, which the special
+methods <tt>_ _getattr_ _</tt>, <tt>_ _setattr_
+_</tt>, and <tt>_ _delattr_ _</tt> enable us to
+perform so smoothly, is a powerful, general technique. In this
+recipe, we show how to use it to get an effect that is almost
+indistinguishable from subclassing while hiding some names. In
+particular, we apply this quasi-subclassing to the task of wrapping
+objects to make them read-only. Performance isn't
+quite as good as it might be with real inheritance, but we get better
+flexibility and finer-grained control as compensation.</P>
+
+<p class="docText">The fundamental idea is that each instance of our class holds an
+instance of the type we are wrapping (i.e., extending and/or
+tweaking). Whenever client code tries to get an attribute from an
+instance of our class, unless the attribute is specifically defined
+there (e.g., the <i>mutators</i> dictionary in class
+<i>Readonly</i>), <tt>_ _getattr_ _</tt>
+TRansparently shunts the request to the wrapped instance after
+appropriate checks. In Python, methods are also attributes, accessed
+in just the same way, so we don't need to do
+anything different to access methods. The <tt>_ _getattr_
+_</tt> approach used to access data attributes works for methods
+just as well.<a name="pythoncook2-CHP-6-ITERM-2097"></a></p>
+
+<p class="docText">This is where the comment in the recipe about there being a specific
+reason to avoid subclassing object comes in. Our <tt>_ _getattr_
+_</tt> based approach does work on <span class="docEmphasis">special</span>
+methods too, but only for instances of old-style classes. In
+today's object model, Python operations access
+special methods on the class, not on the instance. Solutions to this
+issue are presented next in <a class="docLink" href="pythoncook2-CHP-6-SECT-6.html#pythoncook2-CHP-6-SECT-6">Recipe 6.6</a> and in <a class="docLink" href="pythoncook2-CHP-20-SECT-8.html#pythoncook2-CHP-20-SECT-8">Recipe 20.8</a>. The approach adopted in
+this recipemaking class <i>Readonly</I> old style,
+so that the issue can be locally avoided and delegated to other
+recipesis definitely <span class="docEmphasis">not</span> recommended for
+production code. I use it here only to keep this recipe shorter and
+to avoid duplicating coverage that is already amply given elsewhere
+in this cookbook.</p>
+
+<p class="docText"><tt>_ _setattr_ _</tt> plays a role similar to <tt>_
+_getattr_ _</tt>, but it gets called when client code sets an
+instance attribute; in this case, since we want to make a read-only
+wrapper, we simply forbid the operation. Remember, to avoid
+triggering <tt>_ _setattr_ _</tt> from inside the methods
+you code, you must never code normal <tt>self.n = v</tt>
+statements within the methods of classes that have <tt>_
+_setattr_ _</tt>. The simplest workaround is to delegate the
+setting to class <tt>object</tt>, just like our class
+<I>Readonly</i> does twice in its <tt>_ _init_
+_</tt> method. Method <tt>_ _delattr_ _</tt> completes
+the picture, dealing with any attempts to delete attributes from an
+instance.</P>
+
+<p class="docText"><a name="pythoncook2-CHP-6-ITERM-2098"></a>Wrapping by automatic delegation does not
+work well with client or framework code that, one way or another,
+does type-testing. In such cases, the client or framework code is
+breaking polymorphism and should be rewritten. Remember not to use
+type-tests in your own client code, as you probably do not need them
+anyway. See <a class="docLink" href="pythoncook2-CHP-6-SECT-13.html#pythoncook2-CHP-6-SECT-13">Recipe 6.13</a> for
+better alternatives.</P>
+
+<p class="docText"><a name="pythoncook2-CHP-6-ITERM-2099"></a>
+<a name="pythoncook2-CHP-6-ITERM-2100"></a>In old versions of Python,
+automatic delegation was even more prevalent, since you could not
+subclass built-in types. In modern Python, you can inherit from
+built-in types, so you'll use automatic delegation
+less often. However, delegation still has its placeit is just
+a bit farther from the spotlight. Delegation is more flexible than
+inheritance, and sometimes such flexibility is invaluable. In
+addition to the ability to delegate selectively (thus effectively
+"hiding" some of the attributes),
+an object can delegate to different subobjects over time, or to
+multiple subobjects at one time, and inheritance
+doesn't offer anything comparable.</p>
+
+<p class="docText">Here is an example of delegating to multiple specific subobjects. Say
+that you have classes that are chock full of
+"forwarding methods", such as:</p>
+
+<pre>class Pricing(object):
+    def _ _init_ _(self, location, event):
+        self.location = location
+        self.event = event
+    def setlocation(self, location):
+        self.location = location
+    def getprice(self):
+        return self.location.getprice( )
+    def getquantity(self):
+        return self.location.getquantity( )
+    def getdiscount(self):
+        return self.event.getdiscount( )
+    <i>and many more such methods</i></pre><br>
+
+
+<p class="docText">Inheritance is clearly not applicable because an instance of
+<i>Pricing</i> must delegate to
+<span class="docEmphasis">specific</span> <i>location</i> and
+<i>event</i> instances, which get passed at initialization
+time and may even be changed. Automatic delegation to the rescue:</p>
+
+<pre>class AutoDelegator(object):
+    delegates = ( )
+    do_not_delegate = ( )
+    def _ _getattr_ _(self, key):
+        if key not in do_not_delegate:
+            for d in self.delegates:
+                try:
+                    return getattr(d, key)
+                except AttributeError:
+                    pass
+        raise AttributeError, key
+class Pricing(AutoDelegator):
+    def  _ _init_ _(self, location, event):
+        self.delegates = [location, event]
+    def setlocation(self, location):
+        self.delegates[0] = location</pre><br>
+
+
+<p class="docText">In this case, we do not delegate the setting and deletion of
+attributes, only the getting of attributes (and nonspecial methods).
+Of course, this approach is fully applicable only when the methods
+(and other attributes) of the various objects to which we want to
+delegate do not interfere with each other; for example,
+<I>location</I> must not have a
+<i>getdiscount</i> method; otherwise, it would preempt the
+delegation of that method, which is intended to go to
+<I>event</i>.</p>
+
+<p class="docText"><a name="pythoncook2-CHP-6-ITERM-2101"></a>
+<a name="pythoncook2-CHP-6-ITERM-2102"></a>If a class that does lots of
+delegation has a few such issues to solve, it can do so by explicitly
+defining the few corresponding methods, since <tt>_ _getattr_
+_</tt> enters the picture only for attributes and methods that
+cannot be found otherwise. The ability to <span class="docEmphasis">hide</span>
+some attributes and methods that are supplied by a delegate, but the
+delegator does not want to expose, is supported through attribute
+<i>do_not_delegate</i>, which any subclass may override.
+For example, if class <i>Pricing</i> wanted to hide a
+method <I>setdiscount</i> that is supplied by, say,
+<I>event</i>, only a tiny change would be required:</P>
+
+<pre>class Pricing(AutoDelegator):
+    do_not_delegate = ('set_discount',)</pre><br>
+
+
+<p class="docText">while all the rest remains as in the previous snippet.</P>
+
+
+<a name="pythoncook2-CHP-6-SECT-5.4"></a>
+<H4 class="docSection2Title">See Also</h4>
+
+<p class="docText"><a class="docLink" href="pythoncook2-CHP-6-SECT-13.html#pythoncook2-CHP-6-SECT-13">Recipe 6.13</a>; <a class="docLink" href="pythoncook2-CHP-6-SECT-6.html#pythoncook2-CHP-6-SECT-6">Recipe 6.6</a>; <a class="docLink" href="pythoncook2-CHP-20-SECT-8.html#pythoncook2-CHP-20-SECT-8">Recipe 20.8</a>; <span class="docEmphasis">Python in a
+Nutshell</span> chapter on OOP; PEP 253 (<a class="docLink" target="_blank" href="http://www.python.org/peps/pep-0253.html">http://www.python.org/peps/pep-0253.html</a>) for
+more details about Python's current (new-style)
+object model.<a name="pythoncook2-CHP-6-ITERM-2103"></a> <a name="pythoncook2-CHP-6-ITERM-2104"></a></P>
+
+
+
+<UL></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-6-sect-4.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-6-sect-6.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

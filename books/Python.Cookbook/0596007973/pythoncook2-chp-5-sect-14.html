@@ -1,0 +1,311 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;5.14.&nbsp;Enriching the Dictionary Type with Ratings Functionality</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-5-sect-13.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-5-sect-15.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-5-SECT-14"></a>
+<h3 class="docSection1Title">Recipe 5.14. Enriching the Dictionary Type with Ratings Functionality</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Dmitry Vasiliev, Alex Martelli</span></p>
+
+<a name="pythoncook2-CHP-5-SECT-14.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-5-ITERM-1970"></a>You want to
+use a dictionary to store the mapping between some keys and a current
+score value for each key. You frequently need to access the keys and
+scores in natural order (meaning, in order of ascending scores) and
+to check on a
+"key"'s current
+ranking in that order, so that using just a <tt>dict</tt>
+isn't quite enough.</P>
+
+
+<a name="pythoncook2-CHP-5-SECT-14.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">We can subclass <tt>dict</tt> and add or override methods
+as needed. By using multiple inheritance, placing base
+<tt>UserDict.DictMixin</tt> <span class="docEmphasis">before</span>
+base <tt>dict</tt> and carefully arranging our various
+delegations and "over"rides, we can
+achieve a good balance between getting good performance and avoiding
+the need to write "boilerplate"
+code.</p>
+
+<p class="docText"><a name="pythoncook2-CHP-5-ITERM-1971"></a>By enriching
+our class with many examples in its docstring, we can use the
+standard library's module <tt>doctest</tt>
+to give us unit-testing functionality, as well as ensuring the
+accuracy of all the examples we write in the docstring:</P>
+
+<pre>#!/usr/bin/env python
+''' An enriched dictionary that holds a mapping from keys to scores '''
+from bisect import bisect_left, insort_left
+import UserDict
+class Ratings(UserDict.DictMixin, dict):
+    """ class Ratings is mostly like a dictionary, with extra features: the
+        value corresponding to each key is the 'score' for that key, and all
+        keys are ranked in terms their scores.  Values must be comparable; keys,
+        as well as being hashable, must be comparable if any two keys may ever
+        have the same corresponding value (i.e., may be "tied" on score).
+        All mapping-like behavior is just as you would expect, such as:
+        &gt;&gt;&gt; r = Ratings({"bob": 30, "john": 30})
+        &gt;&gt;&gt; len(r)
+        <b>2</b>
+        &gt;&gt;&gt; r.has_key("paul"), "paul" in r
+ <B>       (False, False)</b>
+        &gt;&gt;&gt; r["john"] = 20
+        &gt;&gt;&gt; r.update({"paul": 20, "tom": 10})
+        &gt;&gt;&gt; len(r)
+        <B>4</b>
+        &gt;&gt;&gt; r.has_key("paul"), "paul" in r
+ <b>       (True, True)</b>
+        &gt;&gt;&gt; [r[key] for key in ["bob", "paul", "john", "tom"]]
+ <B>       [30, 20, 20, 10]</b>
+        &gt;&gt;&gt; r.get("nobody"), r.get("nobody", 0)
+ <B>       (None, 0)</b>
+        In addition to the mapping interface, we offer rating-specific
+        methods.  r.rating(key) returns the ranking of a "key" in the
+        ratings, with a ranking of 0 meaning the lowest score (when two
+        keys have equal scores, the keys themselves are compared, to
+        "break the tie", and the lesser key gets a lower ranking):
+        &gt;&gt;&gt; [r.rating(key) for key in ["bob", "paul", "john", "tom"]]
+<b>        [3, 2, 1, 0]</b>
+        getValueByRating(ranking) and getKeyByRating(ranking) return the
+        score and key, respectively, for a given ranking index:
+        &gt;&gt;&gt; [r.getValueByRating(rating) for rating in range(4)]
+<b>        [10, 20, 20, 30]</b>
+        &gt;&gt;&gt; [r.getKeyByRating(rating) for rating in range(4)]
+<b>        ['tom', 'john', 'paul', 'bob']</b>
+        An important feature is that the keys( ) method returns keys in
+        ascending order of ranking, and all other related methods return
+        lists or iterators fully consistent with this ordering:
+        &gt;&gt;&gt; r.keys( )
+  <b>      ['tom', 'john', 'paul', 'bob']</b>
+        &gt;&gt;&gt; [key for key in r]
+<B>        ['tom', 'john', 'paul', 'bob']</b>
+        &gt;&gt;&gt; [key for key in r.iterkeys( )]
+<b>        ['tom', 'john', 'paul', 'bob']</b>
+        &gt;&gt;&gt; r.values( )
+<b>        [10, 20, 20, 30]</b>
+        &gt;&gt;&gt; [value for value in r.itervalues( )]
+<B>        [10, 20, 20, 30]</b>
+        &gt;&gt;&gt; r.items( )
+<b>        [('tom', 10), ('john', 20), ('paul', 20), ('bob', 30)]</b>
+        &gt;&gt;&gt; [item for item in r.iteritems( )]
+<B>        [('tom', 10), ('john', 20), ('paul', 20), ('bob', 30)]</b>
+        An instance can be modified (adding, changing and deleting
+        key-score correspondences), and every method of that instance
+        reflects the instance's current state at all times:
+        &gt;&gt;&gt; r["tom"] = 100
+        &gt;&gt;&gt; r.items( )
+<b>        [('john', 20), ('paul', 20), ('bob', 30), ('tom', 100)]</b>
+        &gt;&gt;&gt; del r["paul"]
+        &gt;&gt;&gt; r.items( )
+<B>        [('john', 20), ('bob', 30), ('tom', 100)]</b>
+        &gt;&gt;&gt; r["paul"] = 25
+        &gt;&gt;&gt; r.items( )
+<B>        [('john', 20), ('paul', 25), ('bob', 30), ('tom', 100)]</b>
+        &gt;&gt;&gt; r.clear( )
+        &gt;&gt;&gt; r.items( )
+<b>        [  ]</b>
+        """
+    ''' the implementation carefully mixes inheritance and delegation
+        to achieve reasonable performance while minimizing boilerplate,
+        and, of course, to ensure semantic correctness as above.  All
+        mappings' methods not implemented below get inherited, mostly
+        from DictMixin, but, crucially!, _ _getitem_ _ from dict. '''
+    def _ _init_ _(self, *args, **kwds):
+        ''' This class gets instantiated just like 'dict' '''
+        dict._ _init_ _(self, *args, **kwds)
+        # self._rating is the crucial auxiliary data structure: a list
+        # of all (value, key) pairs, kept in "natural"ly-sorted order
+        self._rating = [ (v, k) for k, v in dict.iteritems(self) ]
+        self._rating.sort( )
+    def copy(self):
+        ''' Provide an identical but independent copy '''
+        return Ratings(self)
+    def _ _setitem_ _(self, k, v):
+        ''' besides delegating to dict, we maintain self._rating '''
+        if k in self:
+            del self._rating[self.rating(k)]
+        dict._ _setitem_ _(self, k, v)
+        insort_left(self._rating, (v, k))
+    def _ _delitem_ _(self, k):
+        ''' besides delegating to dict, we maintain self._rating '''
+        del self._rating[self.rating(k)]
+        dict._ _delitem_ _(self, k)
+    ''' delegate some methods to dict explicitly to avoid getting
+        DictMixin's slower (though correct) implementations instead '''
+    _ _len_ _ = dict._ _len_ _
+    _ _contains_ _ = dict._ _contains_ _
+    has_key = _ _contains_ _
+    ''' the key semantic connection between self._rating and the order
+        of self.keys( ) -- DictMixin gives us all other methods 'for
+        free', although we could implement them directly for slightly
+        better performance. '''
+    def _ _iter_ _(self):
+        for v, k in self._rating:
+            yield k
+    iterkeys = _ _iter_ _
+    def keys(self):
+        return list(self)
+    ''' the three ratings-related methods '''
+    def rating(self, key):
+        item = self[key], key
+        i = bisect_left(self._rating, item)
+        if item == self._rating[i]:
+            return i
+        raise LookupError, "item not found in rating"
+    def getValueByRating(self, rating):
+        return self._rating[rating][0]
+    def getKeyByRating(self, rating):
+        return self._rating[rating][1]
+def _test( ):
+    ''' we use doctest to test this module, which must be named
+        rating.py, by validating all the examples in docstrings. '''
+    import doctest, rating
+    doctest.testmod(rating)
+if _ _name_ _ == "_ _main_ _":
+    _test( )</pre><br>
+
+
+
+<a name="pythoncook2-CHP-5-SECT-14.3"></a>
+<h4 class="docSection2Title">Discussion</h4>
+
+<p class="docText">In many ways, a dictionary is the natural data structure for storing
+a correspondence between keys (e.g., names of contestants in a
+competition) and the current
+"score" of each key (e.g., the
+number of points a contestant has scored so far, or the highest bid
+made by each contestant at an auction, etc.). If we use a dictionary
+for such purposes, we will probably want to access it often in
+<span class="docEmphasis">natural order</span>the order in which the
+keys' scores are ascendingand
+we'll also want fast access to the rankings
+(ratings) implied by the current
+"score"s (e.g., the contestant
+currently in third place, the score of the contestant who is in
+second place, etc.).</p>
+
+<p class="docText"><a name="pythoncook2-CHP-5-ITERM-1972"></a>To achieve these
+purposes, this recipe subclasses <tt>dict</tt> to add the
+needed functionality that is completely missing from
+<tt>dict</tt> (methods <i>rating</i>,
+<i>getValueByRating</i>, <i>getKeyByRating</i>),
+and, more subtly and crucially, to modify method
+<tt>keys</tt> and all other related methods so that they
+return lists or iterators with the required order (i.e., the order in
+which scores are ascending; if we have to break ties when two keys
+have the same score, we implicitly compare the keys themselves). Most
+of the detailed documentation is in the docstring of the class
+itselfa crucial issue because by keeping the documentation and
+examples there, we can use module <tt>doctest</tt> from the
+Python Standard Library to provide unit-testing functionality, as
+well as ensuring that our examples are correct.</p>
+
+<p class="docText">The most interesting aspect of the implementation is that it takes
+good care to minimize boilerplate (meaning repetitious and boring
+code, and therefore code where bugs are most likely to hide) without
+seriously impairing performance. <tt>class Ratings</tt>
+multiply inherits from <tt>dict</tt>
+<span class="docEmphasis">and</span> <tt>DictMixin</tt>, with the
+latter placed <span class="docEmphasis">first</span> in the list of bases, so
+that all methods come from the mixin, if it provides them, unless
+explicitly overridden in the class.</p>
+
+<p class="docText">Raymond Hettinger's <tt>DictMixin</tt>
+class was originally posted as a recipe to the online version of the
+<span class="docEmphasis">Python</span> <span class="docEmphasis">Cookbook</span> and later
+became part of Python 2.3's standard library.
+<tt>DictMixin</tt> provides all the methods of a mapping
+except <tt>_ _init_ _</tt>, <tt>copy</tt>, and
+the four fundamental methods: <tt>_ _getitem_ _</tt>,
+<tt>_ _setitem_ _</tt>, <tt>_ _delitem_ _</tt>,
+and, last but not least, <tt>keys</tt>. If you are coding a
+mapping class and want to ensure that your class supports all of the
+many methods that a full mapping provides to application code, you
+should subclass <tt>DictMixin</tt> and supply at least the
+fundamental methods (depending on your class'
+semanticse.g., if your class has immutable instances, you need
+not supply the mutator methods <tt>_ _setitem_ _</tt> and
+<tt>_ _delitem_ _</tt>). You may optionally implement other
+methods for performance purposes, overriding the implementation that
+<tt>DictMixin</tt> provides. The whole
+<tt>DictMixin</tt> architecture can be seen as an excellent
+example of the classic Template Method Design Pattern, applied
+pervasively in a useful mix-in variant.<a name="pythoncook2-CHP-5-ITERM-1973"></a>
+<a name="pythoncook2-CHP-5-ITERM-1974"></a></P>
+
+<p class="docText">In this recipe's class, we inherit <tt>_
+_getitem_ _</tt> from our other base (namely, the built-in type
+<tt>dict</tt>), and we also delegate explicitly to
+<tt>dict</tt> everything we can for performance reasons. We
+have to code the elementary mutator methods (<tt>_ _setitem_
+_</tt> and <tt>_ _delitem_ _</tt>) because, in
+addition to delegating to our base class <tt>dict</tt>, we
+need to maintain our auxiliary data structure
+<I>self._rating</i>a list of <tt>(score,
+key)</tt> pairs that we keep in sorted order with the help of
+standard library module <tt>bisect</tt>. We implement
+<tt>keys</tt> ourselves (and while we're
+at it, we implement <tt>_ _iter_ _</tt> i.e.,
+<tt>iterkeys</tt> as well, since clearly
+<tt>keys</tt> is easiest to implement by using <tt>_
+_iter_ _</tt>) to exploit <i>self._rating</I> and
+return the keys in the order we need. Finally, we add the obvious
+implementations for <tt>_ _init_ _</tt> and
+<tt>copy</tt>, in addition to the three, ratings-specific
+methods that we supply.</p>
+
+<p class="docText">The result is quite an interesting example of balancing concision,
+clarity, and well-advised reuse of the enormous amount of
+functionality that the standard Python library places at our
+disposal. If you use this module in your applications, profiling may
+reveal that a method that this recipe's class
+inherits from <tt>DictMixin</tt> has somewhat
+unsatisfactory performanceafter all, the implementations in
+<tt>DictMixin</tt> are, of necessity, somewhat generic. If
+this is the case, by all means add a direct implementation of
+whatever further methods you need to achieve maximum performance! For
+example, if your application performs a lot of looping on the result
+of calling <tt>r.iteritems( )</tt> for some instance
+<tt><i>r</i></tt> of class <i>Ratings</i>, you
+may get slightly better performance by adding to the body of the
+class the direct implementation of the method:</p>
+
+<pre>    def iteritems(self):
+        for v, k in self._rating:
+            yield k, v</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-5-SECT-14.4"></a>
+<h4 class="docSection2Title">See Also</H4>
+
+<p class="docText"><span class="docEmphasis">Library Reference</span> and <span class="docEmphasis">Python in a
+Nutshell</span> documentation about class
+<tt>DictMixin</tt> in module <tt>UserDict</tt>,
+and about module <tt>bisect</tt>.<a name="pythoncook2-CHP-5-ITERM-1975"></a></p>
+
+
+
+<a href="5991535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><UL></ul></TD></TR></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-5-sect-13.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-5-sect-15.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

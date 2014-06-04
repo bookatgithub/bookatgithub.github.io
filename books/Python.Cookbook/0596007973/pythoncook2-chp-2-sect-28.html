@@ -1,0 +1,154 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;2.28.&nbsp;File Locking Using a Cross-Platform API</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-2-sect-27.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-2-sect-29.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-2-SECT-28"></a>
+<h3 class="docSection1Title">Recipe 2.28. File Locking Using a Cross-Platform API</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Jonathan Feinberg, John Nielsen</span></p>
+
+<a name="pythoncook2-CHP-2-SECT-28.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-2-ITERM-1719"></a> <a name="pythoncook2-CHP-2-ITERM-1720"></a>You need to
+lock files in a program that runs on both Windows and Unix-like
+systems, but the Python Standard Library offers only
+platform-specific ways to lock files.</P>
+
+
+<a name="pythoncook2-CHP-2-SECT-28.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">When the Python Standard Library itself doesn't
+offer a cross-platform solution, it's often possible
+to implement one ourselves:</p>
+
+<pre>import os
+# needs win32all to work on Windows (NT, 2K, XP, _not_ /95 or /98)
+if os.name == 'nt':
+    import win32con, win32file, pywintypes
+    LOCK_EX = win32con.LOCKFILE_EXCLUSIVE_LOCK
+    LOCK_SH = 0 # the default
+    LOCK_NB = win32con.LOCKFILE_FAIL_IMMEDIATELY
+    _ _overlapped = pywintypes.OVERLAPPED( )
+    def lock(file, flags):
+        hfile = win32file._get_osfhandle(file.fileno( ))
+        <span class="docEmphBold">win32file.LockFileEx(hfile, flags, 0, 0xffff0000, _ _overlapped)</span>
+    def unlock(file):
+        hfile = win32file._get_osfhandle(file.fileno( ))
+        <span class="docEmphBold">win32file.UnlockFileEx(hfile, 0, 0xffff0000, _ _overlapped)</span>
+elif os.name == 'posix':
+    from fcntl import LOCK_EX, LOCK_SH, LOCK_NB
+    def lock(file, flags):
+        <span class="docEmphBold">fcntl.flock(file.fileno( ), flags)</span>
+    def unlock(file):
+        <span class="docEmphBold">fcntl.flock(file.fileno( ), fcntl.LOCK_UN)</span>
+else:
+    raise RuntimeError("PortaLocker only defined for nt and posix platforms")</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-2-SECT-28.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">When multiple programs or threads have to access a shared file,
+it's wise to ensure that accesses are synchronized
+so that two processes don't try to modify the file
+contents at the same time. Failure to synchronize accesses could even
+corrupt the entire file in some cases.</P>
+
+<p class="docText"><a name="pythoncook2-CHP-2-ITERM-1721"></a>
+<a name="pythoncook2-CHP-2-ITERM-1722"></a>This recipe
+supplies two functions, <i>lock</I> and
+<I>unlock</i>, that request and release locks on a file,
+respectively. Using the <tt>portalocker.py</tt> module is a
+simple matter of calling the <i>lock</i> function and
+passing in the file and an argument specifying the kind of lock that
+is
+desired:<a name="pythoncook2-CHP-2-ITERM-1723"></a></p>
+
+<dl class="docList"><BR><p><dt><i><span class="docPubcolor">Shared lock (default)</span></I></dt></p>
+<dd>
+<p class="docList">This lock denies all processes, including the process that first
+locks the file, write access to the file. All processes can read the
+locked file.</P>
+</dd>
+<br><P><dt><I><span class="docPubcolor">Exclusive lock</span></i></dt></p>
+<dd>
+<p class="docList">This denies all other processes both read and write access to the
+file.</p>
+</dd>
+<br><p><dt><i><span class="docPubcolor">Nonblocking lock</span></i></dt></p>
+<dd>
+<p class="docList">When this value is specified, the function returns immediately if it
+is unable to acquire the requested lock. Otherwise, it waits.
+<tt>LOCK_NB</tt> can be <tt>OR</tt>ed with either
+<tt>LOCK_SH</tt> or <tt>LOCK_EX</tt> by using
+Python's bitwise-or operator, the vertical bar (|).</p>
+</dd>
+</dl>
+
+<p class="docText">For example:</p>
+
+<pre>import portalocker
+afile = open("somefile", "r+")
+portalocker.lock(afile, portalocker.LOCK_EX)</pre><br>
+
+
+<p class="docText">The implementation of the <i>lock</i> and
+<I>unlock</I> functions is entirely different on different
+systems. On Unix-like systems (including Linux and Mac OS X), the
+recipe relies on functionality made available by the standard
+<tt>fcntl</tt> module. On Windows systems (NT, 2000,
+XPit doesn't work on old Win/95 and Win/98
+platforms because they just don't have the needed
+oomph in the operating system!), the recipe uses the
+<tt>win32file</tt> module, part of the very popular
+<tt>PyWin32</tt> package of Windows-specific extensions to
+Python, authored by Mark Hammond. But the important point is that,
+despite the differences in implementation, the functions (and the
+flags you can pass to the <i>lock</i> function) are made to
+behave in the same way across platforms. Such cross-platform
+packaging of differently implemented but equivalent functionality
+enables you to easily write cross-platform applications, which is one
+of Python's strengths.</P>
+
+<p class="docText">When you write a cross-platform program, it's nice
+if the functionality that your program uses is, in turn, encapsulated
+in a cross-platform way. For file locking in particular, it is
+especially helpful to Perl users, who are used to an essentially
+transparent <tt>lock</tt> system call across platforms.
+More generally, <tt>if os.name==</tt> just does not belong
+in application-level code. Such platform testing ideally should
+always be in the standard library or an application-independent
+module, as it is here.</p>
+
+
+<a name="pythoncook2-CHP-2-SECT-28.4"></a>
+<h4 class="docSection2Title">See Also</h4>
+
+<p class="docText">Documentation on the <tt>fcntl</tt> module in the
+<span class="docEmphasis">Library Reference</span>; documentation on the
+<tt>win32file</tt> module at <a class="docLink" target="_blank" href="http://ASPN.ActiveState.com/ASPN/Python/Reference/Products/ActivePython/PythonWin32Extensions/win32file.html">http://ASPN.ActiveState.com/ASPN/Python/Reference/Products/ActivePython/PythonWin32Extensions/win32file.html</a>;
+Jonathan Feinberg's web site (<a class="docLink" target="_blank" href="http://MrFeinberg.com">http://MrFeinberg.com</a>).</p>
+
+
+
+<a href="5991535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><ul></ul></TD></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-2-sect-27.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-2-sect-29.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

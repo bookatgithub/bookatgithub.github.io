@@ -1,0 +1,572 @@
+<html><head>
+<META http-equiv="Content-Type" content="text/html">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="3.6 Pipes"-->
+<link rel="STYLESHEET" type="text/css" href="FILES/style.css">
+<link rel="STYLESHEET" type="text/css" href="FILES/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+	<a href="0596000855_python2-CHP-3-SECT-5.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+	<a href="0596000855_python2-CHP-3-SECT-7.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr>
+<td valign="top"><A NAME="python2-CHP-3-SECT-6"></A>
+<H3 class="docSection1Title">3.6 Pipes</H3>
+
+<P class="docText"><A NAME="python2-IDXTERM-58"></A>Pipes,
+another cross-program communication device, are made available in
+Python with the built-in <TT>os.pipe</TT> call. Pipes are
+unidirectional channels that work something like a shared memory
+buffer, but with an interface resembling a simple file on each of two
+ends. In typical use, one program writes data on one end of the pipe,
+and another reads that data on the other end. Each program only sees
+its end of the pipes, and processes it using normal Python file
+calls.
+</P>
+
+<P class="docText">Pipes are much more within the operating system, though. For
+instance, calls to read a pipe will normally block the caller until
+data becomes available (i.e., is sent by the program on the other
+end), rather than returning an end-of-file indicator. Because of such
+properties, pipes are also a way to synchronize the execution of
+independent programs.
+</P>
+
+<A NAME="python2-CHP-3-SECT-6.1"></A>
+<H4 class="docSection2Title">3.6.1 Anonymous Pipe Basics</H4>
+
+<P class="docText"><A NAME="python2-IDXTERM-59"></A>Pipes
+come in two flavors -- <span class="docEmphasis">anonymous</span> and
+<span class="docEmphasis">named</span>. Named pipes (sometimes called
+"fifos") are represented by a file on your computer.
+Anonymous pipes only exist within processes, though, and are
+typically used in conjunction with process <span class="docEmphasis">forks</span>
+as a way to link parent and spawned child processes within an
+application -- parent and child converse over shared pipe file
+descriptors. Because named pipes are really external files, the
+communicating processes need not be related at all (in fact, they can
+be independently started programs).
+</P>
+
+<P class="docText">Since they are more traditional, let's start with a look at
+anonymous pipes. To illustrate, the script in <A class="docLink" HREF="#python2-CHP-3-EX-15">Example 3-15</A> uses the <TT>os.fork</TT> call to
+make a copy of the calling process as usual (we met forks earlier in
+this chapter). After forking, the original parent process and its
+child copy speak through the two ends of a pipe created with
+<TT>os.pipe</TT> prior to the fork. The
+<TT>os.pipe</TT> call returns a tuple of two <span class="docEmphasis">file
+descriptors  --</span> the low-level file identifiers we met
+earlier -- representing the input and output sides of the pipe.
+Because forked child processes get <span class="docEmphasis">copies</span> of
+their parents' file descriptors, writing to the pipe's
+output descriptor in the child sends data back to the parent on the
+pipe created before the child was spawned.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-3-EX-15"></A>Example 3-15. PP2E\System\Processes\pipe1.py </H5>
+<PRE>import os, time
+
+def child(pipeout):
+    zzz = 0
+    while 1:
+        time.sleep(zzz)                          # make parent wait
+        os.write(pipeout, 'Spam %03d' % zzz)     # send to parent
+        zzz = (zzz+1) % 5                        # goto 0 after 4
+         
+def parent(  ):
+    pipein, pipeout = os.pipe(  )                # make 2-ended pipe
+    if os.fork(  ) == 0:                         # copy this process
+        child(pipeout)                           # in copy, run child
+    else:                                        # in parent, listen to pipe
+        while 1:
+            line = os.read(pipein, 32)           # blocks until data sent
+            print 'Parent %d got "%s" at %s' % (os.getpid(  ), line, time.time(  ))
+
+parent(  )</PRE>
+
+
+<P class="docText">If you run this program on Linux ( <TT>pipe</TT> is
+available on Windows today, but <TT>fork</TT> is not), the
+parent process waits for the child to send data on the pipe each time
+it calls <TT>os.read</TT>. It's almost as if the
+child and parent act as client and server here -- the parent
+starts the child and waits for it to initiate
+communication.<sup class="docFootnote"><A class="docLink" HREF="#">[7]</A></sup> Just to tease, the
+child keeps the parent waiting one second longer between messages
+with <TT>time.sleep</TT> calls, until the delay has reached
+four seconds. When the <TT>zzz</TT> delay counter hits 005,
+it rolls back down to 000 and starts again:
+</P>
+<blockquote><p class="docFootnote"><sup><A NAME="">[7]</A></sup> We will clarify the notions of
+"client" and "server" in <A class="docLink" HREF="0596000855_python2-CHP-10.html#python2-CHP-10">Chapter 10</A>. There, we'll communicate with
+<span class="docEmphasis">sockets</span> (which are very roughly like
+bidirectional pipes for networks), but the overall conversation model
+is similar. Named pipes (fifos), described later, are a better match
+to the client/server model, because they can be accessed by
+arbitrary, unrelated processes (no forks are required). But as
+we'll see, the socket port model is generally used by most
+Internet scripting protocols.</p></blockquote>
+
+<PRE>[mark@toy]$ <B>python pipe1.py</B>
+Parent 1292 got "Spam 000" at 968370008.322
+Parent 1292 got "Spam 001" at 968370009.319
+Parent 1292 got "Spam 002" at 968370011.319
+Parent 1292 got "Spam 003" at 968370014.319
+Parent 1292 got "Spam 004Spam 000" at 968370018.319
+Parent 1292 got "Spam 001" at 968370019.319
+Parent 1292 got "Spam 002" at 968370021.319
+Parent 1292 got "Spam 003" at 968370024.319
+Parent 1292 got "Spam 004Spam 000" at 968370028.319
+Parent 1292 got "Spam 001" at 968370029.319
+Parent 1292 got "Spam 002" at 968370031.319
+Parent 1292 got "Spam 003" at 968370034.319</PRE>
+
+<P class="docText">If you look closely, you'll see that when the child's
+delay counter hits 004, the parent ends up reading two messages from
+the pipe <span class="docEmphasis">at once  --</span> the child wrote two
+distinct messages, but they were close enough in time to be fetched
+as a single unit by the parent. Really, the parent blindly asks to
+read at most 32 bytes each time, but gets back whatever text is
+available in the pipe (when it becomes available at all). To
+distinguish messages better, we can mandate a separator character in
+the pipe. An end-of-line makes this easy, because we can wrap the
+pipe descriptor in a <span class="docEmphasis">file object</span> with
+<TT>os.fdopen</TT>, and rely on the file object's
+<TT>readline</TT> method to scan up through the next
+<TT>\n</TT> separator in the pipe. <A class="docLink" HREF="#python2-CHP-3-EX-16">Example 3-16</A> implements this scheme.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-3-EX-16"></A>Example 3-16. PP2E\System\Processes\pipe2.py </H5>
+<PRE># same as pipe1.py, but wrap pipe input in stdio file object
+# to read by line, and close unused pipe fds in both processes
+
+import os, time
+
+def child(pipeout):
+    zzz = 0
+    while 1:
+        time.sleep(zzz)                          # make parent wait
+        os.write(pipeout, 'Spam %03d\n' % zzz)   # send to parent
+        zzz = (zzz+1) % 5                        # roll to 0 at 5
+         
+def parent(  ):
+    pipein, pipeout = os.pipe(  )                # make 2-ended pipe
+    if os.fork(  ) == 0:                         # in child, write to pipe
+        os.close(pipein)                         # close input side here
+        child(pipeout)
+    else:                                        # in parent, listen to pipe
+        os.close(pipeout)                        # close output side here
+        pipein = os.fdopen(pipein)               # make stdio input object
+        while 1:
+            line = pipein.readline(  )[:-1]        # blocks until data sent
+            print 'Parent %d got "%s" at %s' % (os.getpid(  ), line, time.time(  ))
+
+parent(  )</PRE>
+
+
+<P class="docText">This version has also been augmented to <span class="docEmphasis">close</span>
+the unused end of the pipe in each process (e.g., after the fork, the
+parent process closes its copy of the output side of the pipe written
+by the child); programs should close unused pipe ends in general.
+Running with this new version returns a single child message to the
+parent each time it reads from the pipe, because they are separated
+with markers when written:
+</P>
+
+<A NAME="IXTR3-67"></A><PRE>[mark@toy]$ <B>python pipe2.py</B>
+Parent 1296 got "Spam 000" at 968370066.162
+Parent 1296 got "Spam 001" at 968370067.159
+Parent 1296 got "Spam 002" at 968370069.159
+Parent 1296 got "Spam 003" at 968370072.159
+Parent 1296 got "Spam 004" at 968370076.159
+Parent 1296 got "Spam 000" at 968370076.161
+Parent 1296 got "Spam 001" at 968370077.159
+Parent 1296 got "Spam 002" at 968370079.159
+Parent 1296 got "Spam 003" at 968370082.159
+Parent 1296 got "Spam 004" at 968370086.159
+Parent 1296 got "Spam 000" at 968370086.161
+Parent 1296 got "Spam 001" at 968370087.159
+Parent 1296 got "Spam 002" at 968370089.159</PRE>
+
+
+<A NAME="python2-CHP-3-SECT-6.2"></A>
+<H4 class="docSection2Title">3.6.2 Bidirectional IPC with Pipes</H4>
+
+<P class="docText"><A NAME="python2-IDXTERM-60"></A>Pipes normally only let data flow in
+<span class="docEmphasis">one direction --</span> one side is input, one is
+output. What if you need your programs to talk back and forth,
+though? For example, one program might send another a request for
+information, and then wait for that information to be sent back. A
+single pipe can't generally handle such bidirectional
+conversations, but two pipes can -- one pipe can be used to pass
+requests to a program, and another can be used to ship replies back
+to the requestor.<sup class="docFootnote"><A class="docLink" HREF="#">[8]</A></sup>
+</P>
+<blockquote><p class="docFootnote"><sup><A NAME="">[8]</A></sup> This really does have real-world
+applications. For instance, I once added a GUI interface to a
+command-line debugger for a C-like programming language by connecting
+two processes with pipes. The GUI ran as a separate process that
+constructed and sent commands to the existing debugger's input
+stream pipe and parsed the results that showed up in the
+debugger's output stream pipe. In effect, the GUI acted like a
+programmer typing commands at a keyboard. By spawning command-line
+programs with streams attached by pipes, systems can add new
+interfaces to legacy programs.</p></blockquote>
+
+<P class="docText">The module in <A class="docLink" HREF="#python2-CHP-3-EX-17">Example 3-17</A> demonstrates one way to
+apply this idea to link the input and output streams of two programs.
+Its <TT>spawn</TT> function forks a new child program, and
+connects the input and output streams of the parent to the output and
+input streams of the child. That is:
+</P>
+
+<UL>
+<LI><P class="docList">When the parent reads from its standard input, it is reading text
+sent to the child's standard output.
+</P></LI>
+<LI><P class="docList">When the parent writes to its standard output, it is sending data to
+the child's standard input.
+</P></LI>
+</UL>
+<P class="docText">The net effect is that the two independent programs communicate by
+speaking over their standard streams.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-3-EX-17"></A>Example 3-17. PP2E\System\Processes\pipes.py </H5>
+<PRE>############################################################
+# spawn a child process/program, connect my stdin/stdout
+# to child process's stdout/stdin -- my reads and writes 
+# map to output and input streams of the spawned program;
+# much like popen2.popen2 plus parent stream redirection;
+############################################################
+
+import os, sys
+
+def spawn(prog, *args):                       # pass progname, cmdline args 
+    stdinFd  = sys.stdin.fileno(  )           # get descriptors for streams
+    stdoutFd = sys.stdout.fileno(  )          # normally stdin=0, stdout=1
+
+    parentStdin, childStdout  = os.pipe(  )   # make two ipc pipe channels
+    childStdin,  parentStdout = os.pipe(  )   # pipe returns (inputfd, outoutfd)
+    pid = os.fork(  )                         # make a copy of this process
+    if pid:
+        os.close(childStdout)                 # in parent process after fork:
+        os.close(childStdin)                  # close child ends in parent
+        os.dup2(parentStdin,  stdinFd)        # my sys.stdin copy  = pipe1[0]
+        os.dup2(parentStdout, stdoutFd)       # my sys.stdout copy = pipe2[1]
+    else:
+        os.close(parentStdin)                 # in child process after fork:
+        os.close(parentStdout)                # close parent ends in child
+        os.dup2(childStdin,  stdinFd)         # my sys.stdin copy  = pipe2[0]
+        os.dup2(childStdout, stdoutFd)        # my sys.stdout copy = pipe1[1]
+        args = (prog,) + args
+        os.execvp(prog, args)                 # new program in this process
+        assert 0, 'execvp failed!'            # os.exec call never returns here
+
+if __name__ == '__main__':
+    mypid = os.getpid(  )
+    spawn('python', 'pipes-testchild.py', 'spam')    # fork child program
+
+    print 'Hello 1 from parent', mypid               # to child's stdin
+    sys.stdout.flush(  )                             # subvert stdio buffering
+    reply = raw_input(  )                            # from child's stdout
+    sys.stderr.write('Parent got: "%s"\n' % reply)   # stderr not tied to pipe!
+
+    print 'Hello 2 from parent', mypid
+    sys.stdout.flush(  )
+    reply = sys.stdin.readline(  )
+    sys.stderr.write('Parent got: "%s"\n' % reply[:-1])    </PRE>
+
+
+<P class="docText">This <TT>spawn</TT> function in this module does not work
+on Windows -- remember, <TT>fork</TT> isn't yet
+available there today. In fact, most of the calls in this module map
+straight to Unix system calls (and may be arbitrarily terrifying on
+first glance to non-Unix developers). We've already met some of
+these (e.g., <TT>os.fork</TT>), but much of this code
+depends on Unix concepts we don't have time to address well in
+this text. But in simple terms, here is a brief summary of the system
+calls demonstrated in this code:
+</P>
+
+<UL>
+<LI><P class="docList"><TT>os.fork</TT> copies the calling process as usual, and
+returns the child's process ID in the parent process only.
+</P></LI>
+<LI><P class="docList"><TT>os.execvp</TT> overlays a new program in the calling
+process; it's just like the <TT>os.execlp</TT> used
+earlier but takes a <span class="docEmphasis">tuple</span> or
+<span class="docEmphasis">list</span> of command-line argument strings (collected
+with the <TT>*args</TT> form in the function header).
+</P></LI>
+<LI><P class="docList"><TT>os.pipe</TT> returns a tuple of file descriptors
+representing the input and output ends of a pipe, as in earlier
+examples.
+</P></LI>
+<LI><P class="docList"><TT>os.close(fd)</TT> closes descriptor-based file
+<TT>fd</TT>.
+</P></LI>
+<LI><P class="docList"><TT>os.dup2(fd1,fd2)</TT> copies all system information
+associated with the file named by file descriptor
+<TT>fd1</TT> to the file named by <TT>fd2</TT>.
+</P></LI>
+</UL>
+<P class="docText">In terms of connecting standard streams, <TT>os.dup2</TT>
+is the real nitty-gritty here. For example, the call
+<TT>os.dup2(parentStdin,stdinFd)</TT> essentially assigns
+the parent process's <TT>stdin</TT> file to the input
+end of one of the two pipes created; all <TT>stdin</TT>
+reads will henceforth come from the pipe. By connecting the other end
+of this pipe to the child process's copy of the
+<TT>stdout</TT> stream file with
+<TT>os.dup2(childStdout,stdoutFd)</TT>, text written by the
+child to its <TT>sdtdout</TT> winds up being routed through
+the pipe to the parent's <TT>stdin</TT> stream.
+</P>
+
+<P class="docText">To test this utility, the self-test code at the end of the file
+spawns the program shown in <A class="docLink" HREF="#python2-CHP-3-EX-18">Example 3-18</A> in a child
+process, and reads and writes standard streams to converse with it
+over two pipes.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-3-EX-18"></A>Example 3-18. PP2E\System\Processes\pipes-testchild.py </H5>
+<PRE>import os, time, sys 
+mypid     = os.getpid(  )
+parentpid = os.getppid(  )
+sys.stderr.write('Child %d of %d got arg: %s\n' % 
+                                (mypid, parentpid, sys.argv[1]))
+for i in range(2):
+    time.sleep(3)             # make parent process wait by sleeping here 
+    input = raw_input(  )     # stdin tied to pipe: comes from parent's stdout
+    time.sleep(3)
+    reply = 'Child %d got: [%s]' % (mypid, input)
+    print reply               # stdout tied to pipe: goes to parent's stdin 
+    sys.stdout.flush(  )      # make sure it's sent now else blocks</PRE>
+
+
+<P class="docText">Here is our test in action on Linux; its output is not incredibly
+impressive to read, but represents two programs running independently
+and shipping data back and forth through a pipe device managed by the
+operating system. This is even more like a client/server model (if
+you imagine the child as the server). The text in square brackets in
+this output went from the parent process, to the child, and back to
+the parent again -- all through pipes connected to standard
+streams:
+</P>
+
+<PRE>[mark@toy]$ <B>python pipes.py</B>
+Child 797 of 796 got arg: spam
+Parent got: "Child 797 got: [Hello 1 from parent 796]"
+Parent got: "Child 797 got: [Hello 2 from parent 796]"</PRE>
+
+<A NAME="python2-CHP-3-SECT-6.2.1"></A>
+<H5 class="docSection3Title">3.6.2.1 Deadlocks, flushes, and unbuffered streams</H5>
+
+<P class="docText"><A NAME="IXT-3-336971"></A>
+<A NAME="IXT-3-336972"></A>These
+two processes engage in a simple dialog, but it's already
+enough to illustrate some of the dangers lurking in cross-program
+communications. First of all, notice that both programs need to write
+to <TT>stderr</TT> to display a message -- their
+<TT>stdout</TT> streams are tied to the other
+program's input stream. Because processes share file
+descriptors, <TT>stderr</TT> is the same in both parent and
+child, so status messages show up in the same place.
+</P>
+
+<P class="docText">More subtly, note that both parent and child call
+<TT>sys.stdout.flush</TT> after they print text to the
+<TT>stdout</TT> stream. Input requests on pipes normally
+block the caller if there is no data available, but it seems that
+shouldn't be a problem in our example -- there are as many
+writes as there are reads on the other side of the pipe. By default,
+though, <TT>sys.stdout</TT> is
+<span class="docEmphasis">buffered</span>, so the printed text may not actually
+be transmitted until some time in the future (when the
+<TT>stdio</TT> output buffers fill up). In fact, if the
+flush calls are not made, both processes will get stuck waiting for
+input from the other -- input that is sitting in a buffer and is
+never flushed out over the pipe. They wind up in a
+<span class="docEmphasis">deadlock</span> state, both blocked on
+<TT>raw_input</TT> calls waiting for events that never
+occur.
+</P>
+
+<P class="docText">Keep in mind that output buffering is really a function of the
+filesystem used to access pipes, not pipes themselves (pipes do queue
+up output data, but never hide it from readers!). In fact it only
+occurs in this example because we copy the pipe's information
+over to <TT>sys.stdout</TT> -- a built-in file object
+that uses <TT>stdio</TT> buffering by default. However,
+such anomalies can also occur when using other cross-process tools,
+such as the <TT>popen2</TT> and <TT>popen3</TT>
+calls introduced in <A class="docLink" HREF="0596000855_python2-CHP-2.html#python2-CHP-2">Chapter 2</A>.
+</P>
+
+<P class="docText">In general terms, if your programs engage in a two-way dialogs like
+this, there are at least three ways to avoid buffer-related deadlock
+problems:
+</P>
+
+<UL>
+<LI><P class="docList">As demonstrated in this example, manually
+<span class="docEmphasis">flushing</span> output pipe streams by calling file
+<TT>flush</TT> method is an easy way to force buffers to be
+cleared.
+</P></LI>
+<LI><P class="docList">It's possible to use pipes in <span class="docEmphasis">unbuffered mode
+ --</span> either use low-level <TT>os</TT> module
+calls to read and write pipe descriptors directly, or (on most
+systems) pass a buffer size argument of
+to <TT>os.fdopen</TT> to disable <TT>stdio</TT>
+buffering in the file object used to wrap the descriptor. For fifos,
+described in the next section, do the same for
+<TT>open</TT>.
+</P></LI>
+<LI><P class="docList">Simply use the <TT>-u</TT> Python command-line flag to turn
+off buffering for the <TT>sys.stdout</TT> stream.
+</P></LI>
+</UL>
+<P class="docText">The last technique merits a few more words. Try this: delete all the
+<TT>sys.stdout.flush</TT> calls in both Examples <A class="docLink" HREF="#python2-CHP-3-EX-17">Example 3-17</A> and <A class="docLink" HREF="#python2-CHP-3-EX-18">Example 3-18</A> (files
+<I>pipes.py</I> and
+<I>pipes-testchild.py</I>) and change the
+parent's spawn call in <I>pipes.py</I> to this
+(i.e., add a <TT>-u</TT> command-line argument):
+</P>
+
+<PRE>spawn('python', '-u', 'pipes-testchild.py', 'spam')</PRE>
+
+<P class="docText">Then start the program with a command line like this:
+<TT>python</TT> <TT>-u</TT>
+<TT>pipes.py</TT>. It will work as it did with manual
+<TT>stdout</TT> flush calls, because
+<TT>stdout</TT> will be operating in
+<span class="docEmphasis">unbuffered</span> mode. Deadlock in general, though, is
+a bigger problem than we have space to address here; on the other
+hand, if you know enough to want to do IPC in Python, you're
+probably already a veteran of the deadlock wars.<A NAME="IXTR3-68"></A>
+</P>
+
+
+
+<A NAME="python2-CHP-3-SECT-6.3"></A>
+<H4 class="docSection2Title">3.6.3 Named Pipes (Fifos)</H4>
+
+<P class="docText"><A NAME="IXTR3-69"></A>
+<A NAME="IXT-3-336973"></A>
+<A NAME="IXT-3-336974"></A>
+<A NAME="IXT-3-336975"></A>On some
+platforms, it is also possible to create a pipe that exists as a
+file. Such files are called "named pipes" (or sometimes,
+"fifos"), because they behave just like the pipes created
+within the previous programs, but are associated with a real file
+somewhere on your computer, external to any particular program. Once
+a named pipe file is created, processes read and write it using
+normal file operations. Fifos are unidirectional streams, but a set
+of two fifos can be used to implement bidirectional communication
+just as we did for anonymous pipes in the prior section.
+</P>
+
+<P class="docText">Because fifos are files, they are longer-lived than in-process pipes
+and can be accessed by programs started independently. The unnamed,
+in-process pipe examples thus far depend on the fact that file
+descriptors (including pipes) are copied to child processes. With
+fifos, pipes are accessed instead by a filename visible to all
+programs regardless of any parent/child process relationships.
+Because of that, they are better suited as IPC mechanisms for
+independent client and server programs; for instance, a perpetually
+running server program may create and listen for requests on a fifo,
+that can be accessed later by arbitrary clients not forked by the
+server.
+</P>
+
+<P class="docText">In Python, named pipe files are created with the
+<TT>os.mkfifo</TT> call, available today on Unix-like
+platforms and Windows NT (but not on Windows 95/98). This only
+creates the external file, though; to send and receive data through a
+fifo, it must be opened and processed as if it were a standard file.
+<A class="docLink" HREF="#python2-CHP-3-EX-19">Example 3-19</A> is a derivation of the
+<I>pipe2.py</I> script listed earlier, written to use
+fifos instead of anonymous pipes.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-3-EX-19"></A>Example 3-19. PP2E\System\Processes\pipefifo.py </H5>
+<PRE>#########################################################
+# named pipes; os.mkfifo not avaiable on Windows 95/98;
+# no reason to fork here, since fifo file pipes are 
+# external to processes--shared fds are irrelevent;
+#########################################################
+
+import os, time, sys
+fifoname = '/tmp/pipefifo'                       # must open same name
+
+def child(  ):
+    pipeout = os.open(fifoname, os.O_WRONLY)     # open fifo pipe file as fd
+    zzz = 0 
+    while 1:
+        time.sleep(zzz)
+        os.write(pipeout, 'Spam %03d\n' % zzz)
+        zzz = (zzz+1) % 5
+         
+def parent(  ):
+    pipein = open(fifoname, 'r')                 # open fifo as stdio object
+    while 1:
+        line = pipein.readline(  )[:-1]            # blocks until data sent
+        print 'Parent %d got "%s" at %s' % (os.getpid(  ), line, time.time(  ))
+
+if __name__ == '__main__':
+    if not os.path.exists(fifoname):
+        os.mkfifo(fifoname)                      # create a named pipe file
+    if len(sys.argv) == 1:
+        parent(  )                                 # run as parent if no args
+    else:                                        # else run as child process
+        child(  )</PRE>
+
+
+<P class="docText">Because the fifo exists independently of both parent and child,
+there's no reason to fork here -- the child may be started
+independently of the parent, as long as it opens a fifo file by the
+same name. Here, for instance, on Linux the parent is started in one
+xterm window, and then the child is started in another. Messages
+start appearing in the parent window only after the child is started:
+</P>
+
+<A NAME="IXTR3-70"></A><PRE>[mark@toy]$ <B>python pipefifo.py</B>
+Parent 657 got "Spam 000" at 968390065.865
+Parent 657 got "Spam 001" at 968390066.865
+Parent 657 got "Spam 002" at 968390068.865
+Parent 657 got "Spam 003" at 968390071.865
+Parent 657 got "Spam 004" at 968390075.865
+Parent 657 got "Spam 000" at 968390075.867
+Parent 657 got "Spam 001" at 968390076.865
+Parent 657 got "Spam 002" at 968390078.865
+
+[mark@toy]$ <B>file /tmp/pipefifo</B>
+/tmp/pipefifo: fifo (named pipe)
+[mark@toy]$ <B>python pipefifo.py -child</B></PRE>
+
+
+
+<ul></ul>
+</td>
+</tr>
+</table>
+<td></td>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+          <a href="0596000855_python2-CHP-3-SECT-5.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+          <a href="0596000855_python2-CHP-3-SECT-7.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+</body></html>

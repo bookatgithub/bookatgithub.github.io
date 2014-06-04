@@ -1,0 +1,222 @@
+<html><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<link href="styles/globalstyle.css" type="text/css" rel="stylesheet"/>
+<link title="medium" href="styles/two.css" type="text/css" rel="stylesheet"/>
+<script src="scripts/main.js" type="text/javascript" language="javascript"></script>
+<title>Section 24.3. The Santa Claus Problem</title>
+</head><body>
+<DIV class=h3 style="MARGIN-TOP: 0px; PADDING-BOTTOM: 1em; WIDTH: 100%; PADDING-TOP: 0px"><SPAN>Beautiful Concurrency</SPAN><SPAN> &gt; The Santa Claus Problem</SPAN></DIV>
+<DIV></DIV>
+<DIV>
+<DIV><A name=the_santa_claus_problem></A>
+<H3 class=docSection1Title id=-100000>24.3. The Santa Claus Problem</H3>
+<P class=docText><A name="I want"></A>I want to show you a complete, runnable concurrent program using STM. A well-known example is the so-called <A name=idx-CHP-24-2042></A>Santa Claus problem,<SUP class=docFootnote><A class=docLink href="javascript:moveTo('CHP-24-FNOTE-14');">[<IMG alt=dagger src="images/U2020.GIF"><IMG alt=dagger src="images/U2020.GIF"><IMG alt=dagger src="images/U2020.GIF">]</A></SUP> originally attributed to Trono:<SUP class=docFootnote><A class=docLink href="javascript:moveTo('CHP-24-FNOTE-15');">[<IMG alt="double dagger" src="images/U2021.GIF"><IMG alt="double dagger" src="images/U2021.GIF"><IMG alt="double dagger" src="images/U2021.GIF">]</A></SUP><A name=idx-CHP-24-2044></A></P>
+<BLOCKQUOTE>
+<P class=docFootnote><SUP><A name=CHP-24-FNOTE-14>[<IMG alt=dagger src="images/U2020.GIF"><IMG alt=dagger src="images/U2020.GIF"><IMG alt=dagger src="images/U2020.GIF">]</A></SUP><A name="influenced by"></A> My choice was influenced by the fact that I am writing these words on December 22.</P></BLOCKQUOTE>
+<BLOCKQUOTE>
+<P class=docFootnote><SUP><A name=CHP-24-FNOTE-15>[<IMG alt="double dagger" src="images/U2021.GIF"><IMG alt="double dagger" src="images/U2021.GIF"><IMG alt="double dagger" src="images/U2021.GIF">]</A></SUP> J. A. Trono, "A new exercise in <A name=idx-CHP-24-2043></A>concurrency," <SPAN class=docEmphasis>SIGCSE Bulletin</SPAN>, Vol. 26, pp. 8–10, 1994.</P></BLOCKQUOTE>
+<BLOCKQUOTE>
+<P class=docText><A name="until wakened"></A>Santa repeatedly sleeps until wakened by either all of his nine reindeer, back from their holidays, or by a group of three of his ten elves. If awakened by the reindeer, he harnesses each of them to his sleigh, delivers toys with them and finally unharnesses them (allowing them to go off on holiday). If awakened by a group of elves, he shows each of the group into his study, consults with them on toy R&amp;D and finally shows them each out (allowing them to go back to work). Santa should give priority to the reindeer in the case that there is both a group of elves and a group of reindeer waiting.</P></BLOCKQUOTE>
+<P class=docText><A name="example allows"></A>Using a well-known example allows you to directly compare my solution with well-described solutions in other languages. In particular, Trono's paper gives a semaphore-based solution that is partially correct. Ben-Ari gives a solution in Ada95 and in Ada.<SUP class=docFootnote><A class=docLink href="javascript:moveTo('CHP-24-FNOTE-16');">[§§§]</A></SUP><A name="solution in"></A> Benton gives a solution in Polyphonic C#.<SUP class=docFootnote><A class=docLink href="javascript:moveTo('CHP-24-FNOTE-17');">[||||||]</A></SUP><A name=idx-CHP-24-2047></A></P>
+<BLOCKQUOTE>
+<P class=docFootnote><SUP><A name=CHP-24-FNOTE-16>[§§§]</A></SUP> Nick Benton, "Jingle bells: Solving the <A name=idx-CHP-24-2045></A>Santa Claus problem in Polyphonic C#," Technical report, Microsoft Research, 2003.</P></BLOCKQUOTE>
+<BLOCKQUOTE>
+<P class=docFootnote><SUP><A name=CHP-24-FNOTE-17>[||||||]</A></SUP> Mordechai Ben-Ari, "How to solve the <A name=idx-CHP-24-2046></A>Santa Claus problem," <SPAN class=docEmphasis>Concurrency: Practice and Experience</SPAN>, Vol. 10, No. 6, pp. 485–496, 1998.</P></BLOCKQUOTE><A name=reindeer_and_elves></A>
+<H4 class=docSection2Title id=title-ID0EBCEK>24.3.1. Reindeer and Elves</H4>
+<P class=docText>The basic idea of the <A name=idx-CHP-24-2048></A>STM <A name=idx-CHP-24-2049></A>Haskell implementation is this. Santa makes one "<TT>Group</TT><A name="to join"></A>" for the elves and one for the reindeer. Each elf (or reindeer) tries to join its Group. If it succeeds, it gets two "<TT>Gates</TT><A name=first></A>" in return. The first <TT>Gate</TT><A name="when the"></A> allows Santa to control when the elf can enter the study and also lets Santa know when they are all inside. Similarly, the second <TT>Gate</TT><A name="for his"></A> controls the elves leaving the study. Santa, for his part, waits for either of his two <TT>Groups</TT><A name="to be"></A> to be ready, and then uses that <TT>Group's Gates</TT><A name="helpers "></A> to marshal his helpers (elves or reindeer) through their task. Thus the helpers spend their lives in an infinite loop: try to join a group, move through the gates under Santa's control, and then delay for a random interval before trying to join a group again.</P>
+<P class=docText><A name="description in"></A>Rendering this informal description in Haskell gives the following code for an elf:<SUP class=docFootnote><A class=docLink href="javascript:moveTo('CHP-24-FNOTE-18');">[###]</A></SUP></P>
+<BLOCKQUOTE>
+<P class=docFootnote><SUP><A name=CHP-24-FNOTE-18>[###]</A></SUP><A name="given this"></A> I have given this function a suffix 1 because it deals with only one iteration of the elf, whereas in reality the elves rejoin the fun when they are done with their task. We will define <TT>elf</TT><A name="Main Program"></A> in the section "The Main Program."</P></BLOCKQUOTE><PRE>	elf1 :: Group -&gt; Int -&gt; IO ( )
+	elf1 group elf_id = do { (in_gate, out_gate) &lt;- joinGroup group
+	                       ; passGate in_gate
+	                       ; meetInStudy elf_id
+	                       ; passGate out_gate }
+</PRE><BR>
+<P class=docText>The <TT>elf</TT> is passed its <TT>Group</TT> and an <TT>Int</TT><A name="the call"></A> that specifies its elfin identity. This identity is used only in the call to <TT>meetInStudy</TT><A name="prints out"></A>, which simply prints out a message to say what is happening:<SUP class=docFootnote><A class=docLink href="javascript:moveTo('CHP-24-FNOTE-19');">[****]</A></SUP></P>
+<BLOCKQUOTE>
+<P class=docFootnote><SUP><A name=CHP-24-FNOTE-19>[****]</A></SUP> The function <TT>putStr</TT><A name="that calls"></A> is a library function that calls <TT>hPutStr stdout</TT>.</P></BLOCKQUOTE><PRE>	meetInStudy :: Int -&gt; IO ( )
+	meetInStudy id = putStr ("Elf " ++ show id ++ " meeting in the study\n")
+</PRE><BR>
+<P class=docText>The elf calls <TT>joinGroup</TT> to join its group and <TT>passGate</TT><A name="the gates"></A> to pass through each of the gates:</P><PRE>	joinGroup :: Group -&gt; IO (Gate, Gate)
+	passGate   :: Gate -&gt; IO ( )
+</PRE><BR>
+<P class=docText><A name="The code"></A>The code for reindeer is identical, except that reindeer deliver toys rather than meet in the study:</P><PRE>	deliverToys :: Int -&gt; IO ( )
+	deliverToys id = putStr ("Reindeer " ++ show id ++ " delivering toys\n")
+</PRE><BR>
+<P class=docText>Because <TT>IO</TT><A name="can abstract"></A> actions are first-class, we can abstract over the common pattern, like this:<A name=idx-CHP-24-2050></A></P><PRE>	helper1 :: Group -&gt; IO () -&gt; IO ( )
+	helper1 group do_task = do { (in_gate, out_gate) &lt;- joinGroup group
+	                           ; passGate in_gate
+	                           ; do_task
+	                           ; passGate out_gate }
+</PRE><BR>
+<P class=docText><A name=of></A>The second argument of <TT>helper1</TT> is an <TT>IO</TT><A name="is the"></A> action that is the helper's task, which the helper performs between the two <TT>passGate</TT><A name=specialize></A> calls. Now we can specialize <TT>helper1</TT> to be either an elf or a reindeer:</P><PRE>	elf1, reindeer1 :: Group -&gt; Int -&gt; IO ( )
+	elf1      gp id = helper1 gp (meetInStudy id)
+	reindeer1 gp id = helper1 gp (deliverToys id)
+</PRE><BR><A name=gates_and_groups></A>
+<H4 class=docSection2Title id=title-ID0EXFEK>24.3.2. Gates and Groups</H4>
+<P class=docText>The first abstraction is a <TT>Gate</TT>, which supports the following interface:</P><PRE>	newGate     :: Int -&gt; <A name=idx-CHP-24-2051></A>STM Gate
+	passGate    :: Gate -&gt; IO ( )
+	operateGate :: Gate -&gt; IO ( )
+</PRE><BR>
+<P class=docText>A <TT>Gate</TT> has a fixed <SPAN class=docEmphasis>capacity</SPAN>, <TT>n</TT>, which we specify when we make a new <TT>Gate</TT>, and a mutable <SPAN class=docEmphasis>remaining capacity</SPAN>. This remaining capacity is decremented whenever a helper calls <TT>passGate</TT> to go through the gate; if the remaining capacity is zero, <TT>passGate</TT> blocks. A <TT>Gate</TT><A name="pass through"></A> is created with zero remaining capacity, so that no helpers can pass through it. <A name=idx-CHP-24-2052></A><A name="the gate"></A>Santa opens the gate with <TT>operateGate</TT><A name="capacity back"></A>, which sets its remaining capacity back to <TT>n</TT>.</P>
+<P class=docText><A name=a></A>Here, then, is a possible implementation of a <TT>Gate</TT>:</P><PRE>	data Gate = MkGate Int (TVar Int)
+
+	newGate :: Int -&gt; STM Gate
+	newGate n = do { tv &lt;- newTVar 0; return (MkGate n tv) }
+
+	passGate :: Gate -&gt; IO ( )
+	passGate (MkGate n tv)
+	  = atomically (do { n_left &lt;- readTVar tv
+	                   ; check (n_left &gt; 0)
+	                   ; writeTVar tv (n_left-1) })
+
+	operateGate :: Gate -&gt; IO ( )
+	operateGate (MkGate n tv)
+	  = do { atomically (writeTVar tv n)
+	       ; atomically (do { n_left &lt;- readTVar tv
+	                    ; check (n_left == 0) }) }
+</PRE><BR>
+<P class=docText><A name="The first"></A>The first line declares <TT>Gate</TT><A name=new></A> to be a new <SPAN class=docEmphasis>data type</SPAN>, with a single <SPAN class=docEmphasis>data constructor</SPAN> <TT>MkGate</TT>.<SUP class=docFootnote><A class=docLink href="javascript:moveTo('CHP-24-FNOTE-20');">[<IMG alt=dagger src="images/U2020.GIF"><IMG alt=dagger src="images/U2020.GIF"><IMG alt=dagger src="images/U2020.GIF"><IMG alt=dagger src="images/U2020.GIF">]</A></SUP><A name=two></A> The constructor has two <SPAN class=docEmphasis>fields</SPAN>: an <TT>Int</TT><A name="gate capacity"></A> giving the gate capacity, and a <TT>TVar</TT><A name="how many"></A> whose contents says how many helpers can go through the gate before it closes. If the <TT>TVar</TT> contains zero, the gate is closed.</P>
+<BLOCKQUOTE>
+<P class=docFootnote><SUP><A name=CHP-24-FNOTE-20>[<IMG alt=dagger src="images/U2020.GIF"><IMG alt=dagger src="images/U2020.GIF"><IMG alt=dagger src="images/U2020.GIF"><IMG alt=dagger src="images/U2020.GIF">]</A></SUP> A data type declaration is not unlike a C <TT>struct</TT> declaration, with <TT>MkGate</TT> being the structure tag.</P></BLOCKQUOTE>
+<P class=docText>The function <TT>newGate</TT> makes a new <TT>Gate</TT> by allocating a <TT>TVar</TT> and building a <TT>Gate</TT> value by calling the <TT>MkGate</TT> constructor. Dually, <TT>passGate</TT> uses pattern-matching to take apart the <TT>MkGate</TT> constructor; then, it decrements the contents of the <TT>TVar</TT>, using <TT>check</TT><A name="did with"></A> to ensure there is still capacity in the gate, as we did with <TT>withdraw</TT><A name="section "></A> in the section "Blocking and Choice." Finally, <TT>operateGate</TT> first opens the <TT>Gate</TT><A name="capacity into"></A> by writing its full capacity into the <TT>TVar</TT>, and then waits for the <TT>TVar</TT> to be decremented to zero.</P>
+<P class=docText>A Group has the following interface:</P><PRE>	newGroup   :: Int -&gt; IO Group
+	joinGroup  :: Group -&gt; IO (Gate,Gate)
+	awaitGroup :: Group -&gt; <A name=idx-CHP-24-2053></A>STM (Gate,Gate)
+</PRE><BR>
+<P class=docText>Again, a <TT>Group</TT><A name="An elf"></A> is created empty, with a specified capacity. An elf may join a group by calling <TT>joinGroup</TT><A name="a call"></A>, a call that blocks if the group is full. <A name=idx-CHP-24-2054></A>Santa calls <TT>awaitGroup</TT><A name="the group"></A> to wait for the group to be full; when it is full, he gets the <TT>Group</TT>'s gates, <SPAN class=docEmphasis>and</SPAN> the <TT>Group</TT><A name="with fresh"></A> is immediately reinitialized with fresh <TT>Gates</TT><A name="another group"></A>, so that another group of eager elves can start assembling.</P>
+<P class=docText><A name="possible implementation"></A>Here is a possible implementation:</P><PRE>	data Group = MkGroup Int (TVar (Int, Gate, Gate))
+
+	newGroup n = atomically (do { g1 &lt;- newGate n; g2 &lt;- newGate n
+	                            ; tv &lt;- newTVar (n, g1, g2)
+	                            ; return (MkGroup n tv) })
+</PRE><BR>
+<P class=docText>Again, <TT>Group</TT> is declared as a fresh data type, with constructor <TT>MkGroup</TT> and two fields: the <TT>Group's</TT> full capacity, and a <TT>TVar</TT> containing its number of empty slots and its two <TT>Gates</TT>. Creating a new <TT>Group</TT> is a matter of creating new <TT>Gates</TT>, initializing a new <TT>TVar</TT>, and returning a structure built with <TT>MkGroup</TT>.</P>
+<P class=docText>The implementations of <TT>joinGroup</TT> and <TT>awaitGroup</TT> are now more or less determined by these data structures:</P><PRE>	joinGroup (MkGroup n tv)
+	  = atomically (do { (n_left, g1, g2) &lt;- readTVar tv
+	                   ; check (n_left &gt; 0)
+	                   ; writeTVar tv (n_left-1, g1, g2)
+	                   ; return (g1,g2) })
+
+	awaitGroup (MkGroup n tv)
+	  = do { (n_left, g1, g2) &lt;- readTVar tv
+	       ; check (n_left == 0)
+	       ; new_g1 &lt;- newGate n; new_g2 &lt;- newGate n
+	       ; writeTVar tv (n,new_g1,new_g2)
+	       ; return (g1,g2) }
+</PRE><BR>
+<P class=docText>Notice that <TT>awaitGroup</TT> makes new gates when it reinitializes the <TT>Group</TT><A name="old one"></A>. This ensures that a new group can assemble while the old one is still talking to Santa in the study, with no danger of an elf from the new group overtaking a sleepy elf from the old one.</P>
+<P class=docText><A name="you may"></A>Reviewing this section, you may notice that I have given some of the <TT>Group</TT> and <TT>Gate</TT> operations <TT>IO</TT> types (e.g., <TT>newGroup</TT>, <TT>joinGroup</TT>), and some <TT>STM</TT> types (e.g., <TT>newGate</TT>, <TT>awaitGroup</TT><A name="these choices"></A>). How did I make these choices? For example, <TT>newGroup</TT> has an <TT>IO</TT><A name="never call"></A> type, which means that I can never call it from within an <TT>STM</TT><A name="But this"></A> action. But this is merely a matter of convenience: I could instead have given <TT>newGroup</TT> an <TT>STM</TT> type, by omitting the <TT>atomically</TT><A name="I would"></A> in its definition. In exchange, I would have had to write <TT>atomically(newGroupn)</TT><A name="rather than"></A> at each call site, rather than merely <TT>newGroup n</TT><A name=of></A>. The merit of <A name=idx-CHP-24-2055></A>giving <TT>newGate</TT> an <TT>STM</TT><A name="it is"></A> type is that it is more compos-able, a generality that <TT>newGroup</TT> did not need in this program. In contrast, I wanted to call <TT>newGate</TT> inside <TT>newGroup</TT>, and so I gave <TT>newGate</TT> an <TT>STM</TT> type.<A name=idx-CHP-24-2056></A></P>
+<P class=docText>In general, when designing a library, you should give the functions <TT>STM</TT> types <A name=idx-CHP-24-2057></A>wherever possible. You can think of <TT>STM</TT> actions as Lego bricks that can be glued together—using do {…}, <TT>retry</TT>, and <TT>orElse</TT>—to make bigger <TT>STM</TT> actions. However, as soon as you wrap a block in <TT>atomically</TT>, making it an <TT>IO</TT><A name="is a"></A> type, it can no longer be combined atomically with other actions. There is a good reason for that: a value of IO type can perform arbitrary, irrevocable input/output (such as <TT>launchMissiles</TT>).</P>
+<P class=docText><A name="therefore good"></A>It is therefore good library design to export <TT>STM</TT> actions (rather than <TT>IO</TT><A name="their type"></A> actions) whenever possible, because they are composable; their type advertises that they have no irrevocable effects. The library client can readily get from <TT>STM</TT> to <TT>IO</TT> (using <TT>atomically</TT>), but not vice versa.</P>
+<P class=docText>Sometimes, however, it is <SPAN class=docEmphasis>essential</SPAN> to use an <TT>IO</TT> action. Look at <TT>operateGate</TT>. The two calls to <TT>atomically</TT><A name="the first"></A> cannot be combined into one, because the first has an externally visible side effect (opening the gate), while the second blocks until all the elves have woken up and gone through it. So, <TT>operateGate</TT> <SPAN class=docEmphasis>must</SPAN><A name="have an"></A> have an <TT>IO</TT> type.</P><A name=the_main_program></A>
+<H4 class=docSection2Title id=title-ID0EXPEK>24.3.3. The Main Program</H4>
+<P class=docText><A name="implement the"></A>We will first implement the outer structure of the program, although we have not yet implemented <A name=idx-CHP-24-2058></A>Santa himself. Here it is:</P><PRE>	main = do { elf_group &lt;- newGroup 3
+	          ; sequence_ [ elf elf_group n | n &lt;- [1..10] ]
+
+	          ; rein_group &lt;- newGroup 9	
+	          ; sequence_ [ reindeer rein_group n | n &lt;- [1..9] ]
+
+	          ; forever (santa elf_group rein_group) }
+</PRE><BR>
+<P class=docText><A name="creates a"></A>The first line creates a <TT>Group</TT><A name="elves with"></A> for the elves with capacity <TT>3</TT><A name="is more"></A>. The second line is more mysterious: it uses a so-called <SPAN class=docEmphasis>list comprehension</SPAN> to create a list of <TT>IO</TT> actions and calls sequence_ to execute them in sequence. The <A name=idx-CHP-24-2059></A>list comprehension [<TT>e|</TT><TT><I>x</I></TT><TT>&lt;-</TT><TT><I>xs</I></TT><TT>]</TT> is read, "the list of all <TT>e</TT> where <TT><I>x</I></TT> is drawn from the list <TT><I>xs</I></TT>." So, the argument to <TT>sequence_</TT> is the list:<A name=idx-CHP-24-2060></A></P><PRE>	[elf elf_group 1, elf elf_group 2, ..., elf elf_group 10]
+</PRE><BR>
+<P class=docText>Each of these calls yields an <TT>IO</TT> action that spawns an elf thread. The function <TT>sequence_</TT> takes a list of <TT>IO</TT><A name="actions in"></A> actions and returns an action that, when performed, runs each of the actions in the list in order:<SUP class=docFootnote><A class=docLink href="javascript:moveTo('CHP-24-FNOTE-21');">[<IMG alt="double dagger" src="images/U2021.GIF"><IMG alt="double dagger" src="images/U2021.GIF"><IMG alt="double dagger" src="images/U2021.GIF"><IMG alt="double dagger" src="images/U2021.GIF">]</A></SUP></P>
+<BLOCKQUOTE>
+<P class=docFootnote><SUP><A name=CHP-24-FNOTE-21>[<IMG alt="double dagger" src="images/U2021.GIF"><IMG alt="double dagger" src="images/U2021.GIF"><IMG alt="double dagger" src="images/U2021.GIF"><IMG alt="double dagger" src="images/U2021.GIF">]</A></SUP> The type [<TT>IO a</TT><A name="of values"></A>] means "a list of values of type <TT>IO a</TT><A name="about the"></A>." You may also wonder about the underscore in the name <TT>sequence_</TT><A name="function sequence"></A>: it's because there is a related function sequence, whose type is <TT><A name="IO "></A>[IO a] -&gt; IO [a]</TT><A name="results of"></A>, that gathers the results of the argument actions into a list. Both <TT>sequence</TT> and <TT>sequence_</TT><A name=the></A> are defined in the <TT>Prelude</TT><A name="imported by"></A> library, which is imported by default.</P></BLOCKQUOTE><PRE>	sequence_ :: [IO a] -&gt; IO ( )
+</PRE><BR>
+<P class=docText>An <TT>elf</TT> is built from <TT>elf1</TT><A name="we want"></A>, but with two differences. First, we want the elf to loop indefinitely, and second, we want it to run in a separate thread:</P><PRE>	elf :: Group -&gt; Int -&gt; IO ThreadId
+	elf gp id = <A name=idx-CHP-24-2061></A>forkIO (forever (do { elf1 gp id; randomDelay }))
+</PRE><BR>
+<P class=docText>The <TT>forkIO</TT> part spawns its argument as a separate <A name=idx-CHP-24-2062></A>Haskell thread (see the earlier section "Side Effects and Input/Output in Haskell"). In turn, <TT>forkIO's</TT> argument is a call to <TT>forever</TT>, which runs <SPAN class=docEmphasis>its</SPAN> argument repeatedly (compare to the definition of <TT>nTimes</TT> in "Side Effects and Input/Output in Haskell"):</P><PRE>	forever :: IO () -&gt; IO ( )
+	-- Repeatedly perform the action
+	forever act = do { act; forever act }
+</PRE><BR>
+<P class=docText>Finally, the expression (<TT>elf1 gp id</TT>) is an <TT>IO</TT><A name="by a"></A> action, and we want to repeat that action indefinitely, followed each time by a random delay:</P><PRE>	randomDelay :: IO ( )
+	-- Delay for a random time between 1 and 1,000,000 microseconds
+	randomDelay = do { waitTime &lt;- getStdRandom (randomR (1, 1000000))
+	                 ; threadDelay waitTime }
+</PRE><BR>
+<P class=docText><A name="of the"></A>The rest of the <A name=idx-CHP-24-2063></A><A name="We make"></A>main program should be self-explanatory. We make 9 reindeer in the same way that we made 10 elves, except that we call <TT>reindeer</TT> instead of <TT>elf</TT>:</P><PRE>	reindeer :: Group -&gt; Int -&gt; IO ThreadId
+	reindeer gp id = forkIO (forever (do { reindeer1 gp id; randomDelay }))
+</PRE><BR>
+<P class=docText>The code for <TT>main</TT> finishes by reusing <TT>forever</TT> to run <TT>santa</TT><A name="implement Santa"></A> repeatedly. All that remains is to implement Santa himself.<A name=idx-CHP-24-2064></A></P><A name=implementing_santa></A>
+<H4 class=docSection2Title id=title-ID0EHVEK>24.3.4. Implementing Santa</H4>
+<P class=docText><A name="Santa is"></A>Santa is the most interesting participant of this little drama because he makes choices. He must wait until there is <SPAN class=docEmphasis>either</SPAN><A name="reindeer waiting"></A> a group of reindeer waiting <SPAN class=docEmphasis>or</SPAN><A name="Once he"></A> a group of elves. Once he has made his choice of which group to attend to, he must take them through their task. Here is his code:</P><PRE>	santa :: Group -&gt; Group -&gt; IO ( )
+	santa elf_gp rein_gp
+	  = do { putStr "----------\n"
+	     ; (task, (in_gate, out_gate))
+	            &lt;- atomically (orElse
+	                   (<A name=idx-CHP-24-2065></A>chooseGroup rein_gp "deliver toys")
+	                   (chooseGroup elf_gp "meet in my study"))
+
+	     ; putStr ("Ho! Ho! Ho! let's " ++ task ++ "\n")
+	     ; operateGate in_gate
+	      -- Now the helpers do their task
+	     ; operateGate out_gate }
+
+	where
+	  chooseGroup :: Group -&gt; String -&gt; <A name=idx-CHP-24-2066></A>STM (String, (Gate,Gate))
+	  chooseGroup gp task = do { gates &lt;- awaitGroup gp
+	                       ; return (task, gates) }
+</PRE><BR>
+<P class=docText><A name="is made"></A>The choice is made by the <TT>orElse</TT><A name="to choose"></A>, which first attempts to choose the reindeer (thereby giving them priority), and otherwise chooses the elves. The <TT>chooseGroup</TT> function does an <TT>awaitGroup</TT><A name="a string"></A> call on the appropriate group, and returns a pair consisting of a string that indicates the task (delivering toys or meeting in the study) and the two gates that <A name=idx-CHP-24-2067></A><A name="operate to"></A>Santa must operate to take the group through the task. Once the choice is made, Santa prints out a message and operates the two gates in sequence.</P>
+<P class=docText><A name="we will"></A>This implementation works fine, but we will also explore an alternative, more general version, because <TT>santa</TT><A name="The pattern"></A> demonstrates a very common programming pattern. The pattern is this: a thread (Santa in this case) makes a choice in one atomic transaction, followed by one or more further consequential transactions. Another typical example might be: take a message from one of several message queues, act on the message, and repeat. In the Santa scenario, the consequential action was very similar for both elves and reindeer—in both cases, Santa had to print a message and operate two gates. But that would not work if Santa had to do very different things for elves and reindeer. One approach would be to return a Boolean indicating which was chosen, and dispatch on that Boolean after the choice, but that becomes inconvenient as more alternatives are added. Here is another approach that works better:</P><PRE>	santa :: Group -&gt; Group -&gt; IO ()
+	santa elf_gp rein_gp
+	  = do { putStr "----------\n"
+	       ; choose [(awaitGroup rein_gp, run "deliver toys"),
+	                 (awaitGroup elf_gp, run "meet in my study")] }
+	  where
+	    run :: String -&gt; (Gate,Gate) -&gt; IO ()
+	    run task (in_gate,out_gate)
+	      = do { putStr ("Ho! Ho! Ho! let's " ++ task ++ "\n")
+	           ; operateGate in_gate
+	           ; operateGate out_gate }
+</PRE><BR>
+<P class=docText><A name="The function"></A>The function <TT>choose</TT><A name="guarded command"></A> is like a guarded command: it takes a list of pairs, waits until the first component of a pair is ready to "fire," and then executes the second component. So <TT>choose</TT> has this type:<SUP class=docFootnote><A class=docLink href="javascript:moveTo('CHP-24-FNOTE-22');">[§§§§]</A></SUP></P>
+<BLOCKQUOTE>
+<P class=docFootnote><SUP><A name=CHP-24-FNOTE-22>[§§§§]</A></SUP> In <A name=idx-CHP-24-2068></A>Haskell, the type [<TT><I>ty</I></TT><A name="whose elements"></A>] means a list whose elements have type <TT><I>ty</I></TT><A name="argument is"></A>. In this case, choose's argument is a list of pairs, written (<TT><I>ty</I></TT>1, <TT><I>ty</I></TT><A name="of the"></A>2); the first component of the pair has type <TT>STM a</TT>, while the second is a function with type <TT>a-&gt;IO ( )</TT>.</P></BLOCKQUOTE><PRE>	choose :: [(STM a, a -&gt; IO ())] -&gt; IO ( )
+</PRE><BR>
+<P class=docText>The guard is an <TT>STM</TT> action delivering a value of type <TT>a</TT>; when the <TT>STM</TT> action is ready (that is, does not retry), <TT>choose</TT><A name="be a"></A> can pass the value to the second component, which must therefore be a function expecting a value of type <TT>a</TT><A name="in mind"></A>. With this in mind, <A name=idx-CHP-24-2069></A><A name="He uses"></A>santa should be easy reading. He uses <TT>awaitGroup</TT> to wait for a ready <TT>Group</TT>; the <TT>choose</TT> function gets the pair of <TT>Gates</TT> returned by <TT>awaitGroup</TT> and passes it to the <TT>run</TT><A name="gates in"></A> function. The latter operates the two gates in succession—recall that <TT>operateGate</TT><A name="blocks until"></A> blocks until all the elves (or reindeer) have gone through the gate.</P>
+<P class=docText>The code for <TT>choose</TT><A name="little mind"></A> is brief, but a little mind-bending:</P><PRE>	choose :: [(STM a, a -&gt; IO ( ))] -&gt; IO ( )
+	choose choices = do { act &lt;- atomically (foldr1 orElse actions)
+	                    ; act }
+	  where
+	    actions :: [<A name=idx-CHP-24-2070></A>STM (IO ( ))]
+	    actions = [ do { val &lt;- guard; return (rhs val) }
+	              | (guard, rhs) &lt;- choices ]
+</PRE><BR>
+<P class=docText>First, it forms <A name=idx-CHP-24-2071></A>a list, <TT>actions</TT>, of <TT>STM</TT><A name="combines with"></A> actions, which it then combines with <TT>orElse</TT>. (The call <TT>foldr1</TT> <IMG alt="circled plus" src="images/U2295.GIF">[<TT>x</TT><SUB>1</SUB>,…,<TT>x</TT><SPAN class=docEmphasis>n</SPAN>] returns <TT>x</TT><SUB>1</SUB> <IMG alt="circled plus" src="images/U2295.GIF"> <TT>x</TT><SUB>2</SUB> <IMG alt="circled plus" src="images/U2295.GIF"> … <IMG alt="circled plus" src="images/U2295.GIF"> <TT>x</TT><SUB><SPAN class=docEmphasis>n</SPAN></SUB><A name=these></A>.) Each of these <TT>STM</TT><A name="an IO"></A> actions itself returns an IO action, namely <SPAN class=docEmphasis>the thing to be done when the choice is made</SPAN><A name="cool type"></A>. That is why each action in the list has the cool type <TT>STM(IO( ))</TT><A name="first makes"></A>. The code first makes an atomic choice among the list of alternatives, getting the action <TT>act</TT>, with type <TT>IO( )</TT><A name="action act"></A> in return—and then performs the action act. The list of choices, <TT>actions</TT><A name="pair "></A>, is constructed by taking each pair (<TT>guard, rhs</TT><A name="from the"></A>) from the list of choices, running the guard (an <TT>STM</TT> action), and returning the <TT>IO</TT><A name="applying the"></A> action gotten by applying the rhs to the <TT>guard's</TT> return value.</P><A name=compiling_and_running_the_program></A>
+<H4 class=docSection2Title id=title-ID0EI2EK>24.3.5. Compiling and Running the Program</H4>
+<P class=docText>I have presented <SPAN class=docEmphasis>all</SPAN><A name="this example"></A> the code for this example. If you simply add the appropriate import statements at the top, listed here, you should be good to go:<SUP class=docFootnote><A class=docLink href="javascript:moveTo('CHP-24-FNOTE-23');">[||||||||]</A></SUP></P>
+<BLOCKQUOTE>
+<P class=docFootnote><SUP><A name=CHP-24-FNOTE-23>[||||||||]</A></SUP><A name="get the"></A> You can get the code online at <A class=docLink href="http://research.microsoft.com/~simonpj/papers/stm/Santa.hs.gz" target=_blank>http://research.microsoft.com/~simonpj/papers/stm/Santa.hs.gz</A>.</P></BLOCKQUOTE><PRE>	module Main where
+	  import Control.Concurrent.STM
+	  import Control.Concurrent
+	  import System.Random
+</PRE><BR>
+<P class=docText><A name="use the"></A>To compile the code, use the <A name=idx-CHP-24-2072></A>Glasgow Haskell Compiler, <A name=idx-CHP-24-2073></A>GHC:<SUP class=docFootnote><A class=docLink href="javascript:moveTo('CHP-24-FNOTE-24');">[####]</A></SUP></P>
+<BLOCKQUOTE>
+<P class=docFootnote><SUP><A name=CHP-24-FNOTE-24>[####]</A></SUP> GHC is available for free at <A class=docLink href="http://haskell.org/ghc" target=_blank>http://haskell.org/ghc</A>.<A name=idx-CHP-24-2074></A></P></BLOCKQUOTE><PRE>	$ <B>ghc Santa.hs -package stm -o santa</B>
+</PRE><BR>
+<P class=docText>Finally, you can run the program:<A name=I_indexterm24_tt524></A><A name=I_indexterm24_tt525></A></P><PRE>	$ <B>./santa</B>
+	----------
+	Ho! Ho! Ho! let's deliver toys
+	Reindeer 8 delivering toys
+	Reindeer 7 delivering toys
+	Reindeer 6 delivering toys
+	Reindeer 5 delivering toys
+	Reindeer 4 delivering toys
+	Reindeer 3 delivering toys
+	Reindeer 2 delivering toys
+	Reindeer 1 delivering toys
+	Reindeer 9 delivering toys
+	----------
+	Ho! Ho! Ho! let's meet in my study
+	Elf 3 meeting in the study
+	Elf 2 meeting in the study
+	Elf 1 meeting in the study
+	...and so on...
+</PRE><BR></DIV></DIV>
+<p>&nbsp;</p><p>&nbsp;</p><!-- 仁·义 -->
+</body></html>

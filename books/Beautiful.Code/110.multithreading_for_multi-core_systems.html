@@ -1,0 +1,91 @@
+<html><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<link href="styles/globalstyle.css" type="text/css" rel="stylesheet"/>
+<link title="medium" href="styles/two.css" type="text/css" rel="stylesheet"/>
+<script src="scripts/main.js" type="text/javascript" language="javascript"></script>
+<title>Section 14.8. Multithreading for Multi-Core Systems</title>
+</head><body>
+<DIV class=h3 style="MARGIN-TOP: 0px; PADDING-BOTTOM: 1em; WIDTH: 100%; PADDING-TOP: 0px"><SPAN>How Elegant Code Evolves with Hardware The Case of Gaussian Elimination</SPAN><SPAN> &gt; Multithreading for Multi-Core Systems</SPAN></DIV>
+<DIV></DIV>
+<DIV>
+<DIV><A name=multithreading_for_multi-core_systems></A>
+<H3 class=docSection1Title id=-100000>14.8. Multithreading for Multi-Core Systems</H3>
+<P class=docText><A name="The advent"></A>The advent of multi-core chips brought about a fundamental shift in the way software is produced. Dense linear algebra is no exception. The good news is that LAPACK's LU factorization runs on a multi-core system and can even deliver a modest increase of performance if <A name=idx-CHP-14-1230></A><A name="In technical"></A>multithreaded BLAS are used. In technical terms, this is the <A name=idx-CHP-14-1231></A><A name="call to"></A>fork-join model of computation: each call to BLAS (from a single main thread) forks a suitable number of threads, which perform the work on each core and then join the main thread of computation. The fork-join model implies a synchronization point at each join operation.<A name=idx-CHP-14-1232></A><A name=I_indexterm14_tt325></A><A name=I_indexterm14_tt326></A><A name=I_indexterm14_tt327></A></P>
+<P class=docText><A name="news is"></A>The bad news is that the LAPACK's fork-join algorithm gravely impairs scalability even on small multi-core computers that do not have the memory systems available in SMP systems. The inherent scalability flaw is the heavy synchronization in the fork-join model (only a single thread is allowed to perform the significant computation that occupies the critical section of the code, leaving other threads idle) that results in lock-step execution and prevents hiding of inherently sequential portions of the code behind <A name=idx-CHP-14-1233></A><A name="the threads"></A>parallel ones. In other words, the threads are forced to perform the same operation on different data. If there is not enough data <A name=idx-CHP-14-1234></A><A name="for the"></A>for some threads, they will have to stay idle and wait for the rest of the threads that perform useful work on their data. Clearly, another version of the LU algorithm is needed such that would allow threads to stay busy all the time by possibly making them perform different operations during some portion of the execution.</P>
+<P class=docText>The <A name=idx-CHP-14-1235></A><A name="of the"></A>multithreaded version of the algorithm recognizes the existence of a so-called <SPAN class=docEmphasis>critical path</SPAN><A name="of the"></A> in the algorithm: a portion of the <A name=idx-CHP-14-1236></A><A name="previous calculations"></A>code whose execution depends on previous calculations and can block the progress of the algorithm. The LAPACK's LU does not treat this critical portion of the code in any special way: the DGETF2 subroutine is called by a single thread and doesn't allow much parallelization even at the BLAS level. While one thread calls this routine, the other ones wait idly. And since the performance of DGETF2 is bound by memory bandwidth (rather than processor speed), this bottleneck will exacerbate scalability problems as systems with more cores are introduced.<A name=idx-CHP-14-1237></A></P>
+<P class=docText><A name="The multithreaded"></A>The multithreaded version of the algorithm attacks this problem head-on by introducing the notion of <A name=idx-CHP-14-1238></A><A name="of time"></A>look-ahead: calculating things ahead of time to avoid potential stagnation in the progress of the computations. This of course requires additional synchronization and bookkeeping not present in the previous versions—a trade-off between code complexity and performance. Another aspect of the multithreaded code is the use of recursion in the panel factorization. It turns out that the use of recursion can give even greater performance benefits for tall panel matrices than it does for the square ones.</P>
+<P class=docText><A class=docLink href="javascript:moveTo('factorization_for_multithreaded_execution_c_code');">Example 14-6</A><A name="suitable for"></A> shows a factorization suitable for multithreaded execution.</P><A name=factorization_for_multithreaded_execution_c_code></A>
+<H5 class=docExampleTitle id=title-ID0EYPDK>Example 14-6. Factorization for multithreaded execution (C code)</H5>
+<P>
+<TABLE cellSpacing=0 cellPadding=5 width=* border=1>
+<TBODY>
+<TR>
+<TD>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedHeight>void SMP_dgetrf(int n, double *a, int lda, int *ipiv, int pw,
+                            int tid, int tsize, int *pready,ptm *mtx, ptc *cnd) {
+  int pcnt, pfctr, ufrom, uto, ifrom, p;
+  double *pa = a, *pl, *pf, *lp;
+
+  pcnt = n / pw; /* number of panels */
+
+  pfctr = tid + (tid ? 0 : tsize); /* first panel that should be factored by this
+                     thread after the very first panel (number 0) gets factored */
+
+  /* this is a pointer to the last panel */
+  lp = a + (size_t)(n - pw) * (size_t)lda;
+
+  /* for each panel (that is used as source of updates) */
+  for (ufrom = 0; ufrom &lt; pcnt; ufrom++, pa += (size_t)pw * (size_t)(lda + 1)){
+    p = ufrom * pw; /* column number */
+
+  /* if the panel to be used for updates has not been factored yet; 'ipiv'
+     does not be consulted, but it is to possibly avoid accesses to 'pready'*/
+  if (! ipiv[p + pw - 1] || ! pready[ufrom]) {
+
+    if (ufrom % tsize == tid) { /* if this is this thread's panel */
+      pfactor( n - p, pw, pa, lda, ipiv + p, pready, ufrom, mtx, cnd );
+    } else if (ufrom &lt; pcnt - 1) { /* if this is not the last panel */
+      LOCK( mtx );
+      while (! pready[ufrom]) { WAIT( cnd, mtx ); }
+      UNLOCK( mtx );
+    }
+  }
+  /* <A name=idx-CHP-14-1239></A>for each panel to be updated */
+  for (uto = first_panel_to_update( ufrom, tid, tsize ); uto &lt; pcnt;
+       uto += tsize) {
+    /* if there are still panels to factor by this thread and preceding panel
+       has been factored; test to 'ipiv' could be skipped but is in there to
+       decrease number of accesses to 'pready' */
+    if (pfctr &lt; pcnt &amp;&amp; ipiv[pfctr * pw - 1] &amp;&amp; pready[pfctr - 1]) {
+      /* for each panel that has to (still) update panel 'pfctr' */
+      for (ifrom = ufrom + (uto &gt; pfctr ? 1 : 0); ifrom &lt; pfctr; ifrom++) {
+        p = ifrom * pw;
+        pl = a + (size_t)p * (size_t)(lda + 1);
+        pf = pl + (size_t)(pfctr - ifrom) * (size_t)pw * (size_t)lda;
+        pupdate( n - p, pw, pl, pf, lda, p, ipiv, lp );
+      }
+      p = pfctr * pw;
+      pl = a + (size_t)p * (size_t)(lda + 1);
+      pfactor( n - p, pw, pl, lda, ipiv + p, pready, pfctr, mtx, cnd );
+      pfctr += tsize; /* move to this thread's next panel */
+    }
+
+    /* if panel 'uto' hasn't been factored (if it was, it certainly has been
+       updated, so no update is necessary) */
+    if (uto &gt; pfctr || ! ipiv[uto * pw]) {
+      p = ufrom * pw;
+      pf = pa + (size_t)(uto - ufrom) * (size_t)pw * (size_t)lda;
+      pupdate( n - p, pw, pa, pf, lda, p, ipiv, lp );
+    }
+  }
+}
+
+
+					    </PRE><BR></TD></TR></TBODY></TABLE></P>
+<P class=docText><A name="is the"></A>The algorithm is the same for each thread (the SIMD paradigm), and the matrix data is partitioned among threads in a cyclic manner using panels with <TT>pw</TT><A name="panel "></A> columns in each panel (except maybe the last). The <TT>pw</TT><A name="is the"></A> parameter corresponds to the blocking parameter NB of LAPACK. The difference is the logical assignment of panels (blocks of columns) to threads. (Physically, all panels are equally accessible because the <A name=idx-CHP-14-1240></A><A name="in a"></A>code operates in a shared memory regimen.) The benefits of blocking in a thread are the same as they were in LAPACK: better cache reuse and less stress on the memory bus. Assigning a portion of the matrix to a thread seems an artificial requirement at first, but it simplifies the code and the bookkeeping data structures; most importantly, it provides better memory affinity. It turns out that multi-core chips are not symmetric in terms of memory access bandwidth, so minimizing the number of reassignments of memory pages to cores directly benefits performance.</P>
+<P class=docText><A name="LU factorization"></A>The standard components of LU factorization are represented by the <TT>pfactor()</TT> and <TT>pupdate()</TT><A name="factors a"></A> functions. As one might expect, the former factors a panel, whereas the latter updates a panel using one of the previously factored panels.</P>
+<P class=docText><A name="The main"></A>The main loop makes each thread iterate over each panel in turn. If necessary, the panel is factored by the owner thread while other threads wait (if they happen to need this panel <A name=idx-CHP-14-1241></A>for their updates).</P>
+<P class=docText><A name="inside the"></A>The look-ahead logic is inside the nested loop (prefaced by the comment <TT><A name="to be"></A>for each panel to be updated</TT><A name="DGEMM or"></A>) that replaces DGEMM or PDGEMM from previous algorithms. Before each thread updates one of its panels, it checks whether it's already feasible to factor its first unfactored panel. This minimizes the number of times the threads have to wait because each thread constantly attempts to eliminate the potential bottleneck.</P>
+<P class=docText><A name="case for"></A>As was the case for ScaLAPACK, the <A name=idx-CHP-14-1242></A><A name="in the"></A>multithreaded version detracts from the inherent elegance of the LAPACK's version. Also in the same spirit, performance is the main culprit: LAPACK's <A name=idx-CHP-14-1243></A><A name="not run"></A>code will not run efficiently on machines with ever-increasing numbers of cores. Explicit control of execution threads at the LAPACK level rather than the BLAS level is critical: parallelism cannot be encapsulated in a library call. The only good news is that the code is not as complicated as ScaLAPACK's, and efficient BLAS can still be put to a good use.</P></DIV></DIV>
+<p>&nbsp;</p><p>&nbsp;</p><!-- 仁·义 -->
+</body></html>

@@ -1,0 +1,480 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>4.2 Flocking Example</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="ch04_sect1_001.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="ch04_sect1_003.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="ch04_sect1_002"></A>
+<H3 class="docSection1Title">4.2 Flocking Example</H3>
+<P class="docText">The example we're going to look at involves simulating several units in a continuous environment. Here, we'll use the same rigid-body simulation algorithms we used in the chasing and pattern movement examples we discussed earlier. This example is named <span class="docEmphasis">AIDemo4</span>, and it's available for download from the book's Web site (<A class="docLink" target="_blank" HREF="http://www.oreilly.com/catalog/ai">http://www.oreilly.com/catalog/ai</A>).</P>
+<P class="docText">Basically, we're going to simulate about 20 units that will move around in flocks and interact with the environment and with a player. For this simple demonstration, interaction with the environment consists of avoiding circular objects. The flocking units interact with the player by chasing him.</P>
+<A NAME="ch04_sect2_001"></A>
+<H4 class="docSection2Title">4.2.1 Steering Model</H4>
+<P class="docText">For this example, we'll implement a steering model that is more or less identical to the one we used in the physics-based demo in <A class="docLink" HREF="ch02.html#ch02">Chapter 2</A>. You can refer to <A class="docLink" HREF="ch02_sect1_004.html#ch02_fig08">Figure 2-8</A> and the surrounding discussion to refresh your memory on the steering model. Basically, we're going to treat each unit as a rigid body and apply a net steering force at the front end of the unit. This net steering force will point in either the starboard or port direction relative to the unit and will be the accumulation of steering forces determined by application of each flocking rule. This approach enables us to implement any number or combination of flocking rules—each rule makes a small contribution to the total steering force and the net result is applied to the unit once all the rules are considered.</P>
+<P class="docText">We should caution you that this approach does require some tuning to make sure no single rule dominates. That is, you don't want the steering force contribution from a given rule to be so strong that it always overpowers the contributions from other rules. For example, if we make the steering force contribution from the cohesion rule overpower the others, and say we implement an obstacle avoidance rule so that units try to steer away from objects, if the cohesion rule dominates, the units might stay together. Therefore, they will be unable to steer around objects and might run into or through them. To mitigate this sort of unbalance, we're going to do two things: first, we're going to modulate the steering force contribution from each rule; and second, we're going to tune the steering model to make sure everything is balanced, at least most of the time.</P>
+<P class="docText">Tuning will require trial and error. Modulating the steering forces will require that we write the steering force contribution from each rule in the form of an equation or response curve so that the contribution is not constant. Instead, we want the steering force to be a function of some key parameter important to the given rule.</P>
+<P class="docText">Consider the avoidance rule for a moment. In this case, we're trying to prevent the units from running into each other, while at the same time enabling the units to get close to each other based on the alignment and cohesion rules. We want the avoidance rule steering force contribution to be small when the units are far away from each other, but we want the avoidance rule steering force contribution to be relatively large when the units are dangerously close to each other. This way, when the units are far apart, the cohesion rule can work to get them together and form a flock without having to fight the avoidance rule. Further, once the units are in a flock, we want the avoidance rule to be strong enough to prevent the units from colliding in spite of their tendency to want to stay together due to the cohesion and alignment rules. It's clear in this example that separation distance between units is an important parameter. Therefore, we want to write the avoidance steering force as a function of separation distance. You can use an infinite number of functions to accomplish this task; however, in our experience, a simple inverse function works fine. In this case, the avoidance steering force is inversely proportional to the separation distance. Therefore, large separation distances yield small avoidance steering forces, while small separation distances yield larger avoidance steering forces.</P>
+<P class="docText">We'll use a similar approach for the other rules. For example, for alignment we'll consider the angle between a given unit's current heading relative to the average heading of its neighbors. If that angle is small, we want to make only a small adjustment to its heading, whereas if the angle is large, a larger adjustment is required. To achieve such behavior, we'll make the alignment steering force contribution directly proportional to the angle between the unit's current heading and the average heading of its neighbors. In the following sections, we'll look at and discuss some code that implements this steering model.</P>
+
+<A NAME="ch04_sect2_002"></A>
+<H4 class="docSection2Title">4.2.2 Neighbors</H4>
+<P class="docText">As we discussed earlier, each unit in a flock must be aware of its neighbors. Exactly how many neighbors each unit is aware of is a function of the field-of-view and view radius parameters shown in <A class="docLink" HREF="ch04_sect1_001.html#ch04_fig01">Figure 4-1</A>. Because the arrangement of the units in a flock will change constantly, each unit must update its view of the world each time through the game loop. This means we must cycle through all the units in the flock collecting the required data. Note that we have to do this for each unit to acquire each unit's unique perspective. This neighbor search can become computationally expensive as the number of units grows large. The sample code we discuss shortly is written for clarity and is a good place to make some optimizations.</P>
+<P class="docText">The example program entitled <span class="docEmphasis">AIDemo4</span>, which you can download from the book's web site (<A class="docLink" target="_blank" HREF="http://www.oreilly.com/catalog/ai&quot;">http://www.oreilly.com/catalog/ai"</A>), is set up similar to the examples we discussed earlier in this book. In this example, you'll find a function called <span class="docEmphasis">UpdateSimulation</span> that is called each time through the game, or simulation, loop. This function is responsible for updating the positions of each unit and for drawing each unit to the display buffer. <A class="docLink" HREF="#ch04exm01">Example 4-1</A> shows the <span class="docEmphasis">UpdateSimulation</span> function for this example.</P>
+<A NAME="ch04exm01"></A>
+<H5 class="docExampleTitle">Example 4-1. UpdateSimulation function</H5>
+<PRE>
+void     UpdateSimulation(void)
+{
+     double     dt = _TIMESTEP;
+     int          i;
+     // Initialize the back buffer:
+     if(FrameCounter &gt;= _RENDER_FRAME_COUNT)
+     {
+          ClearBackBuffer();
+          DrawObstacles();
+     }
+     // Update the player-controlled unit (Units[0]):
+     Units[0].SetThrusters(false, false, 1);
+     if (IsKeyDown(VK_RIGHT))
+          Units[0].SetThrusters(true, false, 0.5);
+     if (IsKeyDown(VK_LEFT))
+           Units[0].SetThrusters(false, true, 0.5);
+     Units[0].UpdateBodyEuler(dt);
+     if(Units[0].vPosition.x &gt; _WINWIDTH) Units[0].vPosition.x = 0;
+     if(Units[0].vPosition.x &lt; 0) Units[0].vPosition.x = _WINWIDTH;
+     if(Units[0].vPosition.y &gt; _WINHEIGHT) Units[0].vPosition.y = 0;
+     if(Units[0].vPosition.y &lt; 0) Units[0].vPosition.y = _WINHEIGHT;
+     if(FrameCounter &gt;= _RENDER_FRAME_COUNT)
+             DrawCraft(Units[0], RGB(0, 255, 0));
+     // Update the computer-controlled units:
+     for(i=1; i&lt;_MAX_NUM_UNITS; i++)
+     {
+          DoUnitAI(i);
+          Units[i].UpdateBodyEuler(dt);
+          if(Units[i].vPosition.x &gt; _WINWIDTH)
+               Units[i].vPosition.x = 0;
+          if(Units[i].vPosition.x &lt; 0)
+               Units[i].vPosition.x = _WINWIDTH;
+          if(Units[i].vPosition.y &gt; _WINHEIGHT)
+               Units[i].vPosition.y = 0;
+          if(Units[i].vPosition.y &lt; 0)
+               Units[i].vPosition.y = _WINHEIGHT;
+          if(FrameCounter &gt;= _RENDER_FRAME_COUNT)
+          {
+               if(Units[i].Leader)
+                    DrawCraft(Units[i], RGB(255,0,0));
+               else {
+                    if(Units[i].Interceptor)
+                         DrawCraft(Units[i], RGB(255,0,255));
+                    else
+                         DrawCraft(Units[i], RGB(0,0,255));
+               }
+          }
+     }
+     // Copy the back buffer to the screen:
+     if(FrameCounter &gt;= _RENDER_FRAME_COUNT) {
+             CopyBackBufferToWindow();
+             FrameCounter = 0;
+     }  else
+          FrameCounter++;
+}
+</PRE><BR>
+
+
+<P class="docText"><span class="docEmphasis">UpdateSimulation</span> performs the usual tasks. It clears the back buffer upon which the scene will be drawn; it handles any user interaction for the player-controlled unit; it updates the computer-controlled units; it draws everything to the back buffer; and it copies the back buffer to the screen when done. The interesting part for our purposes is where the computer-controlled units are updated. For this task, <span class="docEmphasis">UpdateSimulation</span> loops through an array of computer-controlled units and, for each one, calls another function named <span class="docEmphasis">DoUnitAI</span>. All the fun happens in <span class="docEmphasis">DoUnitAI</span>, so we'll spend the remainder of this chapter looking at this function.</P>
+<P class="docText"><span class="docEmphasis">DoUnitAI</span> handles everything with regard to the computer-controlled unit's movement. All the flocking rules are implemented in this function. Before the rules are implemented, however, the function has to collect data on the given unit's neighbors. Notice here that the given unit, the one currently under consideration, is passed in as a parameter. More specifically, an array index to the current unit under consideration is passed in to <span class="docEmphasis">DoUnitAI</span> as the parameter <span class="docEmphasis">i</span>.</P>
+<P class="docText"><A class="docLink" HREF="#ch04exm02">Example 4-2</A> shows a snippet of the very beginning of <span class="docEmphasis">DoUnitAI</span>. This snippet contains only the local variable list and initialization code. Normally, we just brush over this kind of code, but because this code contains a relatively large number of local variables and because they are used often in the flocking calculations, it's worthwhile to go through it and state exactly what each one represents.</P>
+<A NAME="ch04exm02"></A>
+<H5 class="docExampleTitle">Example 4-2. DoUnitAI initialization</H5>
+<PRE>
+void     DoUnitAI(int i)
+{
+          int         j;
+          int         N;      // Number of neighbors
+          Vector     Pave;  // Average position vector
+          Vector     Vave;  // Average velocity vector
+          Vector     Fs;     // Net steering force
+          Vector     Pfs;    // Point of application of Fs
+          Vector     d, u, v, w;
+          double     m;
+          bool        InView;
+          bool        DoFlock = WideView||LimitedView||NarrowView;
+          int         RadiusFactor;
+          // Initialize:
+          Fs.x = Fs.y = Fs.z = 0;
+          Pave.x = Pave.y = Pave.z = 0;
+          Vave.x = Vave.y = Vave.z = 0;
+          N = 0;
+          Pfs.x = 0;
+          Pfs.y = Units[i].fLength / 2.0f;
+          .
+          .
+          .
+}
+</PRE><BR>
+
+
+<P class="docText">We've already mentioned that the parameter, <span class="docEmphasis">i</span>, represents the array index to the unit currently under consideration. This is the unit for which all the neighbor data will be collected and the flocking rules will be implemented. The variable, <span class="docEmphasis">j</span>, is used as the array index to all other units in the <span class="docEmphasis">Units</span> array. These are the potential neighbors to <span class="docEmphasis">Units[i]</span>. <span class="docEmphasis">N</span> represents the number of neighbors that are within view of the unit currently under consideration. <span class="docEmphasis">Pave</span> and <span class="docEmphasis">Vave</span> will hold the average position and velocity vectors, respectively, of the <span class="docEmphasis">N</span> neighbors. <span class="docEmphasis">Fs</span> represents the net steering force to be applied to the unit under consideration. <span class="docEmphBold">Pfs</span> represents the location in body-fixed coordinates at which the steering force will be applied. <span class="docEmphasis">d</span>, <span class="docEmphasis">u</span>, <span class="docEmphasis">v</span>, and <span class="docEmphasis">w</span> are used to store various vector quantities that are calculated throughout the function. Such quantities include relative position vectors and heading vectors in both global and local coordinates. <span class="docEmphasis">m</span> is a multiplier variable that always will be either <span class="docEmphasis">+1</span> or <span class="docEmphasis">-1</span>. It's used to make the steering forces point in the directions we need—that is, to either the starboard or port side of the unit under consideration. <span class="docEmphasis">InView</span> is a flag that indicates whether a particular unit is within view of the unit under consideration. <span class="docEmphasis">DoFlock</span> is simply a flag that indicates whether to apply the flocking rules. In this demo, you can turn flocking on or off. Further, you can implement three different visibility models to see how the flock behaves. These visibility models are called <span class="docEmphasis">WideView</span>, <span class="docEmphasis">LimitedView</span>, and <span class="docEmphasis">NarrowView</span>. Finally, <span class="docEmphasis">RadiusFactor</span> represents the <span class="docEmphasis">r</span> parameter shown in <A class="docLink" HREF="ch04_sect1_001.html#ch04_fig01">Figure 4-1</A>, which is different for each visibility model. Note the field-of-view angle is different for each model as well; we'll talk more about this in a moment.</P>
+<P class="docText">After all the local variables are declared, several of them are initialized explicitly. As you can see in <A class="docLink" HREF="#ch04exm02">Example 4-2</A>, they are, for the most part, initialized to <span class="docEmphasis">0</span>. The variables you see listed there are the ones that are used to accumulate some value—for example, to accumulate the steering force contributions from each rule, or to accumulate the number of neighbors within view, and so on. The only one not initialized to <span class="docEmphasis">0</span> is the vector <span class="docEmphBold">Pfs</span>, which represents the point of application of the steering force vector on the unit under consideration. Here, <span class="docEmphBold">Pfs</span> is set to represent a point on the very front and centerline of the unit. This will make the steering force line of action offset from the unit's center of gravity so that when the steering force is applied, the unit will move in the appropriate direction as well as turn and face the appropriate direction.</P>
+<P class="docText">Upon completing the initialization of local variables, <span class="docEmphasis">DoUnitAI</span> enters a loop to gather information about the current unit's neighbors, if there are any.</P>
+<P class="docText"><A class="docLink" HREF="#ch04exm03">Example 4-3</A> contains a snippet from <span class="docEmphasis">DoUnitAI</span> that performs all the neighbor checks and data collection. To this end, a loop is entered, the <span class="docEmphasis">j</span> loop, whereby each unit in the <span class="docEmphasis">Units</span> array—except for <span class="docEmphasis">Units[0]</span> (the player-controlled unit) and <span class="docEmphasis">Units[i]</span> (the unit for which neighbors are being sought)—is tested to see if it is within view of the current unit. If it is, its data is collected.</P>
+<A NAME="ch04exm03"></A>
+<H5 class="docExampleTitle">Example 4-3. Neighbors</H5>
+<PRE>
+          .
+          .
+          .
+          for(j=1; j&lt;_MAX_NUM_UNITS; j++)
+          {
+               if(i!=j)
+               {
+                    InView = false;
+                    d = Units[j].vPosition - Units[i].vPosition;
+                    w = VRotate2D(-Units[i].fOrientation, d);
+                    if(WideView)
+                    {
+                         InView = ((w.y &gt; 0) || ((w.y &lt; 0) &amp;&amp;
+                                    (fabs(w.x) &gt;
+                                    fabs(w.y)*
+                                  _BACK_VIEW_ANGLE_FACTOR)));
+                         RadiusFactor = _WIDEVIEW_RADIUS_FACTOR;
+                    }
+                    if(LimitedView)
+                    {
+                         InView = (w.y &gt; 0);
+                         RadiusFactor = _LIMITEDVIEW_RADIUS_FACTOR;
+                    }
+                    if(NarrowView)
+                    {
+                         InView = (((w.y &gt; 0) &amp;&amp; (fabs(w.x) &lt;
+                                       fabs(w.y)*
+                                      _FRONT_VIEW_ANGLE_FACTOR)));
+                         RadiusFactor = _NARROWVIEW_RADIUS_FACTOR;
+                    }
+                    if(InView)
+                    {
+                         if(d.Magnitude() &lt;= (Units[i].fLength *
+                                                     RadiusFactor))
+                         {
+                              Pave += Units[j].vPosition;
+                              Vave += Units[j].vVelocity;
+                              N++;
+                         }
+                    }
+                    .
+                    .
+                    .
+               }
+          }
+          .
+          .
+          .
+</PRE><BR>
+
+
+<P class="docText">After checking to make sure that <span class="docEmphasis">i</span> is not equal to <span class="docEmphasis">j</span>—that is, we aren't checking the current unit against itself—the function calculates the distance vector between the current unit, <span class="docEmphasis">Units[i]</span>, and <span class="docEmphasis">Units[j]</span>, which is simply the difference in their position vectors. This result is stored in the local variable, <span class="docEmphasis">d</span>. Next, <span class="docEmphasis">d</span> is converted from global coordinates to local coordinates fixed to <span class="docEmphasis">Units[i]</span>. The result is stored in the vector <span class="docEmphBold">w</span>.</P>
+<P class="docText">Next, the function goes on to check to see if <span class="docEmphasis">Units[j]</span> is within the field of view of <span class="docEmphasis">Units[i]</span>. This check is a function of the field-of-view angle as illustrated in <A class="docLink" HREF="ch04_sect1_001.html#ch04_fig01">Figure 4-1</A>; we'll check the radius value later, and only if the field-of-view check passes.</P>
+<P class="docText">Now, because this example includes three different visibility models, three blocks of code perform field-of-view checks. These checks correspond to the wide-field-of-view, the limited-field-of-view, and the narrow-field-of-view models. As we discussed earlier, a unit's visibility influences the group's flocking behavior. You can toggle each model on or off in the example program to see their effect.</P>
+<P class="docText">The wide-view model offers the greatest visibility and lends itself to easily formed and regrouped flocks. In this case, each unit can see directly in front of itself, to its sides, and behind itself, with the exception of a narrow blind spot directly behind itself. <A class="docLink" HREF="#ch04_fig03">Figure 4-3</A> illustrates this field of view.</P>
+<A NAME="ch04_fig03"></A><p><CENTER>
+<H5 class="docFigureTitle">Figure 4-3. Wide field of view</H5>
+<IMG BORDER="0" SRC="images/0596005555/figs/ch04_fig03.jpg" ALT="figs/ch04_fig03.jpg">
+</CENTER></p><br>
+<P class="docText">The test to determine whether <span class="docEmphasis">Units[j]</span> falls within this field of view consists of two parts. First, if the relative position of <span class="docEmphasis">Units[j]</span> in terms of local coordinates fixed to the current unit, <span class="docEmphasis">Units[i]</span>, is such that its y-coordinate is positive, we know that <span class="docEmphasis">Units[j]</span> is within the field of view. Second, if the y-coordinate is negative, it could be either within the field of view or in the blind spot, so another check is required. This check looks at the x-coordinate to determine if <span class="docEmphasis">Units[j]</span> is located within the pie slice-shaped blind spot formed by the two straight lines that bound the visibility arc, as shown in <A class="docLink" HREF="#ch04_fig03">Figure 4-3</A>. If the absolute value of the x-coordinate of <span class="docEmphasis">Units[j]</span> is greater than some factor times the absolute value of the y-coordinate, we know <span class="docEmphasis">Units[j]</span> is located on the outside of the blind spot—that is, within the field of view. That factor times the absolute value of the y-coordinate calculation simply represents the straight lines bounding the field-of-view arc we mentioned earlier. The code that performs this check is shown in <A class="docLink" HREF="#ch04exm03">Example 4-3</A>, but the key part is repeated here in <A class="docLink" HREF="#ch04exm04">Example 4-4</A> for convenience.</P>
+<A NAME="ch04exm04"></A>
+<H5 class="docExampleTitle">Example 4-4. Wide-field-of-view check</H5>
+<PRE>
+          .
+          .
+          .
+                    if(WideView)
+                    {
+                         InView = ((w.y &gt; 0) || ((w.y &lt; 0) &amp;&amp;
+                                      (fabs(w.x) &gt;
+                                   fabs(w.y)*
+                                  _BACK_VIEW_ANGLE_FACTOR)));
+                         RadiusFactor = _WIDEVIEW_RADIUS_FACTOR;
+                    }
+          .
+          .
+          .
+</PRE><BR>
+
+
+<P class="docText">In the code shown here, the <span class="docEmphasis">BACK_VIEW_ANGLE_FACTOR</span> represents a field-of-view angle factor. If it is set to a value of <span class="docEmphasis">1</span>, the field-of-view bounding lines will be 45 degrees from the x-axis. If the factor is greater than <span class="docEmphasis">1</span>, the lines will be closer to the x-axis, essentially creating a larger blind spot. Conversely, if the factor is less than <span class="docEmphasis">1</span>, the lines will be closer to the y-axis, creating a smaller blind spot.</P>
+<P class="docText">You'll also notice here that the <span class="docEmphasis">RadiusFactor</span> is set to some predefined value, <span class="docEmphasis">_WIDEVIEW_RADIUS_FACTOR</span>. This factor controls the radius parameter shown in <A class="docLink" HREF="ch04_sect1_001.html#ch04_fig01">Figure 4-1</A>. By the way, when tuning this example, this radius factor is one of the parameters that require adjustment to achieve the desired behavior.</P>
+<P class="docText">The other two visibility model checks are very similar to the wide-view model; however, they each represent smaller and smaller fields of view. These two models are illustrated in <A class="docLink" HREF="#ch04_fig04">Figures 4-4</A> and <A class="docLink" HREF="#ch04_fig05">4-5</A>.</P>
+<A NAME="ch04_fig04"></A><p><CENTER>
+<H5 class="docFigureTitle">Figure 4-4. Limited field of view</H5>
+<IMG BORDER="0" SRC="images/0596005555/figs/ch04_fig04.jpg" ALT="figs/ch04_fig04.jpg">
+</CENTER></p><br>
+<A NAME="ch04_fig05"></A><p><CENTER>
+<H5 class="docFigureTitle">Figure 4-5. Narrow field of view</H5>
+<IMG BORDER="0" SRC="images/0596005555/figs/ch04_fig05.jpg" ALT="figs/ch04_fig05.jpg">
+</CENTER></p><br>
+<P class="docText">In the limited-view model, the visibility arc is restricted to the local positive y-axis of the unit. This means each unit cannot see anything behind itself. In this case, the test is relatively simple, as shown in <A class="docLink" HREF="#ch04exm05">Example 4-5</A>, where all you need to determine is whether the <span class="docEmphasis">y</span>-coordinate of <span class="docEmphasis">Units[j]</span>, expressed in <span class="docEmphasis">Units[i]</span> local coordinates, is positive.</P>
+<A NAME="ch04exm05"></A>
+<H5 class="docExampleTitle">Example 4-5. Limited-field-of-view check</H5>
+<PRE>
+          .
+          .
+          .
+                    if(LimitedView)
+                    {
+                         InView = (w.y &gt; 0);
+                         RadiusFactor = _LIMITEDVIEW_RADIUS_FACTOR;
+                    }
+          .
+          .
+          .
+</PRE><BR>
+
+
+<P class="docText">The narrow-field-of-view model restricts each unit to seeing only what is directly in front of it, as illustrated in <A class="docLink" HREF="#ch04_fig05">Figure 4-5</A>.</P>
+<P class="docText">The code check in this case is very similar to that for the wide-view case, where the visibility arc can be controlled by some factor. The calculations are shown in <A class="docLink" HREF="#ch04exm06">Example 4-6</A>.</P>
+<A NAME="ch04exm06"></A>
+<H5 class="docExampleTitle">Example 4-6. Narrow-field-of-view check</H5>
+<PRE>
+          .
+          .
+          .
+                    if(NarrowView)
+                    {
+                         InView = (((w.y &gt; 0) &amp;&amp; (fabs(w.x) &lt;
+                                       fabs(w.y)*
+                                   _FRONT_VIEW_ANGLE_FACTOR)));
+                         RadiusFactor = _NARROWVIEW_RADIUS_FACTOR;
+                    }
+          .
+          .
+          .
+</PRE><BR>
+
+
+<P class="docText">In this case, the factor, <span class="docEmphasis">_FRONT_VIEW_ANGLE_FACTOR</span>, controls the field of view directly in front of the unit. If this factor is equal to <span class="docEmphasis">1</span>, the lines bounding the view cone are 45 degrees from the x-axis. If the factor is greater than <span class="docEmphasis">1</span>, the lines move closer to the x-axis, effectively increasing the field of view. If the factor is less than <span class="docEmphasis">1</span>, the lines move closer to the y-axis, effectively reducing the field of view.</P>
+<P class="docText">If any of these tests pass, depending on which view model you selected for this demo, another check is made to see if <span class="docEmphasis">Units[j]</span> is also within a specified distance from <span class="docEmphasis">Units[i]</span>. If <span class="docEmphasis">Units[j]</span> is within the field of view and within the specified distance, it is visible by <span class="docEmphasis">Units[i]</span> and will be considered a neighbor for subsequent calculations.</P>
+<P class="docText">The last <span class="docEmphasis">if</span> block in <A class="docLink" HREF="#ch04exm03">Example 4-3</A> shows this distance test. If the magnitude of the <span class="docEmphBold">d</span> vector is less than the <span class="docEmphasis">Units[i]</span>'s length times the <span class="docEmphasis">RadiusFactor</span>, <span class="docEmphasis">Units[j]</span> is close enough to <span class="docEmphasis">Units[i]</span> to be considered a neighbor. Notice how this prescribed separation threshold is specified in terms of the unit's length times some factor. You can use any value here depending on your needs, though you'll have to tune it for your particular game; however, we like using the radius factor times the unit's length because it scales. If for some reason you decide to change the scale (the dimensions) of your game world, including the units in the game, their visibility will scale proportionately and you won't have to go back and tune some new visibility distance at the new scale.</P>
+
+<A NAME="ch04_sect2_003"></A>
+<H4 class="docSection2Title">4.2.3 Cohesion</H4>
+<P class="docText"><span class="docEmphasis">Cohesion</span> implies that we want all the units to stay together in a group; we don't want each unit breaking from the group and going its separate way. As we stated earlier, to satisfy this rule, each unit should steer toward the average position of its neighbors. <A class="docLink" HREF="#ch04_fig06">Figure 4-6</A> illustrates a unit surrounded by several neighbors. The small dashed circle in the figure represents the average position of the four neighbors that are within view of the unit shown in bold lines with the visibility arc around itself.</P>
+<A NAME="ch04_fig06"></A><p><CENTER>
+<H5 class="docFigureTitle">Figure 4-6. Average position and heading of neighbors</H5>
+<IMG BORDER="0" SRC="images/0596005555/figs/ch04_fig06.jpg" ALT="figs/ch04_fig06.jpg">
+</CENTER></p><br>
+<P class="docText">The average position of neighbors is fairly easy to calculate. Once the neighbors have been identified, their average position is the vector sum of their respective positions divided by the total number of neighbors (a scalar). The result is a vector representing their average position. <A class="docLink" HREF="#ch04exm03">Example 4-3</A> already shows where the positions of the neighbors are summed once they've been identified. The relevant code is repeated here in <A class="docLink" HREF="#ch04exm07">Example 4-7</A> for convenience.</P>
+<A NAME="ch04exm07"></A>
+<H5 class="docExampleTitle">Example 4-7. Neighbor position summation</H5>
+<PRE>
+                    .
+                    .
+                    .
+                    if(InView)
+                    {
+                         if(d.Magnitude() &lt;= (Units[i].fLength *
+                                                   RadiusFactor))
+                         {
+                              Pave += Units[j].vPosition;
+                              Vave += Units[j].vVelocity;
+                              N++;
+                         }
+                    }
+                    .
+                    .
+                    .
+</PRE><BR>
+
+
+<P class="docText">The line that reads <span class="docEmphasis">Pave += Units[j].vPosition;</span> sums the position vectors of all neighbors. Remember, <span class="docEmphasis">Pave</span> and <span class="docEmphasis">vPosition</span> are <span class="docEmphasis">Vector</span> types, and the overloaded operators take care of vector addition for us.</P>
+<P class="docText">After <span class="docEmphasis">DoUnitAI</span> takes care of identifying and collecting information on neighbors, you can apply the flocking rules. The first one handled is the cohesion rule, and the code in <A class="docLink" HREF="#ch04exm08">Example 4-8</A> shows how to do this.</P>
+<A NAME="ch04exm08"></A>
+<H5 class="docExampleTitle">Example 4-8. Cohesion rule</H5>
+<PRE>
+          .
+          .
+          .
+          // Cohesion Rule:
+          if(DoFlock &amp;&amp; (N &gt; 0))
+          {
+               Pave = Pave / N;
+               v = Units[i].vVelocity;
+               v.Normalize();
+               u = Pave - Units[i].vPosition;
+               u.Normalize();
+               w = VRotate2D(-Units[i].fOrientation, u);
+               if(w.x &lt; 0) m = -1;
+               if(w.x &gt; 0) m = 1;
+               if(fabs(v*u) &lt; 1)
+                    Fs.x += m * _STEERINGFORCE * acos(v * u) / pi;
+          }
+          .
+          .
+          .
+</PRE><BR>
+
+
+<P class="docText">Notice that the first thing this block of code does is check to make sure the number of neighbors is greater than zero. If so, we can go ahead and calculate the average position of the neighbors. Do this by taking the vector sum of all neighbor positions, <span class="docEmphasis">Pave</span>, and dividing by the number of neighbors, <span class="docEmphasis">N</span>.</P>
+<P class="docText">Next, the heading of the current unit under consideration, <span class="docEmphasis">Units[i]</span>, is stored in <span class="docEmphBold">v</span> and normalized. It will be used in subsequent calculations. Now the displacement between <span class="docEmphasis">Units[i]</span> and the average position of its neighbors is calculated by taking the vector difference between <span class="docEmphasis">Pave</span> and <span class="docEmphasis">Units[i]</span>'s position. The result is stored in <span class="docEmphBold">u</span> and normalized. <span class="docEmphBold">u</span> is then rotated from global coordinates to local coordinates fixed to <span class="docEmphasis">Units[i]</span> and the result is stored in <span class="docEmphasis">w</span>. This gives the location of the average position of <span class="docEmphasis">Units[i]</span>'s neighbors relative to <span class="docEmphasis">Units[i]</span>'s current position.</P>
+<P class="docText">Next, the multiplier, <span class="docEmphasis">m</span>, for the steering force is determined. If the x-coordinate of <span class="docEmphasis">w</span> is greater than zero, the average position of the neighbors is located to the starboard side of <span class="docEmphasis">Units[i]</span> and it has to turn left (starboard). If the x-coordinate of <span class="docEmphasis">w</span> is less than zero, <span class="docEmphasis">Units[i]</span> must turn right (port side).</P>
+<P class="docText">Finally, a quick check is made to see if the dot product between the unit vectors <span class="docEmphBold">v</span> and <span class="docEmphBold">u</span> is less than 1 and greater than minus -1.<sup class="docFootnote"><A class="docLink" HREF="#cho2_fnt01">[*]</A></sup> This must be done because the dot product will be used when calculating the angle between these two vectors, and the arc cosine function takes an argument between +/-1.</P><blockquote><p class="docFootnote"><sup><A NAME="cho2_fnt01">[*]</A></sup> Refer to the Appendix for a review of the vector dot product operation.</p></blockquote>
+<P class="docText">The last line shown in <A class="docLink" HREF="#ch04exm08">Example 4-8</A> is the one that actually calculates the steering force satisfying the cohesion rule. In that line the steering force is accumulated in <span class="docEmphasis">Fs.x</span> and is equal to the direction factor, <span class="docEmphasis">m</span>, times the prescribed maximum steering force times the angle between the current unit's heading and the vector from it to the average position of its neighbors divided by <span class="docEmphasis">pi</span>. The angle between the current unit's heading and the vector to the average position of its neighbors is found by taking the arc cosine of the dot product of vectors <span class="docEmphBold">v</span> and <span class="docEmphBold">u</span>. This comes from the definition of dot product. Note that the two vectors, <span class="docEmphBold">v</span> and <span class="docEmphBold">u</span>, are unit vectors. Dividing the resulting angle by <span class="docEmphasis">pi</span> yields a scale factor that gets applied to the maximum steering force. Basically, the steering force being accumulated in <span class="docEmphasis">Fs.x</span> is a linear function of the angle between the current unit's heading and the vector to the average position of its neighbors. This means that if the angle is large, the steering force will be relatively large, whereas if the angle is small, the steering force will be relatively small. This is exactly what we want. If the current unit is heading in a direction far from the average position of its neighbors, we want it to make a harder corrective turn. If it is heading in a direction not too far off from the average neighbor position, we want smaller corrections to its heading.</P> 
+<A NAME="ch04_sect2_004"></A>
+<H4 class="docSection2Title">4.2.4 Alignment</H4>
+<P class="docText"><span class="docEmphasis">Alignment</span> implies that we want all the units in a flock to head in generally the same direction. To satisfy this rule, each unit should steer so as to try to assume a heading equal to the average heading of its neighbors. Referring to <A class="docLink" HREF="#ch04_fig06">Figure 4-6</A>, the bold unit in the center is moving along a given heading indicated by the bold arrow attached to it. The light, dashed vector also attached to it represents the average heading of its neighbors. Therefore, for this example, the bold unit needs to steer toward the right.</P>
+<P class="docText">We can use each unit's velocity vector to determine its heading. Normalizing each unit's velocity vector yields its heading vector. <A class="docLink" HREF="#ch04exm07">Example 4-7</A> shows how the heading data for a unit's neighbors is collected. The line <span class="docEmphasis">Vave += Units[j].vVelocity;</span> accumulates each neighbor's velocity vector in <span class="docEmphasis">Vave</span> in a manner similar to how positions were accumulated in <span class="docEmphasis">Pave</span>.</P>
+<P class="docText"><A class="docLink" HREF="#ch04exm09">Example 4-9</A> shows how the alignment steering force is determined for each unit. The code shown here is almost identical to that shown in <A class="docLink" HREF="#ch04exm08">Example 4-8</A> for the cohesion rule. Here, instead of dealing with the average position of neighbors, the average heading of the current unit's neighbors is first calculated by dividing <span class="docEmphasis">Vave</span> by the number of neighbors, <span class="docEmphasis">N</span>. The result is stored in <span class="docEmphBold">u</span> and then normalized, yielding the average heading vector.</P>
+<A NAME="ch04exm09"></A>
+<H5 class="docExampleTitle">Example 4-9. Alignment rule</H5>
+<PRE>
+          .
+          .
+          .
+          // Alignment Rule:
+          if(DoFlock &amp;&amp; (N &gt; 0))
+          {
+               Vave = Vave / N;
+               u = Vave;
+               u.Normalize();
+               v = Units[i].vVelocity;
+               v.Normalize();
+               w = VRotate2D(-Units[i].fOrientation, u);
+               if(w.x &lt; 0) m = -1;
+               if(w.x &gt; 0) m = 1;
+               if(fabs(v*u) &lt; 1)
+                    Fs.x += m * _STEERINGFORCE * acos(v * u) / pi;
+          }
+          .
+          .
+          .
+</PRE><BR>
+
+
+<P class="docText">Next, the heading of the current unit, <span class="docEmphasis">Units[i]</span>, is determined by taking its velocity vector and normalizing it. The result is stored in <span class="docEmphBold">v</span>. Now, the average heading of the current unit's neighbors is rotated from global coordinates to local coordinates fixed to <span class="docEmphasis">Units[i]</span> and stored in vector <span class="docEmphBold">w</span>. The steering direction factor, <span class="docEmphasis">m</span>, is then calculated in the same manner as before. And, as in the cohesion rule, the alignment steering force is accumulated in <span class="docEmphasis">Fs.x</span>.</P>
+<P class="docText">In this case, the steering force is a linear function of the angle between the current unit's heading and the average heading of its neighbors. Here again, we want small steering corrections to be made when the current unit is heading in a direction fairly close to the average of its neighbors, whereas we want large steering corrections to be made if the current unit is heading in a direction way off from its neighbors' average heading.</P>
+
+<A NAME="ch04_sect2_005"></A>
+<H4 class="docSection2Title">4.2.5 Separation</H4>
+<P class="docText"><span class="docEmphasis">Separation</span> implies that we want the units to maintain some minimum distance away from each other, even though they might be trying to get closer to each other as a result of the cohesion and alignment rules. We don't want the units running into each other or, worse yet, coalescing at a coincident position. Therefore, we'll enforce separation by requiring the units to steer away from any neighbor that is within view and within a prescribed minimum separation distance.</P>
+<P class="docText"><A class="docLink" HREF="#ch04_fig07">Figure 4-7</A> illustrates a unit that is too close to a given unit, the bold one. The outer arc centered on the bold unit is the visibility arc we've already discussed. The inner arc represents the minimum separation distance. Any unit that moves within this minimum separation arc will be steered clear of it by the bold unit.</P>
+<A NAME="ch04_fig07"></A><p><CENTER>
+<H5 class="docFigureTitle">Figure 4-7. Separation</H5>
+<IMG BORDER="0" SRC="images/0596005555/figs/ch04_fig07.jpg" ALT="figs/ch04_fig07.jpg">
+</CENTER></p><br>
+<P class="docText">The code to handle separation is just a little different from that for cohesion and alignment because for separation, we need to look at each individual neighbor when determining suitable steering corrections rather than some average property of all the neighbors. It is convenient to include the separation code within the same <span class="docEmphasis">j</span> loop shown in <A class="docLink" HREF="#ch04exm03">Example 4-3</A> where the neighbors are identified. The new <span class="docEmphasis">j</span> loop, complete with the separation rule implementation, is shown in <A class="docLink" HREF="#ch04exm10">Example 4-10</A>.</P>
+<A NAME="ch04exm10"></A>
+<H5 class="docExampleTitle">Example 4-10. Neighbors and separation</H5>
+<PRE>
+          .
+          .
+          .
+          for(j=1; j&lt;_MAX_NUM_UNITS; j++)
+          {
+            if(i!=j)
+            {
+                 InView = false;
+                 d = Units[j].vPosition - Units[i].vPosition;
+                 w = VRotate2D(-Units[i].fOrientation, d);
+                 if(WideView)
+                 {
+                      InView = ((w.y &gt; 0) || ((w.y &lt; 0) &amp;&amp;
+                             (fabs(w.x) &gt;
+                             fabs(w.y)*_BACK_VIEW_ANGLE_FACTOR)));
+                      RadiusFactor = _WIDEVIEW_RADIUS_FACTOR;
+                 }
+                 if(LimitedView)
+                 {
+                      InView = (w.y &gt; 0);
+                      RadiusFactor = _LIMITEDVIEW_RADIUS_FACTOR;
+                 }
+                 if(NarrowView)
+                 {
+                      InView = (((w.y &gt; 0) &amp;&amp; (fabs(w.x) &lt;
+                           fabs(w.y)*_FRONT_VIEW_ANGLE_FACTOR)));
+                      RadiusFactor = _NARROWVIEW_RADIUS_FACTOR;
+                 }
+                 if(InView)
+                 {
+                      if(d.Magnitude() &lt;= (Units[i].fLength *
+                                                 RadiusFactor))
+                      {
+                           Pave += Units[j].vPosition;
+                           Vave += Units[j].vVelocity;
+                           N++;
+                      }
+                 }
+                 if(InView)
+                 {
+                      if(d.Magnitude() &lt;=
+                         (Units[i].fLength * _SEPARATION_FACTOR))
+                      {
+                           if(w.x &lt; 0) m = 1;
+                           if(w.x &gt; 0) m = -1;
+                           Fs.x += m * _STEERINGFORCE *
+                                   (Units[i].fLength *
+                                    _SEPARATION_FACTOR) /
+                                    d.Magnitude();
+                      }
+                 }
+            }
+          }
+          .
+          .
+          .
+</PRE><BR>
+
+
+<P class="docText">The last <span class="docEmphasis">if</span> block contains the new separation rule code. Basically, if the <span class="docEmphasis">j</span> unit is in view and if it is within a distance of <span class="docEmphasis">Units[i].fLength *_SEPARATION_FACTOR</span> from the current unit, <span class="docEmphasis">Units[i]</span>, we calculate and apply a steering correction. Notice that <span class="docEmphasis">d</span> is the distance separating <span class="docEmphasis">Units[i]</span> and <span class="docEmphasis">Units[j]</span>, and was calculated at the beginning of the <span class="docEmphasis">j</span> loop.</P>
+<P class="docText">Once it has been determined that <span class="docEmphasis">Units[j]</span> presents a potential collision, the code proceeds to calculate the corrective steering force. First, the direction factor, <span class="docEmphasis">m</span>, is determined so that the resulting steering force is of such a direction that the current unit, <span class="docEmphasis">Units[i]</span>, steers away from <span class="docEmphasis">Units[j]</span>. In this case, <span class="docEmphasis">m</span> takes on the opposite sense, as in the cohesion and alignment calculations.</P>
+<P class="docText">As in the cases of cohesion and alignment, steering forces get accumulated in <span class="docEmphasis">Fs.x</span>. In this case, the corrective steering force is inversely proportional to the actual separation distance. This will make the steering correction force greater the closer <span class="docEmphasis">Units[j]</span> gets to the current unit. Notice here again that the minimum separation distance is scaled as a function of the unit's length and some prescribed separation factor. This occurs so that separation scales just like visibility, as we discussed earlier.</P>
+<P class="docText">We also should mention that even though separation forces are calculated here, units won't always avoid each other with 100% certainty. Sometimes the sum of all steering forces is such that one unit is forced very close to or right over an adjacent unit. Tuning all the steering force parameters helps to mitigate, though not eliminate, this situation. You could set the separation steering force so high as to override any other forces, but you'll find that the units' behavior when in close proximity to each other appears very erratic. Further, it will make it difficult to keep flocks together. In the end, depending on your game's requirements, you still might have to implement some sort of collision detection and response algorithm similar to that discussed in <span class="docEmphasis">Physics for Game Developers</span> (O'Reilly) to handle cases in which two or more units run into each other.</P>
+<P class="docText">You also should be aware that visibility has an important effect on separation. For example, while in the wide-view visibility model, the units maintain separation very effectively; however, in the narrow-view model the units fail to maintain side-to-side separation. This is because their views are so restricted, they are unaware of other units right alongside them. If you go with such a limited-view model in your games, you'll probably have to use a separate view model, such as the wide-view model, for the separation rule. You can easily change this example to use such a separate model by replacing the last <span class="docEmphasis">if</span> block's condition to match the logic for determining whether a unit is in view according to the wide-view model.</P>
+<P class="docText">Once all the flocking rules are implemented and appropriate steering forces are calculated for the current unit, <span class="docEmphasis">DoUnitAI</span> stores the resulting steering forces and point of application in the current unit's member variables. This is shown in <A class="docLink" HREF="#ch04exm11">Example 4-11</A>.</P>
+<A NAME="ch04exm11"></A>
+<H5 class="docExampleTitle">Example 4-11. Set Units[i] member variables</H5>
+<PRE>
+void DoUnitAI(int i)
+        // Do all steering force calculations...
+        .
+        .
+        .
+        Units[i].Fa = Fs;
+        Units[i].Pa = Pfs;
+}
+</PRE><BR>
+
+
+<P class="docText">Once <span class="docEmphasis">DoUnitAI</span> returns, <span class="docEmphasis">UpdateSimulation</span> becomes responsible for applying the new steering forces and updating the positions of the units (see <A class="docLink" HREF="#ch04exm01">Example 4-1</A>).</P>
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="ch04_sect1_001.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="ch04_sect1_003.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

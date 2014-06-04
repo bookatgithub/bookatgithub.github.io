@@ -1,0 +1,169 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;18.6.&nbsp;Implementing a FIFO Container</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-18-sect-5.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-18-sect-7.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-18-SECT-6"></a>
+<h3 class="docSection1Title" id="409771-857">Recipe 18.6. Implementing a FIFO Container</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: S&eacute;bastien Keim, Alex Martelli, Raymond
+Hettinger, Jeremy Fincher, Danny Yoo, Josiah Carlson</span></p>
+
+<a name="pythoncook2-CHP-18-SECT-6.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText">You need a container that allows element insertion and removal, in
+which the first element inserted is also the first to be removed
+(i.e., a first-in first-out, FIFO, queue).</P>
+
+
+<a name="pythoncook2-CHP-18-SECT-6.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">We can subclass <tt>list</tt> to implement a Pythonic
+version of an idea found in Knuth's <span class="docEmphasis">Art
+of Computer Programming</span>: the frontlist/backlist approach
+to building a FIFO out of two one-way linked lists.
+Here's how:</p>
+
+<pre>class Fifo(list):
+    def _ _init_ _(self):
+        self.back = [  ]
+        self.append = self.back.append
+    def pop(self):
+        if not self:
+            self.back.reverse( )
+            self[:] = self.back
+            del self.back[:]
+        return super(Fifo, self).pop( )</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-18-SECT-6.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">Here is a usage example, protected by the usual guard so it runs only
+when the module executes as a main script rather than being imported:</P>
+
+<pre>if _ _name_ _ == '_ _main_ _':
+    a = Fifo( )
+    a.append(10)
+    a.append(20)
+    print a.pop( ),
+    a.append(5)
+    print a.pop( ),
+    print a.pop( ),
+    print
+# emits: <b>10 20 5</b></pre><BR>
+
+
+<p class="docText">The key idea in class <I>Fifo</i> is to have an auxiliary
+backlist, <i>self.back</i>, to which incoming items get
+appended. Outgoing items get popped from the frontlist,
+<i>self</I>. Each time the frontlist is exhausted, it gets
+replenished with the reversed contents of the backlist, and the
+backlist is emptied. The reversing and copying are
+<tt><i>O</i></tt><tt>(</tt><tt><I>n</i></tt><tt>)</tt>,
+where <tt><I>n</i></tt> is the number of items appended
+since the "front list" was last
+empty, but these operations are performed only once every
+<tt><I>n</I></tt> times, so the
+<span class="docEmphasis">amortized</span> cost of each call to
+<i>pop</i> is a constantthat is,
+<tt>O(1)</tt>.</p>
+
+<p class="docText">A simpler way to build a FIFO in Python is no doubt to just use a
+standard list's <tt>append</tt> and
+<tt>pop(0)</tt> methodssomething like:</p>
+
+<pre>class FifoList(list):
+    def pop(self):
+        return super(FifoList, self).pop(0)</pre><br>
+
+
+<p class="docText">However, when using a list in this way, we need to keep in mind that
+<tt>pop(</tt><tt><i>0</i></tt><tt>)</tt>
+is
+<tt><i>O</i></tt><tt>(</tt><tt><i>n</i></tt><tt>)</tt>,
+where <tt><i>n</i></tt> is the current length of the list.
+<tt><I>O</I></tt><tt>(</tt><tt><i>1</i></tt>)
+performance can be ensured by building the FIFO in a slightly less
+intuitive way, on top of a dictionary:</P>
+
+<pre>class FifoDict(dict):
+    def _ _init_ _(self):
+        self.nextin = 0
+        self.nextout = 0
+    def append(self, data):
+        self.nextin += 1
+        self[self.nextin] = data
+    def pop(self):
+        self.nextout += 1
+        return dict.pop(self, self.nextout)</pre><br>
+
+
+<p class="docText"><a name="pythoncook2-CHP-18-ITERM-3089"></a> <a name="pythoncook2-CHP-18-ITERM-3090"></a>In Python 2.4, we also have
+<tt>collections.deque</tt>, a double-ended queue type that
+also ensures
+<tt><i>O</i></tt><tt>(</tt><tt><i>1</i></tt><tt>)</tt>
+performance when used as a FIFO (using its <tt>append</tt>
+and <tt>popleft</tt> methods):</p>
+
+<pre>import collections
+class FifoDeque(collections.deque):
+    pop = collections.deque.popleft</pre><BR>
+
+
+<p class="docText">To choose among different implementations of the same interface, such
+as the various <i>Fifo...</I> classes shown in this recipe,
+the best approach often is to measure their performance on artificial
+benchmark examples that provide a reasonable simulation of the
+expected load in your application. I ran some such measurements on a
+somewhat slow laptop, with Python 2.4, using the
+<tt>timeit</tt> module from the Python Standard Library.
+For a total of 6,000 appends and pops, with a maximum length of
+3,000, class <i>Fifo</I> takes about 62 milliseconds, class
+<i>FifoList</I> about 78, <I>FifoDict</i> about
+137, and <I>FifoDeque</I> about 30. Making the problem
+exactly ten times bigger, we see the advantages of
+<tt><i>O</i></tt><tt>(</tt><tt><i>1</i></tt><tt>)</tt>
+behavior (exhibited by all of these classes except
+<I>FifoList</i>). <i>Fifo</I> takes 0.62 seconds,
+<i>FifoList</I> 3.8, <i>FifoDict</I> 1.4, and
+<I>FifoDeque</i> 0.29. Clearly, in Python 2.4,
+<i>FifoDeque</i> is fastest as well as simplest; if your
+code has to support Python 2.3, the <i>Fifo</i> class shown
+in this recipe's Solution is best.</p>
+
+
+<a name="pythoncook2-CHP-18-SECT-6.4"></a>
+<h4 class="docSection2Title">See Also</h4>
+
+<p class="docText"><span class="docEmphasis">Library Reference</span> and <span class="docEmphasis">Python in a
+Nutshell</span> docs for built-ins <tt>list</tt> and
+<tt>dict;</tt> <span class="docEmphasis">Library Reference</span>
+docs on modules <tt>collections</tt> (Python 2.4 only) and
+<tt>timeit</tt>. <span class="docEmphasis">Python in a
+Nutshell</span>'s chapter on optimization;
+Donald Knuth, <span class="docEmphasis">The Art Of Computer Programming</span>
+(exercise 14, section 2.2.1).</p>
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-18-sect-5.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-18-sect-7.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

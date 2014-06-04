@@ -1,0 +1,224 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<head>
+<title>ch14lev1sec2.html</title>
+<link rel="STYLESHEET" type="text/css" href="images/css1.css">
+<link rel="STYLESHEET" type="text/css" href="images/css2.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=ch14lev1sec1.html><img src="images/prev.gif" width="20" height="20" border="0" align="absmiddle" alt="Previous Page"></a>
+<a href=ch14lev1sec3.html><img src="images/next.gif" width="20" height="20" border="0" align="absmiddle" alt="Next Page"></a>
+</div></td></tr></table>
+<div style=""><div><a name="ch14lev1sec2"></a>
+<h3 class="docSection1Title" id="-100000">Synchronizing Threads</h3>
+<p class="docText"><a name="A common"></a>&#65; common &#114;equir&#101;me&#110;t &#102;or multithreaded a&#112;plications is that of synchronizing several &#116;hreads. Q&#116; provide&#115; the following sync&#104;ronization clas&#115;es: <tt>QMutex</tt>, <tt>QReadWriteLock</tt>, <tt>&#81;Semaphore</tt>, and <tt>QWaitCondition</tt>.</p>
+<p class="docText">The <tt>QMutex</tt><a name="a means"></a> clas&#115; provides a means of protecting a variable or &#97; piece of code so that only one thread ca&#110; a&#99;cess it at a t&#105;me. The c&#108;ass provid&#101;s a <tt>lock()</tt><a name="that locks"></a> function that loc&#107;s the mutex. If the mutex is unlocked, the current &#116;hread se&#105;zes it i&#109;mediately and &#108;ocks it; otherw&#105;se, the current thread is block&#101;d until the thread that holds th&#101; mutex unlocks it. Either way, when the call &#116;o <tt>lock()</tt> returns, the current thread holds the mutex until it calls <tt>&#117;nlock()</tt>. The <tt>&#81;Mu&#116;ex</tt> class &#97;lso provi&#100;es a <tt>tryLock()</tt> function that ret&#117;rns immediately if the mutex is already locked.</p>
+<p class="docText">Fo&#114; examp&#108;e, let's supp&#111;se that we wa&#110;ted t&#111; protect the <tt>stopped</tt> v&#97;riable of the <tt>Thread</tt> class from the pr&#101;ceding section with a <tt>QMutex</tt>. We would th&#101;n add the following member variable to <tt>Thread</tt>:</p>
+<div class="docText"><pre>private:
+    ...
+    QMutex mutex;
+};</pre></div><br />
+<p class="docText">The <tt>run()</tt> &#102;unc&#116;ion woul&#100; c&#104;ange t&#111; this:</p>
+<div class="docText"><pre>void Thread::run()
+{
+    forever {
+        mutex.lock();
+        if (stopped) {
+            stopped = false;
+            mutex.unlock();
+            break;
+        }
+        mutex.unlock();
+
+        std::cerr &lt;&lt; qPrintable(messageStr);
+    }
+    std::cerr &lt;&lt; std::endl;
+}</pre></div><br />
+<p class="docText">The <tt>stop()</tt> function wo&#117;ld become this:</p>
+<div class="docText"><pre>void Thread::stop()
+{
+    mutex.lock();
+    stopped = true;
+    mutex.unlock();
+}</pre></div><br />
+<p class="docText"><a name="iddle3620"></a><a name="iddle5430"></a><a name="iddle5664"></a><a name="iddle6789"></a><a name="iddle7772"></a><a name="iddle8041"></a><a name="functions that"></a>Locking and unlocking a mut&#101;x i&#110; c&#111;mplex functio&#110;s, or i&#110; functions that throw C++ &#101;xceptions, can be error-prone. &#81;t offers the <tt>QMutexLocker</tt> conveni&#101;nce class to simplify mutex handling. <tt>QMutexLocker</tt>'s cons&#116;ructor a&#99;cepts a <tt>QMut&#101;x</tt> a&#115; argume&#110;t and locks it. <tt>QMutexLock&#101;r</tt><a name="could rewrite"></a>'s destructor unlocks the mutex. F&#111;r e&#120;a&#109;ple, we could rewrit&#101; the ea&#114;lier <tt>run()</tt> and <tt>stop()</tt> functions as f&#111;llows:</p>
+<div class="docText"><pre>void Thread::run()
+{
+    forever {
+        {
+            QMutexLocker locker(&amp;mutex);
+            if (stopped) {
+                stopped = false;
+                break;
+            }
+        }
+
+        std::cerr &lt;&lt; qPrintable(messageStr);
+    }
+    std::cerr &lt;&lt; std::endl;
+}
+
+void Thread::stop()
+{
+    QMutexLocker locker(&amp;mutex);
+    stopped = true;
+}</pre></div><br />
+<p class="docText"><a name="thread can"></a>One issue with using mutexes is th&#97;t only one thread can access the same variable &#97;t a time. In programs with lots of threads trying to re&#97;d the same &#118;ariable si&#109;ultaneousl&#121; (wi&#116;hout modifying it), the mutex c&#97;n be a serious performance bottlene&#99;k. In these ca&#115;es, we ca&#110; use <tt>QRead&#87;riteLock</tt><a name="without compromising"></a>, a synchron&#105;zation class that allows simultaneous rea&#100;-only access without compromisin&#103; performance.</p>
+<p class="docText">In the <tt>Thread</tt> class, it would m&#97;ke no sense to replace <tt>QMutex</tt> with <tt>QReadWriteLock</tt> &#116;o protec&#116; the <tt>stop&#112;ed</tt><a name="to read"></a> v&#97;riable, be&#99;ause at most one thread might tr&#121; to read the variable at any given t&#105;me. A mor&#101; ap&#112;ropriate e&#120;ample would in&#118;olve one or many reader threads accessing &#115;ome shared data and one or many writer threads &#109;odifying the data. For example:</p>
+<div class="docText"><pre>MyData data;
+QReadWriteLock lock;
+
+void ReaderThread::run()
+{
+    ...
+    lock.lockForRead();
+    access_data_without_modifying_it(&amp;data);
+    lock.unlock();
+    ...
+}
+
+void WriterThread::run()
+{
+    ...
+    lock.lockForWrite();
+    modify_data(&amp;data);
+    lock.unlock();
+    ...
+}</pre></div><br />
+<p class="docText"><a name="iddle1066"></a><a name="iddle1367"></a><a name="iddle1569"></a><a name="iddle1794"></a><a name="iddle2615"></a><a name="iddle3619"></a><a name="iddle3621"></a><a name="iddle3962"></a><a name="iddle4511"></a><a name="iddle5426"></a><a name="iddle5429"></a><a name="iddle5663"></a><a name="iddle5730"></a><a name="iddle5731"></a><a name="iddle5733"></a><a name="iddle6666"></a><a name="iddle6846"></a><a name="iddle7086"></a><a name="iddle7087"></a><a name="iddle8310"></a><a name="iddle8311"></a><a name="can use"></a>For convenienc&#101;, we can use the <tt>QReadLocker</tt> and <tt>QWriteLocker</tt> c&#108;asses to lo&#99;k and unlock &#97; <tt>QReadWri&#116;eLock</tt>.</p>
+<p class="docText"><tt>QS&#101;maphore</tt><a name="used to"></a> is another ge&#110;eralization of mutexes, but unlike read-w&#114;ite lo&#99;ks, semaphor&#101;s can be used t&#111; guard a certa&#105;n number of identical res&#111;urces. The following two code snippets show th&#101; correspondence between <tt>QSe&#109;aphore</tt><a name="and"></a> and <tt>QMutex</tt>:</p>
+<p><table cellspacing="0" FRAME="void" rules="none" cellpadding="5"><colgroup align="left" span="4"><col width="150" /><col width="50" /><col width="50" /><col width="150" /></colgroup><thead></thead><tr><td class="docTableCell" align="left" valign="top"><div class="docText"><pre>QSemaphore semaphore(1);
+semaphore.acquire();
+semaphore.release();</pre></div><br /></td><td class="docTableCell rightBorder" align="left" valign="top">&nbsp;</td><td class="docTableCell" align="left" valign="top">&nbsp;</td><td class="docTableCell" align="left" valign="top"><div class="docText"><pre>QMutex mutex;
+mutex.lock();
+mutex.unlock();</pre></div><br /></td></tr></table></p><br />
+<p class="docText"><a name="to the"></a>By passing 1 to the constructor, we tell the semaphore that &#105;t contr&#111;ls &#97; single re&#115;ource. T&#104;e advantage of using a sem&#97;phore is that we can pass numbers other than 1 to the cons&#116;ructor a&#110;d &#116;hen call <tt>acquire()</tt><a name="times to"></a> mu&#108;tiple times to acqu&#105;re many resources.</p>
+<p class="docText"><a name="certain amount"></a>A typical applicati&#111;n of semaphores is when transferring a &#99;ertain amount of data (<tt>DataSize</tt><a name="shared circular"></a>) between two &#116;hreads using a shared circular buffer of a certain size (<tt>Buff&#101;rS&#105;ze</tt>):</p>
+<div class="docText"><pre>const int DataSize = 100000;
+const int BufferSize = 4096;
+char buffer[BufferSize];</pre></div><br />
+<p class="docText"><a name="it reaches"></a>The p&#114;oduce&#114; threa&#100; writes data to the buffer unti&#108; it reaches the end and then restarts from the beginni&#110;g, &#111;ve&#114;writing &#101;xisting da&#116;a. The consumer thread reads the dat&#97; as it is generated. <a class="docLink" href="#ch14fig02">Figure 14.2</a> illustrates this, assu&#109;ing a tiny 16-byte buffer.</p>
+<a name="ch14fig02"></a><p><center>
+
+<h5 class="docFigureTitle">Figure 14.2. The producer–consu&#109;er model</h5>
+
+<p class="docText">
+<img border="0" id="" width="340" height="99" src="images/M2cvMTdhYTdyZDBwYy9laW0vc2c4dDE5cjk0NzkzZmlncGNmaDJnMTQvaTBpcy4-.jpg" alt="" /></p>
+
+
+</center></p><br />
+<p class="docText"><a name="iddle1067"></a><a name="iddle5732"></a><a name="iddle5734"></a><a name="iddle6339"></a><a name="iddle6847"></a><a name="iddle6986"></a><a name="is twofold"></a>The need for synchronization in th&#101; pr&#111;du&#99;er–consumer &#101;xa&#109;ple is twofold: If the producer generate&#115; the data too fast, it will overwrite data that th&#101; co&#110;s&#117;mer hasn't yet &#114;ead; if the consu&#109;er reads the data too fast, it will p&#97;ss the producer and read garbage.</p>
+<p class="docText"><a name="is to"></a>A crude way to s&#111;lve this problem is to have the produ&#99;er fill the buffer, then wait until the consumer has read the enti&#114;e buff&#101;r, a&#110;d &#115;o on. How&#101;ver, on multiprocessor mach&#105;nes, this isn't as fast as letting the producer and consu&#109;er threads o&#112;era&#116;e on differe&#110;t part&#115; of the buffer at the same time.</p>
+<p class="docText"><a name="to efficiently"></a>One wa&#121; to efficiently solve the prob&#108;em involves two semaphores:</p>
+<div class="docText"><pre>QSemaphore freeSpace(BufferSize);
+QSemaphore usedSpace(0);</pre></div><br />
+<p class="docText">The <tt>freeSpace</tt><a name="producer can"></a> &#115;emaphore governs the part of the buffer t&#104;at the &#112;rod&#117;cer can fi&#108;l with data. &#84;he <tt>usedSpace</tt><a name="semaphore governs"></a> semapho&#114;e governs the area that the consumer can read. These tw&#111; ar&#101;as &#97;re complementary. The <tt>f&#114;eeSpace</tt><a name="initialized with"></a> semaphore &#105;s initialized with <tt>BufferSize</tt><a name="that it"></a> (4096), m&#101;aning that it has that many resour&#99;es that can be acquired. When the applicati&#111;n starts, the reader thread will start acquiring &quot;free&quot; by&#116;es and co&#110;v&#101;rt &#116;hem into &quot;&#117;sed&quot; bytes. The <tt>usedSpace</tt><a name="read garbage"></a> &#115;emaphore is initialized with 0 to ensure tha&#116; the cons&#117;mer won't r&#101;ad garba&#103;e at startup.</p>
+<p class="docText"><a name="as one"></a>Fo&#114; this example, each byte co&#117;nts as one resource. In a real-world application, we &#119;ould probably operate on larger units (e.g., 64 or 256 bytes at a ti&#109;e) to reduce the overhead associated with using sema&#112;hor&#101;s.</p>
+<div class="docText"><pre>void Producer::run()
+{
+    for (int i = 0; i &lt; DataSize; ++i) {
+        freeSpace.acquire();
+        buffer[i % BufferSize] = "ACGT"[uint(std::rand()) % 4];
+        usedSpace.release();
+    }
+}</pre></div><br />
+<p class="docText"><a name="the buffer"></a>I&#110; t&#104;e prod&#117;cer, every iteration starts by a&#99;quiring one &quot;free&quot; byte. If the buffer is full of data that the cons&#117;mer hasn't &#114;ead ye&#116;, the call to <tt>acquir&#101;()</tt><a name="to consume"></a> will block unt&#105;l the consumer has started to co&#110;sume the data. Once we have acquired the byte, w&#101; fill it with some random data ('A', 'C', 'G', or 'T') and rele&#97;se the byte as &quot;used&quot;, so that the consumer thread can read it.</p>
+<div class="docText"><pre>void Consumer::run()
+{
+    for (int i = 0; i &lt; DataSize; ++i) {
+        usedSpace.acquire();
+        std::cerr &lt;&lt; buffer[i % BufferSize];
+        freeSpace.release();
+    }
+    std::cerr &lt;&lt; std::endl;
+}</pre></div><br />
+<p class="docText"><a name="iddle2638"></a><a name="iddle5424"></a><a name="iddle6478"></a><a name="iddle8509"></a><a name="iddle8510"></a><a name="If the"></a>I&#110; t&#104;e cons&#117;mer, we sta&#114;t by ac&#113;uiring one &quot;used&quot; byte. I&#102; the buffer contains no data to read, the call to <tt>acquir&#101;()</tt><a name="until the"></a> wi&#108;l block unt&#105;l the produ&#99;er has produced some. Once &#119;e have acquired the byte, we print it and re&#108;ease the byte as &quot;free&quot;, making it possible for the pr&#111;ducer to fill it with data again.</p>
+<div class="docText"><pre>int main()
+{
+    Producer producer;
+    Consumer consumer;
+    producer.start();
+    consumer.start();
+    producer.wait();
+    consumer.wait();
+    return 0;
+}</pre></div><br />
+<p class="docText">Finally, in <tt>main()</tt><a name="converts some"></a>, we start th&#101; producer and consumer threads. Then the producer conve&#114;ts som&#101; &quot;fr&#101;e&quot; s&#112;ace &#105;nto &quot;used&quot; space, and the con&#115;umer can convert it back to &quot;fr&#101;e&quot; s&#112;ace.</p>
+<p class="docText"><a name="When we"></a>&#87;hen we run the progr&#97;m, it writes a rando&#109; sequence of 100000 'A's, 'C's, 'G's, and 'T's to th&#101; console and terminates. To rea&#108;ly understand what is going on, we can d&#105;sable writing the output and instead write 'P' each time the p&#114;oduce&#114; gener&#97;tes a byte &#97;nd 'c' each t&#105;me the consumer reads a byte. And t&#111; make things as simple to follow as possible, we &#99;an use small&#101;r v&#97;lues for <tt>DataSize</tt> an&#100; <tt>BufferSize</tt>.</p>
+<p class="docText"><a name="possible run"></a>&#70;or example, here's a possible r&#117;n with a <tt>DataSize</tt><a name="and a"></a> of 10 and a <tt>BufferSize</tt><a name="as the"></a> of 4: &quot;PcP&#99;PcPcPcPcPcPcPcPc&quot;.In this case, th&#101; consumer reads the bytes as soon as the producer gener&#97;tes them; t&#104;e two t&#104;reads &#97;re execut&#105;ng at the same speed. Another pos&#115;ibility is that the producer fills the whole &#98;uffer befo&#114;e the c&#111;nsumer even s&#116;arts readi&#110;g it: &quot;PPPPccccPPPPccccPP&#99;c&quot;. There are many other possibilities. S&#101;maphores give a lot of latitude to &#116;he system-specific thread scheduler, which can study the threads' b&#101;ha&#118;ior and cho&#111;se &#97;n appropr&#105;ate scheduling policy.</p>
+<p class="docText"><a name="problem of"></a>A differ&#101;nt approach to the problem o&#102; syn&#99;hronizing a &#112;roducer and a c&#111;nsumer is to u&#115;e <tt>QWaitCondition</tt> and <tt>QMutex</tt>. A <tt>QWaitC&#111;ndition</tt><a name="some condition"></a> allows a thread to wa&#107;e up other threads when some condition ha&#115; been met. This allows for more precise cont&#114;ol tha&#110; i&#115; possib&#108;e with mute&#120;es alone. To show h&#111;w it works, we will redo the producer–consumer example u&#115;ing wai&#116; conditi&#111;ns.</p>
+<div class="docText"><pre>const int DataSize = 100000;
+const int BufferSize = 4096;
+char buffer[BufferSize];
+
+QWaitCondition bufferIsNotFull;
+QWaitCondition bufferIsNotEmpty;
+QMutex mutex;
+int usedSpace = 0;</pre></div><br />
+<p class="docText"><a name="iddle3963"></a><a name="iddle6340"></a><a name="iddle6479"></a><a name="iddle6480"></a><a name="iddle6987"></a><a name="iddle8508"></a><a name="iddle8516"></a>In add&#105;tion to the buffe&#114;, we declare two <tt>QWaitCondition</tt>s, one <tt>&#81;Mutex</tt><a name="bytes in"></a>, and one variable that stor&#101;s how many bytes in the buffer a&#114;e &quot;used&quot; bytes.</p>
+<div class="docText"><pre>void Producer::run()
+{
+    for (int i = 0; i &lt; DataSize; ++i) {
+        mutex.lock();
+        while (usedSpace == BufferSize)
+            bufferIsNotFull.wait(&amp;mutex);
+        buffer[i % BufferSize] = "ACGT"[uint(std::rand()) % 4];
+        ++usedSpace;
+        bufferIsNotEmpty.wakeAll();
+        mutex.unlock();
+    }
+}</pre></div><br />
+<p class="docText"><a name="the buffer"></a>In the producer, we start by checking whet&#104;er the &#98;uffer is fu&#108;l. If it is, we &#119;ait on the &quot;bu&#102;fer is not full&quot; condition. W&#104;en that condition is met, we write one by&#116;e to the b&#117;ffer, incr&#101;ment <tt>&#117;sedSpace</tt><a name="any thread"></a>, and wake an&#121; thread waiting for the &quot;bu&#102;fer is not empty&quot; condition to &#116;urn true.</p>
+<p class="docText"><a name="the"></a>We use a mutex to protect all access&#101;s to the <tt>usedSpace</tt><a name="The"></a> variable. The <tt>QW&#97;itCondit&#105;on::wait()</tt><a name="take a"></a> &#102;unc&#116;ion can t&#97;ke a locked mutex as its firs&#116; argument, which it unlocks before blocking the cu&#114;rent t&#104;read a&#110;d then lock&#115; before return&#105;ng.</p>
+<p class="docText"><a name="this example"></a>For this example, we could have re&#112;laced the <tt>while</tt> loop</p>
+<div class="docText"><pre>while (usedSpace == BufferSize)
+    bufferIsNotFull.wait(&amp;mutex);</pre></div><br />
+<p class="docText">w&#105;th this <tt>if</tt> statement:</p>
+<div class="docText"><pre>if (usedSpace == BufferSize) {
+    mutex.unlock();
+    bufferIsNotFull.wait();
+    mutex.lock();
+}</pre></div><br />
+<p class="docText"><a name="than one"></a>However, this would break as &#115;oon as we allow more than one producer threa&#100;, s&#105;nce ano&#116;her prod&#117;cer could &#115;eize the mutex immediately a&#102;ter the <tt>wait()</tt><a name="not full"></a> call and make the &quot;buffer &#105;s not fu&#108;l&quot; conditio&#110; false again.</p>
+<div class="docText"><pre>void Consumer::run()
+{
+    for (int i = 0; i &lt; DataSize; ++i) {
+        mutex.lock();
+        while (usedSpace == 0)
+            bufferIsNotEmpty.wait(&amp;mutex);
+        std::cerr &lt;&lt; buffer[i % BufferSize];
+        --usedSpace;
+        bufferIsNotFull.wakeAll();
+        mutex.unlock();
+    }
+    std::cerr &lt;&lt; std::endl;
+}</pre></div><br />
+<p class="docText"><a name="iddle1463"></a><a name="iddle1954"></a><a name="iddle2653"></a><a name="iddle2965"></a><a name="iddle2984"></a><a name="iddle3215"></a><a name="iddle3607"></a><a name="iddle3681"></a><a name="iddle4861"></a><a name="iddle6335"></a><a name="iddle6347"></a><a name="iddle7259"></a><a name="iddle8048"></a><a name="iddle8098"></a><a name="iddle8247"></a><a name="waits for"></a>&#84;he consumer do&#101;s the exact opposite of &#116;he producer: It waits for the &quot;buffer i&#115; not empty&quot; condition and wakes up any thread waiting fo&#114; the &quot;buffer is not full&quot; condition.</p>
+<p class="docText"><a name="have accessed"></a>In all the examp&#108;es so far, ou&#114; threa&#100;s &#104;ave ac&#99;essed the same global variables. But some mul&#116;ithreaded applications need to have a global varia&#98;le hold dif&#102;ere&#110;t values in di&#102;ferent &#116;hreads. This is often called threa&#100;-local storage or thread-speci&#102;ic data. We can fake it using a map keyed on thread ID&#115; (returned by <tt>QThread::currentThread()</tt><a name="the"></a>), but a nicer a&#112;pro&#97;ch is to us&#101; th&#101; <tt>QT&#104;readStorage&lt;T&gt;</tt> class.</p>
+<p class="docText"><a name="use of"></a>A common u&#115;e of <tt>QThreadStorage&lt;T&gt;</tt><a name="we avoid"></a> is for caches. By ha&#118;ing a separ&#97;te cache i&#110; differen&#116; threads, we avoid the o&#118;erhead of locking, unlocking, and pos&#115;ibly waiting for a mutex. For e&#120;ample:</p>
+<div class="docText"><pre>QThreadStorage&lt;QHash&lt;int, double&gt; *&gt; cache;
+
+void insertIntoCache(int id, double value)
+{
+    if (!cache.hasLocalData())
+        cache.setLocalData(new QHash&lt;int, double&gt;);
+    cache.localData()-&gt;insert(id, value);
+}
+
+void removeFromCache(int id)
+{
+    if (cache.hasLocalData())
+        cache.localData()-&gt;remove(id);
+}</pre></div><br />
+<p class="docText"><a name="The"></a>The <tt>cache</tt><a name="one pointer"></a> variable holds one &#112;ointer to a <tt>QHash&lt;int, double&gt;</tt><a name="of problems"></a> per thread. (Because of problem&#115; with so&#109;e compilers, &#116;he templ&#97;te type in <tt>&#81;ThreadStorage&lt;T&gt;</tt><a name="the cache"></a> mu&#115;t be a pointer type.) The first time we &#117;se the cac&#104;e in a p&#97;rticular thread, <tt>ha&#115;LocalData()</tt> return&#115; <tt>false</tt> and we create the <tt>QHa&#115;h&lt;int, double&gt;</tt> object.</p>
+<p class="docText">In addition to caching, <tt>QThrea&#100;Storage&lt;T&gt;</tt><a name="variables "></a> can be used for global error-state va&#114;iables (similar to <tt>errno</tt>) to ensure that modifica&#116;ions in o&#110;e &#116;hread do&#110;'t &#97;ffect other threads.</p>
+
+</div></div>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=ch14lev1sec1.html><img src="images/prev.gif" width="20" height="20" border="0" align="absmiddle" alt="Previous Page"></a>
+<a href=ch14lev1sec3.html><img src="images/next.gif" width="20" height="20" border="0" align="absmiddle" alt="Next Page"></a>
+</div></td></tr></table>
+</body></html>

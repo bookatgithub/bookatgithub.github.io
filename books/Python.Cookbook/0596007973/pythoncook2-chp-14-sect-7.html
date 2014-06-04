@@ -1,0 +1,206 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;14.7.&nbsp;Handling Cookies While Fetching Web Pages</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-14-sect-6.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-14-sect-8.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-14-SECT-7"></a>
+<h3 class="docSection1Title">Recipe 14.7. Handling Cookies While Fetching Web Pages</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Mike Foord, Nikos Kouremenos</span></p>
+
+<a name="pythoncook2-CHP-14-SECT-7.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-14-ITERM-2924"></a> <a name="pythoncook2-CHP-14-ITERM-2925"></a>You need to
+fetch web pages (or other resources from the web) that require you to
+handle cookies (e.g., save cookies you receive and also reload and
+send cookies you had previously received from the same site).</P>
+
+
+<a name="pythoncook2-CHP-14-SECT-7.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">The Python 2.4 Standard Library provides a
+<tt>cookielib</tt> module exactly for this task. For Python
+2.3, a third-party <tt>ClientCookie</tt> module works
+similarly. We can write our code to ensure usage of the best
+available cookie-handling moduleincluding none at all, in
+which case our program will still run but without saving and
+resending cookies. (In some cases, this might still be OK, just maybe
+slower.) Here is a script to show how this concept works in practice:</p>
+
+<pre>import os.path, urllib2
+from urllib2 import urlopen, Request
+COOKIEFILE = 'cookies.lwp'   # "cookiejar" file for cookie saving/reloading
+# first try getting the best possible solution, cookielib:
+try:
+    import cookielib
+except ImportError:                 # no cookielib, try ClientCookie instead
+    cookielib = None
+    try:
+        import ClientCookie
+    except ImportError:             # nope, no cookies today
+        cj = None                   # so, in particular, no cookie jar
+    else:                           # using ClientCookie, prepare everything
+        urlopen = ClientCookie.urlopen
+        cj = ClientCookie.LWPCookieJar( )
+        Request = ClientCookie.Request
+else:                               # we do have cookielib, prepare the jar
+    cj = cookielib.LWPCookieJar( )
+# Now load the cookies, if any, and build+install an opener using them
+if cj is not None:
+    if os.path.isfile(COOKIEFILE):
+        cj.load(COOKIEFILE)
+    if cookielib:
+        opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(cj))
+        urllib2.install_opener(opener)
+    else:
+        opener = ClientCookie.build_opener(ClientCookie.HTTPCookieProcessor(cj))
+        ClientCookie.install_opener(opener)
+# for example, try a URL that sets a cookie
+theurl = 'http://www.diy.co.uk'
+txdata = None  # or, for POST instead of GET, txdata=urrlib.urlencode(somedict)
+txheaders =  {'User-agent': 'Mozilla/4.0 (compatible; MSIE 5.5; Windows NT)'}
+try:
+    req = Request(theurl, txdata, txheaders)  # create a request object
+    handle = urlopen(req)                     # and open it
+except IOError, e:
+    print 'Failed to open "%s".' % theurl
+    if hasattr(e, 'code'):
+        print 'Error code: %s.' % e.code
+else:
+    print 'Here are the headers of the page:'
+    print handle.info( )
+# you can also use handle.read( ) to get the page, handle.geturl( ) to get the
+# the true URL (could be different from `theurl' if there have been redirects)
+if cj is None:
+    print "Sorry, no cookie jar, can't show you any cookies today"
+else:
+    print 'Here are the cookies received so far:'
+    for index, cookie in enumerate(cj):
+        print index, ': ', cookie
+    cj.save(COOKIEFILE)                     # save the cookies again</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-14-SECT-7.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">The third-party module <tt>ClientCookie</tt>, available for
+download at <a class="docLink" target="_blank" href="http://wwwsearch.sourceforge.net/ClientCookie/">http://wwwsearch.sourceforge.net/ClientCookie/</a>,
+was so successful that, in Python 2.4, its functionality has been
+added to the Python Standard Libraryspecifically, the
+cookie-handling parts in the new module <tt>cookielib</tt>,
+the rest in the current version of <tt>urllib2</tt>.</P>
+
+<p class="docText">So, you do need to be careful if you want your code to work just as
+well on any 2.4 installation (using the latest and greatest
+<tt>cookielib</tt>) or an installation of Python 2.3 with
+<tt>ClientCookie</tt> on top. As long as
+we're at it, we might as well handle running on a
+2.3 installation that does <span class="docEmphasis">not</span> have
+<tt>ClientCookie</tt>run anyway, just
+don't save and resend cookies when we lack library
+code to do so. On some sites, the inability to handle cookies will
+just be a bother and perhaps a performance hit due to the loss of
+session continuity, but the site will still work. Other sites, of
+course, will be completely unusable without cookies.</p>
+
+<p class="docText">The recipe's code is an exercise in the careful
+management of an idiom that's an essential part of
+making your Python code portable among releases and installations,
+while ensuring minimal graceful degradation when third-party modules
+you'd like to use just aren't
+there. The idiom is known as <I>conditional
+import</I> and is expressed as follows:</p>
+
+<pre>try:
+    import <tt><i>something</i></tt>
+except ImportError:            # 'something' not available
+  <i>...code to do without, degrading gracefully...</I>
+else:                          # 'something' IS available, hooray!
+  <i>...code to run only when something is there...</i>
+# and then, go on with the rest of your program
+<I>...code able to run with or w/o `something'...</i></pre><BR>
+
+
+<p class="docText">The use of "conditional import" is
+particularly delicate in this recipe because
+<tt>ClientCookie</tt> and <tt>cookielib</tt>
+aren't drop-in replacements for each
+othertherefore, careful management is indeed necessary. But,
+if you study this recipe, you will see that it is not rocket
+scienceit just requires attention.</p>
+
+<p class="docText">One key technique is to make double use of a small number of names as
+"flags", with value
+<tt>None</tt> when the object to which they would normally
+refer is not available. In this recipe, we do that for
+<I>cookielib</I> (which refers to the module of that name
+when there is one, and otherwise to <tt>None</tt>) and
+<i>cj</i> (which refers to a <tt>cookie-jar</tt>
+object when there is any, and otherwise to <tt>None</tt>).
+Even better, when feasible, is to assign names appropriately to refer
+to the best available object under the circumstances: the recipe does
+that for variables <i>urlopen</i> and
+<i>Request</i>. Note how crucial it is for this purpose
+that Python treats all objects as first class:
+<i>urlopen</i> is a function, <i>Request</i> is a
+class, <i>cookielib</i> (if any) a module,
+<i>cj</I> (if any) an instance object. The distinction,
+however, doesn't matter in the least: the
+name-object reference concept is exactly the same in every case, with
+total uniformity, simplicity, and power.</P>
+
+<p class="docText">When either <tt>cookielib</tt> or
+<tt>ClientCookie</tt> is available, the cookies are saved
+in a file in cookie jar format (a useful plain-text format that is
+automatically handled by either module but can also be examined and
+modified with text editors and other programs). If the file already
+exists when the program runs, cookies are loaded from the file, ready
+to be sent back to the appropriate sites.</p>
+
+<p class="docText">My reason for developing this code is that I'm
+developing a cgi-proxy, <i>approx.py</I> (<a class="docLink" target="_blank" href="http://www.voidspace.org.uk/atlantibots/pythonutils.html#cgiproxy">http://www.voidspace.org.uk/atlantibots/pythonutils.html#cgiproxy</a>),
+which needs to be able to handle cookies when feasible. To keep the
+proxy usable on various versions of Python, and ensure it degrades
+gracefully when no cookie-handling library is available, I needed to
+develop the carefully managed conditional imports that are shown in
+the recipe's Solution. I decided to share them in
+this recipe since, besides the importance of cookie handling,
+conditional imports are such a generally important Python idiom.
+Particularly when installing your code on a server you
+don't control, it is unfortunately quite common to
+have little say in which version of Python is running, nor in which
+third-party extensions are installedexactly the kind of
+situation that requires the conditional import technique to ensure
+your code does the best it can under the circumstances.</p>
+
+
+<a name="pythoncook2-CHP-14-SECT-7.4"></a>
+<h4 class="docSection2Title">See Also</h4>
+
+<p class="docText">Documentation on the <tt>cookielib</tt> and
+<tt>urllib2</tt> standard library modules in the
+<span class="docEmphasis">Library Reference</span> for Python 2.4;
+<tt>ClientCookie</tt> is at <a class="docLink" target="_blank" href="http://wwwsearch.sourceforge.net/ClientCookie/">http://wwwsearch.sourceforge.net/ClientCookie/</a>.<a name="pythoncook2-CHP-14-ITERM-2926"></a> <a name="pythoncook2-CHP-14-ITERM-2927"></a></p>
+
+
+
+<ul></ul></TD></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-14-sect-6.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-14-sect-8.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

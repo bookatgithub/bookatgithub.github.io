@@ -1,0 +1,248 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;19.17.&nbsp;Duplicating an Iterator</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-19-sect-16.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-19-sect-18.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-19-SECT-17"></a>
+<h3 class="docSection1Title">Recipe 19.17. Duplicating an Iterator</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Heiko Wundram, Raymond Hettinger</span></p>
+
+<a name="pythoncook2-CHP-19-SECT-17.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText">You have an iterator (or other iterable) object
+<tt><I>x</i></tt>, and need to iterate twice over
+<tt><I>x</i></tt>'s sequence of values.</P>
+
+
+<a name="pythoncook2-CHP-19-SECT-17.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">In Python 2.4, solving this problem is the job of function
+<tt>tee</tt> in the standard library module
+<tt>itertools</tt>:</P>
+
+<pre>import itertools
+x1, x2 = itertools.tee(x)
+# you can now iterate on x1 and x2 separately</pre><br>
+
+
+<p class="docText">In Python 2.3, you can code <tt>tee</tt> yourself:</P>
+
+<pre>import itertools
+def tee(iterable):
+    def yield_with_cache(next, cache={  }):
+        pop = cache.pop
+        for i in itertools.count( ):
+            try:
+                yield pop(i)
+            except KeyError:
+                cache[i] = next( )
+                yield cache[i]
+    it = iter(iterable)
+    return yield_with_cache(it.next), yield_with_cache(it.next)</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-19-SECT-17.3"></a>
+<h4 class="docSection2Title">Discussion</h4>
+
+<p class="docText">The need to iterate repeatedly over the same sequence of values is a
+reasonably common one. If you know that the sequence comes from a
+list, or some other container that intrinsically lets you iterate
+over its items repeatedly, then you simply perform the iteration
+twice. However, sometimes your sequence may come from a generator, a
+sequential file (which might, e.g., wrap a stream of data coming from
+a network socketdata that you can read only once), or some
+other iterator that is not intrinsically re-iterable. Even then, in
+some cases, the best approach is the simplest onefirst save
+the data into a list in memory, then repeatedly iterate over that
+list:</p>
+
+<pre>saved_x = list(x)
+for item in saved_x: do_something(item)
+for item in saved_x: do_something_else(item)</pre><br>
+
+
+<p class="docText">The simple approach of first saving all data from the iterator into a
+list is not feasible for an infinite sequence
+<tt><I>x</i></tt>, and may not be optimal if
+<tt><i>x</I></tt> is very large and your separate
+iterations over it never get far out-of-step from each other. In
+these cases, the <i>tee</I> function shown in this recipe
+can help. For example, say that the items of
+<tt><i>x</I></tt> are either numbers or operators (the
+latter being represented as strings such as '<tt>+</tt>',
+'<tt>*</tt>', etc.). Whenever you encounter an operator,
+you must output the result of applying that operator to all numbers
+immediately preceding it (since the last operator). Using
+<tt>tee</tt>, you could code:</P>
+
+<pre>def is_operator(item):
+    return isinstance(item, str)
+def operate(x):
+    x1, x2 = tee(iter(x))
+    while True:
+        for item in x1:
+            if is_operator(item): break
+        else:
+            # we get here when there are no more operators in the input
+            # stream, thus the operate function is entirely done
+            return
+        if item == '+':
+            total = 0
+            for item in x2:
+                if is_operator(item): break
+                total += item
+            yield total
+        elif item == '*':
+            total = 1
+            for item in x2:
+                if is_operator(item): break
+                total *= item
+            yield total</pre><br>
+
+
+<p class="docText">This kind of "look-ahead" usage is
+pretty typical of many of the common use cases of
+<tt>tee</tt>. Even in this case, you might choose the
+alternative approach of accumulating items in a list:</p>
+
+<pre>def operate_with_auxiliary_list(x):
+    aux = [  ]
+    for item in x:
+        if is_operator(item):
+            if item == '+':
+                yield sum(aux)
+            elif item == '*':
+                total = 1
+                for item in aux:
+                    total *= item
+                yield total
+            aux = [  ]
+        else:
+            aux.append(item)</pre><br>
+
+
+<p class="docText">Having <tt>tee</tt> available lets you freely choose
+between these different styles of look-ahead processing.</p>
+
+<p class="docText">Function <tt>itertools.tee</tt> as implemented in Python
+2.4 is faster and more general than the pure Python version given in
+this recipe for version 2.3 usage. However, the pure Python version
+is quite instructive and deserves study for the sake of the
+techniques it demonstrates, even if you're lucky
+enough to be using Python 2.4 and therefore don't
+need to use this pure Python version of <i>tee</i>.</p>
+
+<p class="docText">In the pure Python version of <i>tee</i>, the nested
+generator <i>yield_with_cache</i> makes use of the fact
+(which some consider a "wart" in
+Python but is actually quite useful) that the default values of
+arguments get computed just once, at the time the
+<tt>def</tt> statement executes. Thus, both calls to the
+nested generator in the <tt>return</tt> statement of
+<i>tee</i> implicitly share the same initially empty
+<tt>dict</tt> as the value of the <I>cache</I>
+argument.</p>
+
+<p class="docText"><tt>itertools.count</tt> returns non-negative integers,
+<tt>0</tt> and up, one at a time.
+<i>yield_with_cache</I> uses each of these integers as a
+key into the <i>cache</i> dictionary. The call to
+<tt>pop(i)</tt> (the argument of the
+<tt>yield</tt> statement in the <tt>try</tt>
+clause) simultaneously returns and removes the entry corresponding to
+key <tt><i>i</i></tt>, <span class="docEmphasis">if</span> that entry
+was presentthat is, in this case, if the
+"other" instance of the generator
+had already reached that point in the iteration (and cached the item
+for our benefit). Otherwise, the <tt>except</tt> clause
+executes, computes the item (by calling the object bound to name
+<i>next</I>, which in this case is the
+<tt>next</tt> bound method of an iterator over the iterable
+object, which <tt>tee</tt> is duplicating), and caches the
+item (for the "other"
+instance's future benefit) before
+<tt>yield</tt>ing it.</p>
+
+<p class="docText">So, in practice, <I>cache</i> is being used as a FIFO
+queue. Indeed, were it not for the fact that we
+don't need a pure-Python <I>tee</i> in
+Python 2.4, we could code an equivalent implementation of it in
+Python 2.4 using the new type <tt>deque</tt> in standard
+library module <tt>collections</tt>:</P>
+
+<pre>import collections
+def tee_just_an_example(iterable):
+    def yield_with_cache(it, cache=collections.deque):
+        while True:
+            if cache:
+                yield cache.popleft( )
+            else:
+                result = it.next( )
+                cache.append(result)
+                yield result
+    it = iter(iterable)
+    return yield_with_cache(it), yield_with_cache(it)</pre><BR>
+
+
+<p class="docText">This latest version is meant purely as an illustrative example, and
+therefore, it's simplified by not using any of the
+bound-method extraction idioms shown in the version in the
+"Solution" (which
+<span class="docEmphasis">is</span> intended for
+"production" use in Python 2.3).</p>
+
+<p class="docText">Once you've called <tt>tee</tt> on an
+iterator, you should no longer use the original iterator anywhere
+else; otherwise, the iterator could advance without the knowledge of
+the <tt>tee</tt>-generated objects, and those objects would
+then "get out of sync" with the
+original. Be warned that <I>tee</I> requires auxiliary
+storage that is proportional to how much the two
+<i>tee</i>-generated objects get
+"apart" from each other in their
+separate iterations. In general, if one iterator is going to walk
+over most or all of the data from the original before the
+"other" one starts advancing, you
+should consider using <tt>list</tt> instead of
+<i>tee</i>. Both of these caveats apply to the
+<tt>itertools.tee</tt> function of Python 2.4 just as well
+as they apply to the pure Python versions of <I>tee</i>
+presented in this recipe. One more caveat: again both for the
+versions in this recipe, and the <tt>itertools.tee</tt>
+function in Python 2.4, there is no guarantee of thread safety: to
+access the tee'd iterators from different threads,
+you need to guard those iterators with a single lock!</p>
+
+
+<a name="pythoncook2-CHP-19-SECT-17.4"></a>
+<H4 class="docSection2Title">See Also</h4>
+
+<p class="docText">The <tt>itertools</tt> module is part of the Python
+Standard Library and is documented in the <span class="docEmphasis">Library
+Reference</span> portion of Python's online
+documentation; <a class="docLink" href="pythoncook2-CHP-19-SECT-2.html#pythoncook2-CHP-19-SECT-2">Recipe 19.2</a>
+shows how to turn an iterator into a list.</P>
+
+
+
+<a href="5991535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><ul></UL></TD></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-19-sect-16.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-19-sect-18.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

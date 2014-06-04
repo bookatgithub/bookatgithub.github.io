@@ -1,0 +1,126 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Section 6.8.&nbsp; The Freeflowing Regex</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=regex3-CHP-6-SECT-7.html><img src="images/prev.gif" width="60" height="17" border="0" align="absmiddle" alt="Previous Page"></a>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=regex3-CHP-6-SECT-9.html><img src="images/next.gif" width="60" height="17" border="0" align="absmiddle" alt="Next Page"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><a name="regex3-CHP-6-SECT-8"></a>
+<H3 id="686695-902" class="docSection1Title">6.8. The Freeflowing Regex</H3>
+<a name="IDX-CHP-6-2080"></a> 
+<a name="IDX-CHP-6-2081"></a> 
+<a name="IDX-CHP-6-2082"></a> 
+
+<p class="docText">We just spent some time constructing a regex to match a C comment, but left off with the problem of how to stop comment-like items within strings from being matched. Using Perl, we might mistakenly try to remove comments with:</P>
+<pre>
+    $prog =~ <span class="docEmphStrong">s{</span>/\*[^*]*\*+(?:[^/*][^*]*\*+)*/<span class="docEmphStrong">}{}g</span>; #
+<span class="docEmphasis">remove C comments (and more!)</span>
+</pre><BR>
+
+<p class="docText">Text in the variable <tt>$prog</tt> that is matched by our regex is removed (that is, replaced by nothing). The problem with this is that there's nothing to stop a match from starting <span class="docEmphasis">within</span> a string, as in this C snippet:</p>
+<pre>
+    <div><img border="0" alt="" id="195131084204" width="359" height="26" SRC="images/regex3_u0640.jpg"></div>
+</pre><BR>
+
+<p class="docText">Here, the underlined portions are what the regex finds, but the bold portions are what we <span class="docEmphasis">wish</span> to be found. When the engine is searching for a match, it tries to match the expression at each point in the target. Since it is successful only from where a comment begins (or where it looks like one begins), it doesn't match at most locations, so the transmission bump-along bumps us right into the double quoted string, whose contents look like the start of a comment. It would be nice if we could tell the regex engine that when it hits a double-quoted string, it should zip right on past it. Well, we can.</p>
+<a name="regex3-CHP-6-SECT-8.1"></a>
+<h4 id="title-IDARPWML" class="docSection2Title">6.8.1. A Helping Hand to Guide the Match</H4>
+<p class="docText">Consider:</P>
+<pre>
+    $COMMENT = <span class="docEmphStrong">qr{</span>/\*[^*]*\*+(?:[^/*][^*]*\*+)*/<span class="docEmphStrong">}</span>; # <span class="docEmphasis">regex to match a comment</span>
+    $DOUBLE = <span class="docEmphStrong">qr{</span>"(?:\\.|[^\\"])*"<span class="docEmphStrong">}</span>;               # <span class="docEmphasis">regex to match
+ double-quoted string</span>
+    $text =~ <span class="docEmphStrong">s/</span>$DOUBLE|$COMMENT<span class="docEmphStrong">//g</span>;
+</pre><br>
+
+<p class="docText">There are two new things here. One is that this time the regex operand, <tt><span class="docEmphStrong">$DOUBLE|$COMMENT</span></tt>, is made up of two variables, each of which is constructed with Perl's special <tt>qr/&#8943;/</tt> regex-style "double-quoted string" operator. As discussed at length in <a class="docLink" href="regex3-CHP-3.html#regex3-CHP-3">Chapter 3</a> (&#9758; 101), one must be careful when using strings that are meant to be interpreted as regular expressions. Perl alleviates this problem by providing the <tt>qr/&#8943;/</tt> operator, which treats its operand as a regular expression, but doesn't actually apply it. Rather, it returns a "regex object" value that can later be used to build up a larger regular expression. It's extremely convenient, as we saw briefly in <a class="docLink" href="regex3-CHP-2.html#regex3-CHP-2">Chapter 2</a> (&#9758; 76). Like <tt>m/&#8943;/</tt> and <tt>s/&#8943;/&#8943;/</tt>, you can pick delimiters to suit your needs (&#9758; 71), as we've done here using braces.</p>
+<p class="docText">The other new thing here is the matching of double-quoted strings via the <tt><span class="docEmphStrong">$DOUBLE</span></tt> portion. When the transmission has brought us to a position where the <tt><span class="docEmphStrong">$DOUBLE</span></tt> part can match, it will do so, thereby bypassing the whole string in one fell swoop. It is possible to have both alternatives because they are entirely unambiguous with respect to each other. When applied to a string, as you read from the beginning, any point in the text that you start at is:</P>
+<UL><LI><p class="docList">Matchable by the comment part, thereby skipping immediately to the end of the comment, or...</p></LI><LI><p class="docList">Matchable by the double-quoted string part, thereby skipping immediately to the end of the string, or...</p></li><li><p class="docList">Not matchable by either, causing the attempt to fail. This means that the normal bump-along will skip only the one, uninteresting character.</p></LI></ul>
+<p class="docText">This way, the regex will never be <span class="docEmphasis">started</span> from <span class="docEmphasis">within</span> a string or comment, the key to its success. Well, actually, right now it isn't helpful yet, since it removes the strings as well as the comments, but a slight change puts us back on track.</p>
+<p class="docText">Consider:</P>
+<pre>
+    $COMMENT = <span class="docEmphStrong">qr{</span>/\*[^*]*\*+(?:[^/*][^*]*\*+)*/<span class="docEmphStrong">}</span>; # <span class="docEmphasis">regex to match a comment</span>
+    $DOUBLE = <span class="docEmphStrong">qr{</span>"(?:\\.|[^\\"])*"<span class="docEmphStrong">}</span>;               # <span class="docEmphasis">Regex to match
+ double-quoted string</span>
+    $text =~ <span class="docEmphStrong">s/</span><div><img border="0" alt="" id="195131084204" width="8" height="11" SRC="images/regex3_u0641.jpg"></div>$DOUBLE<div><img border="0" alt="" id="195131084204" width="14" height="12" SRC="images/regex3_u0642.jpg"></div>|$COMMENT/<span class="docEmphStrong">/g</span>;
+</pre><br>
+
+<p class="docText">The only differences are that we've:</p>
+<ul><li><p class="docList">Added the parentheses to fill <tt>$1</tt> if the match is via the string alternative. If the match is via the comment alternative, <tt>$1</tt> is left empty.</p></li><li><p class="docList">Made the replacement value that same <tt>$1</tt>. The effect is that if a double-quoted string is matched, the replacement is that same double-quoted stringthe string is not removed and the substitute becomes an effective no-op (but has the side effect of getting us past the string, which is the reason to add it in the first place). On the other hand, if the comment alternative is the one that matches, the <tt>$1</tt> is empty, so the comment is replaced by nothingness just as we want.<sup class="docFootnote"><a class="docLink" href="#regex3-CHP-6-FN-8">[<img src=images/U2020.jpg border=0>]</a></sup></p><blockquote><p class="docFootnote"><sup><a name="regex3-CHP-6-FN-8">[<img src=images/U2020.jpg border=0>]</a></sup> In Perl, if <tt>$1</tt> is not filled during the match, it's given a special "no value" value "<tt>undef</tt>". When used in the replacement value, <tt>undef</tt> is treated as an empty string, so it works as we want. But, if you have Perl warnings turned on (as every good programmer should), the use of an undef value in this way causes a warning to be printed. To avoid this, you can use the '<tt>no warnings</tt>;' pragma before the regular expression is used, or use this special Perl form of the substitute operator:</p></blockquote><pre>
+<div><img border="0" alt="" id="195131084204" width="346" height="11" SRC="images/regex3_u0643.jpg"></div>
+</pre><br>
+</li></ul>
+<p class="docText">Finally, we need to take care of single-quoted C constants such as '<tt>\t</tt>' and the like. This is easywe simply add another alternative inside the parentheses. If we would like to remove C++/Java/C# style // comments too, that's as simple as adding <img src=images/U2308.jpg border=0><tt>//[^\n]*</tt><img src=images/U230B.jpg border=0> as a fourth alternative, outside the parentheses:</p>
+<pre>
+    $COMMENT = <span class="docEmphStrong">qr{</span>/\*[^*]*\*+(?:[^/*][^*]*\*+)*/<span class="docEmphStrong">}</span>; # <span class="docEmphasis">regex to match a comment</span>
+    $COMMENT2 = <span class="docEmphStrong">qr{</span>//[^\n]*<span class="docEmphStrong">}</span>;                      # <span class="docEmphasis">regex to match a C++ //
+ comment</span>
+    $DOUBLE = <span class="docEmphStrong">qr{</span>"(?:\\.|[^\\"])*"<span class="docEmphStrong">}</span>;               # <span class="docEmphasis">regex to match
+ double-quoted string</span>
+    $SINGLE = <span class="docEmphStrong">qr{</span>'(?:\\.|[^'\\])*'<span class="docEmphStrong">}</span>;               # <span class="docEmphasis">regex to match
+ single-quoted string</span>
+    <div><img border="0" alt="" id="195131084204" width="381" height="12" SRC="images/regex3_u0644.jpg"></div>
+</pre><br>
+
+<p class="docText">The basic premise is quite slick: when the engine checks the text, it quickly grabs (and if appropriate, removes) these special constructs. On my old (circa 1997!) system, this Perl snippet took about 16.4 seconds to remove all the comments from a 16-megabyte, 500,000-line test file. That's fast, but we'll speed it up considerably.</p>
+
+<a name="regex3-CHP-6-SECT-8.2"></a>
+<h4 id="title-IDAIXWML" class="docSection2Title">6.8.2. A Well-Guided Regex is a Fast Regex</h4>
+<p class="docText">With just a little hand holding, we can help direct the flow of the regex engine's attention to match much faster. Let's consider the long spans of normal C code between the comments and strings. For each such character, the regex engine has to try each of the four alternatives to see whether it's something that should be gobbled up, and only if all four fail does it bump-along to bypass the character as uninteresting. This is a lot of work that we really don't need to do.</P>
+<p class="docText">We know, for example, that for any of the alternatives to have a chance at matching, the lead character must be a slash, a single quote, or a double quote. One of these doesn't guarantee a match, but <span class="docEmphasis">not</span> being one does guarantee a non-match. So, rather than letting the engine figure this out the slow and painful way, let's just tell it directly by adding <img src=images/U2308.jpg border=0><tt>[^'"/]</tt><img src=images/U230B.jpg border=0> as an alternative. In fact, any number of such characters in a row can be scooped right up, so let's use <img src=images/U2308.jpg border=0><tt>[^'"/]<span class="docEmphStrong">+</span></tt><img src=images/U230B.jpg border=0> instead. If you remember the neverending match, you might feel worried about the added plus. Indeed, it could be of great concern if it were within some kind of (&#8943;)* loop, but in this stand-alone case it's quite fine (there's nothing that follows that could force it to backtrack at all). So, adding:</p>
+<pre>
+    $OTHER = <span class="docEmphStrong">qr{</span>[^"'/]<span class="docEmphStrong">}</span>;   # <span class="docEmphasis">Stuff that couldn't possibly begin one of
+ the other alternatives</span>
+      <img src=images/U22EE.jpg border=0>
+    $text =~ <span class="docEmphStrong">s/</span>($DOUBLE|$SINGLE<div><img border="0" alt="" id="195131084204" width="57" height="12" SRC="images/regex3_u0645.jpg"></div>)|$COMMENT|$COMMENT2<span class="docEmphStrong">/$1/g</span>;
+</pre><BR>
+
+<p class="docText">For reasons that will become apparent after a bit, I've put the plus quantifier after <tt>$OTHER</tt>, rather than part of the contents of $OTHER.</p>
+<p class="docText">So, I retry my benchmarks, and wow, this one change cuts the time by over 75 percent! We've crafted the regex to remove most of the overhead of having to try all the alternatives so often. There are still a few cases where none of the alternatives can match (such as at 'c <img src=images/U22CF.jpg border=0>/ 3.14'), and at such times, we'll have to be content with the bump-along to get us by.</p>
+<p class="docText">However, we're not done yetwe can still help the engine flow to a faster match:</P>
+<UL><LI><p class="docList">In most cases, the most popular alternative will be <img src=images/U2308.jpg border=0><tt>$OTHER+</tt><img src=images/U230B.jpg border=0>, so let's put that first inside the parentheses. This isn't an issue for a POSIX NFA engine because it must always check all alternatives anyway, but for a Traditional NFA, which stops once a match has been found, why make it check for relatively rare matches before checking the one we believe will match most often?</P></li><LI><p class="docList">After one of the quoted items matches, it will likely be followed by some <tt>$OTHER</tt> before another string or a comment is found. If we add <img src=images/U2308.jpg border=0><tt>$OTHER*</tt><img src=images/U230B.jpg border=0> after each item, we tell the engine that it can immediately flow right into matching <tt>$OTHER</tt> without bothering with the <tt>/g</tt> looping.</p><p class="docList">This is similar to the unrolling-the-loop technique, which gains much of its speed from the way it leads the regex engine to a match. We use our global knowledge to create the local optimizations that feed the engine just what it needs to work quickly.</p><p class="docList">Note that it is <span class="docEmphasis">very</span> important that this <tt>$OTHER</tt>, added after each string-matching subexpression, be quantified with star, while the previous <tt>$OTHER</tt> (the one we moved to the head of the alternation) be quantified by plus. If it's not clear why, consider what could happen if the appended <tt>$OTHER</tt> had plus and there were, say, two double-quoted strings right in a row. Also, if the leading <tt>$OTHER</tt> used star, it would always match!</P></LI></ul>
+<p class="docText">These changes yield</p>
+<pre>
+<div><img border="0" alt="" id="195131084204" width="422" height="13" SRC="images/regex3_u0646.jpg"></div>
+</pre><BR>
+
+<p class="docText">as the regex, and further cuts the time by an additional five percent.</P>
+<p class="docText">Let's step back and think about these last two changes. If we go to the trouble of scooping up <tt>$OTHER*</tt> after each quoted string, there are only two situations in which the original <tt>$OTHER+</tt> (which we moved to be the first alternative) can match: 1) at the very start of the whole <tt>s/</tt>&#8943;/&#8943;<tt>/g</tt>, before any of the quoted strings get a chance to match, and 2) after any comment.</P>
+<p class="docText">You might be tempted to think "Hey, to take care of point #2, let's just add <tt>$OTHER+</tt> after the comments as well!" This would be nice, except everything we want to keep must be inside that first set of parenthesesputting it after the comments would throw out the baby code with the comment bathwater.</p>
+<p class="docText">So, if the original <tt>$OTHER+</tt> is useful primarily only after a comment, do we really want to put it first? I guess that depends on the dataif there are more comments than quoted strings, then yes, placing it first makes sense. Otherwise, I'd place it later. As it turns out with my test data, placing it first yields better results. Placing it later takes away about half the gains we achieved in the last step.</P>
+
+<a name="regex3-CHP-6-SECT-8.3"></a>
+<H4 id="title-IDAK1WML" class="docSection2Title">6.8.3. Wrapup</h4>
+<p class="docText">We're not quite done yet. Don't forget, each of the quoted-string subexpressions is ripe for unrollingheck, we spent a long section of this chapter on that very topic. So, as a final change, let's replace the two string subexpressions with:</p>
+<pre>
+    $DOUBLE = <span class="docEmphStrong">qr{</span>"[^\\"]*(?:\\.[^\\"]*)*"<span class="docEmphStrong">}</span>;
+    $SINGLE = <span class="docEmphStrong">qr{</span>'[^'\\]*(?:\\.[^'\\]*)*'<span class="docEmphStrong">}</span>;
+</pre><br>
+
+<p class="docText">This change yields yet another 15 percent gain. Just a few changes has sped things up from 16.4 seconds to 2.3 secondsa speedup of over 7x.</p>
+<p class="docText">This last change also shows how convenient a technique it can be to use variables to build up a regular expression. Individual components, such as <tt>$DOUBLE</tt>, can be considered in relative isolation, and can be changed without having to wade into the full expression. There are still some overall issues (the counting of capturing parentheses, among others) that must be kept in mind, but it's a wonderful technique.</P>
+<p class="docText">One of the features that makes it so convenient in this case is Perl's <tt>qr/&#8943;/</tt> operator, which acts like a regex-related type of "string." Other languages don't have this exact functionality, but many languages do have string types that are amenable to building regular expressions. See "<a class="docLink" href="regex3-CHP-3-SECT-4.html#regex3-CHP-3-SECT-4.1">Strings as Regular Expressions</a>" starting on page 101.</p>
+<p class="docText">You'll particularly appreciate the building up of regular expressions this way when you see the raw regex. Here it is, broken across lines to fit the page:</p>
+<pre>
+    ([^"'/]+|"[^\\"]*(?:\\.[^\\"]*)*"[^"'/]*|'[^'\\]*
+    (?:\\.[^'\\]*)*'[^"'/]*)|/\*[^*]*\*+(?:[^/*][^*]*\*+)*/|//[^\n]*
+</pre><BR>
+
+
+
+</TD></TR></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=regex3-CHP-6-SECT-7.html><img src="images/prev.gif" width="60" height="17" border="0" align="absmiddle" alt="Previous Page"></a>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=regex3-CHP-6-SECT-9.html><img src="images/next.gif" width="60" height="17" border="0" align="absmiddle" alt="Next Page"></a>
+</div></td></tr></table>
+</body></html>

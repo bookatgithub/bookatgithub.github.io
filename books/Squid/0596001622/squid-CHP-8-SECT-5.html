@@ -1,0 +1,321 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>8.5 The diskd Storage Scheme</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="squid-CHP-8-SECT-4.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="squid-CHP-8-SECT-6.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="squid-CHP-8-SECT-5"></A>
+<H3 class="docSection1Title">8.5 The diskd Storage Scheme</H3>
+
+<P class="docText"><span class="docEmphasis">diskd</span> (short for disk daemons) is <A NAME="squid-CHP-8-ITERM-1510"></A><A NAME="squid-CHP-8-ITERM-1511"></A><A NAME="squid-CHP-8-ITERM-1512"></A>similar to <span class="docEmphasis">aufs</span> in
+that disk I/Os are executed by external processes. Unlike
+<span class="docEmphasis">aufs</span>, however, <span class="docEmphasis">diskd</span>
+doesn't use threads. Instead, inter-process
+communication occurs via message queues and shared memory.</P>
+
+<P class="docText">Message queues are a standard feature of modern Unix operating
+systems. They were invented many years ago in
+AT&amp;T's Unix System V, Release 1. The messages
+passed between processes on these queues are relatively small: 32-40
+bytes. Each <span class="docEmphasis">diskd</span> process uses one queue for
+receiving requests from Squid and another queue for transmitting
+results back.</P>
+
+<A NAME="squid-CHP-8-SECT-5.1"></A>
+<H4 class="docSection2Title">8.5.1 How diskd Works</H4>
+
+<P class="docText">Squid creates one <span class="docEmphasis">diskd</span> process for each
+<span class="docEmphasis">cache_dir</span>. This is different from
+<span class="docEmphasis">aufs</span>, which uses a large pool of threads for all
+<span class="docEmphasis">cache_dir</span>s. Squid sends a message to the
+corresponding <span class="docEmphasis">diskd</span> process for each I/O
+operation. When that operation is complete, the
+<span class="docEmphasis">diskd</span> process sends a status message back to
+Squid. Squid and the <span class="docEmphasis">diskd</span> processes preserve
+the order of messages in the queues. Thus, there is no concern that
+I/Os might be executed out of sequence.</P>
+
+<P class="docText">For reads and writes, Squid and the <span class="docEmphasis">diskd</span>
+processes use a shared memory area. Both processes can read from, and
+write to, this area of memory. For example, when Squid issues a read
+request, it tells the <span class="docEmphasis">diskd</span> process where to
+place the data in memory. <span class="docEmphasis">diskd</span> passes this
+memory location to the <I>read( )</I> system call and
+notifies Squid that the read is complete by sending a message on the
+return queue. Squid then accesses the recently read data from the
+shared memory area.</P>
+
+<P class="docText"><span class="docEmphasis">diskd</span> (as with <span class="docEmphasis">aufs</span>)
+essentially gives Squid nonblocking disk I/Os. While the
+<span class="docEmphasis">diskd</span> processes are blocked on I/O operations,
+Squid is free to work on other tasks. This works really well as long
+as the <span class="docEmphasis">diskd</span> processes can keep up with the
+load. Because the main Squid process is now able to do more work,
+it's possible that it may overload the
+<span class="docEmphasis">diskd</span> helpers. The <span class="docEmphasis">diskd</span>
+implementation has two features to help out in this situation.</P>
+
+<P class="docText">First, Squid waits for the <span class="docEmphasis">diskd</span> processes to
+catch up if one of the queues exceeds a certain threshold. The
+default value is 64 outstanding messages. If a
+<span class="docEmphasis">diskd</span> process gets this far behind, Squid
+"sleeps" a small amount of time and
+waits for it to complete some of the pending operations. This
+essentially puts Squid into a blocking I/O mode. It also makes more
+CPU time available to the <span class="docEmphasis">diskd</span> processes. You
+can configure this threshold by specifying a value for the
+<TT>Q2</TT> parameter on a <span class="docEmphasis">cache_dir</span>
+line:</P>
+
+<PRE>cache_dir diskd /cache0 7000 16 256 Q2=50</PRE>
+
+<P class="docText">Second, Squid stops asking the <span class="docEmphasis">diskd</span> process to
+open files if the number of outstanding operations reaches another
+threshold. Here, the default value is 72 messages. If Squid would
+like to open a disk file for reading or writing, but the selected
+<span class="docEmphasis">cache_dir</span> has too many pending operations, the
+open request fails internally. When trying to open a file for
+reading, this causes a cache miss instead of a cache hit. When
+opening files for writing, it prevents Squid from storing a cachable
+response. In both cases the user still receives a valid response. The
+only real effect is that Squid's hit ratio
+decreases. This threshold is configurable with the Q1 parameter:</P>
+
+<PRE>cache_dir diskd /cache0 7000 16 256 Q1=60 Q2=50</PRE>
+
+<P class="docText">Note that in some versions of Squid, the Q1 and Q2 parameters are
+mixed-up in the default configuration file. For optimal performance,
+Q1 should be greater than Q2.</P>
+
+
+<A NAME="squid-CHP-8-SECT-5.2"></A>
+<H4 class="docSection2Title">8.5.2 Compiling and Configuring diskd</H4>
+
+<P class="docText">To use <span class="docEmphasis">diskd</span>, you must add it
+<A NAME="squid-CHP-8-ITERM-1513"></A><A NAME="squid-CHP-8-ITERM-1514"></A>to
+the <I>—enable-storeio</I> list when running
+<I>./configure</I>:</P>
+
+<PRE>% ./configure --enable-storeio=ufs,diskd</PRE>
+
+<P class="docText"><span class="docEmphasis">diskd</span> seems to be portable since shared memory
+and message queues are widely supported on modern Unix systems.
+However, you'll probably need to adjust a few kernel
+limits relating to both. Kernels typically have the following
+variables or parameters:</P>
+
+<DL class="docList"><br><p><DT><I><span class="docPubcolor">MSGMNB</span></I></DT></p>
+<DD>
+<P class="docList">This is the maximum characters (octets) per message queue. With
+<span class="docEmphasis">diskd</span>, the practical limit is about 100
+outstanding messages per queue. The messages that Squid passes are
+32-40 octets, depending on your CPU architecture. Thus, MSGMNB should
+be 4000 or more. To be safe, I recommend setting this to 8192.</P>
+</DD>
+<br><p><DT><I><span class="docPubcolor">MSGMNI</span></I></DT></p>
+<DD>
+<P class="docList">This is the maximum number of message queues for the whole system.
+Squid uses two queues for each <span class="docEmphasis">diskd</span>
+<span class="docEmphasis">cache_dir</span>. If you have 10 disks,
+that's 20 queues. You should probably add even more
+in case other applications also use message queues. I recommend a
+value of 40.</P>
+</DD>
+<br><p><DT><I><span class="docPubcolor">MSGSSZ</span></I></DT></p>
+<DD>
+<P class="docList">This is the size of a message segment, in octets. Messages larger
+than this size are split into multiple segments. I usually set this
+to 64 so that the <span class="docEmphasis">diskd</span> message
+isn't split into multiple segments.</P>
+</DD>
+<br><p><DT><I><span class="docPubcolor">MSGSEG</span></I></DT></p>
+<DD>
+<P class="docList">This is the maximum number of message segments that can exist in a
+single queue. Squid normally limits the queues to 100 outstanding
+messages. Remember that if you don't increase MSGSSZ
+to 64 on 64-bit architectures, each message requires more than one
+segment. To be safe, I recommend setting this to 512.</P>
+</DD>
+<br><p><DT><I><span class="docPubcolor">MSGTQL</span></I></DT></p>
+<DD>
+<P class="docList">This is the maximum number of messages that can exist in the whole
+system. It should be at least 100 multiplied by the number of
+<span class="docEmphasis">cache_dir</span>s. I recommend setting it to 2048,
+which should be more than enough for as many as 10 cache directories.</P>
+</DD>
+<br><p><DT><I><span class="docPubcolor">MSGMAX</span></I></DT></p>
+<DD>
+<P class="docList">This is the maximum size of a single message. For Squid, 64 bytes
+should be sufficient. However, your system may have other
+applications that use larger messages. On some operating systems such
+as BSD, you don't need to set this. BSD
+automatically sets it to MSGSSZ x MSGSEG. On other systems
+you may need to increase the value from its default. In this case,
+you can set it to the same as MSGMNB.</P>
+</DD>
+<br><p><DT><I><span class="docPubcolor">SHMSEG</span></I></DT></p>
+<DD>
+<P class="docList">This is the maximum number of shared memory segments allowed per
+process. Squid uses one shared memory identifier for each
+<span class="docEmphasis">cache_dir</span>. I recommend a setting of 16 or
+higher.</P>
+</DD>
+<br><p><DT><I><span class="docPubcolor">SHMMNI</span></I></DT></p>
+<DD>
+<P class="docList">This is the systemwide limit on the number of shared memory segments.
+A value of 40 is probably enough in most cases.</P>
+</DD>
+<br><p><DT><I><span class="docPubcolor">SHMMAX</span></I></DT></p>
+<DD>
+<P class="docList">This is the maximum size of a single shared memory segment. By
+default, Squid uses about 409,600 bytes for each segment. Just to be
+safe, I recommend setting this to 2 MB, or 2,097,152.</P>
+</DD>
+<br><p><DT><I><span class="docPubcolor">SHMALL</span></I></DT></p>
+<DD>
+<P class="docList">This is the systemwide limit on the amount of shared memory that can
+be allocated. On some systems, SHMALL may be expressed as a number of
+pages, rather than bytes. Setting this to 16 MB (4096 pages) is
+enough for 10 <span class="docEmphasis">cache_dir</span>s with plenty remaining
+for other applications.</P>
+</DD>
+</DL>
+
+<P class="docText">To configure message queues on BSD, add these options to your kernel
+configuration file:<sup class="docFootnote"><A class="docLink" HREF="#squid-CHP-8-FNOTE-2">[2]</A></sup></P><blockquote><p class="docFootnote"><sup><A NAME="squid-CHP-8-FNOTE-2">[2]</A></sup> OpenBSD is a little different.
+Use <TT>option</TT> instead of <TT>options</TT>,
+and specify the SHMMAX value in pages, rather than bytes.</p></blockquote>
+
+<PRE># System V message queues and tunable parameters
+options         SYSVMSG         # include support for message queues
+options         MSGMNB=8192     # max characters per message queue
+options         MSGMNI=40       # max number of message queue identifiers
+options         MSGSEG=512      # max number of message segments per queue
+options         MSGSSZ=64       # size of a message segment MUST be power of 2
+options         MSGTQL=2048     # max number of messages in the system
+options         SYSVSHM
+options         SHMSEG=16       # max shared mem segments per process
+options         SHMMNI=32       # max shared mem segments in the system
+options         SHMMAX=2097152  # max size of a shared mem segment
+options         SHMALL=4096     # max size of all shared memory (pages)</PRE>
+
+<P class="docText">To configure message queues on Linux, add these lines to
+<I>/etc/sysctl.conf</I>:</P>
+
+<PRE>kernel.msgmnb=8192
+kernel.msgmni=40
+kernel.msgmax=8192
+kernel.shmall=2097152
+kernel.shmmni=32
+kernel.shmmax=16777216</PRE>
+
+<P class="docText">Alternatively, or if you find that you need more control, you can
+manually edit <I>include/linux/msg.h</I> and
+<I>include/linux/shm.h</I> in your kernel sources.</P>
+
+<P class="docText">For Solaris, add these lines to <I>/etc/system</I> and
+then reboot:</P>
+
+<PRE>set msgsys:msginfo_msgmax=8192
+set msgsys:msginfo_msgmnb=8192
+set msgsys:msginfo_msgmni=40
+set msgsys:msginfo_msgssz=64
+set msgsys:msginfo_msgtql=2048
+set shmsys:shminfo_shmmax=2097152
+set shmsys:shminfo_shmmni=32
+set shmsys:shminfo_shmseg=16</PRE>
+
+<P class="docText">For Digital Unix (TRU64), you can probably add lines to the kernel
+configuration in the style of BSD, seen previously. Alternatively,
+you can use the <I>sysconfig</I> command. First, create a
+file called <I>ipc.stanza</I> like this:</P>
+
+<PRE>ipc:
+          msg-max = 2048
+          msg-mni = 40
+          msg-tql = 2048
+          msg-mnb = 8192
+          shm-seg = 16
+          shm-mni = 32
+          shm-max = 2097152
+          shm-max = 4096</PRE>
+
+<P class="docText">Now, run this command and reboot:</P>
+
+<PRE># sysconfigdb -a -f ipc.stanza</PRE>
+
+<P class="docText">After you have message queues and shared memory configured in your
+operating system, you can add the <span class="docEmphasis">cache_dir</span>
+lines to <I>squid.conf</I>:</P>
+
+<PRE>cache_dir diskd /cache0 7000 16 256 Q1=72 Q2=64
+cache_dir diskd /cache1 7000 16 256 Q1=72 Q2=64
+...</PRE>
+
+<P class="docText">If you forget to increase the message queue limits, or if you
+don't set them high enough, you'll
+see messages like this in <I>cache.log</I>:</P>
+
+<PRE>2003/09/29 01:30:11| storeDiskdSend: msgsnd: (35) Resource temporarily unavailable</PRE>
+
+
+<A NAME="squid-CHP-8-SECT-5.3"></A>
+<H4 class="docSection2Title">8.5.3 Monitoring diskd</H4>
+
+<P class="docText">The best way to monitor <span class="docEmphasis">diskd</span> performance is
+with the cache manager. Request the <I>diskd</I> page;
+for example:</P>
+
+<PRE>% squidclient mgr:diskd
+...
+sent_count: 755627
+recv_count: 755627
+max_away: 14
+max_shmuse: 14
+open_fail_queue_len: 0
+block_queue_len: 0
+
+             OPS SUCCESS    FAIL
+   open   51534   51530       4
+ create   67232   67232       0
+  close  118762  118762       0
+ unlink   56527   56526       1
+   read   98157   98153       0
+  write  363415  363415       0</PRE>
+
+<P class="docText">See <A class="docLink" HREF="squid-CHP-14-SECT-2.html#squid-CHP-14-SECT-2.1.6">Section 14.2.1.6</A> for a description of <A NAME="squid-CHP-8-ITERM-1515"></A><A NAME="squid-CHP-8-ITERM-1516"></A><A NAME="squid-CHP-8-ITERM-1517"></A>this output.</P>
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="squid-CHP-8-SECT-4.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="squid-CHP-8-SECT-6.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

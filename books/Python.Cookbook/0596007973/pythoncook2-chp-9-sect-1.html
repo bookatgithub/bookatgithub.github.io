@@ -1,0 +1,195 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;9.1.&nbsp;Synchronizing All Methods in an Object</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=ch09-77002.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-9-sect-2.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-9-SECT-1"></a>
+<h3 class="docSection1Title" id="409771-955">Recipe 9.1. Synchronizing All Methods in an Object</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Andr&eacute; Bj&auml;rb, Alex Martelli,
+Radovan Chytracek</span></p>
+
+<a name="pythoncook2-CHP-9-SECT-1.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-9-ITERM-2513"></a> <a name="pythoncook2-CHP-9-ITERM-2514"></a> <a name="pythoncook2-CHP-9-ITERM-2515"></a> <a name="pythoncook2-CHP-9-ITERM-2516"></a>You
+want to share an object among multiple threads, but, to avoid
+conflicts, you need to ensure that only one thread at a time is
+inside the objectpossibly excepting some methods for which you
+want to hand-tune locking behavior.</P>
+
+
+<a name="pythoncook2-CHP-9-SECT-1.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">Java offers such synchronization as a built-in feature, while in
+Python you have to program it explicitly by
+<span class="docEmphasis">wrapping</span> the object and its methods. Wrapping is
+so general and useful that it deserves to be factored out into
+general tools:</p>
+
+<pre>def wrap_callable(any_callable, before, after):
+    ''' wrap any callable with before/after calls '''
+    def _wrapped(*a, **kw):
+        before( )
+        try:
+            return any_callable(*a, **kw)
+        finally:
+            after( )
+    # In 2.4, only: _wrapped._ _name_ _ = any_callable._ _name_ _
+    return _wrapped
+import inspect
+class GenericWrapper(object):
+    ''' wrap all of an object's methods with before/after calls '''
+    def _ _init_ _(self, obj, before, after, ignore=( )):
+        # we must set into _ _dict_ _ directly to bypass _ _setattr_ _; so,
+        # we need to reproduce the name-mangling for double-underscores
+        clasname = 'GenericWrapper'
+        self._ _dict_ _['_%s_ _methods' % clasname] = {  }
+        self._ _dict_ _['_%s_ _obj' % clasname] = obj
+        for name, method in inspect.getmembers(obj, inspect.ismethod):
+            if name not in ignore and method not in ignore:
+                self._ _methods[name] = wrap_callable(method, before, after)
+    def _ _getattr_ _(self, name):
+        try:
+            return self._ _methods[name]
+        except KeyError:
+            return getattr(self._ _obj, name)
+    def _ _setattr_ _(self, name, value):
+        setattr(self._ _obj, name, value)</pre><BR>
+
+
+<p class="docText">Using these simple but general tools, synchronization becomes easy:</p>
+
+<pre>class SynchronizedObject(GenericWrapper):
+    ''' wrap an object and all of its methods with synchronization '''
+    def _ _init_ _(self, obj, ignore=( ), lock=None):
+        if lock is None:
+            import threading
+            lock = threading.RLock( )
+        GenericWrapper._ _init_ _(self, obj, lock.acquire, lock.release, ignore)</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-9-SECT-1.3"></a>
+<H4 class="docSection2Title">Discussion</h4>
+
+<p class="docText">As per usual Python practice, we can complete this module with a
+small self-test, executed only when the module is run as main script.
+This snippet also serves to show how the module's
+functionality can be used:</P>
+
+<pre>if _ _name_ _ == '_ _main_ _':
+    import threading
+    import time
+    class Dummy(object):
+        def foo(self):
+            print 'hello from foo'
+            time.sleep(1)
+        def bar(self):
+            print 'hello from bar'
+        def baaz(self):
+            print 'hello from baaz'
+    tw = SynchronizedObject(Dummy( ), ignore=['baaz'])
+    threading.Thread(target=tw.foo).start( )
+    time.sleep(0.1)
+    threading.Thread(target=tw.bar).start( )
+    time.sleep(0.1)
+    threading.Thread(target=tw.baaz).start( )</pre><BR>
+
+
+<p class="docText">Thanks to the synchronization, the call to
+<tt><i>bar</i></tt> runs only when the call to
+<tt><i>foo</i></tt> has completed. However, because of the
+<I>ignore=</i> keyword argument, the call to
+<tt><i>baaz</I></tt> bypasses synchronization and thus
+completes earlier. So the output is:</p>
+
+<pre>hello from foo
+hello from baaz
+hello from bar</pre><BR>
+
+
+<p class="docText">When you find yourself using the same single-lock locking code in
+almost every method of an object, use this recipe to refactor the
+locking away from the object's application-specific
+logic. The key effect you get by applying this recipe is to
+effectively replace each method with:</p>
+
+<pre>self.lock.acquire( )
+try:
+<I>  # The "real" application code for the method</I>
+finally:
+    self.lock.release( )</pre><br>
+
+
+<p class="docText">This code idiom is, of course, the right way to express locking: the
+<tt>try</tt>/<tt>finally</tt> statement ensures
+that the lock gets released in any circumstance, whether the
+application code terminates correctly or raises an exception.
+You'll note that factory
+<i>wrap_callable</i> returns a closure, which is carefully
+coded in exactly this way!<a name="pythoncook2-CHP-9-ITERM-2517"></a></p>
+
+<p class="docText">To some extent, this recipe can also be handy when you want to
+postpone worrying about a class' locking behavior.
+However, if you intend to use this code for production purposes, you
+should understand all of it. In particular, this recipe does
+<span class="docEmphasis">not</span> wrap direct accesses (for getting or
+setting) to the object's attributes. If you want
+such direct accesses to respect the object's lock,
+you need to add the <tt>try</tt>/<tt>finally</tt>
+locking idiom to the wrapper's <tt>_ _getattr_
+_</tt> and <tt>_ _setattr_ _</tt> special methods,
+around the calls these methods make to the <tt>getattr</tt>
+and <tt>setattr</tt> built-in functions, respectively. I
+normally don't find that depth of wrapping to be
+necessary in my applications. (The way I code, wrapping just the
+methods proves sufficient.)</p>
+
+<p class="docText"><a name="pythoncook2-CHP-9-ITERM-2518"></a>
+<a name="pythoncook2-CHP-9-ITERM-2519"></a>If you're
+into custom metaclasses, you may be surprised that I do not offer a
+metaclass for these synchronization purposes. However, wrapping is a
+more dynamic and flexible approachfor example, an object can
+exist in both wrapped (synchronized) and unwrapped (raw)
+incarnations, and you can use the most appropriate one case by case.
+You pay for wrapping's flexibility with a little bit
+more runtime overhead at each method call, but compared to the large
+costs of acquiring and releasing locks I don't think
+this tiny extra overhead matters. Meanwhile, this recipe shows off,
+and effectively reuses, a wrapper-closure factory and a wrapper class
+that demonstrate how easy Python makes it to implement that favorite
+design pattern of Aspect-Oriented Programming's
+fans, the insertion of
+"before-and-after" calls around
+every call to an object's methods.<a name="pythoncook2-CHP-9-ITERM-2520"></a> <a name="pythoncook2-CHP-9-ITERM-2521"></a> <a name="pythoncook2-CHP-9-ITERM-2522"></a> <a name="pythoncook2-CHP-9-ITERM-2523"></a></p>
+
+
+<a name="pythoncook2-CHP-9-SECT-1.4"></a>
+<h4 class="docSection2Title">See Also</h4>
+
+<p class="docText">Documentation of the standard library modules
+<tt>threading</tt> and <tt>inspect</tt> in the
+<span class="docEmphasis">Library Reference</span> and <span class="docEmphasis">Python in a
+Nutshell</span>.</p>
+
+
+
+<ul></UL></TD></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=ch09-77002.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-9-sect-2.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

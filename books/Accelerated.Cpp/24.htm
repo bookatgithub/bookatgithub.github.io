@@ -1,0 +1,215 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
+<title>Using sequential containers and analyzing strings</title>
+<link rel="stylesheet" type="text/css" href="./acc.css" />
+</head>
+
+<body>
+<div class="prevnext">
+<a href="23.htm"><img src="images/Prev1.gif" /></a>&nbsp;&nbsp;<a href="25.htm"><img src="images/Next1.gif" /></a>
+</div>
+<div class="chapname">
+<h1>5</h1>
+</div>
+<div id="chapter">
+<h2>Using sequential containers and analyzing strings</h2>
+</div>
+<p>We've made a fair start on the core C++ language, and we've learned something about the 
+<code>string</code> and <code>vector</code> classes as well. We can solve a lot of problems with just these tools.</p>
+<p>In this chapter, we'll expand our focus beyond these facilities, and start to understand 
+in more depth how to use the library. As we'll see, the facilities that the library provides 
+can help us solve messier problems than the ones that we've confronted so far.</p>
+<p>Not only does the standard library provide useful data structures and functions, but it 
+also reflects a consistent architecture: Once we have learned how one kind of container 
+behaves, we are well on our way to understanding how to use all the library containers.</p>
+<p>For example, as we'll see in the second half of this chapter, we can often use a <code>string</code> 
+as if it were a <code>vector</code>. Many useful operations on one library type are logically the same 
+as the operations on another. The library is constructed so that such equivalent operations 
+work the same way on different types.</p>
+<a name="separating">
+</a><h3>5.1 Separating students into categories</h3>
+</a>
+<p>Let's revisit our student-grading problem from &sect;4.2/61, supposing this time that not only 
+do we wish to calculate all the students' grades, but we would also like to know which 
+students failed the course. The idea is that if we have a <code>vector</code> of <code>Student_info</code> 
+records, we would like to extract the ones for students who failed the course, and store 
+those records in another <code>vector</code>. We also want to remove the data for failing students 
+from the original <code>vector</code>, so that it will contain only records for students who passed. 
+We'll start by writing a simple function to test whether a student failed:</p>
+<div class="prebox"><pre>
+// <i>predicate to determine whether a student failed </i>
+bool fgrade(const Student_info&amp; s)
+{
+    return grade(s) &lt; 60;
+}
+</pre></div>
+<p>We use the <code>grade</code> function from &sect;4.2.2/63 to calculate the grade, and we arbitrarily 
+define a failing grade as one that is less than 60.</p>
+<p>The most straightforward approach to solving our overall problem is to examine each 
+student record and push it onto one of two <code>vector</code>s, one for students with passing 
+grades and the other for students with failing grades:</p>
+<div class="prebox"><pre>
+// <i>separate passing and failing student records: first try</i>
+vector&lt;Student_info&gt; extract_fails(vector&lt;Student_info&gt;&amp; students)
+{
+    vector&lt;Student_info&gt; pass, fail;
+
+    for (vector&lt;Student_info&gt;::size_type i = 0;
+        i != students.size(); ++i) 
+       if (fgrade(students[i]))
+           fail.push_back(students[i]);
+       else
+           pass.push_back(students[i]);
+
+     students = pass;
+     return fail;
+}
+</pre></div>
+<p>Of course, before we can compile this code, we must add <code>#include</code> directives 
+and <code>using</code>-declarations for the names that we are using. In general, we will no longer 
+show these statements in code that we present. When we use a new header, though, we will 
+continue to mention it.</p>
+<p>Like the <code>read_hw</code> and <code>read</code> functions from Chapter 4, this function effectively has 
+two outputs: One is the <code>vector&lt;Student_info&gt;</code> that we return, which contains the 
+records for students who failed; the other is created as a side effect of calling 
+<code>extract_fails</code>. The function's parameter is a reference, so changes to the parameter 
+are reflected in the argument. When the function finishes, the <code>vector</code> that was passed as 
+an argument will contain records only for students who passed the course.</p>
+<p>The function works by creating two <code>vector</code>s, which hold the data for passing and 
+failing students respectively. The function looks at each record in <code>students</code>, and 
+appends a copy of that record to <code>pass</code> or <code>fail</code> depending on the student's grade.</p>
+<p>After the <code>for</code> statement is finished, we copy the passing records back into <code>students</code> 
+and return the failing records.</p>
+<h4>5.1.1  Erasing elements in place</h4>
+<p>Our <code>extract_fails</code> function does what we want, and is reasonably efficient, but it has 
+a subtle flaw: It requires enough memory to hold two copies of each student record. The 
+reason is that as it builds up <code>pass</code> and <code>fail</code>, the original records are still around. When 
+the function is done with its <code>for</code> statement, and is ready to copy the results and return, 
+there are two copies of each student record.</p>
+<p>We would like to avoid keeping multiple copies of data around any longer than necessary. 
+One way to do so is to eliminate <code>pass</code> entirely. Instead of creating two <code>vector</code>s, 
+we will create a single local variable, named <code>fail</code>, to hold the value that we intend to 
+return. For each record in <code>students</code>, we will compute the grade. If it is a passing grade, 
+we'll leave the record alone; if it's a failing grade, we'll append a copy of it to <code>fail</code> and 
+remove it from students.</p>
+<p>To use this strategy, we need a way to remove an element from a <code>vector</code>. The good 
+news is that such a facility exists; the bad news is that removing elements from <code>vector</code>s 
+is slow enough to argue against using this approach for large amounts of input data. If 
+the data we process get really big, performance degrades to an astonishing extent.</p>
+<p>For example, if all of our students were to fail, the execution time of the function that 
+we are about to see would grow proportionally to the square of the number of students. 
+That means that for a class of 100 students, the program would take 10,000 times as long 
+to run as it would for one student. The problem is that our input records are stored in a 
+<code>vector</code>, which is optimized for fast random access. One price of that optimization is that 
+it can be expensive to insert or delete elements other than at the end of the <code>vector</code>.</p>
+<p>We shall see two ways to solve the performance problem: We can use a data structure 
+that is better suited to our algorithm, or we can use a smarter algorithm that avoids the 
+overhead of our initial design. From here through &sect;5.5.2/87, we'll develop a solution that 
+uses a more appropriate data structure. We'll show an algorithmic solution in &sect;6.3/116.</p>
+<p>Before we can understand why these solutions are improvements, we must have something 
+to improve. Therefore, we'll begin by looking at the slow but direct solution:</p>
+<div class="prebox"><pre>
+// <i>second try: correct but potentially slow</i>
+vector&lt;Student_info&gt; extract_fails(vector&lt;Student_info&gt;&amp; students)
+{
+    vector&lt;Student_info&gt; fail;
+    vector&lt;Student_info&gt;::size_type i = 0;
+
+    // <i>invariant:elements </i>[0, i) of students <i>represent passing grades </i>
+    while (i != students.size()) { 
+        if (fgrade(students[i])) {
+            fail.push_back(students[i]};
+            students.erase(students.begin() + i);
+        } else
+            ++i;
+    }
+    return fail;
+}
+</pre></div>
+<p>We begin this version by creating <code>fail</code>, which is the <code>vector</code> into which we'll copy the 
+records for students with failing grades. We next define <code>i</code>, which we'll use as an index 
+into <code>students</code>. We'll process each record, iterating through <code>students</code> until we've seen 
+all the entries in <code>students</code>.</p>
+<p>For each record in <code>students</code>, we determine whether it represents a failing grade. If 
+so, then we need to copy that record into <code>fail</code> and remove it from <code>students</code>. The 
+<code>push_back</code> call to append a copy of <code>students[i]</code> to <code>fail</code> is nothing new. What is new 
+is the way we remove the element from <code>students</code>:</p>
+<div class="prebox"><pre>
+students.erase(students.begin() + i);
+</pre></div>
+<p>The <code>vector</code> type includes a member named <code>erase</code>, which removes an element from the 
+<code>vector</code>. The argument to <code>erase</code> indicates which element to remove.  As it happens, 
+there is no version of the <code>erase</code> function that operates on indices, because, as we shall see 
+in &sect;5.5/85, not all containers support indices, and it is more useful for the library to offer a 
+form of <code>erase</code> that will work the same way with all containers. Instead, the <code>erase</code> function 
+takes a type that we shall discuss in &sect;5.2.1/80. What's important to understand now 
+is that we can indicate which element to erase by adding our index to the value returned 
+by <code>students.begin()</code>. Recall that <code>students.begin()</code> returns a value that denotes 
+the <code>vector</code>'s initial element—the one with index 0 . If we add an integer, such as <code>i</code>, to 
+that value, the result denotes the element with index <code>i</code>. We can now see that this call to 
+<code>erase</code> removes the <code>i</code>th element from <code>students</code>.</p>
+<p>Once we have removed an element from the <code>vector</code>, the <code>vector</code> now has one fewer 
+element than it did before:</p>
+<center>
+<img src="images/78.jpg" />
+</center>
+<p>In addition to changing the size of the <code>vector, erase</code> removes the element with index <code>i</code>, 
+thereby causing <code>i</code> to denote the next element in the sequence. Each element after 
+position <code>i</code> is copied to the preceding position. Thus, although <code>i</code> does not change, <code>erase</code> has the 
+effect of adjusting the index to denote the next element in the <code>vector</code>, which means that 
+we must not increment it for the next iteration.</p>
+<p>If the record we're looking at does not contain a failing grade, then we want to leave it 
+in <code>students</code>. In that case, we must increment <code>i</code>, so that <code>i</code> will refer to the next record on 
+the next trip through the <code>while</code>.</p>
+<p>We determine whether we have seen all the records in <code>students</code> by comparing <code>i</code> 
+with <code>students.size()</code>. When we erase an element from the <code>vector</code>, the <code>vector</code> has 
+one fewer element than it did before. Therefore, it is essential that we call 
+<code>students.size</code> on each trip through the condition. If, instead, we precomputed and 
+stored the result of <code>size</code></p>
+<div class="prebox"><pre>
+// <i>this code will fail because of misguided optimization</i>
+vector&lt;Student_info&gt;::size_type size = students.size();
+while (i != size) {
+    if (fgrade(students[i])) {
+        fail.push_back(students[i]);
+        students.erase(students.begin() + i);
+    } else
+        ++i;
+}
+</pre></div>
+<p>our program would fail, because calling <code>erase</code> would have changed the number of elements 
+in <code>students</code>. If we precomputed the <code>size</code> and actually <code>erase</code>d any records for 
+failing students, then we would make too many trips through <code>students</code>, and the references 
+to <code>students[i]</code> would be to nonexistent elements! Fortunately, calls to <code>size()</code> 
+are usually fast, so the expected overhead from calling <code>size</code> each time is negligible.</p>
+<h4>5.1.2 Sequential versus random access</h4>
+<p>Both versions of our <code>extract_fails</code> function share a property with many programs 
+that work with containers, which property is not immediately obvious from the code: 
+Each of these functions accesses container elements only sequentially. That is, each version 
+of the function looks at each student record in turn, decides what to do with it, and 
+then proceeds to the next record.</p>
+<p>The reason that this property is not obvious from the code is that the function uses an 
+integer, <code>i</code>, to access each element of <code>students</code>. It is possible to compute the value of an 
+integer in arbitrary ways, which means that in order for us to determine whether we are 
+accessing the container sequentially, we must look at every operation that might affect the 
+value of <code>i</code>, and determine that operation's effect. Another way to view the problem is 
+that when we write <code>students[i]</code> to access an element of <code>students</code>, we are implicitly 
+saying that we might access <code>students</code>'s elements in any order, not just sequentially.</p>
+<p>The reason we care about the sequence in which we access container elements is that 
+different types of containers have different performance characteristics and support different 
+operations. If we know that our program uses only those operations that a particular 
+type of container supports efficiently, then we can make our program more efficient by 
+using that kind of container.</p>
+<p>In other words, because our function requires only sequential access, we do not need 
+to use indices, which provide the ability to access any element randomly. Instead, we'd 
+like to rewrite the function so as to restrict access to the container elements to operations 
+that support only sequential access. To that end, the C++ library supplies an assortment 
+of types called iterators, which allow access to data structures in ways that the library can 
+control. This control lets the library ensure efficient implementation.</p>
+<div class="prevnext">
+<a href="23.htm"><img src="images/Prev1.gif" /></a>&nbsp;&nbsp;<a href="25.htm"><img src="images/Next1.gif" /></a>
+</div>
+</body>
+</html>

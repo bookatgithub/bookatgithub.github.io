@@ -1,0 +1,145 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;13.9.&nbsp;Fixing Messages Parsed by Python 2.4 email.FeedParser</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-13-sect-8.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-13-sect-10.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-13-SECT-9"></a>
+<h3 class="docSection1Title" id="409771-925">Recipe 13.9. Fixing Messages Parsed by Python 2.4 email.FeedParser</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Matthew Cowles</span><a name="pythoncook2-CHP-13-ITERM-2851"></a>
+<a name="pythoncook2-CHP-13-ITERM-2852"></a></p>
+
+<a name="pythoncook2-CHP-13-SECT-9.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-13-ITERM-2853"></a>You're using Python
+2.4's new <tt>email.FeedParser</tt>
+module, but sometimes, when dealing with badly malformed incoming
+messages, that module produces message objects that are internally
+inconsistent (e.g., a message has a content-type header that says the
+message is multipart, but the body isn't), and you
+need to fix those inconsistencies.</P>
+
+
+<a name="pythoncook2-CHP-13-SECT-9.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">Python 2.4's new standard library module
+<tt>email.FeedParser</tt> is very useful, but a little
+post-processing on the messages it returns can heuristically fix some
+inconsistencies and make it even better. Here's a
+module containing a class and a few functions to help with this task:</p>
+
+<pre>import email, email.FeedParser
+import re, sys, sgmllib
+# what chars are non-Ascii, what max fraction of them can be in a text part
+kGuessBinaryThreshold = 0.2
+kGuessBinaryRE = re.compile("[\\0000-\\0025\\0200-\\0377]")
+# what max fraction of HTML tags can be in a text (non-HTML) part
+kGuessHTMLThreshold = 0.05
+class Cleaner(sgmllib.SGMLParser):
+    entitydefs = {"nbsp": " "}  # I'll break if I want to
+    def _ _init_ _(self):
+        sgmllib.SGMLParser._ _init_ _(self)
+        self.result = [  ]
+    def do_p(self, *junk):
+        self.result.append('\n')
+    def do_br(self, *junk):
+        self.result.append('\n')
+    def handle_data(self, data):
+        self.result.append(data)
+    def cleaned_text(self):
+        return ''.join(self.result)
+def stripHTML(text):
+    ''' return text, with HTML tags stripped '''
+    c = Cleaner( )
+    try:
+      c.feed(text)
+    except sgmllib.SGMLParseError:
+      return text
+    else:
+      return c.cleaned_text( )
+def guessIsBinary(text):
+    ''' return whether we can heuristically guess 'text' is binary '''
+    if not text: return False
+    nMatches = float(len(kGuessBinaryRE.findall(text)))
+    return nMatches/len(text) &gt;= kGuessBinaryThreshold
+def guessIsHTML(text):
+    ''' return whether we can heuristically guess 'text' is HTML '''
+    if not text: return False
+    lt = len(text)
+    textWithoutTags = stripHTML(text)
+    tagsChars = float(lt-len(textWithoutTags))
+    return tagsChars/lt &gt;= kGuessHTMLThreshold
+def getMungedMessage(openFile):
+    openFile.seek(0)
+    p = email.FeedParser.FeedParser( )
+    p.feed(openFile.read( ))
+    m = p.close( )
+    # Fix up multipart content-type when message isn't multi-part
+    if m.get_main_type( )=="multipart" and not m.is_multipart( ):
+        t = m.get_payload(decode=1)
+        if guessIsBinary(t):
+            # Use generic "opaque" type
+            m.set_type("application/octet-stream")
+        elif guessIsHTML(t):
+            m.set_type("text/html")
+        else:
+            m.set_type("text/plain")
+    return m</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-13-SECT-9.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText"><tt>FeedParser</tt><a name="pythoncook2-CHP-13-ITERM-2854"></a> <a name="pythoncook2-CHP-13-ITERM-2855"></a> is a
+new module in the Python 2.4 Standard Library's
+<tt>email</tt> package. The module's name
+comes from the fact that it maintains a buffer, so that you
+don't have to give it all the text at once. Possibly
+more interesting is that the module doesn't raise an
+error when called on malformed messages; instead, it tries to make
+some sense of them and return a useful
+<tt>email.Message</tt> object. That's
+useful because so much mail is spam and so much spam is malformed.</P>
+
+<p class="docText">The other side of the coin, given that the heroic feed parser works
+on incorrect messages, is that you can get back from it an
+<tt>email.Message</tt> object that's
+internally inconsistent. This recipe tries to make sense of one kind
+of inconsistency: a message with a content-type header that says that
+the message is multipart, but the body isn't.</p>
+
+<p class="docText">The heuristics that the recipe uses to guess at the correct
+content-type are inevitably messy. Still, better to have such messy
+heuristics in recipes, rather than embedded forever in the Python
+Standard Library.</P>
+
+
+<a name="pythoncook2-CHP-13-SECT-9.4"></a>
+<H4 class="docSection2Title">See Also</h4>
+
+<p class="docText">Documentation for the standard library package
+<tt>email</tt> in the Python 2.4 <span class="docEmphasis">Library
+Reference</span>.<a name="pythoncook2-CHP-13-ITERM-2856"></a> <a name="pythoncook2-CHP-13-ITERM-2857"></a></p>
+
+
+
+<ul></ul></TD></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-13-sect-8.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-13-sect-10.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

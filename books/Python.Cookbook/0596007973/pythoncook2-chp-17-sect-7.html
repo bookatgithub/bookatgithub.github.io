@@ -1,0 +1,240 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;17.7.&nbsp;Accessing a Python Sequence Item-by-Item with the Iterator Protocol</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-17-sect-6.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-17-sect-8.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-17-SECT-7"></a>
+<h3 class="docSection1Title">Recipe 17.7. Accessing a Python Sequence Item-by-Item with the Iterator Protocol</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Luther Blissett</span></p>
+
+<a name="pythoncook2-CHP-17-SECT-7.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-17-ITERM-3073"></a>You want to write a
+Python-callable C extension that takes as an argument a Python
+sequence (or other iterable) and accesses it sequentially, one item
+at a time, requiring no extra storage.</P>
+
+
+<a name="pythoncook2-CHP-17-SECT-7.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">If you can afford to access the sequence item-by-item, without
+knowing in advance the number of items it has, you can often save
+memory by using <tt>PyObject_GetIter</tt> instead of
+<tt>PySequence_Fast</tt>:</p>
+
+<pre>#include &lt;Python.h&gt;
+static PyObject *totalIter(PyObject *self, PyObject *args)
+{
+    PyObject* seq;
+    PyObject* item;
+    double result;
+    /* get one argument as an iterator */
+    if(!PyArg_ParseTuple(args, "O", &amp;seq))
+        return 0;
+    <span class="docEmphBold">seq = PyObject_GetIter(seq);</span>
+    if(!seq)
+        return 0;
+    /* process data sequentially */
+    result = 0.0;
+    while((item=PyIter_Next(seq))) {
+        PyObject *fitem;
+        fitem = PyNumber_Float(item);
+        if(!fitem) {
+            Py_DECREF(seq);
+            Py_DECREF(item);
+            PyErr_SetString(PyExc_TypeError, "all items must be numbers");
+            return 0;
+        }
+        result += PyFloat_AS_DOUBLE(fitem);
+        Py_DECREF(fitem);
+        Py_DECREF(item);
+    }
+    /* clean up and return result */
+    Py_DECREF(seq);
+    return Py_BuildValue("d", result);
+}
+static PyMethodDef totitMethods[  ] = {
+    {"totit", totalIter, METH_VARARGS, "Sum a sequence of numbers."},
+    {0} /* sentinel */
+};
+void
+inittotit(void)
+{
+    (void) Py_InitModule("totit", totitMethods);
+}</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-17-SECT-7.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText"><tt>PyObject_GetIter</tt> is appropriate only when
+it's OK for the rest of your C code to get the items
+one at a time, without knowing in advance the number of items in
+total. When this condition is met,
+<tt>PyObject_GetIter</tt> gives you roughly the same
+performance as <tt>PySequence_Fast</tt> (if the input
+argument is a list or tuple), but it can save memory allocation, and
+therefore can run faster, if the input argument is an iterator or
+another kind of sequence or iterable. In this
+recipe's function, since we are just summing the
+items, it is indeed perfectly OK to get them one at a time, and we
+don't need to know in advance the total number;
+therefore, using <tt>PyObject_GetIter</tt> is preferable.
+(In the real world, you would use Python's built-in
+function <tt>sum</tt> for this specific functionality,
+rather than coding a dedicated C function, but then, this
+<span class="docEmphasis">is</span> meant to be just an example!)</P>
+
+<p class="docText"><tt>PyObject_GetIter</tt> takes one argument: a Python
+object from which an iterator is desired (much like
+Python's <tt>iter</tt> built-in function).
+It either returns <tt>0</tt>, indicating an error, or an
+iterator object, on which you can repeatedly call
+<tt>PyIter_Next</tt> to get the next item (or
+<tt>0</tt>, <tt>NULL</tt>, which does not
+indicate an error, but rather indicates the end of the iteration).
+Both <tt>PyObject_GetIter</tt> and
+<tt>PyIter_Next</tt> return new references, so we must use
+<tt>Py_DECREF</tt> when we're done with
+the respective objects.</p>
+
+<p class="docText">As usual, the best way to build this extension (assuming that
+you've saved it as a file named
+<I>totit.c</I>) is with the
+<tt>distutils</tt> package. Place in the same directory as
+the C source a file named <i>setup.py</i> such as:</p>
+
+<pre>from distutils.core import setup, Extension
+setup(name="totit", maintainer="Luther Blissett", maintainer_email=
+    "situ@tioni.st", ext_modules=[Extension('totit', sources=['totit.c'])]
+)</pre><br>
+
+
+<p class="docText">then build and install by running:</P>
+
+<pre>&lt;m&gt;$ python setup.py install&lt;/m&gt;</pre><br>
+
+
+<p class="docText">Part of the appeal of this approach is that it works on any platform,
+assuming that you have access to the same C compiler used to build
+your version of Python, and permission to write on the
+<i>site-packages</I> directory where the resulting
+dynamically loaded library gets installed.</p>
+
+<p class="docText">Since Python extensions are often coded in C to maximize performance,
+it's interesting to measure performance compared to
+pure Python code dealing with the same task. A typical measurement
+setup might be a script such as the following
+<I>timon.py</i>:</P>
+
+<pre>import timeit, operator
+from total import total
+from totit import totit
+def timo(fn, sq, init):
+    T = timeit.Timer('timon.%s(%s)'%(fn,sq), 'import timon\n'+init)
+    print ' %5.5s: %5.2f' % (fn, T.timeit(40000))
+def totpy(x):
+    result = 0.0
+    for item in x: result += item
+    return result
+def totre(x):
+    return reduce(operator.add, x, 0.0)
+def totsu(x):
+    return sum(x, 0.0)
+if _ _name_ _ == '_ _main_ _':
+    print 'on lists:'
+    for f in 'totre totpy total totit totsu'.split( ):
+        timo(f, 'seq', 'seq=range(2000)')
+    print 'on iters:'
+    for f in 'totre totpy total totit totsu'.split( ):
+        timo(f, 'g( )', 'def g( ):\n  for x in range(2000): yield x')</pre><BR>
+
+
+<p class="docText">This script uses the <tt>timeit</tt> module of the Python
+Standard Library to measure accurately 40,000 calls to each function
+on 2,000-item lists and 2,000-item generators. The
+<tt>timeit.Timer</tt> constructor takes two string
+arguments: first the statement we're timing, then
+the setup statements that run before timing begins. Here, the
+statement we're timing calls functions in this
+module; therefore, the setup statements must import this
+modulewhich is why we add the <tt>import timon</tt>
+at the beginning of the setup statement string. I have also taken
+care to make all these functions strictly comparable, by having them
+all sum <tt>float</tt>s (not just <tt>int</tt>s).
+This purpose is the reason that I provide the explicit
+<tt>0.0</tt> initial arguments to built-in functions
+<tt>reduce</tt> and <tt>sum</tt>.</p>
+
+<p class="docText">On my machine, running with the command-line switch
+<tt>-O</tt> so that Python can optimize operations a little
+bit, the timing results on Python 2.3 are:</p>
+
+<pre>&lt;m&gt;$ python -O timon.py&lt;/m&gt;
+<b>on lists:</b>
+<b> totre: 136.04</b>
+<b> totpy: 118.18</b>
+<b> total: 56.61</b>
+<b> totit: 59.66</b>
+<b> totsu: 74.11</b>
+<b>on iters:</b>
+<b> totre: 220.86</b>
+<b> totpy: 198.98</b>
+<b> total: 199.72</b>
+<b> totit: 201.70</b>
+<B> totsu: 157.44</b></pre><BR>
+
+
+<p class="docText">As you can see, the most important optimization is to avoid the
+"attractive nuisance" of the
+<tt>reduce</tt> built-in function: even a pure Python loop
+is faster! When we're dealing with lists, the
+special-purpose C-coded extensions presented in the last two recipes
+are fastest; but when we're dealing with generators,
+the fastest solution is provided by the built-in function
+<tt>sum</tt>. In practice, one would always use
+<tt>sum</tt> for this functionality, rather than bothering
+to code or expose special-purpose C functions.</p>
+
+
+<a name="pythoncook2-CHP-17-SECT-7.4"></a>
+<h4 class="docSection2Title">See Also</H4>
+
+<p class="docText">The <span class="docEmphasis">Extending and Embedding</span> manual is
+available as part of the standard Python documentation set at
+<a class="docLink" target="_blank" href="http://www.python.org/doc/current/ext/ext.html">http://www.python.org/doc/current/ext/ext.html</a>;
+documentation on the Python C API is at <a class="docLink" target="_blank" href="http://www.python.org/doc/current/api/api.html">http://www.python.org/doc/current/api/api.html</a>;
+the section "Distributing Python
+Modules" in the standard Python documentation set is
+still incomplete but is a good source of information on the
+<tt>distutils</tt> package: <a class="docLink" href="pythoncook2-CHP-19.html#pythoncook2-CHP-19">Chapter 19</a>
+of this book covers iterators and generators in pure Python terms;
+<span class="docEmphasis">Python in a Nutshell</span> covers the essentials of
+extending and embedding, of the Python C API, of the
+<tt>distutils</tt> package, and of iterators;
+Python's <span class="docEmphasis">Library Reference</span>
+covers the <tt>timeit</tt> module.<a name="pythoncook2-CHP-17-ITERM-3074"></a></p>
+
+
+
+<a href="5991535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-17-sect-6.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-17-sect-8.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

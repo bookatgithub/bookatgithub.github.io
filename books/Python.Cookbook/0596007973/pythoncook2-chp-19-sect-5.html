@@ -1,0 +1,158 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;19.5.&nbsp;Automatically Unpacking the Needed Number of Items</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-19-sect-4.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-19-sect-6.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-19-SECT-5"></a>
+<h3 class="docSection1Title" id="409771-1000">Recipe 19.5. Automatically Unpacking the Needed Number of Items</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Sami Hangaslammi, Peter Cogolo</span></p>
+
+<a name="pythoncook2-CHP-19-SECT-5.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText">You want to unpack (and bind to names) some items from the
+"front" of a sequence and bind
+another name to "the rest" of the
+sequence (the part you didn't unpack). You want to
+obtain the number of items to unpack automatically, based on how many
+names are on the left of the <tt>=</tt> sign in a multiple
+unpacking assignment.</P>
+
+
+<a name="pythoncook2-CHP-19-SECT-5.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">The previous approach in <a class="docLink" href="pythoncook2-CHP-19-SECT-4.html#pythoncook2-CHP-19-SECT-4">Recipe 19.4</a> is clean and elegant, but
+you have to "manually" pass the
+number of items to unpack. If you're willing to
+stoop to a little black magic, peering into stack frames and
+bytecodes, you may be able to bypass that requirement:</p>
+
+<pre>import inspect, opcode
+def how_many_unpacked( ):
+    f = inspect.currentframe( ).f_back.f_back
+    if ord(f.f_code.co_code[f.f_lasti]) == opcode.opmap['UNPACK_SEQUENCE']:
+        return ord(f.f_code.co_code[f.f_lasti+1])
+    raise ValueError, "Must be a generator on RHS of a multiple assignment!"
+def unpack(iterable):
+    iterator = iter(iterable)
+    for num in xrange(how_many_unpacked( )-1):
+        yield iterator.next( )
+    yield iterator
+if _ _name_ _ == '_ _main_ _':
+    t5 = range(1, 6)
+    a, b, c = unpack(t5)
+    print a, b, list(c)</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-19-SECT-5.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">While arguably spiffy, this recipe is a bit fragile, as you could
+well expect from a function relying on introspection on bytecode:
+while the recipe works in Python 2.3 and 2.4, any future release of
+Python might easily generate bytecode for a multiple unpacking
+assignment in a somewhat different way, and thus break the recipe.</P>
+
+<p class="docText">Moreover, as presented, the recipe relies on
+<i>how_many_unpacked</I> being called specifically from a
+generator; if you call it from an ordinary function, it does not
+work, since in that case the <tt>UNPACK_SEQUENCE</tt>
+bytecode in the caller's caller happens to fall at
+offset <tt>f.f_lasti+3</tt> instead of
+<tt>f.f_lasti</tt>.</P>
+
+<p class="docText">For example, the following code doesn't work with
+the recipe's Solution because
+<i>enumfunc</i> is an ordinary function, not a generator:</p>
+
+<pre>def enumfunc( ):
+    return xrange(how_many_unpacked( ))
+a, b, c, d, e = enumfunc( )</pre><br>
+
+
+<p class="docText">However, the following code does work:</P>
+
+<pre>def enumgen( ):
+    for x in xrange(how_many_unpacked( )): yield x
+a, b, c, d, e = enumgen( )</pre><br>
+
+
+<p class="docText">because <i>enumgen</I> <span class="docEmphasis">is</span> a generator.</p>
+
+<p class="docText">In other words, this recipe is a hackarguably a
+<span class="docEmphasis">neat</span> hack (to the point that one of the editors
+of this Cookbook successfully lobbied the
+"other" two and managed to obtain
+the recipe's inclusion in this volume), but,
+nevertheless, a hack. Therefore, you probably do not want to
+<span class="docEmphasis">use</span> this approach in
+"production code", meaning code
+that must stay around for a long time and will be maintained across
+future versions of Python.</P>
+
+<p class="docText">Nevertheless, you <span class="docEmphasis">could</span> make
+<i>how_many_unpacked</I> work in both contexts by making it
+a little bit more complicated:</P>
+
+<pre>def how_many_unpacked( ):
+    f = inspect.currentframe( ).f_back.f_back
+    bytecode = f.f_code.co_code
+    ups_code = opcode.opmap['UNPACK_SEQUENCE']
+    if ord(bytecode[f.f_lasti]) == ups_code:
+        return ord(bytecode[f.f_lasti+1])
+    elif ord(bytecode[f.f_lasti+3]) == ups_code:
+        return ord(bytecode[f.f_lasti+4])
+    else:
+        raise ValueError, "Must be on the RHS of a multiple assignment!"</pre><br>
+
+
+<p class="docText">With this more complicated variant,
+<i>how_many_unpacked</i> would work when called from either
+a generator or an ordinary function. However, I recommend sticking
+with the simpler version presented in this recipe's
+Solution, and calling <i>how_many_unpacked</i> only from
+the given <i>unpack</i> generator, or a few other specific
+generators.</p>
+
+<p class="docText">Even such a limited use can be considered debatable, since most
+Pythonistas prefer clarity and simplicity to the risky kind of
+"convenience" that can be obtained
+by such shortcuts. After all, this recipe's only
+advantage, in comparison to <a class="docLink" href="pythoncook2-CHP-19-SECT-4.html#pythoncook2-CHP-19-SECT-4">Recipe 19.4</a>, is that you save yourself
+the trouble of passing to <i>unpack</i> the number of items
+required, which is nice, but clearly, not all that
+crucial."<a name="pythoncook2-CHP-19-ITERM-3126"></a></p>
+
+
+<a name="pythoncook2-CHP-19-SECT-5.4"></a>
+<h4 class="docSection2Title">See Also</h4>
+
+<p class="docText"><a class="docLink" href="pythoncook2-CHP-19-SECT-4.html#pythoncook2-CHP-19-SECT-4">Recipe 19.4</a>;
+<span class="docEmphasis">Language Reference</span> and <span class="docEmphasis">Python in a
+Nutshell</span> about multiple unpacking assignments;
+<span class="docEmphasis">Library Reference</span> and <span class="docEmphasis">Python in a
+Nutshell</span> about library modules <tt>inspect</tt>
+and <tt>opcode</tt>.</P>
+
+
+
+<UL></ul></td></TR></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-19-sect-4.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-19-sect-6.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

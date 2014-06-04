@@ -1,0 +1,143 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;14.10.&nbsp;Finding an Internet Explorer Cookie</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-14-sect-9.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-14-sect-11.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-14-SECT-10"></a>
+<h3 class="docSection1Title">Recipe 14.10. Finding an Internet Explorer Cookie</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Andy McKay</span></p>
+
+<a name="pythoncook2-CHP-14-SECT-10.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-14-ITERM-2932"></a> <a name="pythoncook2-CHP-14-ITERM-2933"></a>You need to find a specific
+IE cookie.</P>
+
+
+<a name="pythoncook2-CHP-14-SECT-10.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">Cookies that your browser has downloaded contain potentially useful
+information, so it's important to know how to get at
+them. With Internet Explorer (IE), one simple approach is to access
+the registry to find where the cookies are, then read them as files.
+Here is a module with the function you need for that purpose:</p>
+
+<pre>import re, os, glob
+import win32api, win32con
+def _getLocation( ):
+    """ Examines the registry to find the cookie folder IE uses """
+    key = r'Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders'
+    regkey = win32api.RegOpenKey(win32con.HKEY_CURRENT_USER, key, 0,
+        win32con.KEY_ALL_ACCESS)
+    num = win32api.RegQueryInfoKey(regkey)[1]
+    for x in range(num):
+        k = win32api.RegEnumValue(regkey, x)
+        if k[0] == 'Cookies':
+            return k[1]
+def _getCookieFiles(location, name):
+    """ Rummages through cookie folder, returns filenames including `name'.
+    `name' is normally the domain, e.g 'activestate' to get cookies for
+    activestate.com (also e.g. for activestate.foo.com, but you can
+    filter out such accidental hits later). """
+    filemask = os.path.join(location, '*%s*' % name)
+    return glob.glob(filemask)
+def _findCookie(filenames, cookie_re):
+    """ Look through a group of files for a cookie that satisfies a
+    given compiled RE, returning first such cookie found, or None. """
+    for file in filenames:
+        data = open(file, 'r').read( )
+        m = cookie_re.search(data)
+        if m: return m.group(1)
+def findIECookie(domain, cookie):
+    """ Finds the cookie for a given domain from IE cookie files """
+    try:
+        l = _getLocation( )
+    except Exception, err:
+        # Print a debug message
+        print "Error pulling registry key:", err
+        return None
+    # Found the key; now find the files and look through them
+    f = _getCookieFiles(l, domain)
+    if f:
+        cookie_re = re.compile('%s\n(.*?)\n' % cookie)
+        return _findCookie(f, cookie_re)
+    else:
+        print "No cookies for domain (%s) found" % domain
+        return None
+if _ _name_ _=='_ _main_ _':
+    print findIECookie(domain='kuro5hin', cookie='k5-new_session')</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-14-SECT-10.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">While Netscape cookies are in a text file, IE keeps cookies as files
+in a directory, and you need to access the registry to find which
+directory that is. To access the Windows registry, this recipe uses
+the <tt>PyWin32</tt> Windows-specific Python extensions; as
+an alternative, you could use the <tt>_winreg</tt> module
+that is part of Python's standard distribution for
+Windows. This recipe's code has been tested and
+works on IE 5 and 6.</P>
+
+<p class="docText">In the recipe, the <i>_getLocation</I> function accesses
+the registry and finds and returns the directory that IE is using for
+cookie files. The <I>_getCookieFiles</i> function receives
+the directory as an argument and uses standard module
+<tt>glob</tt> to return all filenames in the directory
+whose names include a particular requested domain name. The
+<i>_findCookie</i> function opens and reads all such files
+in turn, until it finds one whose contents satisfy a compiled regular
+expression that the function receives as an argument. It then returns
+the substring of the file's contents corresponding
+to the first parenthesized group in the regular expression, or
+<tt>None</tt> when no satisfactory file is found. As the
+leading underscore in the names indicates, these are all internal
+functions, used only as implementation details of the only function
+this module is meant to expose, namely <i>findIECookie</I>,
+which uses the other functions to locate and return the value of a
+specific cookie for a given domain.</p>
+
+<p class="docText">An alternative to this recipe would be to write a Python extension,
+or use <tt>calldll</tt> or <tt>ctypes</tt>, to
+access the <tt>InternetGetCookie</tt> API function in
+<i>Wininet.DLL</I>, as documented on MSDN (Microsoft
+Developer Network).</p>
+
+
+<a name="pythoncook2-CHP-14-SECT-10.4"></a>
+<H4 class="docSection2Title">See Also</h4>
+
+<p class="docText">The Unofficial Cookie FAQ (<a class="docLink" target="_blank" href="http://www.cookiecentral.com/faq/">http://www.cookiecentral.com/faq/</a>) is
+chock-full of information on cookies; documentation for
+<tt>win32api</tt> and <tt>win32con</tt> in
+PyWin32 (<a class="docLink" target="_blank" href="http://starship.python.net/crew/mhammond/win32/Downloads.html">http://starship.python.net/crew/mhammond/win32/Downloads.html</a>)
+or ActivePython (<a class="docLink" target="_blank" href="http://www.activestate.com/ActivePython/">http://www.activestate.com/ActivePython/</a>);
+Windows API documentation available from Microsoft (<a class="docLink" target="_blank" href="http://msdn.microsoft.com">http://msdn.microsoft.com</a>); Mark Hammond and
+Andy Robinson, <span class="docEmphasis">Python Programming on Win32</span>
+(O'Reilly); <tt>calldll</tt> is available
+at Sam Rushing's page (<a class="docLink" target="_blank" href="http://www.nightmare.com/~rushing/dynwin/">http://www.nightmare.com/~rushing/dynwin/</a>);
+<tt>ctypes</tt> is at <a class="docLink" target="_blank" href="http://sourceforge.net/projects/ctypes">http://sourceforge.net/projects/ctypes</a>.<a name="pythoncook2-CHP-14-ITERM-2934"></a> <a name="pythoncook2-CHP-14-ITERM-2935"></a></P>
+
+
+
+<a href="5991535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><UL></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-14-sect-9.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-14-sect-11.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

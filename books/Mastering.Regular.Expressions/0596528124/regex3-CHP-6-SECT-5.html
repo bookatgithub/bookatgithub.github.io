@@ -1,0 +1,353 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Section 6.5.&nbsp; Common Optimizations</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=regex3-CHP-6-SECT-4.html><img src="images/prev.gif" width="60" height="17" border="0" align="absmiddle" alt="Previous Page"></a>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=regex3-CHP-6-SECT-6.html><img src="images/next.gif" width="60" height="17" border="0" align="absmiddle" alt="Next Page"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><a name="regex3-CHP-6-SECT-5"></a>
+<H3 id="title-IDA5MGMK" class="docSection1Title">6.5. Common Optimizations</H3>
+<p class="docText">A smart regex implementation has many ways to optimize how quickly it produces the results you ask of it. Optimizations usually fall into two classes:</P>
+<UL><li><p class="docList"><span class="docEmphStrong">Doing something faster</span> Some types of operations, such as <img src=images/U2308.jpg border=0><tt>\d+</tt><img src=images/U230B.jpg border=0>, are so common that the engine might have special-case handling set up to execute them faster than the general engine mechanics would.</P></li><li><p class="docList"><span class="docEmphStrong">Avoiding work</span> If the engine can decide that some particular operation is unneeded in producing a correct result, or perhaps that some operation can be applied to less text than originally thought, skipping those operations can result in a time savings. For example, a regex beginning with <img src=images/U2308.jpg border=0><tt>\A</tt><img src=images/U230B.jpg border=0> (start-of-line) can match only when started at the beginning of the string, so if no match is found there, the transmission need not bother checking from other positions.</P></LI></ul>
+<p class="docText">Over the next dozen or so pages, we'll look at many of the different and ingenious optimizations that I've seen. No one language or tool has them all, or even the same mix as another language or tool, and I'm sure that there are plenty of other optimizations that I've not yet seen, but this chapter should leave you much more empowered to take advantage of whatever optimizations your tool offers.</p>
+<a name="regex3-CHP-6-SECT-5.1"></a>
+<H4 id="title-IDA5NGMK" class="docSection2Title">6.5.1. No Free Lunch</H4>
+<p class="docText">Optimizations often result in a savings, but not always. There's a benefit only if the amount of time saved is more than the extra time spent checking to see whether the optimization<a name="IDX-CHP-6-1854"></a> 
+ is applicable in the first place. In fact, if the engine checks to see if an optimization is applicable and the answer is "no," the overall result is <span class="docEmphasis">slower</span> because it includes the fruitless check on top of the subsequent normal application of the regex. So, there's a balance among how much time an optimization takes, how much time it saves, and importantly, how likely it is to be invoked.</P>
+<p class="docText">Let's look at an example. The expression <img src=images/U2308.jpg border=0><tt>\b\B</tt><img src=images/U230B.jpg border=0><a name="IDX-CHP-6-1855"></a> 
+<a name="IDX-CHP-6-1856"></a> 
+<a name="IDX-CHP-6-1857"></a> 
+ (<span class="docEmphasis">word boundary</span> at the same location as a <span class="docEmphasis">non-word boundary)</span> can't possibly match. If an engine were to realize that a regex contained <img src=images/U2308.jpg border=0><tt>\b\B</tt><img src=images/U230B.jpg border=0> in such a way that it was required for any match, the engine would know that the overall regex could never match, and hence never have to actually apply that regex. Rather, it could always immediately report failure. If applied to long strings, the savings could be substantial.</p>
+<p class="docText">Yet, no engine that I know of actually uses this optimization. Why not? Well, first of all, it's not necessarily easy to decide whether it would apply to a particular regex. It's certainly possible for a regex to have <img src=images/U2308.jpg border=0><tt>\b\B</tt><img src=images/U230B.jpg border=0> somewhere in it, yet still match, so the engine has to do extra work ahead of time to be absolutely certain. Still, the savings could be truly substantial, so it could be worth doing the extra work if <img src=images/U2308.jpg border=0><tt>\b\B</tt><img src=images/U230B.jpg border=0> was expected to be common.</P>
+<p class="docText">But, it's not common (it's silly!)<sup class="docFootnote"><a class="docLink" href="#regex3-CHP-6-FN-4">[<img src=images/U2020.jpg border=0>]</a></sup> so even though the savings could be huge in the rare case, the added overhead is not worth slowing down the common case.</P><blockquote><p class="docFootnote"><sup><a name="regex3-CHP-6-FN-4">[<img src=images/U2020.jpg border=0>]</a></sup> Actually, in times past, I would use <img src=images/U2308.jpg border=0><tt>\b\B</tt><img src=images/U230B.jpg border=0> to force one part of a larger expression to fail, during testing. For example, I might insert it at the marked point of <img src=images/U2308.jpg border=0><tt>&#8943;(this<sub><img src=images/U22CF.jpg border=0></sub>|this other)&#8943;</tt><img src=images/U230B.jpg border=0> to guaranteed failure of the first alternative. These days, when I need a "must fail" component, I use <img src=images/U2308.jpg border=0><tt>(?!)</tt><img src=images/U230B.jpg border=0>.<a name="IDX-CHP-6-1858"></a> 
+ You can see an interesting Perl-specific example of this on page 333.</p></blockquote>
+
+<a name="regex3-CHP-6-SECT-5.2"></a>
+<h4 id="title-IDAGQGMK" class="docSection2Title">6.5.2. Everyone's Lunch is Different</h4>
+<a name="IDX-CHP-6-1859"></a> 
+<a name="IDX-CHP-6-1860"></a> 
+<a name="IDX-CHP-6-1861"></a> 
+
+<p class="docText">Keep this in mind when looking at the various kinds of optimizations that this chapter discusses. Even though I've tried to pick simple, clean names for each one, it may well be that every engine that implements it does so in a different way. A seemingly innocuous change in a regex can cause it to become substantially faster with one implementation, but substantially slower with another.</p>
+
+<a name="regex3-CHP-6-SECT-5.3"></a>
+<H4 id="title-IDA3QGMK" class="docSection2Title">6.5.3. The Mechanics of Regex Application</h4>
+<p class="docText">Before looking at how advanced systems optimize their regex performance, and how we can take advantage of those optimizations, it's important to first understand the basics of regex application. We've already covered the details about backtracking, but in this short section, we'll look at the broader picture.</p>
+<p class="docText">Here are the main steps taken in applying a regular expression to a target string:</P>
+<ul><li><p class="docList"><span class="docEmphasis">1</span>.<span class="docEmphStrong">Regex Compilation</span> The regex is inspected for errors, and if valid, compiled into an internal form.</p></li><li><p class="docList"><span class="docEmphasis">2</span>.<span class="docEmphStrong">Transmission Begins</span> The transmission "positions" the engine at the start of the target string.</p></li><li><p class="docList"><span class="docEmphasis">3</span>.<span class="docEmphStrong">Component Tests</span> The engine works through the regex and the text, moving from component to component in the regex, as described in <a class="docLink" href="regex3-CHP-4.html#regex3-CHP-4">Chapter 4</a>. We've already covered backtracking for NFAs in great detail, but there are a few additional points to mention:</p><ul><li><p class="docList">With components next to each other, as with the <img src=images/U2308.jpg border=0><tt>S</tt><img src=images/U230B.jpg border=0>, <img src=images/U2308.jpg border=0><tt>u</tt><img src=images/U230B.jpg border=0>, <img src=images/U2308.jpg border=0><tt>b</tt><img src=images/U230B.jpg border=0>, <img src=images/U2308.jpg border=0><tt>j</tt><img src=images/U230B.jpg border=0>, <img src=images/U2308.jpg border=0><tt>e</tt><img src=images/U230B.jpg border=0> ..., of <img src=images/U2308.jpg border=0><tt>Subject</tt><img src=images/U230B.jpg border=0>, each component is tried in turn, stopping only if one fails.</p></li><li><p class="docList">With quantifiers, control jumps between the quantifier (to see whether the quantifier should continue to make additional attempts) and the component quantified (to test whether it matches).</p></li><li><p class="docList">There is some overhead when control enters or exits a set of capturing parentheses. The actual text matched by the parentheses must be remembered so that <tt>$1</tt> and the like are supported. Since a set of parentheses may be "backtracked out of," the state of the parentheses is part of the states used for backtracking, so entering and exiting capturing parentheses requires some modification of that state.</P></li></UL></li><li><p class="docList"><span class="docEmphasis">4</span>.<span class="docEmphStrong">Finding a Match</span> If a match is found, a Traditional NFA "locks in" the current state and reports overall success. On the other hand, a POSIX NFA merely remembers the possible match if it is the longest seen so far, and continues with any saved states still available. Once no more states are left, the longest match that was seen is the one reported.</P></LI><LI><p class="docList"><span class="docEmphasis">5</span>.<span class="docEmphStrong">Transmission Bump-Along</span> If no match is found, the transmission bumps the engine along to the next character in the text, and the engine applies the regex all over again (going back to step 3).</P></li><LI><p class="docList"><span class="docEmphasis">6</span>.<span class="docEmphStrong">Overall Failure</span> If no match is found after having applied the engine at every character in the target string (and after the last character as well), overall failure must be reported.</p></li></UL>
+<p class="docText">The next few sections discuss the many ways this work can be reduced by smart implementations, and taken advantage of by smart users.</P>
+
+<a name="regex3-CHP-6-SECT-5.4"></a>
+<h4 id="title-IDAFUGMK" class="docSection2Title">6.5.4. Pre-Application Optimizations</h4>
+<a name="IDX-CHP-6-1862"></a> 
+<a name="IDX-CHP-6-1863"></a> 
+<a name="IDX-CHP-6-1864"></a> 
+
+<p class="docText">A good regex engine implementation can reduce the amount of work that needs to be done before the actual application of a regex, and sometimes can even decide quickly beforehand that the regex can never match, thereby avoiding the need to even apply the regex in the first place.</P>
+<a name="regex3-CHP-6-SECT-5.4.1"></a>
+<H5 id="title-IDA3UGMK" class="docSection3Title">6.5.4.1. Compile caching</H5>
+<a name="IDX-CHP-6-1865"></a> 
+
+<a name="IDX-CHP-6-1866"></a> 
+
+<p class="docText">Recall the mini mail program from <a class="docLink" href="regex3-CHP-2.html#regex3-CHP-2">Chapter 2</a> (&#9758; 57). The skeleton of the main loop, which processes every line of the header, looks like:</p>
+<pre>
+    while (&#8943;) {
+        if ($line =~ m/<span class="docEmphStrong">^\s*$</span>/ ) &#8943;
+        if ($line =~ m/<span class="docEmphStrong">^Subject: (.*)</span>/) &#8943;
+        if ($line =~ m/<span class="docEmphStrong">^Date: (.*)</span>/) &#8943;
+        if ($line =~ m/<span class="docEmphStrong">^Reply-To: (\S+)</span>/)&#8943;
+        if ($line =~ m/<span class="docEmphStrong">^From: (\S+) \(([^()]*)\)</span>/)&#8943;
+         <img src=images/U22EE.jpg border=0>
+    }
+</pre><BR>
+
+<p class="docText">The first thing that must be done before a regular expression can be used is that it must be inspected for errors, and compiled into an internal form. Once compiled, that internal form can be used in checking many strings, but will it? It would certainly be a waste of time to recompile each regex each time through the loop. Rather, it is much more time efficient (at the cost of some memory) to save, or <span class="docEmphasis">cache</span>,<a name="IDX-CHP-6-1867"></a> 
+ the internal form after it's first compiled, and then use that same internal form for each subsequent application during the loop.</P>
+<p class="docText">The extent to which this can be done depends on the type of regular-expression handling the application offers. As described starting on page 93, the three types of handling are <span class="docEmphasis">integrated, procedural</span>, and <span class="docEmphasis">object-oriented</span>.</p>
+
+<a name="regex3-CHP-6-SECT-5.4.2"></a>
+<h5 id="title-IDA4WGMK" class="docSection3Title">6.5.4.2. Compile caching in the integrated approach</h5>
+<a name="IDX-CHP-6-1868"></a> 
+
+<a name="IDX-CHP-6-1869"></a> 
+<a name="IDX-CHP-6-1870"></a> 
+<a name="IDX-CHP-6-1871"></a> 
+<a name="IDX-CHP-6-1872"></a> 
+<a name="IDX-CHP-6-1873"></a> 
+<a name="IDX-CHP-6-1874"></a> 
+
+<p class="docText">An integrated approach, like Perl's and awk's, allows compile caching<a name="IDX-CHP-6-1875"></a> 
+ to be done with ease. Internally, each regex is associated with a particular part of the code, and the compiled form can be associated with the code the first time it's executed, and merely referenced subsequent times. This provides for the maximum optimization of speed at the cost of the memory needed to hold all the cached expressions.</p>
+<a name="regex3-CHP-6-SIDEBAR-2"></a><P><table cellspacing="0" width="90%" border="1" cellpadding="5"><tr><td>
+<H2 class="docSidebarTitle">DFAs, Tcl, and Hand-Tuning Regular Expressions</h2>
+<p class="docText">For the most part, the optimizations described in this chapter simply don't apply to DFAs. The <span class="docEmphasis">compile caching</span> optimization, discussed on page 242, does apply to all types of engines, but none of the techniques for hand-tuning discussed throughout this chapter apply to DFAs. As <a class="docLink" href="regex3-CHP-4.html#regex3-CHP-4">Chapter 4</a> makes clear (&#9758; 157), expressions that are logically equivalent  <img src=images/U2308.jpg border=0><tt>this|that</tt><img src=images/U230B.jpg border=0> and <img src=images/U2308.jpg border=0><tt>th(is|at)</tt><img src=images/U230B.jpg border=0>, for example  <span class="docEmphasis">are</span> equivalent to a DFA. It's because they're not necessarily equivalent to an NFA that this chapter exists.</p>
+<p class="docText">But what about Tcl, which has a hybrid<a name="IDX-CHP-6-1876"></a> 
+ DFA/NFA engine? Tcl's regex engine was custom built for Tcl by regular-expression legend Henry Spencer (&#9758; 88), who has done a fantastic job blending the best of both DFA and NFA worlds. Henry noted himself in an April 2000 Usenet posting:</p>
+<blockquote>
+<p class="docText">In general, the Tcl RE-matching engine is much less sensitive to the exact form of the RE than traditional matching engines. Things that it does quickly will be fast no matter how you write them; things that it does slowly will be slow no matter how you write them. The old folklore about hand-optimizing your REs simply does not apply.</p>
+</blockquote>
+<p class="docText">Henry's Tcl regex engine is an important step forward. If this technology were more widespread, much of this chapter would not be needed.</p>
+</td></tr></table></p><br>
+<p class="docText">The ability to interpolate variables into the regex operand (that is, use the contents of a variable as part of the regular expression) throws somewhat of a monkey wrench into the caching plan. When variables are interpolated, as with something like <tt><span class="docEmphStrong">m/</span>^Subject:&#8226;\Q <span class="docEmphStrong">$DesiredSubject</span>\E\s*$/</tt>, the actual regular expression may change from iteration to iteration because it depends on the value in the variable, which can change from iteration to iteration. If it changes every time, the regex must be compiled every time, so nothing can be reused.</p>
+<p class="docText">Well, the regular expression <span class="docEmphasis">might</span> change with each iteration, but that doesn't mean it needs to be recompiled each time. An intermediate optimization is to check the results of the interpolation (the actual value to be used as the regular expression), and recompile only if it's different from the previous time. If the value actually changes each time, there's no optimization, as the regex indeed must be recompiled each time. But, if it changes only sporadically, the regular expression need only be checked (but not compiled) most times, yielding a handsome optimization.</p>
+
+<a name="regex3-CHP-6-SECT-5.4.3"></a>
+<h5 id="title-IDAH0GMK" class="docSection3Title">6.5.4.3. Compile caching in the procedural approach</h5>
+<a name="IDX-CHP-6-1877"></a> 
+
+<a name="IDX-CHP-6-1878"></a> 
+<a name="IDX-CHP-6-1879"></a> 
+
+<p class="docText">With an integrated approach, regex use is associated with a particular location in a program, so the compiled version of the regex can be cached and used the next time that location in the program is executed. But, with a procedural approach, there is just a general "apply this regex" function that is called as needed. This means that there's no location in a program with which to associate the compiled form, so the next time the function is called, the regex must be compiled from scratch again. That's how it works in theory, but in practice, it's much too inefficient to abandon all attempts at caching. Rather, what's often done is that a mapping of recently used regex patterns is maintained, linking each pattern to its resulting compiled form.</p>
+<p class="docText">When the apply-this-regex function is called, it compares the pattern argument with those in the cache of saved regular expressions, and uses the cached version if it's there. If it's not, it goes ahead and compiles the regex, saving it to the cache (and perhaps flushing an old one out, if the cache has a size limit). When the cache has become full and a compiled form must be thrown out, it's usually the least recently used one.</p>
+<p class="docText">GNU Emacs<a name="IDX-CHP-6-1880"></a> 
+ keeps a cache of up to 20 expressions. Tcl<a name="IDX-CHP-6-1881"></a> 
+ keeps up to 30. PHP keeps more than 4,000. The .NET Framework by default keeps up to only 15 expressions cached, although that can be changed on the fly or even disabled (&#9758; 432).</p>
+<p class="docText">A large cache size can be important because if more regular expressions are used within a loop than the size of the cache, by the time the loop restarts, the first regex will have been flushed from the cache, guaranteeing that every expression will have to be compiled from scratch every time.</p>
+
+<a name="regex3-CHP-6-SECT-5.4.4"></a>
+<H5 id="title-IDAQ1GMK" class="docSection3Title">6.5.4.4. Compile caching in the object-oriented approach</h5>
+<a name="IDX-CHP-6-1882"></a> 
+
+<p class="docText">The object-oriented approach puts control of when a regex is compiled directly into the programmer's hands. Compilation of the regex is exposed to the user via object constructors such as <tt><span class="docEmphStrong">New Regex, re.compile</span></tt>, and <tt><span class="docEmphStrong">Pattern.compile</span></tt> (which are from .NET, Python, and <tt>java.util.regex</tt>, respectively). In the simple examples from <a class="docLink" href="regex3-CHP-3.html#regex3-CHP-3">Chapter 3</a> where these are introduced (starting on page 95), the compilation is done just before the regex is actually used, but there's no reason that they can't be done earlier (such as sometime before a loop, or even at program initialization) and then used freely as needed. This is done, in the benchmarking examples on pages 235, 237, and 238.</P>
+<p class="docText">The object-oriented approach also affords the programmer control over when a compiled form is thrown away, via the object's destructor. Being able to immediately throw away compiled forms that will no longer be needed saves memory.</p>
+
+<a name="regex3-CHP-6-SECT-5.4.5"></a>
+<h5 id="title-IDAT2GMK" class="docSection3Title">6.5.4.5. Pre-check of required character/substring optimization</H5>
+<a name="IDX-CHP-6-1883"></a> 
+<a name="IDX-CHP-6-1884"></a> 
+<a name="IDX-CHP-6-1885"></a> 
+<a name="IDX-CHP-6-1886"></a> 
+<a name="IDX-CHP-6-1887"></a> 
+<a name="IDX-CHP-6-1888"></a> 
+<a name="IDX-CHP-6-1889"></a> 
+<a name="IDX-CHP-6-1890"></a> 
+<a name="IDX-CHP-6-1891"></a> 
+<a name="IDX-CHP-6-1892"></a> 
+<a name="IDX-CHP-6-1893"></a> 
+<a name="IDX-CHP-6-1894"></a> 
+<a name="IDX-CHP-6-1895"></a> 
+<a name="IDX-CHP-6-1896"></a> 
+<a name="IDX-CHP-6-1897"></a> 
+
+<p class="docText">Searching a string for a particular character (or perhaps some literal substring) is a much "lighter" operation than applying a full NFA regular expression, so some systems do extra analysis of the regex during compilation to determine if there are any characters or substrings that are <span class="docEmphasis">required</span> to exist in the target for a possible match. Then, before actually applying the regex to a string, the string is quickly checked for the required character or stringif it's not found, the entire application of the regex can be bypassed.</P>
+<p class="docText">For example, with <img src=images/U2308.jpg border=0><tt>^Subject:&#8226;(.*)</tt><img src=images/U230B.jpg border=0>, the string '<tt>Subject</tt>:&#8226;' is required. A program can look for the entire string, perhaps using the <span class="docEmphasis">Boyer-Moore</span><a name="IDX-CHP-6-1898"></a> 
+ search algorithm (which is a fast way to search for literal strings within textthe longer the literal string, the more efficient the search). A program not wishing to implement the Boyer-Moore algorithm can still gain a benefit by picking a required character and just checking every character in the target text. Picking a character less likely to be found in the target (such as picking ':' over '<tt>t</tt>' from our '<tt>Subject</tt>:&#8226;' example) is likely to yield better results.</P>
+<p class="docText">While it's trivial for a regex engine to realize what part of <img src=images/U2308.jpg border=0><tt>^Subject:&#8226;(.*)</tt><img src=images/U230B.jpg border=0> is a fixed literal string required for any match, it's more work to recognize that '<tt>th</tt>' is required for any match of <img src=images/U2308.jpg border=0><tt>this|that|other</tt><img src=images/U230B.jpg border=0>, and most don't do it. It's not exactly black and whitean implementation not realizing that '<tt>th</tt>' is required may well still be able to easily realize that '<tt>h</tt>' and '<tt>t</tt>' are required, so at least do a one-character check.</P>
+<p class="docText">There is a great variety in how well different applications can recognize required characters and strings. Most are thwarted by the use of alternation. With such systems, using <img src=images/U2308.jpg border=0><tt>th(is|at)</tt><img src=images/U230B.jpg border=0> can provide an improvement over <img src=images/U2308.jpg border=0><tt>this|that</tt><img src=images/U230B.jpg border=0>. Also, be sure to see the related section "Initial character/class/substring discrimination" on page 247.</p>
+
+<a name="regex3-CHP-6-SECT-5.4.6"></a>
+<H5 id="title-IDANAHMK" class="docSection3Title">6.5.4.6. Length-cognizance optimization</h5>
+<p class="docText"><img src=images/U2308.jpg border=0><tt>^Subject:&#8226;(.*)</tt><img src=images/U230B.jpg border=0> can match arbitrarily long text, but any match is certainly at least nine characters long. Therefore, the engine need not be started up and applied to strings shorter than that length. Of course, the benefit is more pronounced with a regex with a longer required length, such as <img src=images/U2308.jpg border=0><tt>:\d{79}:</tt><img src=images/U230B.jpg border=0> (81 characters in any match).</p>
+<p class="docText">Also see the <span class="docEmphasis">length-cognizance transmission</span> optimization on page 247.</P>
+
+
+<a name="regex3-CHP-6-SECT-5.5"></a>
+<H4 id="title-IDABBHMK" class="docSection2Title">6.5.5. Optimizations with the Transmission</h4>
+<a name="IDX-CHP-6-1899"></a> 
+<a name="IDX-CHP-6-1900"></a> 
+<a name="IDX-CHP-6-1901"></a> 
+<a name="IDX-CHP-6-1902"></a> 
+<a name="IDX-CHP-6-1903"></a> 
+<a name="IDX-CHP-6-1904"></a> 
+<a name="IDX-CHP-6-1905"></a> 
+<a name="IDX-CHP-6-1906"></a> 
+<a name="IDX-CHP-6-1907"></a> 
+
+<p class="docText">If the regex engine can't decide ahead of time that a particular string can never match, it may still be able to reduce the number of locations that the transmission actually has to apply the regex.</p>
+<a name="regex3-CHP-6-SECT-5.5.1"></a>
+<H5 id="title-IDARCHMK" class="docSection3Title">6.5.5.1. Start of string/line anchor optimization</H5>
+<a name="IDX-CHP-6-1908"></a> 
+
+<a name="IDX-CHP-6-1909"></a> 
+
+<a name="IDX-CHP-6-1910"></a> 
+
+<a name="IDX-CHP-6-1911"></a> 
+
+<a name="IDX-CHP-6-1912"></a> 
+
+<a name="IDX-CHP-6-1913"></a> 
+
+<a name="IDX-CHP-6-1914"></a> 
+
+<a name="IDX-CHP-6-1915"></a> 
+
+<a name="IDX-CHP-6-1916"></a> 
+
+<a name="IDX-CHP-6-1917"></a> 
+
+<a name="IDX-CHP-6-1918"></a> 
+
+<a name="IDX-CHP-6-1919"></a> 
+
+<p class="docText">This optimization recognizes that any regex that begins with <img src=images/U2308.jpg border=0><tt>^</tt><img src=images/U230B.jpg border=0> can match only when applied where <img src=images/U2308.jpg border=0><tt>^</tt><img src=images/U230B.jpg border=0> can match, and so need be applied at those locations only.</P>
+<p class="docText">The comments in the "<a class="docLink" href="#regex3-CHP-6-SECT-5.4.5">Pre-check of required character/substring</a>" section on the previous page about the ability of the regex engine to derive just when the optimization is applicable to a regex is also valid here. Any implementation attempting this optimization should be able to recognize that <img src=images/U2308.jpg border=0><tt>^(this|that)</tt><img src=images/U230B.jpg border=0> can match starting only at locations where <img src=images/U2308.jpg border=0><tt>^</tt><img src=images/U230B.jpg border=0> can match, but many won't come to the same realization with <img src=images/U2308.jpg border=0><tt>^this|^that</tt><img src=images/U230B.jpg border=0>. In such situations, writing <img src=images/U2308.jpg border=0><tt>^this|^that</tt><img src=images/U230B.jpg border=0> or (even better) <img src=images/U2308.jpg border=0><tt>^(?:this|that)</tt><img src=images/U230B.jpg border=0> can allow a match to be performed much faster.</p>
+<p class="docText">Similar optimizations<a name="IDX-CHP-6-1920"></a> 
+ involve <img src=images/U2308.jpg border=0><tt>\A</tt><img src=images/U230B.jpg border=0>, and for repeated matches, <img src=images/U2308.jpg border=0><tt>\G</tt><img src=images/U230B.jpg border=0>.</P>
+
+<a name="regex3-CHP-6-SECT-5.5.2"></a>
+<H5 id="title-IDAZFHMK" class="docSection3Title">6.5.5.2. Implicit-anchor optimization</h5>
+<p class="docText">An engine with this optimization realizes that if a regex begins with <img src=images/U2308.jpg border=0><tt>.*</tt><img src=images/U230B.jpg border=0> or <img src=images/U2308.jpg border=0><tt>.+</tt><img src=images/U230B.jpg border=0>, and has no global alternation, an implicit <img src=images/U2308.jpg border=0><tt>^</tt><img src=images/U230B.jpg border=0> can be prepended to the regex. This allows the <span class="docEmphasis">start of string/line anchor</span> optimization of the previous section to be used, which can provide a lot of savings.</p>
+<p class="docText">More advanced systems may realize that the same optimization can also be applied when the leading <img src=images/U2308.jpg border=0><tt>.*</tt><img src=images/U230B.jpg border=0> or <img src=images/U2308.jpg border=0><tt>.+</tt><img src=images/U230B.jpg border=0> is within parentheses, but care must be taken when the parentheses are capturing. For example, the regex <img src=images/U2308.jpg border=0><tt>(.+)X\1</tt><img src=images/U230B.jpg border=0> finds locations where a string is repeated on either side of '<tt>X</tt>', and an implicit leading <img src=images/U2308.jpg border=0><tt>^</tt><img src=images/U230B.jpg border=0> causes it to improperly not match '<img border="0" alt="" width="71" height="13" SRC="images/regex3_u0609.jpg">'.<sup class="docFootnote"><a class="docLink" href="#regex3-CHP-6-FN-5">[<img src=images/U2020.jpg border=0>]</a></sup></p><blockquote><p class="docFootnote"><sup><a name="regex3-CHP-6-FN-5">[<img src=images/U2020.jpg border=0>]</a></sup> It's interesting to note that Perl had this over-optimization bug unnoticed for over 10 years until Perl developer Jeff Pinyan discovered (and fixed) it in early 2002. Apparently, regular expressions like <img src=images/U2308.jpg border=0><tt>(.+)X\1</tt><img src=images/U230B.jpg border=0> aren't used often, or the bug would have been discovered sooner.</p></blockquote>
+
+<a name="regex3-CHP-6-SECT-5.5.3"></a>
+<H5 id="title-IDAEHHMK" class="docSection3Title">6.5.5.3. End of string/line anchor optimization</h5>
+<p class="docText">This optimization recognizes that some regexes ending with <img src=images/U2308.jpg border=0><tt>$</tt><img src=images/U230B.jpg border=0> or other end anchors (&#9758; 129) have matches that start within a certain number of characters from the end of the string. For example, with <img src=images/U2308.jpg border=0><tt>regex(es)?$</tt><img src=images/U230B.jpg border=0>, any match must start no more than eight<sup class="docFootnote"><a class="docLink" href="#regex3-CHP-6-FN-6">[<img src=images/U2021.jpg border=0>]</a></sup> characters from the end of the string, so the transmission can jump directly there, potentially bypassing much of the target string.</p><blockquote><p class="docFootnote"><sup><a name="regex3-CHP-6-FN-6">[<img src=images/U2021.jpg border=0>]</a></sup> I say eight characters rather than seven because in many flavors, <img src=images/U2308.jpg border=0><tt>$</tt><img src=images/U230B.jpg border=0> can match before a string-ending newline (&#9758; 129).</P></blockquote>
+
+<a name="regex3-CHP-6-SECT-5.5.4"></a>
+<h5 id="title-IDA0HHMK" class="docSection3Title">6.5.5.4. Initial character/class/substring discrimination optimization</h5>
+<a name="IDX-CHP-6-1921"></a> 
+
+<a name="IDX-CHP-6-1922"></a> 
+<a name="IDX-CHP-6-1923"></a> 
+<a name="IDX-CHP-6-1924"></a> 
+<a name="IDX-CHP-6-1925"></a> 
+<a name="IDX-CHP-6-1926"></a> 
+
+<p class="docText">A more generalized version of the <a class="docLink" href="#regex3-CHP-6-SECT-5.4.5"><span class="docEmphasis">pre-check of required character/string</span> optimization</a>, this optimization uses the same information (that any match by the regex must begin with a specific character or literal substring) to let the transmission use a fast substring check so that it need apply the regex only at appropriate spots in the string. For example <img src=images/U2308.jpg border=0><tt>this|that|other</tt><img src=images/U230B.jpg border=0> can match only at locations beginning with <img src=images/U2308.jpg border=0><tt>[ot]</tt><img src=images/U230B.jpg border=0>, so having the transmission pre-check each character in the string and applying the regex only at matching positions can afford a huge savings. The longer the substring that can be pre-checked, the fewer "false starts" are likely.</p>
+
+<a name="regex3-CHP-6-SECT-5.5.5"></a>
+<h5 id="title-IDAMJHMK" class="docSection3Title">6.5.5.5. Embedded literal string check optimization</h5>
+<p class="docText">This is almost exactly like the <span class="docEmphasis">initial string discrimination</span> optimization, but is more advanced in that it works for literal strings embedded a known distance into any match. <img src=images/U2308.jpg border=0><tt>\b(perl;java)\.regex\.info\b</tt><img src=images/U230B.jpg border=0>, for example, has '<tt>.regex.info</tt>' four characters into any match, so a smart transmission can use a fast Boyer-Moore<a name="IDX-CHP-6-1927"></a> 
+ literal-string check to find '<tt>.regex.info</tt>', and then actually apply the regex starting four characters before.</p>
+<p class="docText">In general, this works only when the literal string is embedded a fixed distance into any match. It doesn't apply to <img src=images/U2308.jpg border=0><tt>\b(vb|java)\.regex\.info\b</tt><img src=images/U230B.jpg border=0>, which does have a literal string, but one that's embedded either two or four characters into any match. It also doesn't apply to <img src=images/U2308.jpg border=0><tt>\b(\w+)\.regex\.info\b</tt><img src=images/U230B.jpg border=0>, whose literal string is embedded any number of characters into any match.</p>
+
+<a name="regex3-CHP-6-SECT-5.5.6"></a>
+<h5 id="title-IDAJKHMK" class="docSection3Title">6.5.5.6. Length-cognizance transmission optimization</h5>
+<p class="docText">Directly related to the <span class="docEmphasis">Length-cognizance optimization</span> on page 245, this optimization allows the transmission to abandon the attempt if it's gotten too close to the end of the string for a match to be possible.</p>
+
+
+<a name="regex3-CHP-6-SECT-5.6"></a>
+<h4 id="title-IDAWKHMK" class="docSection2Title">6.5.6. Optimizations of the Regex Itself</h4>
+<a name="regex3-CHP-6-SECT-5.6.1"></a>
+<h5 id="title-IDA2KHMK" class="docSection3Title">6.5.6.1. Literal string concatenation optimization</h5>
+<p class="docText">Perhaps the most basic optimization is that <img src=images/U2308.jpg border=0><tt>abc</tt><img src=images/U230B.jpg border=0> can be treated by the engine as "one part," rather than the three parts "<img src=images/U2308.jpg border=0><tt>a</tt><img src=images/U230B.jpg border=0> then <img src=images/U2308.jpg border=0><tt>b</tt><img src=images/U230B.jpg border=0> then <img src=images/U2308.jpg border=0><tt>c</tt><img src=images/U230B.jpg border=0>." If this is done, the one part can be applied by one iteration of the engine mechanics, avoiding the overhead of three separate iterations.</p>
+
+<a name="regex3-CHP-6-SECT-5.6.2"></a>
+<h5 id="title-IDAOLHMK" class="docSection3Title">6.5.6.2. Simple quantifier optimization</h5>
+<p class="docText">Uses of star, plus, and friends that apply to simple items, such as literal characters and character classes, are often optimized such that much of the step-by-step overhead of a normal NFA engine is removed. The main control loop inside a regex engine must be general enough to deal with all the constructs the engine supports. In programming, "general" often means "slow," so this important optimization<a name="IDX-CHP-6-1928"></a> 
+ makes simple quantifiers like <img src=images/U2308.jpg border=0><tt>.*</tt><img src=images/U230B.jpg border=0> into one "part," replacing the general engine mechanics of quantifier processing with fast, specialized processing. Thus, the general engine is short-circuited for these tests.</P>
+<p class="docText">For example, <img src=images/U2308.jpg border=0><tt>.*</tt><img src=images/U230B.jpg border=0> and <img src=images/U2308.jpg border=0><tt>(?:.)*</tt><img src=images/U230B.jpg border=0> are logically identical, but for systems with this optimization, the simple <img src=images/U2308.jpg border=0><tt>.*</tt><img src=images/U230B.jpg border=0> is substantially faster. A few examples: it's only about 10 percent faster in <tt>java.util.regex</tt>, but with Ruby and the .NET languages, it's about two and a half times faster. With Python, it's about 50 times faster, and with PHP/PCRE, it's about 150 times faster. Because Perl has the optimization discussed in the next section, both <img src=images/U2308.jpg border=0><tt>.*</tt><img src=images/U230B.jpg border=0> and <img src=images/U2308.jpg border=0><tt>(?:.)*</tt><img src=images/U230B.jpg border=0> are the same speed. (Be sure to see the sidebar on the facing page for more on how to interpret these numbers.)</p>
+
+<a name="regex3-CHP-6-SECT-5.6.3"></a>
+<H5 id="title-IDAOMHMK" class="docSection3Title">6.5.6.3. Needless parentheses elimination</h5>
+<a name="IDX-CHP-6-1929"></a> 
+<a name="IDX-CHP-6-1930"></a> 
+<a name="IDX-CHP-6-1931"></a> 
+<a name="IDX-CHP-6-1932"></a> 
+
+<p class="docText">If an implementation can realize that <img src=images/U2308.jpg border=0><tt>(?:.)*</tt><img src=images/U230B.jpg border=0> is exactly the same as <img src=images/U2308.jpg border=0><tt>.*</tt><img src=images/U230B.jpg border=0>, it opens up the latter to the previous optimization.</p>
+
+<a name="regex3-CHP-6-SECT-5.6.4"></a>
+<H5 id="title-IDAQNHMK" class="docSection3Title">6.5.6.4. Needless character class elimination</H5>
+<p class="docText">A character class with a single character in it is a bit silly because it invokes the processing overhead of a character class, but without any benefits of one. So, a smarter implementation internally converts something like <img src=images/U2308.jpg border=0><tt>[.]</tt><img src=images/U230B.jpg border=0> to <img src=images/U2308.jpg border=0><tt>\.</tt><img src=images/U230B.jpg border=0>.</P>
+
+<a name="regex3-CHP-6-SECT-5.6.5"></a>
+<H5 id="title-IDA4NHMK" class="docSection3Title">6.5.6.5. Character following lazy quantifier optimization</h5>
+<a name="IDX-CHP-6-1933"></a> 
+
+<p class="docText">With a lazy quantifier, as in <img src=images/U2308.jpg border=0><tt>"(.*?)"</tt><img src=images/U230B.jpg border=0>, the engine normally must jump between checking what the quantifier controls (the dot) with checking what comes after (<img src=images/U2308.jpg border=0><tt>"</tt><img src=images/U230B.jpg border=0>). For this and other reasons, lazy quantifiers are generally much slower than greedy ones, especially for greedy ones that are optimized with the <span class="docEmphasis">simple quantifier</span> optimization discussed two sections ago. Another factor is that if the lazy quantifier is inside capturing parentheses, control must repeatedly jump in and out of the capturing, which causes additional overhead.</P>
+<p class="docText">So, this optimization involves the realization that if a literal character follows the lazy quantifier, the lazy quantifier can act like a normal greedy quantifier so long as the engine is not at that literal character. Thus, implementations with this optimization switch to specialized lazy quantifier processing for use in these situations, which quickly checks the target text for the literal character, bypassing the normal "skip this attempt" if the target text is not at that special literal character.</p>
+<p class="docText">Variations on this optimization might include the ability to pre-check for a class of characters, rather than just a specific literal character (for instance, a pre-check for <img src=images/U2308.jpg border=0><tt>['"]</tt><img src=images/U230B.jpg border=0> with <img src=images/U2308.jpg border=0><tt>['"](.*?)["']</tt><img src=images/U230B.jpg border=0>, which is similar to the <span class="docEmphasis">initial character discrimination</span> optimization discussed on the previous page).</p>
+<a name="regex3-CHP-6-SIDEBAR-3"></a><P><table cellspacing="0" width="90%" border="1" cellpadding="5"><TR><td>
+<h2 class="docSidebarTitle">Understanding Benchmarks in This Chapter</H2>
+<p class="docText">For the most part, benchmarks in this chapter are reported as relative ratios for a given language. For example, on page 248, I note that a certain optimized construct is 10 percent faster than the unoptimized construct, at least with Sun's Java regex package. In the .NET Framework, the optimized and unoptimized constructs differ by a factor of two and a half, but in PCRE, it's a factor of about whopping 150x. In Perl, it's a factor of one (i.e., they are the same speedno difference).</P>
+<p class="docText">From this, what can you infer about the speed of one language compared to another? Absolutely nothing. The 150x speedup for the optimization in PCRE may mean that the optimization has been implemented particularly well, relative to the other languages, or it may mean that the unoptimized version is particularly slow. For the most part, I report very little timing information about how languages compare against each other, since that's of interest mostly for bragging rights among language developers.</P>
+<p class="docText">But, for what it's worth, it may be interesting to see the details behind such different results as Java's 10 percent speedup and PCRE's 150x speedup. It turns out that PCRE's unoptimized <img src=images/U2308.jpg border=0><tt>(?:.)*</tt><img src=images/U230B.jpg border=0> is about 11 times <span class="docEmphasis">slower</span> than Java's, but its optimized <img src=images/U2308.jpg border=0><tt>.*</tt><img src=images/U230B.jpg border=0> is about 13 times <span class="docEmphasis">faster</span>. Java's and Ruby's optimized versions are about the same speed, but Ruby's unoptimized version is about 2.5 times slower than Java's unoptimized version. Ruby's unoptimized version is only about 10 percent slower than Python's unoptimized version, but Python's optimized version is about 20 times faster than Ruby's optimized version.</p>
+<p class="docText">All of these are slower than Perl's. Both Perl's optimized and unoptimized versions are 10 percent faster than Python's fastest. Note that each language has its own strong points, and these numbers are for only one specific test case.</P>
+</TD></tr></table></p><br>
+
+<a name="regex3-CHP-6-SECT-5.6.6"></a>
+<h5 id="title-IDAVPHMK" class="docSection3Title">6.5.6.6. "Excessive" backtracking detection</H5>
+<a name="IDX-CHP-6-1934"></a> 
+<a name="IDX-CHP-6-1935"></a> 
+<a name="IDX-CHP-6-1936"></a> 
+<a name="IDX-CHP-6-1937"></a> 
+
+<p class="docText">The problem revealed with the "<a class="docLink" href="regex3-CHP-6-SECT-2.html#regex3-CHP-6-SECT-2.4">Reality Check</a>" on page 226 is that certain combinations of quantifiers, such as <img src=images/U2308.jpg border=0><tt>(.+)*</tt><img src=images/U230B.jpg border=0>, can create an exponential amount of backtracking. One simple way to avoid this is to keep a count of the backtracking, and abort the match when there's "too much." This is certainly useful in the reality-check situation, but it puts an artificial limit on the amount of text that some regular expressions can be used with.</p>
+<p class="docText">For example, if the limit is 10,000 backtracks, <img src=images/U2308.jpg border=0><tt>.*?</tt><img src=images/U230B.jpg border=0> can never match text longer than 10,000 characters, since each character matched involves a backtrack. Working with these amounts of text is not all that uncommon, particularly when working with, say, web pages, so the limitation is unfortunate.</p>
+<p class="docText">For different reasons, some implementations have a limit on the size of the backtrack stack (on how many saved states there can be at any one time). For example, Python allows at most 10,000. Like a backtrack limit, it limits the length of text some regular-expressions can work with.</P>
+<p class="docText">This issue made constructing some of the benchmarks used while researching this book rather difficult. To get the best results, the timed portion of a benchmark should do as much of the target work as possible, so I created huge strings and compared the time it took to execute, say, <img src=images/U2308.jpg border=0><tt>"(.*)"</tt><img src=images/U230B.jpg border=0>, <img src=images/U2308.jpg border=0><tt>"(.)*"</tt><img src=images/U230B.jpg border=0>, <img src=images/U2308.jpg border=0><tt>"(.)*?"</tt><img src=images/U230B.jpg border=0>, and <img src=images/U2308.jpg border=0><tt>"([^"])*?"</tt><img src=images/U230B.jpg border=0>. To keep meaningful results, I had to limit the length of the strings so as not to trip the backtrack-count or stack-size limitations. You can see an example on page 239.</p>
+
+<a name="regex3-CHP-6-SECT-5.6.7"></a>
+<h5 id="title-IDAQRHMK" class="docSection3Title">6.5.6.7. Exponential (a.k.a., super-linear) short-circuiting</h5>
+<a name="IDX-CHP-6-1938"></a> 
+
+<a name="IDX-CHP-6-1939"></a> 
+
+<a name="IDX-CHP-6-1940"></a> 
+
+<a name="IDX-CHP-6-1941"></a> 
+<a name="IDX-CHP-6-1942"></a> 
+<a name="IDX-CHP-6-1943"></a> 
+<a name="IDX-CHP-6-1944"></a> 
+
+<p class="docText">A better solution to avoid matching forever on an exponential match is to detect when the match attempt has gone super-linear. You can then make the extra effort to keep track of the position at which each quantifier's subexpression has been attempted, and short-circuit repeat attempts.</p>
+<p class="docText">It's actually fairly easy to detect when a match has gone super-linear. A quantifier should rarely "iterate" (loop) more times than there are characters in the target string. If it does, it's a good sign that it may be an exponential match. Having been given this clue that matching may go on forever, it's a more complex issue to detect and eliminate redundant matches, but since the alternative is matching for a very, very long time, it's probably a good investment.</p>
+<p class="docText">One negative side effect of detecting a super-linear match and returning a quick failure is that a truly inefficient regex now has its inefficiency mostly hidden. Even with exponential short-circuiting, these matches are much slower than they need to be, but no longer slow enough to be easily detected by a human (instead of finishing long after the sun has gone dormant, it may take 1/100 of a secondquick to us, but still an eternity in computer time).</p>
+<p class="docText">Still, the overall benefit is probably worth it. There are many people who don't care about regex efficiencythey're scared of regular expressions and just want the thing to work, and don't care how. (You may have been this way before, but I hope reading this book emboldens you, like the title says, to master the use of regular expressions.)</p>
+
+<a name="regex3-CHP-6-SECT-5.6.8"></a>
+<h5 id="title-IDACTHMK" class="docSection3Title">6.5.6.8. State-suppression with possessive quantifiers</h5>
+<p class="docText">After something with a normal quantifier has matched, a number of "try the nonmatch option" states have been created (one state per iteration of the quantifier). Possessive quantifiers (&#9758; 142) don't leave those states around. This can be accomplished by removing the extra states after the quantifier has run its course, or, it can be done more efficiently by removing the previous iteration's state while adding the current iteration's. (During the matching, one state is always required so that the regex can continue once the quantified item can no longer match.)</p>
+<p class="docText">The reason the on-the-fly removal is more efficient is because it takes less memory. Applying <img src=images/U2308.jpg border=0><tt>.*</tt><img src=images/U230B.jpg border=0> leaves one state per character matched, which could consume a vast amount of memory if the string is long.</p>
+<a name="regex3-CHP-6-SIDEBAR-4"></a><p><table cellspacing="0" width="90%" border="1" cellpadding="5"><tr><td>
+<h2 class="docSidebarTitle">Automatic "Possessification"</h2>
+<p class="docText">Recall the example from <a class="docLink" href="regex3-CHP-4.html#regex3-CHP-4">Chapter 4</a> (&#9758; 171) where <img src=images/U2308.jpg border=0><tt>^\w+:</tt><img src=images/U230B.jpg border=0> is applied to '<tt>Subject</tt>'. Once <img src=images/U2308.jpg border=0><tt>\w+</tt><img src=images/U230B.jpg border=0> matches to the end of the string, the subsequent colon can't match, and the engine must waste the effort of trying <img src=images/U2308.jpg border=0><tt>:</tt><img src=images/U230B.jpg border=0> at each position where backtracking forces <img src=images/U2308.jpg border=0><tt>\w+</tt><img src=images/U230B.jpg border=0> to give up a character. The example then concluded that we could have the engine avoid that extra work by using atomic grouping, <img src=images/U2308.jpg border=0><tt>^<span class="docEmphStrong">(?&gt;</span>\w+<span class="docEmphStrong">)</span>:</tt><img src=images/U230B.jpg border=0>, or possessive quantifiers, <img src=images/U2308.jpg border=0><tt>^\w+<span class="docEmphStrong">+</span>:</tt><img src=images/U230B.jpg border=0>.</p>
+<p class="docText">A smart implementation should be able to do this for you. When the regex is first compiled, the engine can see that what <span class="docEmphasis">follows the quantifier</span> can't be matched by what <span class="docEmphasis">is quantified</span>, so the quantifier can be automatically turned into a possessive one.</P>
+<p class="docText">Although I know of no system that currently has this optimization, I include it here to encourage developers to consider it, for I believe it can have a substantial positive impact.</p>
+</TD></tr></table></p><BR>
+
+<a name="regex3-CHP-6-SECT-5.6.9"></a>
+<H5 id="title-IDAEVHMK" class="docSection3Title">6.5.6.9. Small quantifier equivalence</H5>
+<a name="IDX-CHP-6-1945"></a> 
+<a name="IDX-CHP-6-1946"></a> 
+<a name="IDX-CHP-6-1947"></a> 
+<a name="IDX-CHP-6-1948"></a> 
+<a name="IDX-CHP-6-1949"></a> 
+
+<p class="docText">Some people like to write <img src=images/U2308.jpg border=0><tt>\d\d\d\d</tt><img src=images/U230B.jpg border=0> directly, while some like to use a small quantifier and write <img src=images/U2308.jpg border=0><tt>\d{4}</tt><img src=images/U230B.jpg border=0>. Is one more efficient than the other? For an NFA, the answer is almost certainly yes, but which is faster depends on the tool. If the tool's quantifier has been optimized, the <img src=images/U2308.jpg border=0><tt>\d{4}</tt><img src=images/U230B.jpg border=0> version is likely faster unless the version without the quantifier can somehow be optimized more. Sound a bit confusing? It is.</P>
+<p class="docText">My tests show that with Perl, Python, PHP/PCRE, and .NET, <img src=images/U2308.jpg border=0><tt>\d{4}</tt><img src=images/U230B.jpg border=0> is faster by as much as 20 percent. On the other hand, with Ruby and Sun's Java regex package, <img src=images/U2308.jpg border=0><tt>\d\d\d\d</tt><img src=images/U230B.jpg border=0> is fastersometimes several times faster. So, this seems to make it clear that the small quantifier is better for some, but worse for others. But, it can be more complex than that.</p>
+<p class="docText">Compare <img src=images/U2308.jpg border=0><tt>====</tt><img src=images/U230B.jpg border=0> with <img src=images/U2308.jpg border=0><tt>={4}</tt><img src=images/U230B.jpg border=0>. This is a quite different example because this time, the subject of the repetition is a literal character, and perhaps using <img src=images/U2308.jpg border=0><tt>====</tt><img src=images/U230B.jpg border=0> directly makes it easier for the regex engine to recognize the literal substring. If it can, the highly effective <span class="docEmphasis">initial character/substring discrimination</span> optimization (&#9758; 247) can kick in, if supported. This is exactly the case for Python and Sun's Java regex package, for whom the <img src=images/U2308.jpg border=0><tt>====</tt><img src=images/U230B.jpg border=0> version can be up to 100x faster than <img src=images/U2308.jpg border=0><tt>={4}</tt><img src=images/U230B.jpg border=0>.</P>
+<p class="docText">More advanced still, Perl, Ruby, and .NET recognize this optimization with <span class="docEmphasis">either</span> <img src=images/U2308.jpg border=0><tt>====</tt><img src=images/U230B.jpg border=0> or <img src=images/U2308.jpg border=0><tt>={4}</tt><img src=images/U230B.jpg border=0>, and as such, both are equally fast (and in either case, can be hundreds or thousands of times faster than the <img src=images/U2308.jpg border=0><tt>\d\d\d\d</tt><img src=images/U230B.jpg border=0> and <img src=images/U2308.jpg border=0><tt>\d{4}</tt><img src=images/U230B.jpg border=0> counterparts).</p>
+
+<a name="regex3-CHP-6-SECT-5.6.10"></a>
+<h5 id="title-IDAOXHMK" class="docSection3Title">6.5.6.10. Need cognizance</H5>
+<a name="IDX-CHP-6-1950"></a> 
+<a name="IDX-CHP-6-1951"></a> 
+<a name="IDX-CHP-6-1952"></a> 
+<a name="IDX-CHP-6-1953"></a> 
+<a name="IDX-CHP-6-1954"></a> 
+<a name="IDX-CHP-6-1955"></a> 
+<a name="IDX-CHP-6-1956"></a> 
+<a name="IDX-CHP-6-1957"></a> 
+<a name="IDX-CHP-6-1958"></a> 
+<a name="IDX-CHP-6-1959"></a> 
+<a name="IDX-CHP-6-1960"></a> 
+<a name="IDX-CHP-6-1961"></a> 
+<a name="IDX-CHP-6-1962"></a> 
+<a name="IDX-CHP-6-1963"></a> 
+
+<p class="docText">One simple optimization is if the engine realizes that some aspect of the match result isn't needed (say, the capturing aspect of capturing parentheses), it can eliminate the work to support them. The ability to detect such a thing is very language dependent, but this optimization can be gained as easily as allowing an extra match-time option to disable various high-cost features.</P>
+<p class="docText">One example of a system that has this optimization is Tcl. Its capturing parentheses don't actually capture unless you explicitly ask. Conversely, the .NET Framework regular expressions have an option that allows the programmer to indicate that capturing parentheses shouldn't capture.</p>
+
+
+
+<a href="7041536.html"><img src="images/pixel.jpg" alt="" width="1" height="1" border="0"></a></TD></TR></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=regex3-CHP-6-SECT-4.html><img src="images/prev.gif" width="60" height="17" border="0" align="absmiddle" alt="Previous Page"></a>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=regex3-CHP-6-SECT-6.html><img src="images/next.gif" width="60" height="17" border="0" align="absmiddle" alt="Next Page"></a>
+</div></td></tr></table>
+</body></html>

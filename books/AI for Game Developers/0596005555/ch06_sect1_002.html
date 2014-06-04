@@ -1,0 +1,247 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>6.2 Breadcrumb Pathfinding</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="ch06_sect1_001.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="ch06_sect1_003.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="ch06_sect1_002"></A>
+<H3 class="docSection1Title">6.2 Breadcrumb Pathfinding</H3>
+<P class="docText"><span class="docEmphasis">Breadcrumb pathfinding</span> can make computer-controlled characters seem very intelligent because the player is unknowingly creating the path for the computer-controlled character. Each time the player takes a step, he unknowingly leaves an invisible marker, or breadcrumb, on the game world. When a game character comes in contact with a breadcrumb, the breadcrumb simply begins following the trail. The game character will follow in the footsteps of the player until the player is reached. The complexity of the path and the number of obstacles in the way are irrelevant. The player already has created the path, so no serious calculations are necessary.</P>
+<P class="docText">The breadcrumb method also is an effective and efficient way to move groups of computer-controlled characters. Instead of having each member of a group use an expensive and time-consuming pathfinding algorithm, you can simply have each member follow the leader's breadcrumbs.</P>
+<P class="docText"><A class="docLink" HREF="#ch06_fig08">Figure 6-8</A> shows how each step the player takes is marked with an integer value. In this case, a maximum of 15 steps are recorded. In a real game, the number of breadcrumbs dropped will depend on the particular game and how smart you want the game-controlled characters to appear. In this example, a troll randomly moves about the tile-based environment until it detects a breadcrumb on an adjacent location.</P>
+<A NAME="ch06_fig08"></A><p><CENTER>
+<H5 class="docFigureTitle">Figure 6-8. Breadcrumb trail</H5>
+<IMG BORDER="0" id="" SRC="images/0596005555/figs/ch06_fig08.jpg" ALT="figs/ch06_fig08.jpg">
+</CENTER></p><br>
+<P class="docText">Of course, in a real game, the player never sees the breadcrumb trail. It's there exclusively for the game AI. <A class="docLink" HREF="#ch06exm03">Example 6-3</A> shows the class we use to track the data associated with each game character.</P>
+<A NAME="ch06exm03"></A>
+<H5 class="docExampleTitle">Example 6-3. ai_Entity class</H5>
+<PRE>
+#define   kMaxTrailLength   15
+class	   ai_Entity
+{
+       public:
+       int   row;
+       int   col;
+       int   type;
+       int   state;
+       int   trailRow[kMaxTrailLength];
+       int   trailCol[kMaxTrailLength];
+       ai_Entity();
+       ~ai_Entity();
+};
+</PRE><BR>
+
+
+<P class="docText">The initial <span class="docEmphasis">#define</span> statement sets the maximum number of player steps to track. We then use the <span class="docEmphasis">kMaxTrailLength</span> constant to define the bounds for the <span class="docEmphasis">trailRow</span> and <span class="docEmphasis">trailCol</span> arrays. The <span class="docEmphasis">trailRow</span> and <span class="docEmphasis">trailCol</span> arrays store the row and column coordinates of the previous 15 steps taken by the player.</P>
+<P class="docText">As <A class="docLink" HREF="#ch06exm04">Example 6-4</A> shows, we begin by setting each element of the <span class="docEmphasis">trailRow</span> and <span class="docEmphasis">trailCol</span> arrays to a value of <span class="docEmphasis">-1</span>. We use <span class="docEmphasis">-1</span> because it's a value outside of the coordinate system we are using for this tile-based demo. When the demo first starts, the player hasn't taken any steps, so we need a way to recognize that some of the elements in the <span class="docEmphasis">trailRow</span> and <span class="docEmphasis">trailCol</span> arrays haven't been set yet.</P>
+<A NAME="ch06exm04"></A>
+<H5 class="docExampleTitle">Example 6-4. Trail array initialization</H5>
+<PRE>
+int   i;
+for (i=0;i&lt;kMaxTrailLength;i++)
+   {
+      trailRow[i]=-1;
+      trailCol[i]=-1;
+   }
+</PRE><BR>
+
+
+<P class="docText">As you can see in <A class="docLink" HREF="#ch06exm04">Example 6-4</A>, we traverse the entire <span class="docEmphasis">trailRow</span> and <span class="docEmphasis">trailCol</span> arrays, setting each value to <span class="docEmphasis">-1</span>. We are now ready to start recording the actual footsteps. The most logical place to do this is in the function that changes the player's position. Here we'll use the <span class="docEmphasis">KeyDown</span> function. This is where the demo checks the four direction keys and then changes the player's position if a key-down event is detected. The <span class="docEmphasis">KeyDown</span> function is shown in <A class="docLink" HREF="#ch06exm05">Example 6-5</A>.</P>
+<A NAME="ch06exm05"></A>
+<H5 class="docExampleTitle">Example 6-5. Recording the player positions</H5>
+<PRE>
+void ai_World::KeyDown(int key)
+{
+     int   i;
+   if (key==kUpKey)
+       for (i=0;i&lt;kMaxEntities;i++)
+          if (entityList[i].state==kPlayer)
+              if (entityList[i].row&gt;0)
+                 {
+                    entityList[i].row--;
+                    DropBreadCrumb();
+                 }
+   if (key==kDownKey)
+       for (i=0;i&lt;kMaxEntities;i++)
+          if (entityList[i].state==kPlayer)
+              if (entityList[i].row&lt;(kMaxRows-1))
+                 {
+                    entityList[i].row++;
+                    DropBreadCrumb();
+                 }
+   if (key==kLeftKey)
+       for (i=0;i&lt;kMaxEntities;i++)
+           if (entityList[i].state==kPlayer)
+               if (entityList[i].col&gt;0)
+                  {
+                     entityList[i].col--;
+                     DropBreadCrumb();
+                  }
+   if (key==kRightKey)
+       for (i=0;i&lt;kMaxEntities;i++)
+          if (entityList[i].state==kPlayer)
+             if (entityList[i].col&lt;(kMaxCols-1))
+                {
+                   entityList[i].col++;
+                   DropBreadCrumb();
+                }
+}
+</PRE><BR>
+
+
+<P class="docText">The <span class="docEmphasis">KeyDown</span> function shown in <A class="docLink" HREF="#ch06exm05">Example 6-5</A> determines if the player has pressed any of the four direction keys. If so, it traverses the <span class="docEmphasis">entityList</span> array to search for a character being controlled by the player. If it finds one, it makes sure the new desired position is within the bounds of the tile world. If the desired position is legitimate, the position is updated. The next step is to actually record the position by calling the function <span class="docEmphasis">DropBreadCrumb</span>. The <span class="docEmphasis">DropBreadCrumb</span> function is shown in <A class="docLink" HREF="#ch06exm06">Example 6-6</A>.</P>
+<A NAME="ch06exm06"></A>
+<H5 class="docExampleTitle">Example 6-6. Dropping a breadcrumb</H5>
+<PRE>
+void ai_World::DropBreadCrumb(void)
+{
+    int   i;
+    for (i=kMaxTrailLength-1;i&gt;0;i--)
+        {
+           entityList[0].trailRow[i]=entityList[0].trailRow[i-1];
+           entityList[0].trailCol[i]=entityList[0].trailCol[i-1];
+        }
+    entityList[0].trailRow[0]=entityList[0].row;
+    entityList[0].trailCol[0]=entityList[0].col;
+}
+</PRE><BR>
+
+
+<P class="docText">The <span class="docEmphasis">DropBreadCrumb</span> function adds the current player position to the <span class="docEmphasis">trailRow</span> and <span class="docEmphasis">trailCol</span> arrays. These arrays maintain a list of the most recent player positions. In this case, the constant <span class="docEmphasis">kMaxTrailLength</span> sets the number of positions that will be tracked. The longer the trail, the more likely a computer-controlled character will discover it and pathfind its way to the player.</P>
+<P class="docText">The <span class="docEmphasis">DropBreadCrumb</span> function begins by dropping the oldest position in the <span class="docEmphasis">trailRow</span> and <span class="docEmphasis">trailCol</span> arrays. We are tracking only <span class="docEmphasis">kMaxTrailLength</span> positions, so each time we add a new position we must drop the oldest one. We do this with the initial <span class="docEmphasis">for</span> loop. In effect, this loop shifts all the positions in the array. It deletes the oldest position and makes the first array element available for the current player position. Next, we store the player's current position in the first element of the <span class="docEmphasis">trailRow</span> and <span class="docEmphasis">trailCol</span> arrays.</P>
+<P class="docText">The next step is to actually make the computer-controlled character detect and follow the breadcrumb trail that the player is leaving. The demo begins by having the computer-controlled troll move randomly about the tiled environment. <A class="docLink" HREF="#ch06_fig09">Figure 6-9</A> illustrates how the troll moves about the tiled environment in any one of eight possible directions.</P>
+<A NAME="ch06_fig09"></A><p><CENTER>
+<H5 class="docFigureTitle">Figure 6-9. Finding the breadcrumbs</H5>
+<IMG BORDER="0" id="" SRC="images/0596005555/figs/ch06_fig09.jpg" ALT="figs/ch06_fig09.jpg">
+</CENTER></p><br>
+<P class="docText"><A class="docLink" HREF="#ch06exm07">Example 6-7</A> goes on to show how the troll detects and follows the breadcrumb trail.</P>
+<A NAME="ch06exm07"></A>
+<H5 class="docExampleTitle">Example 6-7. Following the breadcrumbs</H5>
+<PRE>
+for (i=0;i&lt;kMaxEntities;i++)
+    {
+       r=entityList[i].row;
+       c=entityList[i].col;
+       foundCrumb=-1;
+       for (j=0;j&lt;kMaxTrailLength;j++)
+       {
+          if ((r==entityList[0].trailRow[j]) &amp;&amp;
+               (c==entityList[0].trailCol[j]))
+             {
+                foundCrumb=j;
+                break;
+             }
+          if ((r-1==entityList[0].trailRow[j]) &amp;&amp;
+               (c-1==entityList[0].trailCol[j]))
+             {
+                foundCrumb=j;
+                break;
+             }
+         if ((r-1==entityList[0].trailRow[j]) &amp;&amp;
+              (c==entityList[0].trailCol[j]))
+            {
+               foundCrumb=j;
+               break;
+            }
+         if ((r-1==entityList[0].trailRow[j]) &amp;&amp;
+              (c+1==entityList[0].trailCol[j]))
+            {
+               foundCrumb=j;
+               break;
+            }
+         if ((r==entityList[0].trailRow[j]) &amp;&amp;
+              (c-1==entityList[0].trailCol[j]))
+            {
+               foundCrumb=j;
+               break;
+            }
+         if ((r==entityList[0].trailRow[j]) &amp;&amp;
+              (c+1==entityList[0].trailCol[j]))
+            {
+               foundCrumb=j;
+               break;
+            }
+         if ((r+1==entityList[0].trailRow[j]) &amp;&amp;
+              (c-1==entityList[0].trailCol[j]))
+            {
+               foundCrumb=j;
+               break;
+            }
+         if ((r+1==entityList[0].trailRow[j]) &amp;&amp;
+              (c==entityList[0].trailCol[j]))
+            {
+               foundCrumb=j;
+               break;
+            }
+         if ((r+1==entityList[0].trailRow[j]) &amp;&amp;
+              (c+1==entityList[0].trailCol[j]))
+            {
+               foundCrumb=j;
+               break;
+            }
+      }
+      if (foundCrumb&gt;=0)
+          {
+             entityList[i].row=entityList[0].trailRow[foundCrumb];
+             entityList[i].col=entityList[0].trailCol[foundCrumb];
+          }
+      else
+         {
+            entityList[i].row=entityList[i].row+Rnd(0,2)-1;
+            entityList[i].col=entityList[i].col+Rnd(0,2)-1;
+         }
+      if (entityList[i].row&lt;0)
+         entityList[i].row=0;
+      if (entityList[i].col&lt;0)
+         entityList[i].col=0;
+      if (entityList[i].row&gt;=kMaxRows)
+         entityList[i].row=kMaxRows-1;
+      if (entityList[i].col&gt;=kMaxCols)
+         entityList[i].col=kMaxCols-1;
+   }
+</PRE><BR>
+
+
+<P class="docText">the <span class="docEmphasis">trailRow</span> and <span class="docEmphasis">trailCol</span> arrays are ordered from the most recent player position to the oldest player position. Starting the search from the most recent player position also ensures that the troll will follow the breadcrumbs to, rather than away from, the player. It's quite probable that the troll will first detect a breadcrumb somewhere in the middle of the <span class="docEmphasis">trailRow</span> and <span class="docEmphasis">trailCol</span> arrays. We want to make sure the troll follows the breadcrumbs to the player.</P>
+<P class="docText">Once the <span class="docEmphasis">for</span> loop is finished executing, we check whether a breadcrumb has been found. The <span class="docEmphasis">foundCrumb</span> variable stores the array index of the breadcrumb found. If no breadcrumb is found, it contains its initial value of <span class="docEmphasis">-1</span>. If <span class="docEmphasis">foundCrumb</span> is greater than or equal to <span class="docEmphasis">0</span>, we set the troll's position to the value stored at array index <span class="docEmphasis">foundCrumb</span> in the <span class="docEmphasis">trailRow</span> and <span class="docEmphasis">trailCol</span> arrays. Doing this each time the troll's position needs to be updated results in the troll following a trail to the player's position.</P>
+<P class="docText">If <span class="docEmphasis">foundCrumb</span> is equal to a value of <span class="docEmphasis">-1</span> when we exit the <span class="docEmphasis">for</span> loop, we know that no breadcrumbs were found. In this case, we simply select a random direction in which to move. Hopefully, this random move will put the troll adjacent to a breadcrumb which can be detected and followed the next time the troll's position needs to be updated.</P>
+<P class="docText">There is another benefit to storing the most recent player positions in the lower <span class="docEmphasis">trailRow</span> and <span class="docEmphasis">trailCol</span> array elements. It is not unusual for a player to backtrack or to move in such a way that his path overlaps with or is adjacent to a previous location. This is illustrated in <A class="docLink" HREF="#ch06_fig10">Figure 6-10</A>.</P>
+<A NAME="ch06_fig10"></A><p><CENTER>
+<H5 class="docFigureTitle">Figure 6-10. Following the shortest path</H5>
+<IMG BORDER="0" id="" SRC="images/0596005555/figs/ch06_fig10.jpg" ALT="figs/ch06_fig10.jpg">
+</CENTER></p><br>
+<P class="docText">In this case, the troll isn't going to follow the exact footsteps of the player. In fact, doing so would be rather unnatural. It would probably be obvious to the player that the troll was simply moving in the player's footsteps rather than finding its way to the player in an intelligent way. In this case, however, the troll will always look for the adjacent tile containing the most recent breadcrumb. The end result is that the troll will skip over breadcrumbs whenever possible. For example, in <A class="docLink" HREF="#ch06_fig10">Figure 6-10</A>, the troll would follow array elements {<span class="docEmphasis">12</span>,<span class="docEmphasis">11</span>,<span class="docEmphasis">10</span>,<span class="docEmphasis">9</span>,<span class="docEmphasis">8</span>,<span class="docEmphasis">7</span>,<span class="docEmphasis">6</span>,<span class="docEmphasis">2</span>} as it moves to the player's position.</P>
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="ch06_sect1_001.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="ch06_sect1_003.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

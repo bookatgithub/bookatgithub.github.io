@@ -1,0 +1,410 @@
+<HTML><HEAD><META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=iso-8859-1">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="10.2 Interfacing with COM: Cheap Public Relations"-->
+<LINK REL="stylesheet" href="FILES/sbolM.css">
+</HEAD>
+<BODY link="#354278" vlink="#000066" alink="#000080" topmargin="0">
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right"><a href="lpython_snode105.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a> <a href="lpython_snode107.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a></td></table>
+<FONT>
+<h3>10.2
+Interfacing with COM: Cheap Public Relations</h3>
+
+
+<p>
+<a NAME="idx824"></a>We
+use the data to do two things. First, we'll write a program
+that's run periodically (say, at 2 a.m., every night<fonT SIZe="1"><sup><A HREf="#FOOTNOTE-3">[3]</a></sup></font>
+) and looks through the
+saved data, finds out which saved pickled files correspond to
+complaints, and prints out a customized letter to the complainant.
+Sounds sophisticated, but you'll be surprised at how simple it
+is using the right tools. Joe's web site is on a Windows
+machine, so we'll assume that for this program, but other
+platforms work in similar ways.</p>
+
+
+<blockquote><FoNt siZe="1">
+<P ClASs="footnote">
+<SuP><A NAme="FOOTNOTE-3">[3]</a></sUP>
+Setting up this kind of automatic regularly scheduled program
+is easily done on most platforms, using, for example,
+<TT clasS="monofont">cron</TT> on Unix or the <Tt claSS="monofont">AT</TT>
+scheduler on Windows NT.</p>
+</font></blockquote>
+
+
+
+
+
+<p>Before we talk about how to write this program, a word about the
+technology it uses, namely<a namE="idx825"></a> Microsoft's Common
+Object Model (COM). <A namE="idx826"></a>COM is a standard for interaction
+between programs (an <A NaME="idx827"></a>Object Request Broker service, to be
+technical), which allows any COM-compliant program to talk to, access
+the data in, and execute commands in other COM-compliant programs.
+Grossly, the program doing the calling is called a COM client, and
+the program doing the executing is called a COM server. Now, as one
+might suspect given the origin of COM, all major Microsoft products
+are COM-aware, and most can act as servers. Microsoft Word Version 8
+is one of those, and the one we'll use here. Indeed, Microsoft
+Word is just fine for writing letters, which is what we're
+doing. Luckily for us, Python can be made COM-aware as well, at least
+on Windows 95, Windows 98, and Windows NT. Mark
+<A nAME="idx828"></A>Hammond and
+Greg <a namE="idx829"></A>Stein have
+made available a set of extensions to Python for Windows
+called<A Name="idx830"></a>
+<I>win32com</I> that allow Python programs to do almost
+everything you can do with COM from any other language. You can write
+COM clients, servers, ActiveX scripting hosts, debuggers, and more,
+all in Python. We only need to do the first of these, which is also
+the simplest. Basically, our form letter program needs to do the
+following things:</P>
+
+
+
+<Ol typE="1">
+<LI><P>Open all of the pickled files in the appropriate directory and
+unpickle them.</p>
+</li>
+<li><p>For each unpickled instance file, test if the feedback is a
+complaint. If it is, find out the name and address of the person who
+filled out the form and go on to Step 3. If not, skip it.</p>
+</li>
+<li><p>Open a Word document containing a template of the letter we want to
+send, and fill in the appropriate pieces with the customized
+information.</p>
+</li>
+<li><p>	Print the document and close it.</p>
+</lI>
+</oL>
+
+<p>It's almost as simple in Python with
+<i>win32com</i>
+<A nAMe="idx831"></A> <A nAmE="idx832"></A> <A Name="idx833"></a>.
+Here's a little program called <I>formletter.py
+</I>:</P>
+
+
+
+<Pre clASS="monofont"><B>from win32com.client import constants, Dispatch</b>
+<b>WORD = 'Word.Application.8'</b>
+False, True = 0, -1
+import string
+
+class Word:
+    def __init__(self):
+<b>        self.app = Dispatch(WORD)</B>
+    def open(self, doc):
+        self.app.Documents.Open(FileName=doc)
+    def replace(self, source, target):
+        self.app.Selection.HomeKey(Unit=constants.wdLine)
+        find = self.app.Selection.Find
+        find.Text = "%"+source+"%"
+        self.app.Selection.Find.Execute()
+        self.app.Selection.TypeText(Text=target)
+    def printdoc(self):
+        self.app.Application.PrintOut()
+    def close(self):
+        self.app.ActiveDocument.Close(SaveChanges=False)
+
+def print_formletter(data):
+    word.open(r"h:\David\Book\tofutemplate.doc")
+    word.replace("name", data.name)
+    word.replace("address", data.address)
+    word.replace("firstname", string.split(data.name)[0])
+    word.printdoc()
+    word.close()
+
+if __name__ == '__main__':
+    import os, pickle
+    from feedback import DIRECTORY, FormData, FeedbackData
+<B>    word = Word()</B>
+    for filename in os.listdir(DIRECTORY):
+        data = pickle.load(open(os.path.join(DIRECTORY, filename)))
+        if data.type == 'complaint':
+            print "Printing letter for %(name)s." % vars(data)
+            print_formletter(data)
+        else:
+            print "Got comment from %(name)s, skipping printing." % vars(data)</Pre>
+
+
+<p>The first few lines of the main program show the power of a
+well-designed framework. The first line is a standard import
+statement, except that it's worth noting that
+<i>win32com</i> is a package, not a module. It is, in
+fact, a collection of subpackages, modules, and functions. We need
+two things from
+the<a name="idx834"></a> <i>win32com</i>
+package: the <tt class="monofont">Dispatch</Tt> function in the
+<Tt clAsS="monofont">client</Tt> module, a function that allows us to
+"dispatch" functions to other objects (in this case COM
+servers), and the <TT cLaSS="monofont">constants</TT> submodule of the same
+module, which holds the constants defined by the COM objects we want
+to talk to.</p>
+
+
+
+<p>The second line simply defines a variable that contains the name of
+the COM server we're interested in. It's called
+<tt CLASs="monofont">Word.Application.8</tt>
+<a NAME="idx835"></a>
+<a naME="idx836"></A>
+<A name="idx837"></a>,
+as you can find out from using a COM browser or reading Word's
+API (see the sidebar <a href="lpython_snode106.html#4">Finding Out About COM Interfaces</a>).</p>
+
+
+
+<p>Let's focus now on the<tt class="monofont"> if </Tt>_
+_<Tt clAsS="monofont">name</Tt>__<TT cLaSS="monofont"> == '</TT>_
+_<tt clASS="monofont">main</Tt>__<tt cLASS="monofont">'</tt> block, which is the
+next statement after the class and function definitions.</p>
+
+
+
+<p>The first task is to read the data. We import the
+<TT CLass="monofont">os</tt>
+<a name="idx838"></a> and
+<tt class="monofont">pickle</tt>
+<A nAme="idx839"></a> modules for fairly obvious reasons, and
+then three references from the <Tt CLaSS="monofont">feedback</tT> module we
+just wrote: the <tT CLAss="monofont">DIRECTORY</tt> where the data is stored
+(this way if we change it in <I>feedback.py</I>, this
+module reflects the change the next time it's run), and the
+<TT clasS="monofont">FormData</TT> and <Tt claSS="monofont">FeedbackData</TT>
+classes. The next line creates an instance of the
+<tt class="monofont">Word</tt> class; this opens a connection with the Word
+COM server, starting the server if needed.</p>
+
+
+
+<p>The <tt class="monofont">for</tt> loop is a simple iteration over the files
+in the directory with all the saved files. It's important that
+this directory contain only the pickled instances, since we're
+not doing any error checking. As usual we should make the code more
+robust, but we've ignored stability for simplicity.</P>
+
+
+
+<p>The first line in the <Tt clAsS="monofont">for</Tt> loop does the
+unpickling. It uses the <TT cLaSS="monofont">load</TT> function from the
+<tt clASS="monofont">pickle</Tt> module, which takes a single argument, the
+file which is being unpickled. It returns as many references as were
+stored in the file—in our case, just one. Now, the data that
+was stored was just the instance of the
+<tt cLASS="monofont">FeedbackData</tt> class. The definition of the class
+itself isn't stored in the pickled file, just the instance
+values and a reference to the class.<foNT SIze="1"><sup><a href="#FOOTNOTE-4">[4]</a></sup></font>
+</p>
+
+
+<bLoCkquOtE><FoNT sIzE="1">
+<P CLass="footnote">
+<sUP><A Name="FOOTNOTE-4">[4]</a></SUP>
+There are very
+good reasons for this behavior: first, it reduces the total size of
+pickled objects, and more importantly, it allows you to unpickle
+instances of previous versions of a class and automatically upgrade
+them to the newer class definitions.</P>
+</font></BLOCkquote>
+
+
+
+
+
+<p><table border="0" bgCoLor="black" cElLSpACiNg="0" CELLpaddING="1" Width="90%" ALIGn="center"><tr><tD>
+<TABle bgcolor="white" width="100%" border="0" CeLlspAcINg="0" CElLpADDIng="6"><tr>
+<TD WIdth="60" vALIGn="top"><img src="FILES/tip_yellow.gif" Width="50" height="54"></td>
+<td valign="top">
+
+
+<P>At unpickling time, unpickling instances automatically causes an
+import of the module in which the class was defined. Why, then, did
+we need to import the classes specifically? In <a href="lpython_cnode52.html">Chapter 5</A>, we said the name of the currently running
+module is __m<tT ClASs="monofont">ain</Tt>__. In other words, the name of
+the module in which the class is defined is _
+_<TT CLass="monofont">main</tT>__ (even though the name of the file is
+<I>feedback.py</I>), and alas, importing _
+_<Tt claSS="monofont">main</TT>__ when we're unpickling imports the
+currently running module (which lives in
+<i>formletter.py</i>), which doesn't contain the
+definition of the classes of the pickled instances. This is why we
+need to import the class definitions explicitly from the
+<tt CLASs="monofont">feedback</tt> module. If they weren't made
+available to the code calling <tt class="monofont">pickle.unload</tt> (in
+either the local or global namespaces), the unpickling would fail.
+Alternatively, we could save the source of the class in a file and
+import it first before any of the instances, or, even more simply,
+place the class definitions in a separate module that's
+imported explicitly by <i>feedback.py</i> and
+implicitly by the unpickling process in the
+<i>formletter.py</i>. The latter is the usual case, and
+as a result, in most circumstances, you don't need to
+explicitly import the class definitions; unpickling the instance does
+it all, "by magic."<font SiZe="1"><suP><a HReF="#FOOTNOTE-5">[5]</A></sUp></FONT>
+</p>
+
+
+<bloCKQUote><fONT Size="1">
+<p CLASs="footnote">
+<sup><a name="FOOTNOTE-5">[5]</a></sup>
+This point about
+pickling of top-level classes is a subtle one; it's much beyond
+the level of this book. We mention it here because 1) we need to
+explain the code we used, and 2) this is about as complex as Python
+gets. In some ways this should be comforting—there is really no
+"magic" here. The apparently special-case behavior of
+<tt class="monofont">pickle</Tt> is in fact a natural consequence of
+understanding what the __<Tt clAsS="monofont">main</Tt>__ module
+is.</P>
+</FoNt></BLOCkquoTE>
+
+
+
+</TD>
+</tr></taBLE></Td></tr></tABLE></p><br>
+
+
+<p>The <tt class="monofont">if</tt> statement inside the loop is
+straightforward. All that remains is to explain is the
+<tt class="monofont">print_formletter</Tt> function, and, of course, the
+<Tt clAsS="monofont">Word</Tt> class.</P>
+
+
+
+<P>The <tT cLASS="monofont">print_formletter</tt> function simply calls the
+various methods of the <tt CLASs="monofont">word</tt> instance of the
+<tT CLAss="monofont">Word</tt> class with the data extracted from the
+<TT CLass="monofont">data</tt> instance. Note that we use the
+<tt class="monofont">string.split</tt> function to extract the first name of
+the user, just to make the letter more friendly, but this risks
+strange behavior for nonstandard names.</p>
+
+
+
+<p>In the <tt clAsS="monofont">Word</tt> class, the __<tT cLAsS="monofont">init</Tt>_
+_ method appears simple yet hides a lot of work. It creates a
+connection with the COM server and stores a reference to that COM
+server in an instance variable <Tt CLASs="monofont">app</tt>. Now, there are
+two ways in which the subsequent code might use this server:
+<i>dynamic dispatch</I> and <I>nondynamic
+dispatch</I>. In dynamic dispatch, Python doesn't
+"know" at the time the program is running what the
+interface to the COM server (in this case Microsoft Word) is. It
+doesn't matter, because COM allows Python to interrogate the
+server and determine the protocol, for example, the number and kinds
+of arguments each function expects. This approach can be slow,
+however. A way to speed it up is to run the
+<I>makepy.py</i>
+<a naME="idx840"></A> program, which does this once for each
+specified COM server and stores this information on disk. When a
+program using that specific server is executed, the dispatch routine
+uses the precomputed information rather than doing the dynamic
+dispatch. The program as written works in both cases. If
+<I>makepy.py</i> was run on Word in the past, the fast
+dispatch method is used; if not, the dynamic dispatch method is used.
+For more information on these issues, see the information for the
+<i>win32</i>
+<a NAME="idx841"></a>
+<a name="idx842"></a>
+extensions at <a target="_blank" href="http://www.python.org/windows/win32all/default.htm">http://www.python.org/windows/win32all/</a>.</p>
+
+
+
+<P>To explain the <tT claSs="monofont">Word</TT> class methods, let's
+start with a possible template document, so that we can see what
+needs to be done to it to customize it. It's shown in <a href="lpython_snode106.html#3">Figure 10.3</a>.</P>
+
+
+
+<CENter>
+<h5>
+<A NAMe="3"></a>Figure 10.3. Joe's template letter to complainants</h5>
+
+<iMG BOrder="0" WIDTh="503" height="436" src="FILES/lpy_1003.gif" alt="figs/lpy_1003.gif"></center>
+
+
+<p>As you can see, it's a pretty average document, with the
+exception of some text in between <Tt ClasS="monofont">%</tT> signs.
+We've used this notation just to make it easy for a program to
+find the parts which need customization, but any other technique
+could work as well. To use this template, we need to open the
+document, customize it, print it, and close it. Opening it is done by
+the <Tt CLaSs="monofont">open</TT> method of the <TT clasS="monofont">Word</TT>
+class. The printing and closing are done similarly. To customize, we
+replace the <Tt claSS="monofont">%name%</TT>,
+<tt clASS="monofont">%firstname%</Tt>, and <tt class="monofont">%address%</tt> text
+with the appropriate strings. That's what the
+<tt class="monofont">replace</tt> method of the <tT cLass="monofont">Word</Tt>
+class does (we won't cover how we figured out what the exact
+sequence of calls should be; see <A href="lpython_snode106.html#4">Finding Out About COM Interfaces</a> for details).</P>
+
+
+
+<p><A NAMe="4"></a><taBLE CellsPACIng="0" wiDTH="90%" Border="1"><tr><td><center><h2>
+Finding Out About COM Interfaces</h2></cenTeR>
+
+
+<p><a nAmE="idx940"></A><a NAmE="idx941"></a>How can you find out what the various methods and attributes of COM
+objects are? In general, COM objects are just like any other program;
+they should come with documentation. In the case of COM objects,
+however, it's quite possible to have the software without the
+documentation, simply because, as in the case of Word, it's
+possible to use Word without needing to program it. There are three
+strategies available to you if you want to explore a COM interface:</P>
+
+
+
+<UL>
+<Li><p>Find or buy the documentation; some COM programs have their
+documentation available on the Web, or available in printed form.</p>
+</lI>
+<LI><P>Use a COM browser to explore the objects. Pythonwin (part of the
+<i>win32all</i> extensions to Python on Windows, see
+<a href="lpython_cnode123.html">Appendix B</A>), for example, comes with a COM browser
+tool that lets you explore the complex hierarchy of COM objects.
+It's not much more than a listing of available objects and
+functions, but sometimes that's all you need. Development tools
+such as Microsoft's Visual Studio also come with COM browsers.</p>
+</li>
+<lI><P>Use another tool to find what's available. For the example
+above, we simply used Microsoft Word's "macro
+recorder" facility to produce a VBA (Visual Basic for
+Applications) script, which is fairly straightforward to translate to
+Python. Macros tend to be fairly low-intelligence programs, meaning
+that the macro-recording facility can't pick up on the fact
+that you might want to do something 10 times, and so just records the
+same action multiple times. But they work fine for finding out that
+the equivalent of selecting the Print item of the File menu is to
+"say" <TT class="monofont">ActiveDocument.PrintOut()</tt>.</p>
+</li>
+</ul>
+</td></tr></tablE></p>
+
+
+<P>Putting all of this at work, the program, when run, outputs text like:</p>
+
+
+
+<prE cLAsS="monofont">C:\Programs&gt; <B>python formletter.py</b></PrE>
+
+<PRE clasS="monofont">Printing letter for John Doe.
+Got comment from Your Mom, skipping printing.
+Printing letter for Susan B. Anthony.</PRE>
+
+
+<p>and prints two customized letters, ready to be sent in the mail. Note
+that the Word program doesn't show up on the desktop; by
+default, COM servers are invisible, so Word just acts behind the
+scenes. If Word is currently active on the desktop, each step is
+visible to the user (one more reason why it's good to run these
+things after hours).<a naME="idx843"></A></P>
+
+</font>
+ 
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right"><a href="lpython_snode105.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a> <a href="lpython_snode107.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a></td></table>
+</BODY></HTML>

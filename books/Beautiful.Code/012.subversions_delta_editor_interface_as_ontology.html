@@ -1,0 +1,68 @@
+<html><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<link href="styles/globalstyle.css" type="text/css" rel="stylesheet"/>
+<link title="medium" href="styles/two.css" type="text/css" rel="stylesheet"/>
+<script src="scripts/main.js" type="text/javascript" language="javascript"></script>
+<title>Chapter 2. Subversion's Delta Editor: Interface As Ontology</title>
+</head><body>
+<DIV class=h3 style="MARGIN-TOP: 0px; PADDING-BOTTOM: 1em; WIDTH: 100%; PADDING-TOP: 0px"><SPAN>Subversion's Delta Editor: Interface As Ontology</SPAN><SPAN> &gt; Version Control and Tree Transformation</SPAN></DIV>
+<DIV></DIV>
+<DIV>
+<DIV><A name=subversions_delta_editor_interface_as_ontology></A>
+<H2 class=docChapterTitle id=title-ID0EJQCK>2. Subversion's Delta Editor: Interface As Ontology</H2>
+<P class=docText><SPAN class=docEmphasis><A name="Karl Fogel"></A>Karl Fogel</SPAN> <A name=idx-CHP-2-0048></A><A name=idx-CHP-2-0049></A><A name=idx-CHP-2-0050></A></P>
+<P class=docText><SPAN class=docEmphSmaller><A name="code tend"></A>Examples of beautiful code tend to be local solutions</SPAN><A name="such as"></A> to well-bounded, easily comprehensible problems, such as <A name=idx-CHP-2-0051></A>Duff's Device (<A class=docLink href="http://en.wikipedia.org/wiki/Duff's_device" target=_blank>http://en.wikipedia.org/wiki/Duff's_device</A>) or <SPAN class=docEmphasis>rsync's</SPAN><A name="algorithm "></A> rolling checksum algorithm (<A class=docLink href="http://en.wikipedia.org/wiki/Rsync#Algorithm" target=_blank>http://en.wikipedia.org/wiki/Rsync#Algorithm</A><A name="because small"></A>). This is not because small, simple solutions are the only beautiful kind, but because appreciating complex code requires more context than can be given on the back of a napkin.<A name=idx-CHP-2-0052></A></P>
+<P class=docText><A name="talk about"></A>Here, with the luxury of several pages to work in, I'd like to talk about a larger sort of beauty—not necessarily the kind that would strike a passing reader immediately, but the kind that programmers who work with the code on a regular basis would come to appreciate as they accumulate experience with the problem domain. My example is not an algorithm, but an interface: the programming interface used by the open source version control system Subversion (<A class=docLink href="http://subversion.tigris.org/" target=_blank>http://subversion.tigris.org</A><A name="the difference"></A>) to express the difference between two directory trees, which is also the interface used to transform one tree into the other. In Subversion, its formal name is the C type <TT>svn_delta_editor_t</TT><A name="colloquially as"></A>, but it is known colloquially as the <SPAN class=docEmphasis>delta editor</SPAN>.</P>
+<P class=docText><A name=idx-CHP-2-0053></A>Subversion's <A name=idx-CHP-2-0054></A><A name="that programmers"></A>delta editor demonstrates the properties that programmers look for in good design. It breaks down the problem along boundaries so natural that anyone designing a new feature for Subversion can easily tell when to call each function, and for what purpose. It presents the programmer with uncontrived opportunities to maximize efficiency (such as by eliminating unnecessary data transfers over the network) and allows for easy integration of auxiliary tasks (such as progress reporting). Perhaps most important, the design has proved very resilient during enhancements and updates.</P>
+<P class=docText><A name="And as"></A>And as if to confirm suspicions about the origins of good design, the delta editor was created by a single person over the course of a few hours (although that person was very familiar with the problem and the code base).</P>
+<P class=docText><A name="makes the"></A>To understand what makes the delta editor beautiful, we must start by examining the problem it solves.</P><A name=version_control_and_tree_transformation></A>
+<H3 class=docSection1Title id=-100000>2.1. Version Control and Tree Transformation</H3>
+<P class=docText><A name="the Subversion"></A>Very early in the Subversion project, the team realized we had a general task that would be performed over and over: that of minimally expressing the difference between two similar (usually related) directory trees. As a version control system, one of Subversion's goals is to track revisions to directory structures as well as individual file contents. In fact, Subversion's server-side repository is fundamentally designed around directory versioning. A repository is simply a series of snapshots of a directory tree as that tree transforms over time. For each changeset committed to the repository, a new tree is created, differing from the preceding tree exactly where the changes are located and nowhere else. The unchanged portions of the new tree share storage with the preceding tree, and so on back into time. Each successive version of the tree is labeled with a monotonically increasing integer; this unique identifier is called a <SPAN class=docEmphasis>revision number</SPAN>.<A name=idx-CHP-2-0055></A><A name=idx-CHP-2-0056></A><A name=idx-CHP-2-0057></A></P>
+<P class=docText><A name="the repository"></A>Think of the repository as an array of revision numbers, stretching off into infinity. By convention, revision 0 is always an empty directory. In <A class=docLink href="javascript:moveTo('conceptual_view_of_revision_numbers');">Figure 2-1</A><A name="tree hanging"></A>, revision 1 has a tree hanging off it (typically the initial import of content into the repository), and no other revisions have been committed yet. The boxes represent nodes in this virtual filesystem: each node is either a directory (labeled DIR in the upper-right corner) or a file (labeled FILE).</P>
+<P class=docText>What happens when we modify <SPAN class=docEmphasis>tuna?</SPAN><A name="node is"></A> First, we make a new file node, containing the latest text. The new node is not connected to anything yet. As <A class=docLink href="javascript:moveTo('new_node_when_just_created');">Figure 2-2</A><A name="out there"></A> shows, it's just hanging out there in space, with no name.</P>
+<P class=docText><A name="revision of"></A>Next, we create a new revision of its parent directory. As <A class=docLink href="javascript:moveTo('creation_of_new_parent_directory');">Figure 2-3</A><A name="connected to"></A> shows, the subgraph is still not connected to the revision array.</P><A name=conceptual_view_of_revision_numbers></A>
+<P>
+<CENTER>
+<H5 class=docFigureTitle><A name="Figure "></A>Figure 2-1. Conceptual view of revision numbers</H5><IMG id="" height=482 alt="" src="images/subversions_delta_editor_interface_as_ontology.0.png" width=500 border=0> </CENTER>
+<P></P><BR><A name=new_node_when_just_created></A>
+<P>
+<CENTER>
+<H5 class=docFigureTitle><A name="when just"></A>Figure 2-2. New node when just created</H5><IMG id="" height=101 alt="" src="images/subversions_delta_editor_interface_as_ontology.1.png" width=107 border=0> </CENTER>
+<P></P><BR><A name=creation_of_new_parent_directory></A>
+<P>
+<CENTER>
+<H5 class=docFigureTitle><A name="new parent"></A>Figure 2-3. Creation of new parent directory</H5><IMG id="" height=226 alt="" src="images/subversions_delta_editor_interface_as_ontology.2.png" width=176 border=0> </CENTER>
+<P></P><BR>
+<P class=docText><A name="up the"></A>We continue up the line, creating a new revision of the next parent directory (<A class=docLink href="javascript:moveTo('continuing_to_move_up_creating_parent_directories');">Figure 2-4</A>).</P>
+<P class=docText><A name="create a"></A>At the top, we create a new revision of the root directory, as shown in <A class=docLink href="javascript:moveTo('complete_new_directory_tree');">Figure 2-5</A><A name=idx-CHP-2-0058></A><A name="directory A"></A>. This new directory needs an entry to point to the "new" directory A, but since directory B hasn't changed at all, the new root directory also has an entry still pointing to the <SPAN class=docEmphasis>old</SPAN> directory B's node.</P><A name=continuing_to_move_up_creating_parent_directories></A>
+<P>
+<CENTER>
+<H5 class=docFigureTitle><A name="to move"></A>Figure 2-4. Continuing to move up, creating parent directories</H5><IMG id="" height=351 alt="" src="images/subversions_delta_editor_interface_as_ontology.3.png" width=244 border=0> </CENTER>
+<P></P><BR><A name=complete_new_directory_tree></A>
+<P>
+<CENTER>
+<H5 class=docFigureTitle>Figure 2-5. Complete new directory tree</H5><IMG id="" height=520 alt="" src="images/subversions_delta_editor_interface_as_ontology.4.png" width=500 border=0> </CENTER>
+<P></P><BR>
+<P class=docText><A name="new nodes"></A>Now that all the new nodes are written, we finish the "bubble up" process by linking the new tree to the next available revision in the history array, thus making it visible to repository users (<A class=docLink href="javascript:moveTo('finished_revision_link_to_new_tree');">Figure 2-6</A><A name="becomes revision"></A>). In this case, the new tree becomes revision 2.</P>
+<P class=docText><A name="Thus each"></A>Thus each revision in the repository points to the root node of a unique tree, and the difference between that tree and the preceding one is the change that was committed in the new revision. To trace the changes, a program walks down both trees simultaneously, noting where entries point to different places. (For brevity, I've left out some details, such as saving storage space by compressing older nodes as differences against their newer <A name=idx-CHP-2-0059></A>versions.)</P><A name=finished_revision_link_to_new_tree></A>
+<P>
+<CENTER>
+<H5 class=docFigureTitle><A name="to new"></A>Figure 2-6. Finished revision: link to new tree</H5><IMG id="" height=520 alt="" src="images/subversions_delta_editor_interface_as_ontology.5.png" width=500 border=0> </CENTER>
+<P></P><BR>
+<P class=docText>Although this tree-<A name=idx-CHP-2-0060></A><A name="all background"></A>versioning model is all background to the main point of this chapter (the <A name=idx-CHP-2-0061></A><A name="come to"></A>delta editor, which we'll come to soon), it has such nice properties that I considered making it the subject of its own chapter, as an example of beautiful code. Some of its attractive features are:</P>
+<DL class=docList>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docEmphasis>Easy reads</SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList>To locate revision <SPAN class=docEmphasis>n</SPAN> of file <SPAN class=docEmphasis>/path/to/foo.txt</SPAN><A name=revision></A>, one jumps to revision <SPAN class=docEmphasis>n</SPAN>, then walks down the tree to <TT>/path/to/foo.txt.</TT></P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docEmphasis>Writers don't interfere with readers</SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList><A name="concurrent readers"></A>As writers create new nodes, bubbling their way up to the top, concurrent readers cannot see the work in progress. A new tree becomes visible to readers only after the writer makes its final "link" to a revision number in the repository.</P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docEmphasis><A name="is versioned"></A>Tree structure is versioned</SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList><A name="each tree"></A>The very structure of each tree is being saved from revision to revision. File and directory renames, additions, and deletions become an intrinsic part of the repository's history.</P></DD></DL>
+<P class=docText>If <A name=idx-CHP-2-0062></A><A name="would be"></A>Subversion were only a repository, this would be the end of the story. However, there's a client side, too: the <SPAN class=docEmphasis><A name="working copy"></A>working copy</SPAN><A name="copy of"></A>, which is a user's checked-out copy of some revision tree plus whatever local edits the user has made but not yet committed. (Actually, working copies do not always reflect a single revision tree; they often contain mixtures of nodes from different revisions. This turns out not to make much of a difference as far as <A name=idx-CHP-2-0063></A><A name="for the"></A>tree transformation is concerned. So, for the purposes of this chapter, just assume that a working copy represents some revision tree, though not necessarily that of the latest revision.)<A name=idx-CHP-2-0064></A><A name=I_indexterm2_tt18></A></P></DIV></DIV>
+<p>&nbsp;</p><p>&nbsp;</p><!-- 仁·义 -->
+</body></html>

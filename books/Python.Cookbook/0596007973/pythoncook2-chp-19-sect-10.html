@@ -1,0 +1,176 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;19.10.&nbsp;Reading a Text File by Paragraphs</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-19-sect-9.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-19-sect-11.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-19-SECT-10"></a>
+<h3 class="docSection1Title">Recipe 19.10. Reading a Text File by Paragraphs</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Alex Martelli, Magnus Lie Hetland, Terry
+Reedy</span></p>
+
+<a name="pythoncook2-CHP-19-SECT-10.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText">You need to read a text file (or any other iterable whose items are
+lines of text) paragraph by paragraph, where a
+"paragraph" is defined as a
+sequence of nonwhite lines (i.e., paragraphs are separated by lines
+made up exclusively of whitespace).</P>
+
+
+<a name="pythoncook2-CHP-19-SECT-10.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">A generator is quite suitable for bunching up lines this way:</p>
+
+<pre>def paragraphs(lines, is_separator=str.isspace, joiner=''.join):
+    paragraph = [  ]
+    for line in lines:
+        if is_separator(line):
+            if paragraph:
+                yield joiner(paragraph)
+                paragraph = [  ]
+        else:
+            paragraph.append(line)
+    if paragraph:
+        yield joiner(paragraph)
+if _ _name_ _ == '_ _main_ _':
+    text = 'a first\nparagraph\n\nand a\nsecond one\n\n'
+    for p in paragraphs(text.splitlines(True)): print repr(p)</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-19-SECT-10.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">Python doesn't directly support paragraph-oriented
+file reading, but it's not hard to add such
+functionality. We define a
+"paragraph" as the string formed by
+joining a nonempty sequence of nonseparator lines, separated from any
+adjoining paragraphs by nonempty sequences of separator lines. A
+separator line is one that satisfies the predicate passed in as
+argument <I>is_separator</i>. (A
+<I>predicate</I> is a function whose result is taken
+as a logical truth value, and we say a
+<i>predicate</i> is <i>satisfied</i>
+when the predicate returns a result that is true.) By default, a line
+is a separator if it is made up entirely of whitespace characters
+(e.g., space, tab, newline, etc.).</P>
+
+<p class="docText">The recipe's code is quite straightforward. The
+state of the generator during iteration is entirely held in local
+variable <i>paragraph</i>, a list to which we append the
+nonseparator lines that make up the current paragraph. Whenever we
+meet a separator in the body of the <tt>for</tt> statement,
+we test <tt>if paragraph</tt> to check whether the list is
+currently empty. If the list is empty, we're already
+skipping a run of separators and need do nothing special to handle
+the current separator line. If the list is not empty,
+we've just met a separator line that terminates the
+current paragraph, so we must join up the list,
+<tt>yield</tt> the resulting paragraph string, and then set
+the list back to empty.</P>
+
+<p class="docText">This recipe implements a special case of sequence adaptation by
+bunching: an underlying iterable is "bunched
+up" into another iterable with
+"bigger" items.
+Python's generators let you express sequence
+adaptation tasks very directly and linearly. By passing as arguments,
+with reasonable default values, the <i>is_separator</I>
+predicate, and the <i>joiner</I> callable that determines
+what happens to each "bigger item"
+when we're done bunching it up, we achieve a
+satisfactory amount of generality without any extra complexity. To
+see this, consider a snippet such as:</P>
+
+<pre>import operator
+numbers = [1, 2, 3, 0, 0, 6, 5, 3, 0, 12]
+bunch_up = paragraphs
+for s in bunch_up(numbers, operator.not_, sum): print 'S', s
+for l in bunch_up(numbers, bool, len): print 'L', l</pre><br>
+
+
+<p class="docText">In this snippet, we use the <i>paragraphs</i> generator
+(under the name of <i>bunch_up</i>, which is clearer in
+this context) to get the sums of
+"runs" of nonzero numbers separated
+by runs of zeros, then the lengths of the runs of
+zerosapplications that, at first sight, might appear to be
+quite different from the recipe's stated purpose.
+That's the magic of abstraction: when appropriately
+and tastefully applied, it can easily turn the solution of a problem
+into a family of solutions for many other apparently unrelated
+problems.</p>
+
+<p class="docText">An elementary issue, but a crucial one for getting good performance
+in the "main" use case of this
+recipe, is that the <i>paragraphs</i>'
+generator builds up each resulting paragraph as a list of strings,
+then concatenates all strings in the list with
+'<tt>'.join</tt> to obtain each result it
+<tt>yield</tt>s. An alternate approach, where a large
+string is built up as a string, by repeated application of
+<tt>+=</tt> or <tt>+</tt>, is never the right
+approach in Python: it is both slow and clumsy. Good Pythonic style
+absolutely <span class="docEmphasis">demands</span> that we use a list as the
+intermediate accumulator, whenever we are building a long string by
+concatenating a number of smaller ones. Python 2.4 has diminished the
+performance penalty of the wrong approach. For example, to join a
+list of 52 one-character strings into a 52-character string on my
+machine, Python 2.3 takes 14.2 microseconds with the right approach,
+73.6 with the wrong one; but Python 2.4 takes 12.7 microseconds with
+the right approach, 41.6 with the wrong one, so the penalty in this
+case has decreased from over five times to over three. Nevertheless,
+there is no reason to choose to pay such a performance penalty
+without any returns, even the lower penalty that Python 2.4 manages
+to extract!</p>
+
+<p class="docText">Python 2.4 offers a new <tt>itertools.groupby</tt> function
+that is quite suitable for sequence-bunching tasks. Using it, we
+could express the <i>paragraphs</i>'
+generator in a really tight and concise way:</p>
+
+<pre>from itertools import groupby
+def paragraphs(lines, is_separator=str.isspace, joiner=''.join):
+    for separator_group, lineiter in groupby(lines, key=is_separator):
+        if not separator_group:
+            yield joiner(lineiter)</pre><br>
+
+
+<p class="docText"><tt>itertools.groupby</tt>, like SQL's
+<tt>GROUP BY</tt> clause, which inspired it, is not exactly
+trivial use, but it can be quite useful indeed for sequence-bunching
+tasks once you have mastered it thoroughly.</P>
+
+
+<a name="pythoncook2-CHP-19-SECT-10.4"></a>
+<H4 class="docSection2Title">See Also</h4>
+
+<p class="docText"><a class="docLink" href="pythoncook2-CHP-19-SECT-11.html#pythoncook2-CHP-19-SECT-11">Recipe 19.11</a>; <a class="docLink" href="pythoncook2-CHP-1.html#pythoncook2-CHP-1">Chapter 1</a> for general issues about handling text;
+<a class="docLink" href="pythoncook2-CHP-2.html#pythoncook2-CHP-2">Chapter 2</a> for general issues about handling
+files; <a class="docLink" href="pythoncook2-CHP-19-SECT-21.html#pythoncook2-CHP-19-SECT-21">Recipe 19.21</a>;
+<span class="docEmphasis">Library Reference</span> documentation on Python
+2.4's <tt>itertools.groupby</tt>.</p>
+
+
+
+<a href="5991535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><UL></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-19-sect-9.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-19-sect-11.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

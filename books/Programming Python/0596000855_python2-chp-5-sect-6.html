@@ -1,0 +1,351 @@
+<html><head>
+<META http-equiv="Content-Type" content="text/html">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="5.6 Copying Directory Trees"-->
+<link rel="STYLESHEET" type="text/css" href="FILES/style.css">
+<link rel="STYLESHEET" type="text/css" href="FILES/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+	<a href="0596000855_python2-CHP-5-SECT-5.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+	<a href="0596000855_python2-CHP-5-SECT-7.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr>
+<td valign="top"><A NAME="python2-CHP-5-SECT-6"></A>
+<H3 class="docSection1Title">5.6 Copying Directory Trees</H3>
+
+<P class="docText">The next three sections conclude this chapter by exploring a handful
+of additional utilities for processing directories (a.k.a.
+"folders") on your computer with Python. They present
+directory <span class="docEmphasis">copy</span>, <span class="docEmphasis">deletion</span>,
+and <span class="docEmphasis">comparison</span> scripts that demonstrate system
+tools at work. All of these were born of necessity, are generally
+portable among all Python platforms, and illustrate Python
+development concepts along the way.
+</P>
+
+<P class="docText">Some of these scripts do something too unique for the
+<TT>visitor</TT> module's classes we've been
+applying in early sections of this chapter, and so require more
+custom solutions (e.g., we can't remove directories we intend
+to walk through). Most have platform-specific equivalents too (e.g.,
+drag-and-drop copies), but the Python utilities shown here are
+portable, easily customized, callable from other scripts, and
+surprisingly fast.
+</P>
+
+<A NAME="python2-CHP-5-SECT-6.1"></A>
+<H4 class="docSection2Title">5.6.1 A Python Tree Copy Script</H4>
+
+<P class="docText">My CD writer sometimes does weird things. In fact, copies of files
+with odd names can be totally botched on the CD, even though other
+files show up in one piece. That's not necessarily a
+show-stopper -- if just a few files are trashed in a big CD backup
+copy, I can always copy the offending files to floppies one at a
+time. Unfortunately, Windows drag-and-drop copies don't play
+nicely with such a CD: the copy operation stops and exits the moment
+the first bad file is encountered. You only get as many files as were
+copied up to the error, but no more.
+</P>
+
+<P class="docText">There may be some magical Windows setting to work around this
+feature, but I gave up hunting for one as soon as I realized that it
+would be easier to code a copier in Python. The
+<I>cpall.py</I> script in <A class="docLink" HREF="#python2-CHP-5-EX-20">Example 5-20</A>
+is one way to do it. With this script, I control what happens when
+bad files are found -- skipping over them with Python exception
+handlers, for instance. Moreover, this tool works with the same
+interface and effect on other platforms. It seems to me, at least,
+that a few minutes spent writing a portable and reusable Python
+script to meet a need is a better investment than looking for
+solutions that work on only one platform (if at all).
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-5-EX-20"></A>Example 5-20. PP2E\System\Filetools\cpall.py </H5>
+<PRE>#########################################################
+# Usage: "python cpall.py dir1 dir2".
+# Recursive copy of a directory tree. Works like a 
+# unix "cp -r dirFrom/* dirTo" command, and assumes 
+# that dirFrom and dirTo are both directories.  Was
+# written to get around fatal error messages under 
+# Windows drag-and-drop copies (the first bad file 
+# ends the entire copy operation immediately), but 
+# also allows you to customize copy operations.
+# May need more on Unix--skip links, fifos, etc.  
+#########################################################
+
+import os, sys
+verbose = 0
+dcount = fcount = 0
+maxfileload = 100000
+blksize = 1024 * 8
+
+def cpfile(pathFrom, pathTo, maxfileload=maxfileload):
+    """
+    copy file pathFrom to pathTo, byte for byte
+    """
+    if os.path.getsize(pathFrom) &lt;= maxfileload:
+        bytesFrom = open(pathFrom, 'rb').read(  )   # read small file all at once
+        open(pathTo, 'wb').write(bytesFrom)       # need b mode on Windows
+    else:
+        fileFrom = open(pathFrom, 'rb')           # read big files in chunks
+        fileTo   = open(pathTo,   'wb')           # need b mode here too 
+        while 1:
+            bytesFrom = fileFrom.read(blksize)    # get one block, less at end
+            if not bytesFrom: break               # empty after last chunk
+            fileTo.write(bytesFrom)
+
+def cpall(dirFrom, dirTo):
+    """
+    copy contents of dirFrom and below to dirTo
+    """
+    global dcount, fcount
+    for file in os.listdir(dirFrom):                      # for files/dirs here
+        pathFrom = os.path.join(dirFrom, file)
+        pathTo   = os.path.join(dirTo,   file)            # extend both paths
+        if not os.path.isdir(pathFrom):                   # copy simple files
+            try:
+                if verbose &gt; 1: print 'copying', pathFrom, 'to', pathTo
+                cpfile(pathFrom, pathTo)
+                fcount = fcount+1
+            except:
+                print 'Error copying', pathFrom, to, pathTo, '--skipped'
+                print sys.exc_type, sys.exc_value
+        else:
+            if verbose: print 'copying dir', pathFrom, 'to', pathTo
+            try:
+                os.mkdir(pathTo)                          # make new subdir
+                cpall(pathFrom, pathTo)                   # recur into subdirs
+                dcount = dcount+1
+            except:
+                print 'Error creating', pathTo, '--skipped'
+                print sys.exc_type, sys.exc_value
+
+def getargs(  ):
+    try:
+        dirFrom, dirTo = sys.argv[1:]
+    except:
+        print 'Use: cpall.py dirFrom dirTo'
+    else:
+        if not os.path.isdir(dirFrom):
+            print 'Error: dirFrom is not a directory'
+        elif not os.path.exists(dirTo):
+            os.mkdir(dirTo)
+            print 'Note: dirTo was created'
+            return (dirFrom, dirTo)
+        else:
+            print 'Warning: dirTo already exists'
+            if dirFrom == dirTo or (hasattr(os.path, 'samefile') and
+                                    os.path.samefile(dirFrom, dirTo)):
+                print 'Error: dirFrom same as dirTo'
+            else:
+                return (dirFrom, dirTo)
+
+if __name__ == '__main__':
+    import time
+    dirstuple = getargs(  )
+    if dirstuple: 
+        print 'Copying...'
+        start = time.time(  )
+        apply(cpall, dirstuple)
+        print 'Copied', fcount, 'files,', dcount, 'directories',
+        print 'in', time.time(  ) - start, 'seconds'</PRE>
+
+
+<P class="docText">This script implements its own recursive tree traversal logic, and
+keeps track of both the "from" and "to"
+directory paths as it goes. At every level, it copies over simple
+files, creates directories in the "to" path, and recurs
+into subdirectories with "from" and "to"
+paths extended by one level. There are other ways to code this task
+(e.g., other <TT>cpall</TT> variants on the book's CD
+change the working directory along the way with
+<TT>os.chdir</TT> calls), but extending paths on descent
+works well in practice.
+</P>
+
+<P class="docText">Notice this script's reusable <TT>cpfile</TT>
+function -- just in case there are multigigabyte files in the tree
+to be copied, it uses a file's size to decide whether it should
+be read all at once or in chunks (remember, the file
+<TT>read</TT> method without arguments really loads the
+while file into an in-memory string). Also note that this script
+creates the "to" directory if needed, but assumes it is
+empty when a copy starts up; be sure to remove the target directory
+before copying a new tree to its name (more on this in the next
+section).
+</P>
+
+<P class="docText">Here is a big book examples tree copy in action on Windows; pass in
+the name of the "from" and "to" directories
+to kick off the process, and run a <I>rm</I> shell
+command (or similar platform-specific tool) to delete the target
+directory first:
+</P>
+
+<PRE>C:\temp&gt;<B>rm -rf cpexamples</B>
+
+C:\temp&gt;<B>python %X%\system\filetools\cpall.py examples cpexamples</B>
+Note: dirTo was created
+Copying...
+Copied 1356 files, 118 directories in 2.41999995708 seconds
+
+C:\temp&gt;<B>fc /B examples\System\Filetools\cpall.py</B>
+              <B>cpexamples\System\Filetools\cpall.py</B>
+Comparing files examples\System\Filetools\cpall.py and 
+cpexamples\System\Filetools\cpall.py
+FC: no differences encountered</PRE>
+
+<P class="docText">This run copied a tree of 1356 files and 118 directories in 2.4
+seconds on my 650 MHz Windows 98 laptop (the built-in
+<TT>time.time</TT> call can be used to query the system
+time in seconds). It runs a bit slower if programs like MS Word are
+open on the machine, and may run arbitrarily faster or slower for
+you. Still, this is at least as fast as the best drag-and-drop
+I've timed on Windows.
+</P>
+
+<P class="docText">So how does this script work around bad files on a CD backup? The
+secret is that it catches and ignores file
+<span class="docEmphasis">exceptions</span>, and keeps walking. To copy all the
+files that are good on a CD, I simply run a command line like this:
+</P>
+
+<PRE>C:\temp&gt;<B>python %X%\system\filetools\cpall_visitor.py </B>
+<B>                            g:\PP2ndEd\examples\PP2E cpexamples</B></PRE>
+
+<P class="docText">Because the CD is addressed as "G:" on my Windows
+machine, this is the command-line equivalent of drag-and-drop copying
+from an item in the CD's top-level folder, except that the
+Python script will recover from errors on the CD and get the rest. In
+general, <TT>cpall</TT> can be passed any absolute
+directory path on your machine -- even ones that mean devices like
+CDs. To make this go on Linux, try a root directory like
+<I>/dev/cdrom</I> to address your CD drive.
+</P>
+
+
+<A NAME="python2-CHP-5-SECT-6.2"></A>
+<H4 class="docSection2Title">5.6.2 Recoding Copies with a Visitor-Based Class</H4>
+
+<P class="docText"><A NAME="IXT-5-336986"></A>When I first wrote the
+<TT>cpall</TT> script just discussed, I couldn't see
+a way that the <TT>visitor</TT> class hierarchy we met
+earlier would help -- <span class="docEmphasis">two</span> directories needed
+to be traversed in parallel (the original and the copy), and
+<TT>visitor</TT> is based on climbing one tree with
+<TT>os.path.walk</TT>. There seemed no easy way to keep
+track of where the script is at in the copy directory.
+</P>
+
+<P class="docText">The trick I eventually stumbled onto is to not keep track at all.
+Instead, the script in <A class="docLink" HREF="#python2-CHP-5-EX-21">Example 5-21</A> simply
+replacesthe "from" directory path
+string with the "to" directory path string, at the front
+of all directory and pathnames passed-in from
+<TT>os.path.walk</TT>. The results of the string
+replacements are the paths that the original files and directories
+are to be copied to.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-5-EX-21"></A>Example 5-21. PP2E\System\Filetools\cpall_visitor.py </H5>
+<PRE>###########################################################
+# Use: "python cpall_visitor.py fromDir toDir"
+# cpall, but with the visitor classes and os.path.walk;
+# the trick is to do string replacement of fromDir with
+# toDir at the front of all the names walk passes in;
+# assumes that the toDir does not exist initially;
+###########################################################
+
+import os
+from PP2E.PyTools.visitor import FileVisitor
+from cpall import cpfile, getargs
+verbose = 1
+
+class CpallVisitor(FileVisitor):
+    def __init__(self, fromDir, toDir):
+        self.fromDirLen = len(fromDir) + 1
+        self.toDir      = toDir
+        FileVisitor.__init__(self)
+    def visitdir(self, dirpath):
+        toPath = os.path.join(self.toDir, dirpath[self.fromDirLen:])
+        if verbose: print 'd', dirpath, '=&gt;', toPath
+        os.mkdir(toPath)
+        self.dcount = self.dcount + 1
+    def visitfile(self, filepath):
+        toPath = os.path.join(self.toDir, filepath[self.fromDirLen:])
+        if verbose: print 'f', filepath, '=&gt;', toPath
+        cpfile(filepath, toPath)
+        self.fcount = self.fcount + 1
+
+if __name__ == '__main__':
+    import sys, time
+    fromDir, toDir = sys.argv[1:3]
+    if len(sys.argv) &gt; 3: verbose = 0 
+    print 'Copying...'
+    start = time.time(  )
+    walker = CpallVisitor(fromDir, toDir)
+    walker.run(startDir=fromDir)
+    print 'Copied', walker.fcount, 'files,', walker.dcount, 'directories',
+    print 'in', time.time(  ) - start, 'seconds'</PRE>
+
+
+<P class="docText">This version accomplishes roughly the same goal as the original, but
+has made a few assumptions to keep code simple -- the
+"to" directory is assumed to not exist initially, and
+exceptions are not ignored along the way. Here it is copying the book
+examples tree again on Windows:
+</P>
+
+<PRE>C:\temp&gt;<B>rm -rf cpexamples</B>
+
+C:\temp&gt;<B>python %X%\system\filetools\cpall_visitor.py </B>
+                                           <B>examples cpexamples -quiet</B>
+Copying...
+Copied 1356 files, 119 directories in 2.09000003338 seconds
+
+C:\temp&gt;<B>fc /B examples\System\Filetools\cpall.py </B>
+<B>              cpexamples\System\Filetools\cpall.py</B>
+Comparing files examples\System\Filetools\cpall.py and 
+cpexamples\System\Filetools\cpall.py
+FC: no differences encountered</PRE>
+
+<P class="docText">Despite the extra string slicing going on, this version runs just as
+fast as the original. For tracing purposes, this version also prints
+all the "from" and "to" copy paths during the
+traversal, unless you pass in a third argument on the command line,
+or set the script's <TT>verbose</TT> variable to 0:
+</P>
+
+<PRE>C:\temp&gt;<B>python %X%\system\filetools\cpall_visitor.py examples cpexamples </B>
+Copying...
+d examples =&gt; cpexamples\
+f examples\autoexec.bat =&gt; cpexamples\autoexec.bat
+f examples\cleanall.csh =&gt; cpexamples\cleanall.csh
+<I> ...more deleted...</I>
+d examples\System =&gt; cpexamples\System
+f examples\System\System.txt =&gt; cpexamples\System\System.txt
+f examples\System\more.py =&gt; cpexamples\System\more.py
+f examples\System\reader.py =&gt; cpexamples\System\reader.py
+<I> ...more deleted...</I>
+Copied 1356 files, 119 directories in 2.31000006199 seconds</PRE>
+
+
+
+<a href="0596000855_"><img src="FILES/pixel.gif" width="1" height="1" border="0"></a><ul></ul>
+</td>
+</tr>
+</table>
+<td></td>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+          <a href="0596000855_python2-CHP-5-SECT-5.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+          <a href="0596000855_python2-CHP-5-SECT-7.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+</body></html>

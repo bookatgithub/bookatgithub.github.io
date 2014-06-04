@@ -1,0 +1,161 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;10.16.&nbsp;Reading Microsoft Outlook Contacts</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-10-sect-15.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-10-sect-17.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-10-SECT-16"></a>
+<h3 class="docSection1Title">Recipe 10.16. Reading Microsoft Outlook Contacts</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Kevin Altis</span></p>
+
+<a name="pythoncook2-CHP-10-SECT-16.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-10-ITERM-2659"></a> <a name="pythoncook2-CHP-10-ITERM-2660"></a> <a name="pythoncook2-CHP-10-ITERM-2661"></a> <a name="pythoncook2-CHP-10-ITERM-2662"></a>Your Microsoft Outlook Contacts
+house a wealth of useful information, and you need to extract some of
+it in text form.</P>
+
+
+<a name="pythoncook2-CHP-10-SECT-16.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">Like many other problems of system administration on Windows, this
+one is best approached by using COM. The most popular way to
+interface Python to COM is to use the <tt>win32com</tt>
+package, which is part of Mark Hammond's
+<tt>pywin32</tt> extension
+package:<a name="pythoncook2-CHP-10-ITERM-2663"></a></p>
+
+<pre>from win32com.client import gencache, constants
+DEBUG = False
+class MSOutlook(object):
+    def _ _init_ _(self):
+        try:
+            self.oOutlookApp = gencache.EnsureDispatch("Outlook.Application")
+            self.outlookFound = True
+        except:
+            print "MSOutlook: unable to load Outlook"
+            self.outlookFound = False
+        self.records = [  ]
+    def loadContacts(self, keys=None):
+        if not self.outlookFound: return
+        onMAPI = self.oOutlookApp.GetNamespace("MAPI")
+        ofContacts = onMAPI.GetDefaultFolder(constants.olFolderContacts)
+        if DEBUG: print "number of contacts:", len(ofContacts.Items)
+        for oc in range(len(ofContacts.Items)):
+            contact = ofContacts.Items.Item(oc + 1)
+            if contact.Class == constants.olContact:
+                if keys is None:
+                    # no keys were specified, so build up a list of all keys
+                    # that belong to some types we know we can deal with
+                    good_types = int, str, unicode
+                    keys = [key for key in contact._prop_map_get_
+                        if isinstance(getattr(contact, key), good_types) ]
+                    if DEBUG:
+                        print "Fields\n== == == == == == == == == == == =="
+                        keys.sort( )
+                        for key in keys: print key
+                record = {  }
+                for key in keys:
+                    record[key] = getattr(contact, key)
+                self.records.append(record)
+                if DEBUG:
+                    print oc, contact.FullName
+if _ _name_ _ == '_ _main_ _':
+    if '-d' in sys.argv:
+        DEBUG = True
+    if DEBUG:
+        print "attempting to load Outlook"
+    oOutlook = MSOutlook( )
+    if not oOutlook.outlookFound:
+        print "Outlook not found"
+        sys.exit(1)
+    fields = ['FullName', 'CompanyName',
+              'MailingAddressStreet', 'MailingAddressCity',
+              'MailingAddressState', 'MailingAddressPostalCode',
+              'HomeTelephoneNumber', 'BusinessTelephoneNumber',
+              'MobileTelephoneNumber', 'Email1Address', 'Body',
+             ]
+    if DEBUG:
+        import time
+        print "loading records..."
+        startTime = time.time( )
+    # to get all fields just call oOutlook.loadContacts( )
+    # but getting a specific set of fields is much faster
+    oOutlook.loadContacts(fields)
+    if DEBUG:
+        print "loading took %f seconds" % (time.time( ) - startTime)
+    print "Number of contacts: %d" % len(oOutlook.records)
+    print "Contact: %s" % oOutlook.records[0]['FullName']
+    print "Body:\n%s" % oOutlook.records[0]['Body']</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-10-SECT-16.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">This recipe's code could use more error-checking,
+and you could get it by using nested
+<tt>TRy</tt>/<tt>except</tt> blocks, but I
+didn't want to obscure the code's
+fundamental simplicity in this recipe. This recipe should work with
+different versions of Outlook, but I've tested it
+only with Outlook 2000. If you have applied the Outlook security
+patches then you will be prompted with a dialog requesting access to
+Outlook for 1-10 minutes from an external program, which in this case
+is Python.</p>
+
+<p class="docText">The code has already been optimized in two important ways. First, by
+ensuring that the Python COM wrappers for Outlook have been
+generated, which is guaranteed by calling
+<tt>gencache.EnsureDispatch</tt>. Second, in the loop that
+reads the contacts, the <tt>Contact</tt> reference is
+obtained only once and then kept in a local variable
+<tt>contact</tt> to avoid repeated references. This simple
+but crucial optimization is the role of the statement:</P>
+
+<pre>contact = ofContacts.Items.Item(oc + 1)</pre><BR>
+
+
+<p class="docText">Both of these optimizations have a dramatic impact on total import
+time, and both are important enough to keep in mind. Specifically,
+the <tt>EnsureDispatch</tt> idea is important for most uses
+of COM in Python; the concept of getting an object reference, once,
+into a local variable (rather than repeating indexing, calls, and
+attribute accesses) is even more important and applies to
+<span class="docEmphasis">every</span> use of Python.</p>
+
+<p class="docText">Simple variations of this script can be applied to other elements of
+the Outlook object model such as the Calendar and Tasks.
+You'll want to look at the Python wrappers generated
+for Outlook in the
+<i>C:\Python23\Lib\site-packages\win32com\gen_py</i>
+directory. I also suggest that you look at the Outlook object model
+documentation on MSDN and/or pick up a book on the subject.<a name="pythoncook2-CHP-10-ITERM-2664"></a> <a name="pythoncook2-CHP-10-ITERM-2665"></a> <a name="pythoncook2-CHP-10-ITERM-2666"></a> <a name="pythoncook2-CHP-10-ITERM-2667"></a></p>
+
+
+<a name="pythoncook2-CHP-10-SECT-16.4"></a>
+<H4 class="docSection2Title">See Also</h4>
+
+<p class="docText">PyWin32 docs at <a class="docLink" target="_blank" href="http://sourceforge.net/projects/pywin32/">http://sourceforge.net/projects/pywin32/</a>;
+Microsoft's MSDN site, <a class="docLink" target="_blank" href="http://msdn.microsoft.com">http://msdn.microsoft.com</a>.</p>
+
+
+
+<UL></ul></TD></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-10-sect-15.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-10-sect-17.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

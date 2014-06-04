@@ -1,0 +1,375 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
+<title>15.1 Design</title>
+<link rel="stylesheet" type="text/css" href="./acc.css" />
+</head>
+
+<body>
+<div class="prevnext">
+<a href="94.htm"><img src="images/Prev1.gif" /></a>&nbsp;&nbsp;<a href="96.htm"><img src="images/Next1.gif" /></a>
+</div>
+<h3>15.1 Design</h3>
+<p>We are trying to solve two distinct problems. One is a design problem—we'd like to keep 
+structural information about how a picture was created. The other is an implementation 
+problem—we want to store fewer copies of the same data. Both problems result from our 
+decision to store a picture as a <code>vector&lt;string&gt;</code>, so we must revisit that decision.</p>
+<p>We can solve the implementation problem by managing our data with the <code>Ptr</code> class 
+that we developed in Chapter 14. That class will let us store the actual character data in a 
+single object, and then arrange for multiple pictures to share that same object. For example, 
+if we <code>frame</code> a given picture, we will no longer have to copy the characters of the picture 
+that we're framing. Instead, class <code>Ptr</code> will manage a reference count associated with 
+the data, which will indicate how many other pictures are using those data.</p>
+<p>The design problem is harder to solve. Each picture that we create has a structure, 
+which we want to retain. We form a picture either from an initial collection of characters, 
+or through one of three operations: <code>frame</code>, to produce a framed picture; and <code>hcat</code> or 
+<code>vcat</code>, to create pictures that are concatenated horizontally or vertically.</p>
+<p>In other words, we have four similar kinds of pictures. Despite their similarity, we create 
+them differently, and we would like to keep track of the differences.</p>
+<h4>15.1.1 Using inheritance to model the structure</h4>
+<p>Our problem is a perfect match for inheritance: We have various kinds of data structures 
+that are similar to one another, but that differ in ways that we sometimes want to take into 
+account. Each of our data structures is a kind of picture, which implies that inheritance is 
+a sensible way to represent these data structures. We can define a common base class that 
+models the common properties of every kind of picture, and then derive from that base 
+class a separate class for each specific kind of picture that we want to support.</p>
+<p>We'll call the derived classes <code>String_Pic</code>, for pictures created from strings that our 
+user gives us; <code>Frame_Pic</code>, for a picture created by framing another picture; and 
+<code>HCat_Pic</code> and <code>VCat_Pic</code>, for pictures that are the result of concatenating two other pictures 
+horizontally or vertically respectively. By relating these classes through inheritance, 
+we can use <code>virtual</code> functions to write code that doesn't always need to know the precise 
+kind of picture on which it is operating. That way, our users can still use any of our operations 
+without knowing which kind of picture is being manipulated. We will derive each 
+of these classes from a common base class, which we shall call <code>Pic_base</code>, resulting in 
+the following inheritance hierarchy:</p>
+<center>
+<img src="images/270.jpg" />
+</center>
+<p>The next question to resolve is whether to make the inheritance hierarchy visible to our 
+users. There seems to be little reason to do so. None of our operations deals with specific 
+kinds of pictures; instead, they all deal with the abstract notion of a picture. So, there is 
+no need to expose the hierarchy. Moreover, because we intend to use a reference-
+counting strategy, our users will find it more convenient if we hide the inheritance and 
+associated reference counting.</p>
+<p>Instead of making our users deal directly with <code>Pic_base</code> and its associated derived 
+classes, we'll define a picture-specific interface class. Our users will access that class, freeing 
+them from having to be aware of any of our implementation's details. In particular, 
+using an interface class will hide the inheritance hierarchy, along with the fact that our 
+class relies on <code>Ptr</code>. Apparently, then we'll need to define six classes: the interface class, 
+the base class for our inheritance hierarchy, and the four derived classes. We'll call the 
+interface class <code>Picture</code>. Internally, <code>Picture</code> will use a <code>Ptr</code> to manage its data.</p>
+<p>What kind of <code>Ptr</code>? That is, what type of objects will the <code>Ptr</code> manage? It will manage 
+our implementation class, <code>Pic_base</code>. Thus, class <code>Picture</code> will have a single data member, 
+which will have type <code>Ptr&lt;Pic_base&gt;</code>.</p>
+<p>We said that we intend to conceal our use of <code>Pic_base</code> and its related hierarchy, so 
+that users will manipulate these objects only indirectly through class <code>Picture</code>, and will 
+not access any of these classes directly. It turns out that the most straightforward way to 
+hide these classes is to rely on the normal protection mechanisms. By giving these classes 
+an empty <code>public</code> interface, we can let the compiler enforce our decision that all interactions 
+with our pictures will be through class <code>Picture</code>.</p>
+<p>To make these decisions concrete, let's write code that captures what we know so far:</p>
+<div class="prebox"><pre>
+// private <i>classes for use in the implementation only </i>
+class Pic_base { };
+
+class String_Pic: public Pic_base { };
+class Frame_Pic: public Pic_base { };
+class VCat_Pic: public Pic_base { };
+class HCat_Pic: public Pic_base { };
+
+// public <i>interface class and operations</i>
+class Picture {
+public:
+    Picture(const std::vector&lt;std::string&gt;&amp; =
+        std::vector&lt;std::string&gt;());
+private:
+    Ptr&lt;Pic_base&gt; p;
+};
+</pre></div>
+<p>Each <code>Picture</code> object will hold a (<code>private</code>) <code>Ptr&lt;Pic_base&gt;</code> object. Class <code>Pic_base</code> is 
+the common base class for the four classes that will represent our four kinds of pictures. 
+The <code>Ptr</code> class will manage the reference counts to allow us to share the underlying 
+<code>Pic_base</code> objects. We will implement each operation on a <code>Picture</code> by forwarding that 
+operation through the <code>Ptr</code> to the underlying derived-class object. We haven't thought yet 
+about what these operations will be, so for now we've left the bodies of <code>Pic_base</code> 
+and its derived classes empty.</p>
+<p>So far, the <code>Picture</code> class is pretty simple: The only operation is to create a <code>Picture</code> 
+from a <code>vector</code> of <code>string</code>s. We use a default argument (&sect;7.3/127) to make that <code>vector</code> 
+optional. If a user constructs a <code>Picture</code> with no argument, then the compiler will supply 
+<code>vector&lt;string&gt;()</code> as an argument automatically, which yields a <code>vector&lt;string&gt;</code> 
+with no elements. Therefore, the effect of the default argument is to allow us to use a definition 
+such as</p>
+<div class="prebox"><pre>
+Picture p;       // <i>an empty </i>Picture
+</pre></div>
+<p>to create a <code>Picture</code> with no rows.</p>
+<p>Next, we need to think about how to represent our other <code>Picture</code> operations. We 
+know that we want to implement <code>frame</code>, <code>hcat</code>, and <code>vcat</code>. What we must decide is how 
+to do so, and whether these operations should be members of class <code>Picture</code>. The operations 
+do not change the state of the <code>Picture</code> on which they operate, so there is no strong 
+reason to make them members. Moreover, there is a strong reason not to do so: As we 
+saw in &sect;12.3.5/220, by making them nonmembers we can allow conversions.</p>
+<p>For example, because the <code>Picture</code> constructor that we have already written is not 
+<code>explicit</code>, users will be able to write</p>
+<div class="prebox"><pre>
+vector&lt;string&gt; vs;
+Picture p = vs;
+</pre></div>
+<p>and the implementation will convert <code>vs</code> into a <code>Picture</code> for us. If we wish to allow this 
+behavior—and we do—then we should also allow users to write expressions such as 
+<code>frame(vs)</code>. If <code>frame</code> were a member, then users would not be able to write the seemingly 
+equivalent <code>vs.frame()</code>. Remember that conversions are not applied to the left 
+operand of the <code>.</code> operator, so this call would be interpreted as invoking the (nonexistent) 
+<code>frame</code> member of <code>vs</code>.</p>
+<p>Moreover, we believe that our users will find it convenient to use an expression syntax 
+to build up complicated pictures. We consider it clearer to write,</p>
+<div class="prebox"><pre>
+hcat(frame(p), p) 
+</pre></div>
+<p>than to write</p>
+<div class="prebox"><pre>
+p.frame().hcat(p)
+</pre></div>
+<p>because the first example reflects the symmetry of <code>hcat</code>'s arguments and the second 
+example conceals it.</p>
+<p>In addition to the functions that let us build <code>Picture</code>s, we will want to define an output 
+operator that can write the contents of a <code>Picture</code>. These decisions let us flesh out the 
+rest of our interface design:</p>
+<div class="prebox"><pre>
+Picture frame(const Picture&amp;);
+Picture hcat(const Picture&amp;, const Picture&amp;);
+Picture vcat(const Picture&amp;, const Picture&amp;);
+std::ostream&amp; operator&lt;&lt;(std::ostream&amp;, const Picture&amp;);
+</pre></div>
+<h4>15.1.2 The Pic_base class</h4>
+<p>The next step in our design is to fill in the details of the <code>Pic_base</code> hierarchy. If we look 
+back at our initial implementation, we'll see that we used the <code>vector&lt;string&gt;::size</code> 
+function to determine how many strings were in a given picture, and we wrote a separate 
+<code>width</code> function (&sect;5.8/91), which proved useful in padding the output. When we 
+think about how we will display a picture, we see that we are likely to need to be able to 
+perform these same operations on our classes that are derived from <code>Pic_base</code>. These 
+operations will need to be <code>virtual</code>, so that we can ask any kind of <code>Pic_base</code> how many 
+rows it has and how wide its widest row is. Furthermore, because our users will use the 
+output operator to write the contents of a particular <code>Pic_base</code>, we can infer that we'll 
+need another <code>virtual</code> function to display a given <code>Pic_base</code> on a given <code>ostream</code>.</p>
+<p>The only one of these operations that needs significant insight is <code>display</code>. It is easy 
+to decide that one of the parameters to <code>display</code> should be the stream on which to write 
+its output, but figuring out what other parameters <code>display</code> might take requires that we 
+think carefully about how it will operate. When we write a <code>Picture</code>, that <code>Picture</code> will 
+comprise one or more component parts, each of which is an object of a class derived from 
+<code>Pic_base</code>. If we think about writing a horizontally concatenated picture, it will be 
+apparent that each row of the output from a single <code>Picture</code> might involve writing the 
+corresponding row for more than one subpicture. In particular, we cannot write the 
+entire contents of one subpicture, and then the entire contents of the other. Instead, we 
+have to write the contents of each subpicture a row at a time, interleaved with the corresponding 
+rows of the other subpictures. We can conclude, therefore, that the <code>display</code> 
+function needs a parameter that says which row to write.</p>
+<p>Similarly, when we <code>display</code> the left-hand part of a horizontally concatenated picture, 
+we'll need to tell the corresponding subpicture to pad each row to use the full <code>width()</code> of 
+itself on each line. We'll also need to tell a picture that is contained within a <code>Frame_Pic</code> 
+to pad to its widest extent. On the other hand, if we're displaying a <code>Picture</code> that contains 
+only a <code>String_Pic</code>, or a vertically concatenated <code>Picture</code> composed only of 
+<code>String_Pic</code>s, then padding the output results only in writing a lot of unneeded trailing 
+blanks. So, as an optimization, we'll pass <code>display</code> a third argument that indicates 
+whether to pad the output.</p>
+<p>These observations lead us to decide that the <code>display</code> function will take three arguments: 
+the stream on which to generate the output, the number of the row to write, and a 
+<code>bool</code> that will indicate whether to pad the picture to its full <code>width</code>. With these decisions, 
+we can fill in the details of the <code>Pic_base</code> family of classes:</p>
+<div class="prebox"><pre>
+class Pic_base {
+    // <i>no public interface</i>
+    typedef std::vector&lt;std::string&gt;::size_type ht_sz;
+    typedef std::string::size_type wd_sz;
+
+    virtual wd_sz width() const = 0;
+    virtual ht_sz height() const = 0;
+    virtual void display(std::ostream&amp;, ht_sz, bool) const = 0;
+};
+</pre></div>
+<p>We start by defining shorthand names for the <code>size_type</code>s that we'll need in our implementation. 
+Thinking ahead, we can see that the underlying data will still be a 
+<code>vector&lt;string&gt;</code>, so the <code>size_type</code> member of <code>vector&lt;string&gt;</code> will be the right 
+type to represent the height of a picture, and the one from <code>string</code> will be the one we 
+need for the width. We'll abbreviate these types as <code>ht_sz</code> and <code>wd_sz</code> respectively.</p>
+<p>The other task is to define our <code>virtual</code> functions for the base class, which you'll 
+notice take a new form: In each case we say <code>= 0</code> where the body would appear. This syntax 
+indicates our intention that there be no other definition of this <code>virtual</code> function. 
+Why did we define these functions this way?</p>
+<p>To answer this question, let's begin by thinking about what the definitions would look 
+like if we tried to write them. In our design, <code>Pic_base</code> exists only to act as the common 
+base class for our concrete picture classes. We will create objects of these concrete types as 
+a result of executing one of the <code>Picture</code> operations, or in response to a user's creating a 
+<code>Picture</code> from a <code>vector&lt;string&gt;</code>. None of these operations directly creates or manipulates 
+<code>Pic_base</code> objects. If there are never any <code>Pic_base</code> objects, then what would it 
+mean to take the <code>height</code> or <code>width</code> of a <code>Pic_base</code> object (as opposed to doing so for an 
+object of a type derived from <code>Pic_base</code>)? These operations are needed only for the 
+derived classes, in which there always will be a concrete picture. For a <code>Pic_base</code> itself, 
+there is nothing of which to take the <code>height</code> or <code>width</code>.</p>
+<p>Instead of forcing us to concoct an arbitrary definition for these operations, the C++ 
+language lets us say that there will be no definition for a given <code>virtual</code> function. As a 
+side effect of declining to implement the <code>virtual</code> function, we also promise that there 
+will never be objects of the associated type. There may still be objects of types derived 
+from this type, but there are no objects of its exact type.</p>
+<p>The way that we specify that we don't intend to implement a <code>virtual</code> function is to 
+say <code>= 0</code>, as we did on <code>height</code>, <code>width</code>, and <code>display</code>. Doing so makes it a 
+<i><b>pure virtual function</b>. </i>By giving a class even a single pure <code>virtual</code> function, we are also implicitly 
+specifying that there will never be objects of that class. Such classes are called <i><b>abstract base classes</b>, </i>
+because they exist only to capture an abstract interface for an inheritance hierarchy. 
+They are purely abstract: There are no objects of the base class itself. Once we give 
+a class any pure <code>virtual</code>s, the compiler will enforce our design by preventing us from 
+creating any objects of an abstract class.</p>
+<h4>15.1.3 The derived classes</h4>
+<p>As with <code>virtual</code> itself, the fact that a function is a pure <code>virtual</code> is inherited. If a 
+derived class defines all of its inherited pure <code>virtual</code> functions, it becomes a concrete 
+class, and we can create objects of that class. However, if the derived class fails to define 
+even a single pure <code>virtual</code> function that it inherits, then the abstract nature is also inherited. 
+In this case the derived class is itself abstract, and we will not be able to create 
+objects of the derived class. Because each of our derived classes is intended to model a 
+concrete class, we know that we have to redefine all of the virtuals in each of the 
+derived classes.</p>
+<p>The only other things we have to think about right now are what data each of our 
+derived classes will contain, and the associated question of how we will construct objects 
+of each type. We designed these classes to model the structure of how a picture was 
+formed. The type of the picture object tells us how it was created: A <code>String_Pic</code> is created 
+from character data that a user supplied to us; a <code>Frame_Pic</code> results from running 
+<code>frame</code> on another <code>Picture</code>, and so on. In addition to knowing how an object was created, 
+we also need to store the object(s) from which it was created. For a <code>String_Pic</code>, 
+we'll need to remember the characters that the user gave us, which we can do in a 
+<code>vector&lt;string&gt;</code>. We create a <code>Frame_Pic</code> by framing another <code>Picture</code>, so we'll need 
+to store the <code>Picture</code> that was <code>frame</code>d. Similarly, we create <code>HCat_Pic</code>s and <code>VCat_Pic</code>s 
+by combining two other <code>Picture</code>s. These classes will store the <code>Picture</code>s used in creating 
+the resultant new object.</p>
+<p>Before settling on a design that stores Pictures in the <code>Pic_base</code> derived classes, we 
+should think through the implications of this design a bit more deeply. Class <code>Picture</code> is 
+an interface class intended for use by our users. As such, it captures the interface to our 
+problem domain but not the implementation. Specifically, it does not have <code>height</code>, 
+<code>width</code>, or <code>display</code> operations. If we think a bit about how these functions might be 
+implemented, we'll see that we'll need access to the corresponding operations on the 
+<code>Picture</code>(s) stored in each of the derived types. For example, to calculate <code>height</code> of a 
+<code>VCat_Pic</code>, we need to add the heights of the two Pictures from which it was formed. 
+Similarly, we'll obtain the <code>width</code> by finding the maximum of the <code>width</code>s of the two component Pictures.</p>
+<p>An implication of storing a <code>Picture</code> in each of the derived classes is that we'll have to 
+give class <code>Picture</code> functions that duplicate the <code>Pic_base</code> operations. Doing so obscures 
+our initial design intent, which was that class <code>Picture</code> should be concerned with interface 
+not implementation. We can maintain our design by realizing that what we need in 
+the derived classes is not an interface object but an implementation object. This realization 
+implies that instead of storing a <code>Picture</code>, we should store a <code>Ptr&lt;Pic_base&gt;</code>. This 
+design keeps a clean separation between interface and implementation, while still maintaining 
+our intention to reference count our implementation objects to avoid unnecessary 
+data duplication.</p>
+<p>Although our design is clean, enough indirection is involved that a picture may help:</p>
+<center>
+<img src="images/275.jpg" />
+</center>
+<p>Here we assume that we are generating three <code>Picture</code>s. The first <code>Picture</code> represents a 
+<code>String_Pic</code> object that holds the data that we got from the user. The second one represents 
+a <code>Frame_Pic</code> object that we constructed by calling <code>frame</code> on the initial <code>Picture</code>. 
+Finally, we construct a <code>Picture</code> that represents the output of <code>vcat</code> run on the two previous 
+<code>Picture</code>s. Each <code>Picture</code> has a single data member, which is a <code>Ptr&lt;Pic_base&gt;</code>. 
+That <code>Ptr</code> points to an object of the appropriate <code>Pic_base</code> derived type. Each such object, 
+in turn, contains either the <code>vector</code> that holds a copy of the data we got from the user, or 
+one or two <code>Ptr</code>s that point to the <code>Pic_base</code> objects used to create the <code>Picture</code>. Not 
+shown in this diagram are the reference counts associated with the <code>Ptr</code> objects, because 
+we assume that the <code>Ptr</code> class is doing its job, and we can ignore the details of that job.</p>
+<p>What's different from what we did in Chapter 5 is that only <code>String_Pic</code> contains any 
+characters. The others hold one or two <code>Ptr</code>s. Therefore, we won't copy any characters 
+when we create f or v. Instead, the <code>Ptr</code> will be yet another reference to the <code>Ptr</code>s in the 
+<code>Picture</code>s that are used in creating a new <code>Picture</code>, and the <code>Ptr</code> class will take care of 
+the reference counting for us. So, when we call <code>frame(pic)</code>, the effect is to create a new 
+<code>Frame_Pic</code> object, and to point its <code>Ptr</code> at the same <code>String_Pic</code> that is stored in <code>pic</code>. 
+Similarly, the <code>VCat_Pic</code> contains two <code>Ptr</code>s pointing to the <code>Frame_Pic</code> and the 
+<code>String_Pic</code> respectively. We will not destroy any of these <code>Pic_base</code> objects; doing so 
+is the responsibility of the <code>Ptr</code> class. It will arrange to destroy each <code>Pic_base</code> object 
+when the last <code>Ptr</code> that refers to each object has gone away.</p>
+<p>At this point, we should capture these design decisions in code. We know what data 
+each object will contain, and we know what our operations will be:</p>
+<div class="prebox"><pre>
+class Pic_base {
+    // <i>no </i>public <i>interface</i>
+    typedef std::vector&lt;std::string&gt;::size_type ht_sz;
+    typedef std::string::size_type wd_sz;
+
+    // <i>this class is an abstract base class </i>
+    virtual wd_sz width() const = 0;
+    virtual ht_sz height() const = 0;
+    virtual void display(std::ostream&amp;, ht_sz, bool) const = 0;
+};
+
+class Frame_Pic: public Pic_base { 
+    //<i> no </i>public <i>interface </i>
+    Ptr&lt;Pic_base&gt; p;
+    Frame_Pic(const Ptr&lt;Pic_base&gt;&amp; pic): p(pic) { }
+
+    wd_sz width() const;
+    ht_sz height() const;
+    void display(std::ostream&amp;, ht_sz, bool) const;
+};
+</pre></div>
+<p>Here we say that <code>Frame_Pic</code> inherits from <code>Pic_base</code>, and declare our intention to 
+define class-specific versions of each of the three <code>virtual</code>s from that base class. Thus, 
+<code>Frame_Pic</code> will not be an abstract class, and we will be able to create <code>Frame_Pic</code> objects. 
+It is worth noting that we have declared these <code>virtual</code>s in the <code>private</code> section of the 
+class. Doing so lets the compiler enforce our design decision that only class <code>Picture</code> and 
+operations on <code>Picture</code>s can access the <code>Pic_base</code> hierarchy. Of course, because these 
+<code>virtual</code>s are <code>private</code>, we may need to revisit the class definition to include <code>friend</code> 
+declarations for class <code>Picture</code>, or the associated operations, as needed.</p>
+<p>The <code>Frame_Pic</code> constructor needs only to copy the <code>Ptr</code> from the object that is being 
+framed, which it does in the constructor initializer. The constructor body is empty, 
+because there is no other work to do.</p>
+<p>Continuing with our other derived classes, the concatenation classes will operate similarly 
+to <code>Frame_Pic</code>: Each class will need to remember its two constituent pictures. How 
+they were concatenated, vertically or horizontally, will be implicit in the type itself:</p>
+<div class="prebox"><pre>
+class VCat_Pic: public Pic_base {
+    Ptr&lt;Pic_base&gt; top, bottom;
+    VCat_Pic(const Ptr&lt;Pic_base&gt;&amp; t, const Ptr&lt;Pic_base&gt;&amp; b): 
+	    top(t), bottom(b) { }
+
+    wd_sz width() const;
+    ht_sz height() const;
+    void display(std::ostream&amp;, ht_sz, bool) const;
+};
+
+class HCat_Pic: public Pic_base {
+    Ptr&lt;Pic_base&gt; left, right;
+    HCat_Pic(const Ptr&lt;Pic_base&gt;&amp; l, const Ptr&lt;Pic_base&gt;&amp; r): 
+        left(l), right(r) { }
+
+    wd_sz width() const;
+    ht_sz height() const;
+    void display(std::ostream&amp;, ht_sz, bool) const;
+};
+</pre></div>
+<p>The <code>String_Pic</code> class differs slightly from the others in that it stores a copy of the 
+<code>vector&lt;char&gt;</code> that contains the picture's data:</p>
+<div class="prebox"><pre>
+class String_Pic: public Pic_base {
+    std::vector&lt;std::string&gt; data;
+    String_Pic(const std::vector&lt;std::string&gt;&amp; v): data(v) { }
+
+    wd_sz width() const;
+    ht_sz height() const;
+    void display(std::ostream&amp;, ht_sz, bool) const;
+};
+</pre></div>
+<p>We still copy the underlying characters from our user's <code>vector</code> parameter v into our own 
+member, which is called <code>data</code>. This is the only place in our entire program that copies 
+characters. Everywhere else, we copy only <code>Ptr&lt;Pic_base&gt;</code> objects, which copies pointers 
+and manipulates reference counts.</p>
+<h4>15.1.4   Copy control</h4>
+<p>Perhaps the most interesting aspect of our design is what isn't here. There are no copy 
+constructors, assignment operators, or destructors. Why?</p>
+<p>The reason is that the synthesized defaults work. The <code>vector</code> class takes care of managing 
+the space for the initial copy of the characters that our user gives us as part of creating 
+a new <code>Picture</code>. If we copy or assign two <code>Picture</code>s that refer to <code>String_Pic</code>s, or 
+we destroy a <code>Picture</code>, then the <code>Ptr</code> operations will do the right thing to manage the 
+<code>Picture</code> objects, and arrange to delete the underlying <code>String_Pic</code> at the right time. 
+More generally, the <code>Ptr</code> class takes care of copying, assigning, and destroying the <code>Ptr</code> 
+members in the other <code>Pic_base</code> classes—and in class <code>Picture</code> itself.</p>
+<div class="prevnext">
+<a href="94.htm"><img src="images/Prev1.gif" /></a>&nbsp;&nbsp;<a href="96.htm"><img src="images/Next1.gif" /></a>
+</div>
+</body>
+</html>

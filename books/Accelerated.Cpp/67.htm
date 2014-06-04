@@ -1,0 +1,334 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
+<title>11.2 Implementing the Vec class</title>
+<link rel="stylesheet" type="text/css" href="./acc.css" />
+</head>
+
+<body>
+<div class="prevnext">
+<a href="66.htm"><img src="images/Prev1.gif" /></a>&nbsp;&nbsp;<a href="68.htm"><img src="images/Next1.gif" /></a>
+</div>
+<h3>11.2 Implementing the Vec class</h3>
+<p>Having determined our operations, we next need to think about how to represent a <code>Vec</code>.</p>
+<p>The easiest implementation decision is that we need to define a <i><b>template class</b>. </i>We 
+want to allow users to use <code>Vec</code>s to hold a variety of types. The template facility that we 
+described in &sect;8.1.1/140 for functions also applies to classes. That facility let us write one 
+definition of a template function, and use that template to create versions that could be 
+run on a variety of types. Similarly, we can define a template class, and then use that class to create 
+a family of types that differ only with respect to the types used in the template 
+parameter list. We've already used such types, including <code>vector</code>, <code>list</code>, and <code>map</code>.</p>
+<p>As with template functions, when we define a template class, we have to signal that 
+the class is a template, and list the type parameters that will be used in the class definition:</p>
+<div class="prebox"><pre>
+template &lt;class T&gt; class Vec {
+public:
+    // <i>interface </i>
+private:
+    // <i>implementation</i>
+};
+</pre></div>
+<p>This code says that <code>Vec</code> is a template class, with one type parameter named <code>T</code>. As with 
+other class types, we can assume that there will be <code>public</code> and <code>private</code> parts that define 
+the interface and implementation respectively.</p>
+<p>The next question we must resolve is what data we will store. Presumably we'll need 
+some storage to hold the elements in the <code>Vec</code>, and we'll want to keep track of the number 
+of elements that the <code>Vec</code> contains. The most obvious choice is to hold the elements in a 
+dynamically allocated array.</p>
+<p>What information about the array do we need to store? We intend to implement the 
+<code>begin</code>, <code>end</code>, and <code>size</code> functions. This intention suggests that we might store the address 
+of the initial element, one past the address of the last element, and the number of elements. 
+However, we do not need to store all three of these items, because we can compute 
+any of them from the other two. Therefore, we'll make the arbitrary decision to store 
+only pointers to the first and (one past) the last element of the array, and to compute the 
+<code>size</code> as needed. We envision a data structure that looks like this:</p>
+<center>
+<img src="images/188.jpg" />
+</center>
+<p>With these implementation decisions made, we can update our <code>Vec</code> class:</p>
+<div class="prebox"><pre>
+template &lt;class T&gt; class Vec {
+public:
+    // <i>interface </i>
+private:
+    T* data;        // <i>first element in the </i>Vec
+    T* limit;       // <i>one past the last element in the </i>Vec
+};
+</pre></div>
+<p>This class definition says that <code>Vec</code> is a template type, and that it takes a single type parameter. 
+In the body of the class definition, we'll call that type <code>T</code>. Whenever we use <code>T</code>, the 
+compiler will replace it with whatever type the user names when creating a <code>Vec</code>. So for 
+example, if we write</p>
+<div class="prebox"><pre>
+Vec&lt;int&gt; v;
+</pre></div>
+<p>this definition will cause the compiler to instantiate (&sect;8.1.2/142) a version of the <code>Vec</code> class 
+in which it replaces each reference to <code>T</code> by <code>int</code>. The code that the compiler generates for 
+that class will resolve expressions that involve <code>T</code> as if they had been written using <code>int</code>. 
+Thus, because we used the type parameter <code>T</code> in the declaration of <code>data</code> and <code>limit</code>, the 
+type of these pointers depends on the type of the objects that the <code>Vec</code> will hold.</p>
+<p>This type is not known until the definition of a <code>Vec</code> is instantiated. Once we say that 
+we want a <code>Vec&lt;int&gt;</code>, the types of <code>data</code> and <code>limit</code> are known: They will be <code>int*</code> for 
+this instance of <code>Vec</code>. Similarly, if we also used <code>Vec&lt;string&gt;</code>, then the compiler would 
+generate a second, different instantiation of <code>Vec</code> that bound <code>T</code> to <code>string</code>, thereby giving 
+<code>data</code> and <code>limit</code> the type <code>string*</code> in that instantiation.</p>
+<h4>11.2.1 Memory allocation</h4>
+<p>Because our class will allocate its array dynamically (&sect;10.6.2/184), we might expect that 
+we should allocate space for our <code>Vec</code> by using new <code>T[n]</code>, where <code>n</code> is the number of elements 
+we want to allocate. However, remember that not only does <code>new T[n]</code> allocate 
+space, but it also initializes the elements by running the default constructor for <code>T</code>. If we 
+were to use <code>new T[n]</code>, then we would be imposing a requirement on <code>T</code>: Users could create 
+a <code>Vec&lt;T&gt;</code> only if <code>T</code> has a default constructor. The standard <code>vector</code> class imposes no 
+such restriction. Because we want to emulate standard <code>vector</code>s, we don't want to 
+impose this restriction either.</p>
+<p>It turns out that the library provides a memory allocation class that offers more 
+detailed control over memory allocation. This class will suit our needs exactly, if we use it 
+instead of <code>new</code> and <code>delete</code>. The class lets us allocate raw memory, and then—in a separate 
+step—build objects in that memory. Rather than diving right into the details of that 
+class, we will assume that eventually we shall have to write some utility functions that 
+will manage the memory for us. For now, we'll assume that these functions exist, and 
+we'll use them in completing the <code>Vec</code> class. As we use them, we'll get a better picture of 
+just what we would like them to do, so that when it's time to implement them, We will 
+know just what it is that we need to implement.</p>
+<p>These new utility members will be part of the <code>private</code> implementation of our class. 
+They will be responsible for allocating and deallocating the memory that we need, and for 
+initializing and destroying the elements stored in the <code>Vec</code>. Thus, these functions will 
+manage our pointers—<code>data</code> and <code>limit</code>. Only these memory management functions will 
+give new values to these data members. The <code>public</code> members of <code>Vec</code> will read <code>data</code> and 
+ <code>1imit</code>, but will not change them.</p>
+<p>When the <code>public</code> members need to do something, such as constructing a new <code>Vec</code> 
+that needs to change the value of <code>data</code> or <code>limit</code>, they will call an appropriate memory-
+management function to do so. This strategy will let us partition our work: One set of 
+members will provide the interface to our user, and another set will deal with the implementation 
+details.</p>
+<p>We'll come back to fill in the details of these utility functions in &sect;11.5/203.</p>
+<h4>11.2.2 Constructors</h4>
+<p>We know that we must define two constructors:</p>
+<div class="prebox"><pre>
+Vec&lt;Student_info&gt; vs;  // <i>the default constructor</i>
+Vec&lt;double&gt; vs(100);   // <i>constructor taking a size</i>
+</pre></div>
+<p>The standard <code>vector</code> also provides a closely related third constructor, which takes a size 
+and an initial value to use to initialize the elements of the <code>vector</code>, and initializes all the 
+elements to copies of that value. This constructor is similar to the one that takes a size 
+alone, so we may as well implement this third constructor too.</p>
+<p>The role of any constructor is to ensure that the object is correctly initialized. For <code>Vec</code> 
+objects, we need to initialize <code>data</code> and <code>limit</code>. Doing so involves allocating space to hold 
+the elements of the <code>Vec</code> and initializing those elements to an appropriate value. In the 
+case of the default constructor, we want to create an empty <code>Vec</code>, so we need not allocate 
+any space. For the constructors that take a size, we will allocate the given amount of storage. 
+If the user gives us an initial value as well as a size, we'll use that value to initialize 
+all the elements that we allocated. If the user gives us just a size, then we'll use the default 
+constructor for <code>T</code> to obtain a value to use in initializing the elements. For now, we'll forward 
+to our as yet unwritten memory-management functions the job of initializing <code>data</code> 
+and <code>limit</code>, and the related work of allocating and initializing the elements:</p>
+<div class="prebox"><pre>
+template &lt;class T&gt; class Vec {
+public:
+    Vec() { create(); }
+    explicit Vec(size_type n, const T&amp; val = T()) { create(n, val); }
+    // <i>remaining interface</i>
+
+private:
+    T* data;
+    T* limit;
+};
+</pre></div>
+<p>The default constructor, which is the one that takes no arguments, needs to indicate that 
+the <code>Vec</code> is empty (i.e., that it has no elements). It does so by calling a member called 
+<p><code>create</code>, that we'll have to write. When we return from <code>create</code>, we intend for both 
+<code>data</code> and <code>limit</code> to be set to zero.</p>
+<p>Our second constructor uses a keyword that we have not yet seen, <b>explicit, </b>which 
+we will explain shortly. First, let's understand what the constructor does. Note that it 
+uses a default argument (&sect;7.3/127) for the second parameter. Thus, the constructor effectively 
+defines two constructors: One takes a single argument of type <code>size_type</code>; the 
+other takes a <code>size_type</code> and a <code>const T&amp;</code>. In both cases we call a version of <code>create</code> 
+that takes a size and a value. We'll assume that this function, which we'll write in &sect;11.5/203, 
+will allocate enough memory to hold <code>n</code> objects of type <code>T</code>, and will give those elements the 
+initial value specified by <code>val</code>. Our users will have supplied that value explicitly, or else 
+the default constructor for <code>T</code> will have generated it using the rules outlined in &sect;9.5/164 for 
+value-initialization.</p>
+<p>Now let's understand a bit about the use of <code>explicit</code>. This keyword makes sense 
+only in the definition of a constructor that takes a single argument. When we say that a 
+constructor is explicit, we're saying that the compiler will use the constructor only in 
+contexts in which the user expressly invokes the constructor, and not otherwise:</p>
+<div class="prebox"><pre>
+Vec&lt;int&gt; vi(100);     //  <i>ok, explicitly construct the </i>Vec <i>from an </i>int
+Vec&lt;int&gt; vi = 100;    // <i>error: implicitly construct the </i>Vec <i>(&sect;11.3.3/199) and copy it to </i>vi
+</pre></div>
+<p>Use of <code>explicit</code> can be crucial in other contexts in which a constructor might be used, so 
+we will discuss it further in &sect;12.2/213. For consistency with the standard <code>vector</code> class, 
+we have made this constructor explicit even though none of our subsequent examples 
+in this chapter relies on this fact.</p>
+<h4>11.2.3 Type definitions</h4>
+<p>Following the convention used by the standard template classes, we want to provide type 
+names that our users can use, and that will hide the implementation details of how we 
+implement our class. Specifically, we need to provide <code>typedef</code>s for the <code>const</code> and 
+non<code>const </code>iterator types, and for the type that we use to denote the size of a <code>Vec</code>.</p>
+<p>It turns out that the library containers also define another type, named <code>value_type</code>, 
+that is a synonym for type of the objects that the container stores. Looking ahead, we will 
+want to add <code>push_back</code> to class <code>Vec</code>, so that users can dynamically grow their <code>Vec</code> 
+objects. If we also define <code>value_type</code>, then users will be able to use <code>back_inserter</code> 
+(which depends on both <code>push_back</code> and <code>value_type</code>) to generate an output iterator 
+that can grow the <code>Vec</code>.</p>
+<p>The only hard part of defining these types is deciding what types to choose. As we've 
+seen, iterators are objects that navigate among the objects in a container and let us examine 
+their values. Often iterators are themselves of class type. For example, consider a 
+class that implements a linked list. A logical strategy for such a class would be to model a 
+list as a set of nodes, where each node contains a value and a pointer to the next node in 
+the list. The iterator for such a class would contain a pointer to one of these nodes and 
+would implement the <code>++</code> operator to follow the pointer to the next node in the list. Such 
+an iterator would have to be implemented as a class type.</p>
+<p>Because we used an array to hold the elements of a <code>Vec</code>, we can use plain pointers 
+as our <code>Vec</code> iterator type. Each such pointer will point into the underlying <code>data</code> array. As 
+we learned in &sect;10.1/169, pointers support all the random-access-iterator operations. By 
+using a pointer as our underlying iterator type, we will provide full random-access properties, 
+which is consistent with the standard <code>vector</code> class.</p>
+<p>What about the other types? The type of <code>value_type</code> is obvious: It must be <code>T</code>. But, 
+what about the type that represents the size? We know that <code>size_t</code> is big enough to hold 
+the number of elements in any array. Because we are storing <code>Vec</code>s in an array, we can use 
+<code>size_t</code> as the underlying type for <code>Vec::size_type</code>. These decisions give us a class 
+that now looks like</p>
+<div class="prebox"><pre>
+template &lt;class T&gt; class Vec {
+public:
+    typedef T* iterator;                // <i>added</i>
+    typedef const T* const_iterator;    // <i>added</i>
+    typedef size_t size_type;           // <i>added</i>
+    typedef T value_type;               // <i>added</i>
+
+    Vec() { create(); }
+    explicit Vec(size_type n, const T&amp; val = T()) { create(n, val); }
+    // <i>remaining interface</i>
+private:
+    iterator data;                     // <i>changed</i>
+    iterator limit;                    // <i>changed</i>
+};
+</pre></div>
+<p>In addition to adding the appropriate <code>typedef</code>s, we've also updated the class to use our 
+new types. By using the same names inside the class that we defined with our <code>typedef</code> 
+declarations, we make our code more readable and ensure the code will not get out of 
+sync if we subsequently change one of these types.</p>
+<h4>11.2.4  Index and size</h4>
+<p>We said that our users should be able to call <code>size</code> to find out how many elements are in the <code>Vec</code> and 
+to use the index operator to access the elements in the <code>Vec</code>. For example,</p>
+<div class="prebox"><pre>
+for (i = 0; i != vs.size(); ++i)
+    cout &lt;&lt; vs[i].name();
+</pre></div>
+<p>From this usage we can see that the <code>size</code> function should be a member of class <code>Vec</code>, and 
+that we'll need to define what it means to use the subscript operator, <code>[]</code>, on a <code>Vec</code>. The 
+<code>size</code> function is easiest: It takes no argument and should return the number of elements 
+in the <code>Vec</code> as a <code>Vec::size_type</code>. Before we define the index operation, we need to 
+know a bit more about how overloaded operators work.</p>
+<p>We define an overloaded operator much as we define any other function: It has a 
+name, takes arguments, and specifies a return type.</p>
+<p>We form the name of an overloaded operator by appending the operator symbol to the 
+word operator. Thus, the function we need to define will be called <code>operator[]</code>.</p>
+<p>The kind of operator—whether it is a unary or binary operator—is part of what determines 
+how many parameters the corresponding function has. It the operator is a function 
+that is not a member, then the function has as many arguments as the operator has 
+operands. The first argument is bound to the left operand; the second is bound to the 
+right operand. If the operator is defined as a member function, then its left operand is 
+implicitly bound to the object on which the operator is invoked. Member operator functions, 
+therefore, take one less argument than the operator indicates.</p>
+<p>In general, operator functions may be member or nonmember functions. However, the 
+index operator is one of a handful of operations that <i>must </i>be member functions. When 
+our user writes an expression such as <code>vs[i]</code>, that expression will call the member named 
+<code>operator[]</code> of <code>vs</code>, passing <code>i</code> as its argument.</p>
+<p>We know that the operand must be an integral type large enough to denote the last 
+element in the largest possible <code>Vec</code>, and that this type is <code>Vec::size_type</code>. What 
+remains is to decide what type the index operator should return.</p>
+<p>If we give it a bit of thought, we'll conclude that we should return a reference to the 
+element stored in the <code>Vec</code>. Doing so will allow users to write through the index as well as 
+read from it. Although our sample program uses the index only to read a value from <code>vs</code>, 
+it is reasonable to expect that users will also want write access to the elements. With this 
+analysis complete, we can update our class appropriately:</p>
+<div class="prebox"><pre>
+template &lt;class T&gt; class Vec {
+public:
+    typedef T* iterator;
+    typedef const T* const_iterator;
+    typedef size_t size_type;
+    typedef T value_type;
+    
+    Vec() { create(); }
+    explicit Vec(size_type n, const T&amp; val = T()) { create(n, val); }
+
+    // <i>new operations: size and index</i>
+    size_type size() const { return limit - data; }
+
+    T&amp; operator[](size_type i) { return data[i]; }
+    const T&amp; operator[](size_type i) const { return data[i]; }
+private:
+    iterator data;
+    iterator limit;
+};
+</pre></div>
+<p>The <code>size</code> function calculates the number of elements in the <code>Vec</code> by subtracting the pointers 
+that delimit the array that holds our values. Remember from &sect;10.1.4/175 that subtracting 
+two pointers yields the number of elements apart the locations are to which the 
+pointers refer (a value of type <code>ptrdiff_t</code>). Returning that value from the <code>size</code> function 
+converts it to <code>size_type</code>, the function's return type, which is a synonym for <code>size_t</code> 
+(&sect;10.1.3/174). Taking the <code>size</code> of a <code>Vec</code> doesn't change the <code>Vec</code>, so we declare <code>size</code> as a 
+<code>const</code> member function. Doing so lets us take the <code>size</code> of a <code>const Vec</code>.</p>
+<p>The index operator finds the corresponding position in the underlying array and 
+returns a reference to the element. By returning a reference, we allow the user to use the 
+index operation to change the values that are stored in the <code>Vec</code>. This ability to write to 
+the element implies that we need two versions: one for <code>const Vec</code> objects, the other for 
+non<code>const</code> objects of type <code>Vec</code>. Note that the <code>const</code> version returns a reference to 
+<code>const</code>. Doing so ensures that users may use the index only to read the <code>Vec</code>, not to write 
+to it. It is worth noting that we still return a reference, rather than returning a value, for 
+consistency with the standard <code>vector</code>. The reason to return a reference is that if the 
+objects stored in the container are large, it is more efficient to avoid copying them.</p>
+<p>It may be surprising that we can overload the index operator, because it appears that 
+both argument lists are the same; each appears to take a single parameter of type 
+<code>size_type</code>. However, every member function, including each of these operators, takes 
+an implicit parameter, which is the object on which it operates. Because the operations 
+differ regarding whether that object is <code>const</code>, we can overload the operation.</p>
+<h4>11.2.5 Operations that return iterators</h4>
+<p>Next, we need to consider the functions that return iterators. Our specification called for 
+us to implement the <code>begin</code> and <code>end</code> operations, which return an iterator positioned at 
+the beginning and one past the end of the <code>Vec</code> respectively:</p>
+<div class="prebox"><pre>
+template &lt;class T&gt; class Vec {
+public:
+    typedef T* iterator;
+    typedef const T* const_iterator;
+    typedef size_t size_type;
+    typedef T value_type;
+
+    Vec() { create(); }
+    explicit Vec(size_type n, const T&amp; val = T()) { create(n, val); }
+
+    T&amp; operator[](size_type i) { return data[i]; }
+    const T&amp; operator[](size_type i) const { return data[i]; }
+
+    size_type size() const { return limit - data; }
+
+    // <i>new functions to return iterators</i>
+    iterator begin() { return data; }                 // <i>added</i>
+    const_iterator begin() const { return data; }     // <i>added</i>
+
+    iterator end() { return limit; }                  // <i>added</i>
+    const_iterator end() const { return limit; }      // <i>added</i>
+
+private:
+    iterator data;
+    iterator limit;
+};
+</pre></div>
+<p>We offer two versions of the <code>begin</code> and <code>end</code> operations, which are overloaded based on 
+whether the <code>Vec</code> is <code>const</code>. The <code>const</code> versions return <code>const_iterator</code>s, so our users 
+will be able to read but not modify the <code>Vec</code> elements through the iterator.</p>
+<p>At this point, our <code>Vec</code> class is still pretty basic, but the essentials are in place. In fact, if 
+we add only a few more operations, such as <code>push_back</code> and <code>clear</code>, we could use this 
+class instead of the standard <code>vector</code> for all the examples in this book. Unfortunately, 
+though, our <code>Vec</code> class fails to meet the <code>vector</code> specification in some critically important 
+ways, which we must now address.</p>
+<div class="prevnext">
+<a href="66.htm"><img src="images/Prev1.gif" /></a>&nbsp;&nbsp;<a href="68.htm"><img src="images/Next1.gif" /></a>
+</div>
+</body>
+</html>

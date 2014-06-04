@@ -1,0 +1,90 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>4.3 Obstacle Avoidance</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="ch04_sect1_002.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="ch04_sect1_004.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="ch04_sect1_003"></A>
+<H3 class="docSection1Title">4.3 Obstacle Avoidance</H3>
+<P class="docText">The flocking rules we discussed so far yield impressive results. However, such flocking behavior would be far more realistic and useful in games if the units also could avoid running into objects in the game world as they move around in a flock. As it turns out, adding such obstacle avoidance behavior is a relatively simple matter. All we have to do is provide some mechanism for the units to see ahead of them and then apply appropriate steering forces to avoid obstacles in their paths.</P>
+<P class="docText">In this example, we'll consider a simple idealization of an obstacle—we'll consider them as circles. This need not be the case in your games; you can apply the same general approach we'll apply here for other obstacle shapes as well. The only differences will, of course, be geometry, and how you mathematically determine whether a unit is about to run into the obstacle.</P>
+<P class="docText">To detect whether an obstacle is in the path of a unit, we'll borrow from robotics and outfit our units with virtual <span class="docEmphasis">feelers</span>. Basically, these feelers will stick out in front of the units, and if they hit something, this will be an indication to the units to turn. We'll assume that each unit can see obstacles to the extent that we can calculate to which side of the unit the obstacle is located. This will tell us whether to turn right or left.</P>
+<P class="docText">The model we just described isn't the only one that will work. For example, you could outfit your units with more than one feeler—say, three sticking out in three different directions to sense not only whether the obstacle is present, but also to which side of the unit it is located. Wide units might require more than one feeler so that you can be sure the unit won't sideswipe an obstacle. In 3D you could use a virtual volume that extends out in front of the unit. You then could test this volume against the game-world geometry to determine an impending collision with an obstacle. You can take many approaches.</P>
+<P class="docText">Getting back to the approach we'll discuss, take a look at <A class="docLink" HREF="#ch04_fig08">Figure 4-8</A> to see how our single virtual feeler will work in geometric terms. The vector, <span class="docEmphBold">v</span>, represents the feeler. It's of some prescribed finite length and is collinear with the unit's heading. The large shaded circle represents an obstacle. To determine whether the feeler intersects the obstacle at some point, we need to apply a little vector math.</P>
+<A NAME="ch04_fig08"></A><p><CENTER>
+<H5 class="docFigureTitle">Figure 4-8. Obstacle avoidance</H5>
+<IMG BORDER="0" SRC="images/0596005555/figs/ch04_fig08.jpg" ALT="figs/ch04_fig08.jpg">
+</CENTER></p><br>
+<P class="docText">First, we calculate the vector, <span class="docEmphBold">a</span>. This is simply the difference between the unit's and the obstacle's positions. Next, we project <span class="docEmphBold">a</span> onto <span class="docEmphBold">v</span> by taking their dot product. This yields vector <span class="docEmphBold">p</span>. Subtracting vector <span class="docEmphBold">p</span> from <span class="docEmphBold">a</span> yields vector <span class="docEmphBold">b</span>. Now to test whether <span class="docEmphBold">v</span> intersects the circle somewhere we need to test two conditions. First, the magnitude of <span class="docEmphBold">p</span> must be less than the magnitude of <span class="docEmphBold">v</span>. Second, the magnitude of <span class="docEmphBold">b</span> must be less than the radius of the obstacle, <span class="docEmphasis">r</span>. If both of these tests pass, corrective steering is required; otherwise, the unit can continue on its current heading.</P>
+<P class="docText">The steering force to be applied in the event of an impending collision is calculated in a manner similar to the flocking rules we discussed earlier. Basically, the required force is calculated as inversely proportional to the distance from the unit to the center of the obstacle. More specifically, the steering force is a function of the prescribed maximum steering force times the ratio of the magnitude of <span class="docEmphBold">v</span> to the magnitude of a. This will make the steering correction greater the closer the unit is to the obstacle, where there's more urgency to get out of the way.</P>
+<P class="docText"><A class="docLink" HREF="#ch04exm12">Example 4-12</A> shows the code that you must add to <span class="docEmphasis">DoUnitAI</span> to perform these avoidance calculations. You insert this code just after the code that handles the three flocking rules. Notice here that all the obstacles in the game world are looped through and checked to see if there's an impending collision. Here again, in practice you'll want to optimize this code. Also notice that the corrective steering force is accumulated in the same <span class="docEmphasis">Fs.x</span> member variable within which the other flocking rule steering forces were accumulated.</P>
+<A NAME="ch04exm12"></A>
+<H5 class="docExampleTitle">Example 4-12. Obstacle avoidance</H5>
+<PRE>
+          .
+          .
+          .
+          Vector     a, p, b;
+          for(j=0; j&lt;_NUM_OBSTACLES; j++)
+          {
+               u = Units[i].vVelocity;
+               u.Normalize();
+               v = u * _COLLISION_VISIBILITY_FACTOR *
+                   Units[i].fLength;
+               a = Obstacles[j] - Units[i].vPosition;
+               p = (a * u) * u;
+               b = p - a;
+               if((b.Magnitude() &lt; _OBSTACLE_RADIUS) &amp;&amp;
+                   (p.Magnitude() &lt; v.Magnitude()))
+               {
+                    // Impending collision...steer away
+                    w = VRotate2D(-Units[i].fOrientation, a);
+                    w.Normalize();
+                    if(w.x &lt; 0) m = 1;
+                    if(w.x &gt; 0) m = -1;
+                    Fs.x += m * _STEERINGFORCE *
+                            (_COLLISION_VISIBILITY_FACTOR *
+                            Units[i].fLength)/a.Magnitude();
+               }
+          }
+          .
+          .
+          .
+</PRE><BR>
+
+
+<P class="docText">If you download and run this example, you'll see that even while the units form flocks, they'll still steer well clear of the randomly placed circular objects. It is interesting to experiment with the different visibility models to see how the flocks behave as they encounter obstacles. With the wide-visibility model the flock tends to split and go around the obstacles on either side. In some cases, they regroup quite readily while in others they don't. With the limited- and narrow-visibility models, the units tend to form single-file lines that flow smoothly around obstacles, without splitting.</P>
+<P class="docText">We should point out that this obstacle avoidance algorithm will not necessarily guarantee zero collisions between units and obstacles. A situation could arise such that a given unit receives conflicting steering instructions that might force it into an obstacle—for example, if a unit happens to get too close to a neighbor on one side while at the same time trying to avoid an obstacle on the other side. Depending on the relative distances from the neighbor and the obstacle, one steering force might dominate the other, causing a collision. Judicious tuning, again, can help mitigate this problem, but in practice you still might have to implement some sort of collision detection and response mechanism to properly handle these potential collisions.</P>
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="ch04_sect1_002.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="ch04_sect1_004.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

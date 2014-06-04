@@ -1,0 +1,282 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;20.15.&nbsp;Upgrading Class Instances Automatically on reload</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-20-sect-14.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-20-sect-16.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-20-SECT-15"></a>
+<h3 class="docSection1Title">Recipe 20.15. Upgrading Class Instances Automatically on reload</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Michael Hudson, Peter Cogolo</span></p>
+
+<a name="pythoncook2-CHP-20-SECT-15.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-20-ITERM-3140"></a> <a name="pythoncook2-CHP-20-ITERM-3141"></a>You are developing a Python
+module that defines a class, and you're trying
+things out in the interactive interpreter. Each time you
+<tt>reload</tt> the module, you have to ensure that
+existing instances are updated to instances of the new, rather than
+the old class.</P>
+
+
+<a name="pythoncook2-CHP-20-SECT-15.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">First, we define a custom metaclass, which ensures its classes keep
+track of all their existing instances:</p>
+
+<pre>import weakref
+class MetaInstanceTracker(type):
+    ''' a metaclass which ensures its classes keep track of their instances '''
+    def _ _init_ _(cls, name, bases, ns):
+        super(MetaInstanceTracker, cls)._ _init_ _(name, bases, ns)
+        # new class cls starts with no instances
+        cls._ _instance_refs_ _ = [  ]
+    def _ _instances_ _(cls):
+        ''' return all instances of cls which are still alive '''
+        # get ref and obj for refs that are still alive
+        instances = [(r, r( )) for r in cls._ _instance_refs_ _ if r( ) is not None]
+        # record the still-alive references back into the class
+        cls._ _instance_refs_ _ = [r for (r, o) in instances]
+        # return the instances which are still alive
+        return [o for (r, o) in instances]
+    def _ _call_ _(cls, *args, **kw):
+        ''' generate an instance, and record it (with a weak reference) '''
+        instance = super(MetaInstanceTracker, cls)._ _call_ _(*args, **kw)
+        # record a ref to the instance before returning the instance
+        cls._ _instance_refs_ _.append(weakref.ref(instance))
+        return instance
+class InstanceTracker:
+    ''' any class may subclass this one, to keep track of its instances '''
+    _ _metaclass_ _ = MetaInstanceTracker</pre><BR>
+
+
+<p class="docText">Now, we can subclass <i>MetaInstanceTracker</I> to obtain
+another custom metaclass, which, on top of the instance-tracking
+functionality, implements the auto-upgrading functionality required
+by this recipe's Problem:</P>
+
+<pre>import inspect
+class MetaAutoReloader(MetaInstanceTracker):
+    ''' a metaclass which, when one of its classes is re-built, updates all
+        instances and subclasses of the previous version to the new one '''
+    def _ _init_ _(cls, name, bases, ns):
+        # the new class may optionally define an _ _update_ _ method
+        updater = ns.pop('_ _update_ _', None)
+        super(MetaInstanceTracker, cls)._ _init_ _(name, bases, ns)
+        # inspect locals &amp; globals in the stackframe of our caller
+        f = inspect.currentframe( ).f_back
+        for d in (f.f_locals, f.f_globals):
+            if name in d:
+                # found the name as a variable is it the old class
+                old_class = d[name]
+                if not isinstance(old_class, mcl):
+                    # no, keep trying
+                    continue
+                # found the old class: update its existing instances
+                for instance in old_class._ _instances_ _( ):
+                    instance._ _class_ _ = cls
+                    if updater: updater(instance)
+                    cls._ _instance_refs_ _.append(weakref.ref(instance))
+                # also update the old class's subclasses
+                for subclass in old_class._ _subclasses_ _( ):
+                    bases = list(subclass._ _bases_ _)
+                    bases[bases.index(old_class)] = cls
+                    subclass._ _bases_ _ = tuple(bases)
+                break
+        return cls
+class AutoReloader:
+    ''' any class may subclass this one, to get automatic updates '''
+    _ _metaclass_ _ = MetaAutoReloader</pre><br>
+
+
+<p class="docText">Here is a usage example:</P>
+
+<pre># an 'old class'
+class Bar(AutoReloader):
+    def _ _init_ _(self, what=23):
+       self.old_attribute = what
+# a subclass of the old class
+class Baz(Bar):
+    pass
+# instances of the old class &amp; of its subclass
+b = Bar( )
+b2 = Baz( )
+# we rebuild the class (normally via 'reload', but, here, in-line!):
+class Bar(AutoReloader):
+    def _ _init_ _(self, what=42):
+       self.new_attribute = what+100
+    def _ _update_ _(self):
+       # compute new attribute from old ones, then delete old ones
+       self.new_attribute = self.old_attribute+100
+       del self.old_attribute
+    def meth(self, arg):
+       # add a new method which wasn't in the old class
+       print arg, self.new_attribute
+if _ _name_ _ == '_ _main_ _':
+    # now b is "upgraded" to the new Bar class, so we can call 'meth':
+    b.meth(1)
+    # emits:<B> 1 123</b>
+    # subclass Baz is also upgraded, both for existing instances...:
+    b2.meth(2)
+    # emits: <b>2 123</b>
+    # ...and for new ones:
+    Baz( ).meth(3)
+    # emits:<b> 3 142</b></pre><br>
+
+
+
+<a name="pythoncook2-CHP-20-SECT-15.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">You're probably familiar with the problem this
+recipe is meant to address. The scenario is that
+you're editing a Python module with your favorite
+text editor. Let's say at some point, your module
+<i>mod.py</i> looks like this:</P>
+
+<pre>class Foo(object):
+    def meth1(self, arg):
+        print arg</pre><br>
+
+
+<p class="docText">In another window, you have an interactive interpreter running to
+test your code:</P>
+
+<pre>&gt;&gt;&gt; import mod
+&gt;&gt;&gt; f = mod.Foo( )
+&gt;&gt;&gt; f.meth1(1)
+<b>1</b></pre><BR>
+
+
+<p class="docText">and it seems to be working. Now you edit <I>mod.py</i>
+to add another method:</p>
+
+<pre>class Foo(object):
+    def meth1(self, arg):
+        print arg
+    def meth2(self, arg):
+        print -arg</pre><br>
+
+
+<p class="docText">Head back to the test session:</p>
+
+<pre>&gt;&gt;&gt; reload(mod)
+<b>module 'mod' from 'mod.pyc'</b>
+&gt;&gt;&gt; f.meth2(2)
+<b>Traceback (most recent call last):</b>
+<b>  File "&amp;lt;stdin&amp;gt;", line 1, in ?</b>
+<b>AttributeError: 'Foo' object has no attribute 'meth2'</b></pre><br>
+
+
+<p class="docText">Argh! You forgot that <tt>f</tt> was an instance of the
+<span class="docEmphasis">old</span> <tt>mod.Foo</tt>!</p>
+
+<p class="docText">You can do two things about this situation. After reloading, either
+regenerate the instance:</p>
+
+<pre>&gt;&gt;&gt; f = mod.Foo( )
+&gt;&gt;&gt; f.meth2(2)
+<b>-2</b></pre><br>
+
+
+<p class="docText">or manually assign to <tt>f._ _class_ _</tt>:</P>
+
+<pre>&gt;&gt;&gt; f._ _class_ _ = mod.Foo
+&gt;&gt;&gt; f.meth2(2)
+<B>-2</b></pre><br>
+
+
+<p class="docText">Regenerating works well in simple situations but can become very
+tedious. Assigning to the class can be automated, which is what this
+recipe is all about.</p>
+
+<p class="docText">Class <I>MetaInstanceTracker</i> is a metaclass that tracks
+instances of its instances. As metaclasses go, it
+isn't too complicated. New classes of this metatype
+get an extra <i>_ _instance_refs_ _</i> class variable
+(which is used to store weak references to instances) and an
+<i>_ _instances_ _</i> class method (which strips out dead
+references from the <i>_ _instance_refs_ _</I> list and
+returns real references to the still live instances). Each time a
+class whose metatype is <i>MetaInstanceTracker</I> gets
+instantiated, a weak reference to the instance is appended to the
+class' <i>_ _instance_refs_ _</I> list.</p>
+
+<p class="docText">When the definition of a class of metatype
+<I>MetaAutoReloader</I> executes, the namespace of the
+definition is examined to determine whether a class of the same name
+already exists. If it does, then it is assumed that this is a class
+<span class="docEmphasis">re</span>definition, instead of a class definition, and
+all instances of the <span class="docEmphasis">old</span> class are updated to
+the <span class="docEmphasis">new</span> class.
+(<i>MetaAutoReloader</I> inherits from
+<I>MetaInstanceTracker</i>, so such instances can easily be
+found). All direct subclasses, found through the old
+class' intrinsic <tt>_ _subclasses_ _</tt>
+class method, then get their <tt>_ _bases_ _</tt> tuples
+rebuilt with the same change.</p>
+
+<p class="docText">The new class definition can optionally include a method <tt>_
+_update_ _</tt>, whose job is to update the state (meaning the
+set of attributes) of each instance, as the
+instance's class transitions from the old version of
+the class to the new one. The usage example in this
+recipe's Solution presents a case in which one
+attribute has changed name and is computed by different rules, as you
+can tell by observing the way the <tt>_ _init_ _</tt>
+methods of the old and new versions are coded; in this case, the job
+of <tt>_ _update_ _</tt> is to compute the new attribute
+based on the value of the old one, then <tt>del</tt> the
+old attribute for tidiness.</p>
+
+<p class="docText">This recipe's code should probably do more thorough
+error checking; Net of error-checking issues, this recipe can also
+supply some fundamental tools to start solving a problem that is
+substantially harder than the one explained in this
+recipe's Problem statement: automatically upgrade
+classes in a long-running application, without needing to stop and
+restart that application.</p>
+
+<p class="docText">Doing automatic upgrading in production code is more difficult than
+doing it during development because many more issues must be
+monitored. For example, you may need a form of locking to ensure the
+application is in a quiescent state while a number of classes get
+upgraded, since you probably don't want to have the
+application answering requests in the middle of the upgrading
+procedure, with some classes or instances already upgraded and others
+still in their old versions. You also often encounter issues of
+persistent storage because the application probably needs to update
+whatever persistent storage it keeps from old to new versions when it
+upgrades classes. And those are just two examples. Nevertheless, the
+key component of such on-the-fly upgrading, which has to do with
+updating instances and subclasses of old classes to new ones, can be
+tackled with the tools shown in this recipe.</P>
+
+
+<a name="pythoncook2-CHP-20-SECT-15.4"></a>
+<h4 class="docSection2Title">See Also</h4>
+
+<p class="docText">Docs for the built-in function <tt>reload</tt> in the
+<span class="docEmphasis">Library Reference</span> and <span class="docEmphasis">Python in a
+Nutshell</span>.<a name="pythoncook2-CHP-20-ITERM-3142"></a> <a name="pythoncook2-CHP-20-ITERM-3143"></a></P>
+
+
+
+<a href="5991535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><ul></UL></td></TR></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-20-sect-14.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-20-sect-16.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

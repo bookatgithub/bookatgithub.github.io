@@ -1,0 +1,220 @@
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>8.6 The coss Storage Scheme</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="squid-CHP-8-SECT-5.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="squid-CHP-8-SECT-7.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="squid-CHP-8-SECT-6"></A>
+<H3 class="docSection1Title">8.6 The coss Storage Scheme</H3>
+
+<P class="docText">The Cyclic Object Storage Scheme (<span class="docEmphasis">coss</span>)
+<A NAME="squid-CHP-8-ITERM-1518"></A><A NAME="squid-CHP-8-ITERM-1519"></A>is an attempt to develop
+a custom filesystem for Squid. With the
+<span class="docEmphasis">ufs</span>-based schemes, the primary performance
+bottleneck comes from the need to execute so many
+<TT>open( )</TT> and <TT>unlink( )</TT> system
+calls. Because each cached response is stored in a separate disk
+file, Squid is always opening, closing, and removing files.</P>
+
+<P class="docText"><span class="docEmphasis">coss</span>, on the other hand, uses one big file to
+store all responses. In this sense, it is a small, custom filesystem
+specifically for Squid. <span class="docEmphasis">coss</span> implements many of
+the functions normally handled by the underlying filesystem, such as
+allocating space for new data and remembering where there is free
+space.</P>
+
+<P class="docText">Unfortunately, <span class="docEmphasis">coss</span> is still a little rough
+around the edges. Development of <span class="docEmphasis">coss</span> has been
+proceeding slowly over the last couple of years. Nonetheless,
+I'll describe it here in case you feel adventurous.</P>
+
+<A NAME="squid-CHP-8-SECT-6.1"></A>
+<H4 class="docSection2Title">8.6.1 How coss Works</H4>
+
+<P class="docText">On the disk, each <span class="docEmphasis">coss</span>
+<span class="docEmphasis">cache_dir</span> is just one big file. The file grows
+in size until it reaches its maximum size. At this point, Squid
+starts over at the beginning of the file, overwriting any data
+already stored there. Thus, new objects are always stored at the
+"end" of this cyclic
+file.<sup class="docFootnote"><A class="docLink" HREF="#squid-CHP-8-FNOTE-3">[3]</A></sup></P><blockquote><p class="docFootnote"><sup><A NAME="squid-CHP-8-FNOTE-3">[3]</A></sup> The beginning is the location where data was
+first written; the end is the location where data was most recently
+written.</p></blockquote>
+
+<P class="docText">Squid actually doesn't write new object data to disk
+immediately. Instead, the data is copied into a 1-MB memory buffer,
+called a <I>stripe</I>. A stripe is written to disk
+when it becomes full. <span class="docEmphasis">coss</span> uses asynchronous
+writes so that the main Squid process doesn't become
+blocked on disk I/O.</P>
+
+<P class="docText">As with other filesystems, <span class="docEmphasis">coss</span> also uses the
+<I>blocksize</I> concept. Back in <A class="docLink" HREF="squid-CHP-7-SECT-1.html#squid-CHP-7-SECT-1.4">Section 7.1.4</A>, I talked about file numbers. Each cached
+object has a file number that Squid uses to locate the data on disk.
+For <span class="docEmphasis">coss</span>, the file number is the same as the
+block number. For example, a cached object with a swap file number
+equal to 112 starts at the 112th block in a <span class="docEmphasis">coss</span>
+filesystem. File numbers aren't allocated
+sequentially with <span class="docEmphasis">coss</span>. Some file numbers are
+unavailable because cached objects generally occupy more than one
+block in the <span class="docEmphasis">coss</span> file.</P>
+
+<P class="docText">The <span class="docEmphasis">coss</span> block size is configurable with a
+<span class="docEmphasis">cache_dir</span> option. Because
+Squid's file numbers are only 24 bits, the block
+size determines the maximum size of a <span class="docEmphasis">coss</span> cache
+directory: size = block_size x
+2<SUP>24</SUP>. For example, with a 512-byte block
+size, you can store up to 8 GB in a <span class="docEmphasis">coss</span>
+<span class="docEmphasis">cache_dir</span>.</P>
+
+<P class="docText"><span class="docEmphasis">coss</span> doesn't implement any of
+Squid's normal cache replacement algorithms (see
+<A class="docLink" HREF="squid-CHP-7-SECT-5.html#squid-CHP-7-SECT-5">Section 7.5</A>). Instead, cache hits are
+"moved" to the end of the cyclic
+file. This is, essentially, the LRU algorithm. It does,
+unfortunately, mean that cache hits cause disk writes, albeit
+indirectly.</P>
+
+<P class="docText">With <span class="docEmphasis">coss</span>, there is no need to unlink or remove
+cached objects. Squid simply forgets about the space allocated to
+objects that are removed. The space will be reused eventually when
+the end of the cyclic file reaches that place again.</P>
+
+
+<A NAME="squid-CHP-8-SECT-6.2"></A>
+<H4 class="docSection2Title">8.6.2 Compiling and Configuring coss</H4>
+
+<P class="docText">To use <span class="docEmphasis">coss</span>, you must add it to the
+<I>—enable-storeio</I> list
+<A NAME="squid-CHP-8-ITERM-1520"></A>
+<A NAME="squid-CHP-8-ITERM-1521"></A><A NAME="squid-CHP-8-ITERM-1522"></A>when running
+<I>./configure</I>:</P>
+
+<PRE>% ./configure --enable-storeio=ufs,coss ...</PRE>
+
+<P class="docText"><span class="docEmphasis">coss</span> cache directories require a
+<TT>max-size</TT> option. Its value must be less than the
+stripe size (1 MB by default, but configurable with the
+<I>—enable-coss-membuf-size</I> option). Also note
+that you must omit the L1 and L2 values that are normally present for
+<span class="docEmphasis">ufs</span>-based schemes. Here is an example:</P>
+
+<PRE>cache_dir coss /cache0/coss 7000 max-size=1000000
+cache_dir coss /cache1/coss 7000 max-size=1000000
+cache_dir coss /cache2/coss 7000 max-size=1000000
+cache_dir coss /cache3/coss 7000 max-size=1000000
+cache_dir coss /cache4/coss 7000 max-size=1000000</PRE>
+
+<P class="docText">Furthermore, you can change the default <span class="docEmphasis">coss</span>
+block size with the <TT>block-size</TT> option:</P>
+
+<PRE>cache_dir coss /cache0/coss 30000 max-size=1000000 block-size=2048</PRE>
+
+<P class="docText">One tricky thing about <span class="docEmphasis">coss</span> is that the
+<span class="docEmphasis">cache_dir</span> directory argument (e.g.,
+<I>/cache0/coss</I>) isn't actually a
+directory. Instead, it is a regular file that Squid opens, and
+creates if necessary. This is so you can use raw partitions as
+<span class="docEmphasis">coss</span> files. If you mistakenly create the
+<span class="docEmphasis">coss</span> file as a directory,
+you'll see an error like this when starting Squid:</P>
+
+<PRE>2003/09/29 18:51:42|  /usr/local/squid/var/cache: (21) Is a directory
+FATAL: storeCossDirInit: Failed to open a coss file.</PRE>
+
+<P class="docText">Because the <span class="docEmphasis">cache_dir</span> argument
+isn't a directory, you must use the
+<span class="docEmphasis">cache_swap_log</span> directive (see <A class="docLink" HREF="squid-CHP-13-SECT-6.html#squid-CHP-13-SECT-6">Section 13.6</A>). Otherwise Squid attempts to create a
+<I>swap.state</I> file in the
+<span class="docEmphasis">cache_dir</span> directory. In that case,
+you'll see an error like this:</P>
+
+<PRE>2003/09/29 18:53:38| /usr/local/squid/var/cache/coss/swap.state:
+        (2) No such file or directory
+FATAL: storeCossDirOpenSwapLog: Failed to open swap log.</PRE>
+
+<P class="docText"><span class="docEmphasis">coss</span> uses asynchronous I/Os for better
+performance. In particular, it uses the <I>aio_read(
+)</I> and <I>aio_write( )</I> system calls.
+These may not be available on all operating systems. At this time,
+they are available on FreeBSD, Solaris, and Linux. If the
+<span class="docEmphasis">coss</span> code seems to compile okay, but you get a
+"Function not implemented" error
+message, you need to enable these system calls in your kernel. On
+FreeBSD, your kernel must have this option:</P>
+
+<PRE>options         VFS_AIO</PRE>
+
+
+<A NAME="squid-CHP-8-SECT-6.3"></A>
+<H4 class="docSection2Title">8.6.3 coss Issues</H4>
+
+<P class="docText"><span class="docEmphasis">coss</span> is still an experimental feature. The code
+has not yet proven stable enough for everyday use. If you want to
+play with and help improve it, be prepared to lose any data stored in
+a <span class="docEmphasis">coss</span> <span class="docEmphasis">cache_dir</span>. On the
+plus side, <span class="docEmphasis">coss</span>'s preliminary
+performance tests are very good. For an example, see <A class="docLink" HREF="squid-APP-D.html#squid-APP-D">Appendix D</A>.</P>
+
+<P class="docText"><span class="docEmphasis">coss</span> doesn't support rebuilding
+cached data from disk very well. When you restart Squid, you might
+find that it fails to read the <span class="docEmphasis">coss</span>
+<I>swap.state</I> files, thus losing any cached data.
+Furthermore, Squid doesn't remember its place in the
+cyclic file after a restart. It always starts back at the beginning.</P>
+
+<P class="docText"><span class="docEmphasis">coss</span> takes a nonstandard approach to object
+replacement. This may cause a lower hit ratio than you might get with
+one of the other storage schemes.</P>
+
+<P class="docText">Some operating systems have problems with files larger than 2 GB. If
+this happens to you, you can always create more, smaller
+<span class="docEmphasis">coss</span> areas. For example:</P>
+
+<PRE>cache_dir coss /cache0/coss0 1900 max-size=1000000 block-size=128
+cache_dir coss /cache0/coss1 1900 max-size=1000000 block-size=128
+cache_dir coss /cache0/coss2 1900 max-size=1000000 block-size=128
+cache_dir coss /cache0/coss3 1900 max-size=1000000 block-size=128</PRE>
+
+<P class="docText">Using a raw disk device (e.g., <I>/dev/da0s1c</I>)
+doesn't work very well yet. One reason is that disk
+devices usually require that I/Os take place on 512-byte block
+boundaries. Another concern is that direct disk access bypasses the
+systems buffer cache and may degrade performance. Many disk drives,
+however, <A NAME="squid-CHP-8-ITERM-1523"></A><A NAME="squid-CHP-8-ITERM-1524"></A>have built-in caches these days.</P>
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e6e6e6">
+<tr style="background-image: url(images/tile_back.gif);">
+<td class="v2" align="left" width="30%">
+<a href="squid-CHP-8-SECT-5.html"><img src="images/previous.gif" width="70" height="19" border="0" align="absmiddle" alt="Previous Section"></a>
+</td>
+<td class="v2" align="center" width="40%">
+<a href="main.html" style="color:white;text-decoration:none;text-underline:none">&nbsp;&lt;&nbsp;Day Day Up&nbsp;&gt;&nbsp;</a>
+</td>
+<td class="v2" align="right" width="30%">
+<a href="squid-CHP-8-SECT-7.html"><img src="images/next.gif" width="70" height="19" border="0" align="absmiddle" alt="Next Section"></a>
+</td>
+</tr>
+</table>
+</body>
+</html>

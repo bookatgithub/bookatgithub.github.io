@@ -1,0 +1,504 @@
+<html><head>
+<META http-equiv="Content-Type" content="text/html">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="14.8 Designing for Reuse and Growth"-->
+<link rel="STYLESHEET" type="text/css" href="FILES/style.css">
+<link rel="STYLESHEET" type="text/css" href="FILES/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+	<a href="0596000855_python2-CHP-14-SECT-7.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+	<a href="0596000855_python2-CHP-15.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr>
+<td valign="top"><A NAME="python2-CHP-14-SECT-8"></A>
+<H3 class="docSection1Title">14.8 Designing for Reuse and Growth</H3>
+
+<P class="docText">I admit it: PyErrata may be thrifty, but it's also a bit
+self-centered. The database interfaces presented in the prior
+sections work as planned and serve to separate all database
+processing from CGI scripting details. But as shown in this book,
+these interfaces aren't as generally reusable as they could be;
+moreover, they are not yet designed to scale up to larger database
+applications.
+</P>
+
+<P class="docText">Let's wrap up this chapter by donning our software code review
+hats for just a few moments and exploring some design alternatives
+for PyErrata. In this section, I highlight the PyErrata database
+interface's obstacles to general applicability, not as
+self-deprecation, but to show how programming decisions can impact
+reusability.
+</P>
+
+<P class="docText">Something else is going on in this section too. There is more concept
+than code here, and the code that is here is more like an
+experimental design than a final product. On the other hand, because
+that design is coded in Python, it can be run to test the feasibility
+of design alternatives; as we've seen, Python can be used as a
+form of <span class="docEmphasis">executable pseudocode</span>.
+</P>
+
+<A NAME="python2-CHP-14-SECT-8.1"></A>
+<H4 class="docSection2Title">14.8.1 Reusability</H4>
+
+<P class="docText"><A NAME="IXT-14-337741"></A>
+<A NAME="IXT-14-337742"></A>As
+we saw, code reuse is pervasive within PyErrata: top-level calls
+filter down to common browse and submit modules, which in turn call
+database classes that reuse a common module. But what about sharing
+PyErrata code with other systems? Although not designed with
+generality in mind, PyErrata's database interface modules could
+<span class="docEmphasis">almost</span> be reused to implement other kinds of
+file- and shelve-based databases outside the context of PyErrata
+itself. However, we need a few more tweaks to turn these interfaces
+into widely useful tools.
+</P>
+
+<P class="docText">As is, shelve and file-directory names are hardcoded into the
+storage-specific subclass modules, but another system could import
+and reuse their <TT>Dbase</TT> classes and provide
+different directory names. Less generally, though, the
+<TT>dbcommon</TT> module adds two attributes to all new
+records (submit-time and report-state) that may or may not be
+relevant outside PyErrata. It also assumes that stored values are
+mappings (dictionaries), but that is less PyErrata-specific.
+</P>
+
+<P class="docText">If we were to rewrite these classes for more general use, it would
+make sense to first repackage the four <TT>DbaseErrata</TT>
+and <TT>DbaseComment</TT> classes in modules of their own
+(they are very specific instances of file and shelve databases). We
+would probably also want to somehow relocate
+<TT>dbcommon</TT>'s insertion of submit-time and
+report-state attributes from the <TT>dbcommon</TT> module
+to these four classes themselves (these attributes are specific to
+PyErrata databases). For instance, we might define a new
+<TT>DbasePyErrata</TT> class that sets these attributes and
+is a mixed-in superclass to the four PyErrata storage-specific
+database classes:
+</P>
+
+<PRE># in new module
+class DbasePyErrata:
+     def storeItem(self, newdata):
+        secsSinceEpoch          = time.time(  )
+        timeTuple               = time.localtime(secsSinceEpoch)
+        y_m_d_h_m_s             = timeTuple[:6]      
+        newdata['Submit date']  = '%s/%02d/%02d, %02d:%02d:%02d' % y_m_d_h_m_s
+        newdata['Report state'] = 'Not yet verified'
+        self.writeItem(newdata)
+
+# in dbshelve
+class Dbase(MutexCntl, dbcommon.Dbase):
+    # as is
+
+# in dbfiles
+class Dbase(dbcommon.Dbase):
+    # as is
+
+# in new file module
+class DbaseErrata(DbasePyErrata,  dbfiles.Dbase):
+    dirname = 'DbaseFiles/errataDB/'
+class DbaseComment(DbasePyErrata, dbfiles.Dbase):
+    dirname = 'DbaseFiles/commentDB/'
+
+# in new shelve module
+class DbaseErrata(DbasePyErrata,  dbshelve.Dbase):
+    filename = 'DbaseShelve/errataDB'
+class DbaseComment(DbasePyErrata, dbshelve.Dbase):
+    filename = 'DbaseShelve/commentDB'</PRE>
+
+<P class="docText">There are more ways to structure this than we have space to cover
+here. The point is that by factoring out application-specific code,
+<TT>dbshelve</TT> and <TT>dbfiles</TT> modules
+not only serve to keep PyErrata interface and database code distinct,
+but also become generally useful data-storage tools.
+</P>
+
+
+<A NAME="python2-CHP-14-SECT-8.2"></A>
+<H4 class="docSection2Title">14.8.2 Scalability</H4>
+
+<P class="docText"><A NAME="python2-IDXTERM-1572"></A> <A NAME="python2-IDXTERM-1573"></A>PyErrata's
+database interfaces were designed for this specific
+application's storage requirements alone and don't
+directly support very large databases. If you study the database code
+carefully, you'll notice that submit operations update a single
+item, but browse requests load entire report databases all at once
+into memory. This scheme works fine for the database sizes expected
+in PyErrata, but performs badly for larger data sets. We could extend
+the database classes to handle larger data sets too, but they would
+likely require new top-level interfaces altogether.
+</P>
+
+<P class="docText">Before I stopped updating it, the static HTML file used to list
+errata from the first edition of this book held just some 60 reports,
+and I expect a similarly small data set for other books and editions.
+With such small databases, it's reasonable to load an entire
+database into memory (i.e., into Python lists and dictionaries) all
+at once, and frequently. Indeed, the time needed to transfer a web
+page containing 60 records across the Internet likely outweighs the
+time it takes to load 60 report files or shelve keys on the server.
+</P>
+
+<P class="docText">On the other hand, the database may become too slow if many more
+reports than expected are posted. There isn't much we could do
+to optimize the "Simple list" and "With
+index" display options, since they really do display all
+records. But for the "Index only" option, we might be
+able to change our classes to load only records having a selected
+value in the designated report field.
+</P>
+
+<P class="docText">For instance, we could work around database load bottlenecks by
+changing our classes to implement <span class="docEmphasis">delayed
+loading</span> of records: rather than returning the real
+database, load requests could return objects that look the same but
+fetch actual records only when needed. Such an approach might require
+no changes in the rest of the system's code, but may be complex
+to implement.
+</P>
+
+<A NAME="python2-CHP-14-SECT-8.2.1"></A>
+<H5 class="docSection3Title">14.8.2.1 Multiple shelve field indexing</H5>
+
+<P class="docText"><A NAME="python2-IDXTERM-1574"></A> <A NAME="python2-IDXTERM-1575"></A>Perhaps a better approach would be to
+define an entirely new top-level interface for the "Index
+only" option -- one that really does load only records
+matching a field value query. For instance, rather than storing all
+records in a single shelve, we could implement the database as a
+<span class="docEmphasis">set of index shelves</span>, one per record field, to
+associate records by field values. Index shelve
+<span class="docEmphasis">keys</span> would be values of the associated field;
+shelve <span class="docEmphasis">values</span> would be lists of records having
+that field value. The shelve entry lists might contain either
+redundant copies of records, or unique names of flat files holding
+the pickled record dictionaries, external to the index shelves (as in
+the current flat-file model).
+</P>
+
+<P class="docText"><A NAME="IXT-14-337743"></A>
+<A NAME="IXT-14-337744"></A>For
+example, the PyErrata comment database could be structured as a
+<span class="docEmphasis">directory of flat files</span> to hold pickled report
+dictionaries, together with five shelves to index the values in all
+record fields (submitter-name, submitter-email, submit-mode,
+submit-date, report-state). In the report-state shelve, there would
+be one entry for each possible report state (verified, rejected,
+etc.); each entry would contain a list of records with just that
+report-state value. Field value queries would be fast, but store and
+load operations would become more complex:
+</P>
+
+<UL>
+<LI><P class="docList">To store a record in such a scheme, we would first pickle it to a
+uniquely named flat file, then insert that file's name into
+lists in all five shelves, using each field's value as shelve
+key.
+</P></LI>
+<LI><P class="docList">To load just the records matching a field/value combination, we would
+first index that field's shelve on the value to fetch a
+filename list, and step through that list to load matching records
+only, from flat pickle files.
+</P></LI>
+</UL>
+<P class="docText">Let's take the leap from hypothetical to concrete, and
+prototype these ideas in Python. If you're following closely,
+you'll notice that what we're really talking about here
+is an <span class="docEmphasis">extension</span> to the flat-file database
+structure, one that merely adds index shelves. Hence, one possible
+way to implement the model is as a subclass of the current flat-file
+classes. <A class="docLink" HREF="#python2-CHP-14-EX-31">Example 14-31</A> does just that, as proof of the
+design concept.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-14-EX-31"></A>Example 14-31. PP2E\Internet\PyErrata\AdminTools\dbaseindexed.py </H5>
+<PRE>############################################################################
+# add field index shelves to flat-file database mechanism;
+# to optimize "index only" displays, use classes at end of this file;
+# change browse, index, submit to use new loaders for "Index only" mode;
+# minor nit: uses single lock file for all index shelve read/write ops;
+# storing record copies instead of filenames in index shelves would be
+# slightly faster (avoids opening flat files), but would take more space;
+# falls back on original brute-force load logic for fields not indexed;
+# shelve.open creates empty file if doesn't yet exist, so never fails;
+# to start, create DbaseFilesIndex/{commentDB,errataDB}/indexes.lck;
+############################################################################
+
+import sys; sys.path.insert(0, '..')         # check admin parent dir first
+from Mutex import mutexcntl                  # fcntl path okay: not 'nobody'
+import dbfiles, shelve, pickle, string, sys
+
+class Dbase(mutexcntl.MutexCntl, dbfiles.Dbase):
+    def makeKey(self):
+        return self.cachedKey
+    def cacheKey(self):                                   # save filename
+        self.cachedKey = dbfiles.Dbase.makeKey(self)      # need it here too
+        return self.cachedKey
+
+    def indexName(self, fieldname):
+        return self.dirname + string.replace(fieldname, ' ', '-')
+
+    def safeWriteIndex(self, fieldname, newdata, recfilename):
+        index = shelve.open(self.indexName(fieldname))
+        try:
+            keyval  = newdata[fieldname]                  # recs have all fields
+            reclist = index[keyval]                       # fetch, mod, rewrite
+            reclist.append(recfilename)                   # add to current list
+            index[keyval] = reclist
+        except KeyError:
+            index[keyval] = [recfilename]                 # add to new list
+
+    def safeLoadKeysList(self, fieldname):
+        if fieldname in self.indexfields:
+            keys = shelve.open(self.indexName(fieldname)).keys(  )
+            keys.sort(  )
+        else:   
+            keys, index = self.loadIndexedTable(fieldname)
+        return keys
+
+    def safeLoadByKey(self, fieldname, fieldvalue):
+        if fieldname in self.indexfields:
+            dbase = shelve.open(self.indexName(fieldname))
+            try:
+                index = dbase[fieldvalue]
+                reports = []
+                for filename in index:
+                    pathname = self.dirname + filename + '.data'
+                    reports.append(pickle.load(open(pathname, 'r')))
+                return reports    
+            except KeyError:
+                return []
+        else:
+            key, index = self.loadIndexedTable(fieldname)
+            try:
+                return index[fieldvalue]
+            except KeyError:
+                return []
+
+    # top-level interfaces (plus dbcommon and dbfiles)
+
+    def writeItem(self, newdata):                 
+        # extend to update indexes
+        filename = self.cacheKey(  )
+        dbfiles.Dbase.writeItem(self, newdata)
+        for fieldname in self.indexfields:
+            self.exclusiveAction(self.safeWriteIndex, 
+                                 fieldname, newdata, filename)             
+
+    def loadKeysList(self, fieldname):            
+        # load field's keys list only
+        return self.sharedAction(self.safeLoadKeysList, fieldname)
+
+    def loadByKey(self, fieldname, fieldvalue):   
+        # load matching recs lisy only
+        return self.sharedAction(self.safeLoadByKey, fieldname, fieldvalue)
+
+class DbaseErrata(Dbase):
+    dirname     = 'DbaseFilesIndexed/errataDB/'
+    filename    = dirname + 'indexes'
+    indexfields = ['Submitter name', 'Submit date', 'Report state']
+
+class DbaseComment(Dbase): 
+    dirname     = 'DbaseFilesIndexed/commentDB/'
+    filename    = dirname + 'indexes'
+    indexfields = ['Submitter name', 'Report state']    # index just these
+
+#
+# self-test
+#
+
+if __name__ == '__main__':      
+    import os      
+    dbase = DbaseComment(  )
+    os.system('rm %s*'        % dbase.dirname)          # empty dbase dir
+    os.system('echo &gt; %s.lck' % dbase.filename)         # init lock file
+    
+    # 3 recs; normally have submitter-email and description, not page 
+    # submit-date and report-state are added auto by rec store method
+    records = [{'Submitter name': 'Bob',   'Page': 38, 'Submit mode': ''},
+               {'Submitter name': 'Brian', 'Page': 40, 'Submit mode': ''},
+               {'Submitter name': 'Bob',   'Page': 42, 'Submit mode': 'email'}]
+    for rec in records: dbase.storeItem(rec)
+
+    dashes = '-'*80
+    def one(item):
+        print dashes; print item
+    def all(list): 
+        print dashes
+        for x in list: print x
+
+    one('old stuff')
+    all(dbase.loadSortedTable('Submitter name'))              # load flat list
+    all(dbase.loadIndexedTable('Submitter name'))             # load, grouped
+   #one(dbase.loadIndexedTable('Submitter name')[0])
+   #all(dbase.loadIndexedTable('Submitter name')[1]['Bob'])
+   #all(dbase.loadIndexedTable('Submitter name')[1]['Brian'])
+
+    one('new stuff')
+    one(dbase.loadKeysList('Submitter name'))                 # bob, brian
+    all(dbase.loadByKey('Submitter name', 'Bob'))             # two recs match
+    all(dbase.loadByKey('Submitter name', 'Brian'))           # one rec mathces
+    one(dbase.loadKeysList('Report state'))                   # all match
+    all(dbase.loadByKey('Report state',   'Not yet verified')) 
+
+    one('boundary cases')
+    all(dbase.loadByKey('Submit mode',    ''))              # not indexed: load
+    one(dbase.loadByKey('Report state',   'Nonesuch'))      # unknown value: []
+    try:           dbase.loadByKey('Nonesuch',  'Nonesuch') # bad fields: exc
+    except: print 'Nonesuch failed'</PRE>
+
+
+<P class="docText">This module's code is something of an executable prototype, but
+that's much of the point here. The fact that we can actually
+run experiments coded in Python helps pinpoint problems in a model
+early on.<A NAME="IXT-14-337745"></A>
+</P>
+
+<P class="docText">For instance, I had to redefine the <TT>makeKey</TT> method
+here to cache filenames locally (they are needed for index shelves
+too). That's not quite right, and if I were to adopt this
+database interface, I would probably change the file class to return
+generated filenames, not discard them. Such misfits can often be
+uncovered only by writing real code -- a task that Python
+optimizes by design.
+</P>
+
+<P class="docText">If this module is run as a top-level script, its self-test code at
+the bottom of the file executes with the following output. I
+don't have space to explain it in detail, but try to match it
+up with the module's self-test code to trace how queries are
+satisfied with and without field indexes:
+</P>
+
+<PRE>[mark@toy .../Internet/Cgi-Web/PyErrata/AdminTools]$ <B>python dbaseindexed.py </B>
+--------------------------------------------------------------------------------
+old stuff
+--------------------------------------------------------------------------------
+{'Submit date': '2000/06/13, 11:45:01', 'Page': 38, 'Submit mode': '', 'Report s
+tate': 'Not yet verified', 'Submitter name': 'Bob'}
+{'Submit date': '2000/06/13, 11:45:01', 'Page': 42, 'Submit mode': 'email', 'Rep
+ort state': 'Not yet verified', 'Submitter name': 'Bob'}
+{'Submit date': '2000/06/13, 11:45:01', 'Page': 40, 'Submit mode': '', 'Report s
+tate': 'Not yet verified', 'Submitter name': 'Brian'}
+--------------------------------------------------------------------------------
+['Bob', 'Brian']
+{'Bob': [{'Submit date': '2000/06/13, 11:45:01', 'Page': 38, 'Submit mode': '',
+'Report state': 'Not yet verified', 'Submitter name': 'Bob'}, {'Submit date': '2
+000/06/13, 11:45:01', 'Page': 42, 'Submit mode': 'email', 'Report state': 'Not y
+et verified', 'Submitter name': 'Bob'}], 'Brian': [{'Submit date': '2000/06/13, 
+11:45:01', 'Page': 40, 'Submit mode': '', 'Report state': 'Not yet verified', 'S
+ubmitter name': 'Brian'}]}
+--------------------------------------------------------------------------------
+new stuff
+--------------------------------------------------------------------------------
+['Bob', 'Brian']
+--------------------------------------------------------------------------------
+{'Submit date': '2000/06/13, 11:45:01', 'Page': 38, 'Submit mode': '', 'Report s
+tate': 'Not yet verified', 'Submitter name': 'Bob'}
+{'Submit date': '2000/06/13, 11:45:01', 'Page': 42, 'Submit mode': 'email', 'Rep
+ort state': 'Not yet verified', 'Submitter name': 'Bob'}
+--------------------------------------------------------------------------------
+{'Submit date': '2000/06/13, 11:45:01', 'Page': 40, 'Submit mode': '', 'Report s
+tate': 'Not yet verified', 'Submitter name': 'Brian'}
+--------------------------------------------------------------------------------
+['Not yet verified']
+--------------------------------------------------------------------------------
+{'Submit date': '2000/06/13, 11:45:01', 'Page': 38, 'Submit mode': '', 'Report s
+tate': 'Not yet verified', 'Submitter name': 'Bob'}
+{'Submit date': '2000/06/13, 11:45:01', 'Page': 40, 'Submit mode': '', 'Report s
+tate': 'Not yet verified', 'Submitter name': 'Brian'}
+{'Submit date': '2000/06/13, 11:45:01', 'Page': 42, 'Submit mode': 'email', 'Rep
+ort state': 'Not yet verified', 'Submitter name': 'Bob'}
+--------------------------------------------------------------------------------
+boundary cases
+--------------------------------------------------------------------------------
+{'Submit date': '2000/06/13, 11:45:01', 'Page': 38, 'Submit mode': '', 'Report s
+tate': 'Not yet verified', 'Submitter name': 'Bob'}
+{'Submit date': '2000/06/13, 11:45:01', 'Page': 40, 'Submit mode': '', 'Report s
+tate': 'Not yet verified', 'Submitter name': 'Brian'}
+--------------------------------------------------------------------------------
+[]
+Nonesuch failed
+
+[mark@toy .../PyErrata/AdminTools]$ <B>ls DbaseFilesIndexed/commentDB/ </B>
+960918301.263-895.data  960918301.506-895.data  Submitter-name  indexes.log
+960918301.42-895.data   Report-state            indexes.lck
+
+[mark@toy .../PyErrata/AdminTools]$ <B>more DbaseFilesIndexed/commentDB/indexes.log </B>
+960918301.266   Requested: 895, writer
+960918301.266   Aquired: 895
+960918301.36    Released: 895
+960918301.36    Requested: 895, writer
+960918301.361   Aquired: 895
+960918301.419   Released: 895
+960918301.422   Requested: 895, writer
+960918301.422   Aquired: 895
+960918301.46    Released: 895
+<I> ...more...</I></PRE>
+
+<P class="docText">One drawback to this interface is that it works only on a machine
+that supports the <TT>fcntl.flock</TT> call (notice that I
+ran the previous test on Linux). If you want to use these classes to
+support indexed file/shelve databases on other machines, you could
+delete or stub out this call in the <TT>mutex</TT> module
+to do nothing and return. You won't get safe updates if you do,
+but many applications don't need to care:
+</P>
+
+<PRE>try:
+    import fcntl
+    from FCNTL import *
+except ImportError:
+    class fakeFcntl:
+        def flock(self, fileno, flag): return
+    fcntl = fakeFcntl(  )
+    LOCK_SH = LOCK_EX = LOCK_UN = 0</PRE>
+
+<P class="docText">You might instead instrument <TT>MutexCntl.lockFile</TT> to
+do nothing in the presence of a command-line argument flag, mix in a
+different <TT>MutexCntl</TT> class at the bottom that does
+nothing on lock calls, or hunt for platform-specific locking
+mechanisms (e.g., the Windows extensions package exports a
+Windows-only file locking call; see its documentation for details).
+</P>
+
+<P class="docText">Regardless of whether you use locking or not, the
+<TT>dbaseindexed</TT> flat-files plus multiple-shelve
+indexing scheme can speed access by keys for large databases.
+However, it would also require changes to the top-level CGI script
+logic that implements "Index only" displays, and so is
+not without seams. It may also perform poorly for very large
+databases, as record information would span multiple files. If
+pressed, we could finally extend the database classes to talk to a
+real database system such as Oracle, MySQL, PostGres, or Gadfly
+(described in <A class="docLink" HREF="0596000855_python2-CHP-16.html#python2-CHP-16">Chapter 16</A>).
+</P>
+
+<P class="docText">All of these options are not without trade-offs, but we have now come
+dangerously close to stepping beyond the scope of this chapter.
+Because the PyErrata database modules were designed with neither
+general applicability nor broad scalability in mind, additional
+mutations are left as suggested exercises.<A NAME="IXTR3-411"></A> <A NAME="IXTR3-412"></A> <A NAME="IXTR3-413"></A><A NAME="IXTR3-414"></A> <A NAME="IXTR3-415"></A><A NAME="IXTR3-416"></A> <A NAME="IXTR3-417"></A><A NAME="IXTR3-418"></A>
+</P>
+
+
+
+
+<ul></ul>
+</td>
+</tr>
+</table>
+<td></td>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+          <a href="0596000855_python2-CHP-14-SECT-7.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+          <a href="0596000855_python2-CHP-15.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+</body></html>

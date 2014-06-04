@@ -1,0 +1,190 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;19.18.&nbsp;Looking Ahead into an Iterator</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-19-sect-17.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-19-sect-19.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-19-SECT-18"></a>
+<h3 class="docSection1Title">Recipe 19.18. Looking Ahead into an Iterator</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Steven Bethard, Peter Otten</span></p>
+
+<a name="pythoncook2-CHP-19-SECT-18.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText">You are using an iterator for some task such as parsing, which
+requires you to be able to "look
+ahead" at the next item the iterator is going to
+yield, without disturbing the iterator state.</P>
+
+
+<a name="pythoncook2-CHP-19-SECT-18.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">The best solution is to wrap your original iterator into a suitable
+class, such as the following one (Python 2.4-only):</p>
+
+<pre>import collections
+class peekable(object):
+    """ An iterator that supports a peek operation.  Example usage:
+    &gt;&gt;&gt; p = peekable(range(4))
+    &gt;&gt;&gt; p.peek( )
+    0
+    &gt;&gt;&gt; p.next(1)
+    [0]
+    &gt;&gt;&gt; p.peek(3)
+    [1, 2, 3]
+    &gt;&gt;&gt; p.next(2)
+    [1, 2]
+    &gt;&gt;&gt; p.peek(2)
+    Traceback (most recent call last):
+      ...
+    StopIteration
+    &gt;&gt;&gt; p.peek(1)
+    [3]
+    &gt;&gt;&gt; p.next(2)
+    Traceback (most recent call last):
+      ...
+    StopIteration
+    &gt;&gt;&gt; p.next( )
+    3
+    """
+    def _ _init_ _(self, iterable):
+        self._iterable = iter(iterable)
+        self._cache = collections.deque( )
+    def _ _iter_ _(self):
+        return self
+    def _fillcache(self, n):
+        if n is None:
+            n = 1
+        while len(self._cache) &lt; n:
+            self._cache.append(self._iterable.next( ))
+    def next(self, n=None):
+        self._fillcache(n)
+        if n is None:
+            result = self._cache.popleft( )
+        else:
+            result = [self._cache.popleft( ) for i in range(n)]
+        return result
+    def peek(self, n=None):
+        self._fillcache(n)
+        if n is None:
+            result = self._cache[0]
+        else:
+            result = [self._cache[i] for i in range(n)]
+        return result</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-19-SECT-18.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">Many iterator-related tasks, such as parsing, require the ability to
+"peek ahead" (once or a few times)
+into the sequence of items that an iterator is yielding, in a way
+that does not alter the iterator's observable state.
+One approach is to use the new Python 2.4 function
+<tt>iterator.tee</tt> to get two independent copies of the
+iterator, one to be advanced for peeking purposes and the
+"other" one to be used as the
+"main" iterator.
+It's actually handier to wrap the incoming iterator
+once for all, at the start, with the class <I>peekable</i>
+presented in this recipe; afterwards, a <I>peek</I> method,
+which is safe and effective, can be counted on. A little added
+sweetener is the ability to call <i>peek</i> (and, as long
+as we're at it, the standard <tt>next</tt>
+method too) with a specific number argument
+<tt><i>n</i></tt>, to request a list of the next
+<tt><I>n</i></tt> items of the iterator (without
+disturbing the iterator's state when you call
+<tt>peek(n)</tt>, with iterator state advancement when you
+call
+<tt>next(</tt><tt><i>n</I></tt><tt>)</tt>just
+like for normal calls without arguments to the same methods).</p>
+
+<p class="docText">The obvious idea used in this recipe for implementing
+<I>peekable</i> is to have it keep a cache of peeked-ahead
+arguments. Since the cache must grow at the tail and get consumed
+from the end, a natural choice is to make the cache a
+<tt>collections.deque</tt>, a new type introduced in Python
+2.4. However, if you need this code to run under version 2.3 as well,
+make <I>self._cache</I> a <tt>list</tt>
+insteadyou only need to change method
+<tt>next</tt>'s body a little bit, making
+it:</p>
+
+<pre>        if n is None:
+            result = self._cache.pop(0)
+        else:
+            result, self_cache = self._cache[:n], self._cache[n:]</pre><br>
+
+
+<p class="docText">As long as you're caching only one or just a few
+items of lookahead at a time, performance won't
+suffer much by making <i>self._cache</i> a
+<tt>list</tt> rather than a <tt>deque</tt>.</p>
+
+<p class="docText">An interesting characteristic of the <i>peekable</i> class
+presented in this recipe is that, if you request too many items from
+the iterator, you get a <tt>StopIteration</tt> exception
+but that does not throw away the last few values of the iterator. For
+example, if <tt><i>p</i></tt> is an instance of
+<i>peekable</i> with just three items left, when you call
+<tt>p.next(5)</tt>, you get a
+<tt>StopIteration</tt> exception. You can later call
+<tt>p.next(3)</tt> and get the list of the last three
+items.</p>
+
+<p class="docText">A subtle point is that the <tt><i>n</I></tt> argument to
+methods <I>peek</i> and <tt>next</tt> defaults to
+<tt>None</tt>, not to <tt>1</tt>. This gives you
+two distinct ways to peek at a single item: the default way, calling
+<tt>p.peek( )</tt>, just gives you that item, while calling
+<tt>p.peek(1)</tt> gives you a list with that single item
+in it. This behavior is quite consistent with the way
+<tt>p.peek</tt> behaves when called with different
+arguments: any call <tt>p.peek(n)</tt> with any
+non-negative integer <tt><i>n</I></tt> returns a list with
+<tt><i>n</i></tt> items (or raises
+<tt>StopIteration</tt> if <tt><i>p</i></tt> has
+fewer than <tt><i>n</i></tt> items left). This approach
+even supports calls such as <tt>p.next(0)</tt>, which in
+practice always returns an empty list <tt>[ ]</tt> without
+advancing the iterator's state. Typically, you just
+call <tt>p.peek( )</tt>, without arguments, and get one
+look-ahead item without problems.</P>
+
+<p class="docText">As an implementation detail, note that the docstring of the class
+<i>peekable</I> presented in this recipe is essentially
+made up of examples of use with expected results. Besides being
+faster to write, and arguably to read for an experienced Pythonista,
+this style of docstring is perfect for use with the Python Standard
+Library module <tt>doctest</tt>.</p>
+
+
+<a name="pythoncook2-CHP-19-SECT-18.4"></a>
+<H4 class="docSection2Title">See Also</h4>
+
+<p class="docText"><tt>collections.deque</tt> and <tt>doctest</tt>
+in the <span class="docEmphasis">Python</span> <span class="docEmphasis">Library
+Reference</span> (for Python 2.4).</P>
+
+
+
+<UL></ul></TD></TR></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-19-sect-17.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-19-sect-19.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

@@ -1,0 +1,40 @@
+<html><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<link href="styles/globalstyle.css" type="text/css" rel="stylesheet"/>
+<link title="medium" href="styles/two.css" type="text/css" rel="stylesheet"/>
+<script src="scripts/main.js" type="text/javascript" language="javascript"></script>
+<title>Section 28.4. Finding the Failure Cause Automatically</title>
+</head><body>
+<DIV class=h3 style="MARGIN-TOP: 0px; PADDING-BOTTOM: 1em; WIDTH: 100%; PADDING-TOP: 0px"><SPAN>Beautiful Debugging</SPAN><SPAN> &gt; Finding the Failure Cause Automatically</SPAN></DIV>
+<DIV></DIV>
+<DIV>
+<DIV><A name=finding_the_failure_cause_automatically></A>
+<H3 class=docSection1Title id=-100000>28.4. Finding the Failure Cause Automatically</H3>
+<P class=docText><A name="It took"></A>It took me three months to come up with a solution—which came to me, incidentally, lying in my bed at six in the morning. The sun was rising, the birds were singing, and I finally had an idea. The reasoning was as follows:<A name=idx-CHP-28-2449></A></P>
+<UL>
+<LI>
+<P class=docList>Applying <SPAN class=docEmphasis>half</SPAN><A name="has a"></A> of the changes has a small chance of getting a consistent build; the risk of skipping a dependent change is simply too high. On the other hand, if we get a consistent build (or a "resolved" outcome), we can very quickly narrow down the set of changes.</P></LI>
+<LI>
+<P class=docList><A name=applying></A>On the other hand, applying <SPAN class=docEmphasis>individual</SPAN><A name="a far"></A> changes has a far greater chance of getting something meaningful—in particular, if the version being changed was already consistent. As an example, think of changing a single function; unless its interface changes, we will most likely get a running program. On the other hand, trying out one change after the other would still take ages.</P></LI></UL>
+<P class=docText>Therefore, I'd call for a <SPAN class=docEmphasis>compromise</SPAN><A name="with two"></A>: I would start with two halves. If neither half of the changes would result in a testable build, I would split the set of changes into <SPAN class=docEmphasis>four</SPAN> subsets instead, and then apply each subset individually to the <SPAN class=docEmphasis>gdb</SPAN> 4.16 source. In addition, I would also <SPAN class=docEmphasis>unapply</SPAN> the subset from the <SPAN class=docEmphasis>gdb</SPAN><A name="subset to"></A> 4.17 source (which would be realized by applying the complement of the subset to the <SPAN class=docEmphasis>gdb</SPAN> 4.16 source).</P>
+<P class=docText><A name=idx-CHP-28-2450></A><A name="four "></A>Splitting in four (rather than two) would mean that <SPAN class=docEmphasis>smaller</SPAN><A name="which means"></A> change sets would be applied, which means that the changed versions would be closer to the (working) original versions—and which would imply higher chances of getting a consistent build.</P>
+<P class=docText><A name="not suffice"></A>And if four subsets would not suffice, then I would go for 8, 16, 32, and so on, until, eventually, I would apply each single change individually, one after the other—which should give me the greatest chance of getting a consistent build. As soon as I had a testable build, the algorithm would restart from scratch.</P>
+<P class=docText><A name="I calculated"></A>I calculated that in the worst case, the algorithm would still require 8,721<SUP>2</SUP><A name="still way"></A> = 76,055,841 tests. This number was still way too high, but much lower than the exponential-approaches thought of earlier. At the other extreme, if all builds succeeded, the algorithm would work as a binary search, and require just log<SUB>2</SUB><A name="it worth"></A> 8,721 = 14 tests. Given the odds, was it worth doing?</P>
+<P class=docText><A name="a simple"></A>I implemented a simple Python script with a very crude version of the preceding algorithm. The key part was the testing function. It would take a set of changes, run <SPAN class=docEmphasis>patch</SPAN><A name="changes to"></A> to apply the changes to the <SPAN class=docEmphasis>gdb</SPAN> 4.16 source, and then invoke <SPAN class=docEmphasis>make</SPAN> to build the changed <SPAN class=docEmphasis>gdb</SPAN>. Finally, it would run <SPAN class=docEmphasis>gdb</SPAN><A name="As any"></A> and see whether the failure occurred (returning "fail" if it did) or not (returning "pass"). As any of these steps could fail, the testing function could also return "unresolved" as a test result.</P>
+<P class=docText><A name="started the"></A>As I started the script, it quickly turned out that "unresolved" was still by far the most frequent return value. Actually, for the first 800 tests or so, the testing function returned nothing but "unresolved." The number of change subsets had gone up from two to four to eight…until we had 64 subsets, each containing 136 changes. And these tests took some time. As one <SPAN class=docEmphasis>gdb</SPAN><A name="I was"></A> build took about six minutes, I was already waiting for three days. (Actually, I was not waiting, but writing my Ph.D. thesis. But still….)</P>
+<P class=docText><A name="log as"></A>I was just examining the log as something unusual happened. A test had just failed! Now, finally, I would see how the algorithm would focus on the smaller set, narrowing the search space. But when I checked the results, it turned out that the test printed the following message on the screen and stopped:</P><PRE>	NameError: name 'next_c_fial' is not defined
+</PRE><BR>
+<P class=docText><A name="After three"></A>After three days of constant calculation, my script had stumbled on a dumb misspelling. I truly wished I had used a language with static checking rather than Python.</P>
+<P class=docText><A name="problem and"></A>I fixed the problem and ran the script again. Now, finally, it would work. After five more days, and roughly 1,200 tests, the script finally isolated the failure-inducing change: the change to <SPAN class=docEmphasis>gdb</SPAN> that had caused <SPAN class=docEmphasis>ddd</SPAN><A name="a one"></A> to fail. It was a one-line change—and it was not even a change to program code, but instead a change to some built-in text:</P><PRE>	diff -r gdb-4.16/gdb/infcmd.c gdb-4.17/gdb/infcmd.c
+	1239c1278
+	&lt; "Set arguments to give program being debugged when it is started.\n\
+	---
+	&gt; "Set argument list to give program being debugged when it is started.\n\
+</PRE><BR>
+<P class=docText><A name=from></A>This change from <TT>arguments</TT> to <TT>argument list</TT><A name=for></A> was the cause for <SPAN class=docEmphasis>gdb</SPAN> 4.17 no longer working with <SPAN class=docEmphasis>ddd</SPAN>. This text is output by <SPAN class=docEmphasis>gdb</SPAN> when the user requests help for the <TT>set args</TT> command. However, it is also used in other places. When given the command <TT>show args</TT>, <SPAN class=docEmphasis>gdb</SPAN> 4.16 replies:</P><PRE>	Arguments to give program being debugged is "11 14"
+</PRE><BR>
+<P class=docText><SPAN class=docEmphasis>gdb</SPAN> 4.17, however, replies:</P><PRE>	Argument list to give program being debugged is "11 14"
+</PRE><BR>
+<P class=docText>This new reply was what confused <SPAN class=docEmphasis>ddd</SPAN> because it expected the reply to start with <TT>Arguments</TT><A name="yet in"></A>. Thus, my script had actually determined the failure-inducing change—after five days of work, but yet in a fully automatic version.</P></DIV></DIV>
+<p>&nbsp;</p><p>&nbsp;</p><!-- 仁·义 -->
+</body></html>

@@ -1,0 +1,179 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;19.13.&nbsp;Fetching Large Record Sets from a Database with a Generator</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-19-sect-12.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-19-sect-14.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-19-SECT-13"></a>
+<h3 class="docSection1Title">Recipe 19.13. Fetching Large Record Sets from a Database with a Generator</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Christopher Prinos</span></p>
+
+<a name="pythoncook2-CHP-19-SECT-13.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-19-ITERM-3129"></a>You want to fetch a result set
+from a database (using the Python DB API) and easily iterate over
+each record in the result set. However, you don't
+want to use the DB cursor's method
+<tt>fetchall</tt>: it could consume a lot of memory and
+would force you to wait until the whole result set comes back before
+you can start iterating.</P>
+
+
+<a name="pythoncook2-CHP-19-SECT-13.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">A generator is the ideal solution to this problem:</p>
+
+<pre>def fetchsome(cursor, arraysize=1000):
+    ''' A generator that simplifies the use of fetchmany '''
+    while True:
+        results = cursor.fetchmany(arraysize)
+        if not results: break
+        for result in results:
+            yield result</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-19-SECT-13.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">In applications that use the Python DB API, you often see code that
+goes somewhat like (where <I>cursor</i> is a DB API cursor
+object):</P>
+
+<pre>cursor.execute('select * from HUGE_TABLE')
+for result in cursor.fetchall( ):
+    doSomethingWith(result)</pre><BR>
+
+
+<p class="docText">This simple approach is "just"
+fine, as long as <tt>fetchall</tt> returns a small result
+set, but it does not work very well if the query result is very
+large. A large result set can take a long time to return. Also,
+<tt>cursor.fetchall( )</tt> needs to allocate enough memory
+to store the entire result set in memory at once. Further, with this
+simple approach, the <i>doSomethingWith</i> function
+isn't going to get called until the entire
+query's result finishes coming over from the
+database to our program.</p>
+
+<p class="docText">An alternative approach is to rely on the
+<tt>cursor.fetchone</tt> method:</p>
+
+<pre>for result in iter(cursor.fetchone, None):
+    doSomethingWith(result)</pre><BR>
+
+
+<p class="docText">However, this alternative approach does not allow the database to
+optimize the fetching process: most databases can exhibit better
+efficiency when returning multiple records for a single query, rather
+than returning records one at a time as <tt>fetchone</tt>
+requires.</p>
+
+<p class="docText">To let your applications obtain greater efficiency than
+<tt>fetchone</tt> allows, without the risks of unbounded
+memory consumption and delay connected to the use of
+<tt>fetchall</tt>, Python's DB
+API's cursors also have a
+<tt>fetchmany</tt> method. However, the direct use of
+<tt>fetchmany</tt> makes your iterations somewhat more
+complicated than the simple <tt>for</tt> statements such as
+those just shown. For example:</p>
+
+<pre>while True:
+    results = cursor.fetchmany(1000)
+    if not results: break
+    for result in results:
+        doSomethingWith(result)</pre><BR>
+
+
+<p class="docText">Python's generators are a great way to encapsulate
+complicated iteration logic so that application code can just about
+always loop with simple <tt>for</tt> statements. With this
+recipe's <i>fetchsome</I> generator, you
+get the same efficiencies and safeguards as with the native use of
+the <tt>fetchmany</tt> method in the preceding snippet but
+with the same crystal-clear simplicity as in the snippets that used
+either <tt>fetchall</tt> or <tt>fetchone</tt>,
+namely:</p>
+
+<pre>for result in fetchsome(cursor):
+    doSomethingWith(result)</pre><BR>
+
+
+<p class="docText">By default, <I>fetchsome</i> fetches up to 1,000 records at
+a time, but you can change that number, depending on your
+requirements. Optimal values can depend on schema, database type,
+choice of Python DB API module. In general, you're
+best advised to experiment with a few different values in your
+specific settings if you need to optimize this specific aspect. (Such
+experimentation is often a good idea for any optimization task.)</p>
+
+<p class="docText">This recipe is clearly an example of a more general case: a
+<span class="docEmphasis">subsequence unbuncher</span> generator that you can use
+when you have a sequence of subsequences (each subsequence being
+obtained through some call, and the end of the whole sequence being
+indicated by an empty subsequence) and want to flatten it into a
+simple, linear sequence of items. You can think of this unbunching
+task as the reverse of the sequence-bunching tasks covered earlier in
+<a class="docLink" href="pythoncook2-CHP-19-SECT-10.html#pythoncook2-CHP-19-SECT-10">Recipe 19.10</a> and <a class="docLink" href="pythoncook2-CHP-19-SECT-11.html#pythoncook2-CHP-19-SECT-11">Recipe 19.11</a>, or as a simpler
+variant of the sequence-flattening task covered in <a class="docLink" href="pythoncook2-CHP-4-SECT-6.html#pythoncook2-CHP-4-SECT-6">Recipe 4.6</a>. A generator for unbunching
+might be:</p>
+
+<pre>def unbunch(next_subseq, *args):
+    ''' un-bunch a sequence of subsequences into a linear sequence '''
+    while True:
+        subseq = next_subseq(*args)
+        if not subseq: break
+        for item in subseq:
+            yield item</pre><br>
+
+
+<p class="docText">As you can see, the structure of <i>unbunch</i> is
+basically identical to that of the recipe's
+<i>fetchsome</i>. Usage would also be just about the same:</p>
+
+<pre>for result in unbunch(cursor.fetchmany, 1000):
+    doSomethingWith(result)</pre><br>
+
+
+<p class="docText">However, while it is important and instructive to consider this kind
+of generalization, when you're writing applications
+you're often better off using specific generators
+that directly deal with your application's specific
+needs. In this case, for example, calling
+<tt>fetchsome(cursor)</tt> is more obvious and direct than
+calling <tt>unbunch(cursor.fetchmany, 1000)</tt>, and
+<i>fetchsome</i> usefully hides the usage of
+<tt>fetchmany</tt> as well as the specific choice of
+<tt>1,000</tt> as the subsequence size to fetch at each
+step.</p>
+
+
+<a name="pythoncook2-CHP-19-SECT-13.4"></a>
+<H4 class="docSection2Title">See Also</H4>
+
+<p class="docText"><a class="docLink" href="pythoncook2-CHP-19-SECT-10.html#pythoncook2-CHP-19-SECT-10">Recipe 19.10</a>; <a class="docLink" href="pythoncook2-CHP-19-SECT-11.html#pythoncook2-CHP-19-SECT-11">Recipe 19.11</a>; <a class="docLink" href="pythoncook2-CHP-4-SECT-6.html#pythoncook2-CHP-4-SECT-6">Recipe 4.6</a>; Python's
+DB API is covered in <a class="docLink" href="pythoncook2-CHP-7.html#pythoncook2-CHP-7">Chapter 7</a> and in
+<span class="docEmphasis">Python in a Nutshell</span>.</p>
+
+
+
+<a href="5991535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><ul></UL></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-19-sect-12.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-19-sect-14.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

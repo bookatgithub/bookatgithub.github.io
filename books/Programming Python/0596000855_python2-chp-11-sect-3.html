@@ -1,0 +1,1797 @@
+<html><head>
+<META http-equiv="Content-Type" content="text/html">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="11.3 Processing Internet Email"-->
+<link rel="STYLESHEET" type="text/css" href="FILES/style.css">
+<link rel="STYLESHEET" type="text/css" href="FILES/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+	<a href="0596000855_python2-CHP-11-SECT-2.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+	<a href="0596000855_python2-CHP-11-SECT-4.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr>
+<td valign="top"><A NAME="python2-CHP-11-SECT-3"></A>
+<H3 class="docSection1Title">11.3 Processing Internet Email</H3>
+
+<P class="docText"><A NAME="python2-IDXTERM-839"></A>
+<A NAME="python2-IDXTERM-840"></A>
+<A NAME="python2-IDXTERM-841"></A>Some of the other most common higher-level
+Internet protocols have to do with reading and sending email
+messages: POP and IMAP for fetching email from servers,<sup class="docFootnote"><A class="docLink" HREF="#">[4]</A></sup> SMTP for sending new messages,
+and other formalisms such as <TT>rfc822</TT> for specifying
+email message contents and format. You don't normally need to
+know about such acronyms when using common email tools; but
+internally, programs like Microsoft Outlook talk to POP and SMTP
+servers to do your bidding.
+</P>
+<blockquote><p class="docFootnote"><sup><A NAME="">[4]</A></sup> IMAP, or Internet Message Access Protocol, was designed as an
+alternative to POP, but is not as widely used today, and so is not
+presented in this text. See the Python library manual for IMAP
+support details.</p></blockquote>
+
+<P class="docText">Like FTP, email ultimately consists of formatted commands and byte
+streams shipped over sockets and ports (port 110 for POP; 25 for
+SMTP). But also like FTP, Python has standard modules to simplify all
+aspects of email processing. In this section, we explore the POP and
+SMTP interfaces for fetching and sending email at servers, and the
+<TT>rfc822</TT> interfaces for parsing information out of
+email header lines; other email interfaces in Python are analogous
+and are documented in the Python library reference manual.
+</P>
+
+<A NAME="python2-CHP-11-SECT-3.1"></A>
+<H4 class="docSection2Title">11.3.1 POP: Reading Email</H4>
+
+<P class="docText"><A NAME="python2-IDXTERM-842"></A>
+<A NAME="python2-IDXTERM-843"></A>I used to be an old-fashioned guy. I
+admit it: up until recently, I preferred to check my email by
+telneting to my ISP and using a simple command-line email interface.
+Of course, that's not ideal for mail with attachments,
+pictures, and the like, but its portability is
+staggering -- because Telnet runs on almost any machine with a
+network link, I was able to check my mail quickly and easily from
+anywhere on the planet. Given that I make my living traveling around
+the world teaching Python classes, this wild accessibility was a big
+win.
+</P>
+
+<P class="docText">If you've already read the web site mirror scripts sections
+earlier in this chapter, you've already heard my tale of ISP
+woe, so I won't repeat it here. Suffice it to say that times
+have changed on this front too: when my ISP took away Telnet access,
+they also took away my email access.<sup class="docFootnote"><A class="docLink" HREF="#">[5]</A></sup> Luckily, Python came to the rescue here, too -- by
+writing email access scripts in Python, I can still read and send
+email from any machine in the world that has Python and an Internet
+connection. Python can be as portable a solution as Telnet.
+</P>
+<blockquote><p class="docFootnote"><sup><A NAME="">[5]</A></sup> In the process
+of losing Telnet, my email account and web site were taken down for
+weeks on end, and I lost forever a backlog of thousands of messages
+saved over the course of a year. Such outages can be especially bad
+if your income is largely driven by email and web contacts, but
+that's a story for another night, boys and girls.</p></blockquote>
+
+<P class="docText">Moreover, I can still use these scripts as an alternative to tools
+suggested by the ISP, such as Microsoft Outlook. Besides not being a
+big fan of delegating control to commercial products of large
+companies, tools like Outlook generally download mail to your PC and
+delete it from the mail server as soon as you access it. This keeps
+your email box small (and your ISP happy), but isn't exactly
+friendly to traveling Python salespeople -- once accessed, you
+cannot re-access a prior email from any machine except the one where
+it was initially downloaded to. If you need to see an old email and
+don't have your PC handy, you're out of luck.
+</P>
+
+<P class="docText">The next two scripts represent one solution to these portability and
+single-machine constraints (we'll see others in this and later
+chapters). The first, <span class="docEmphasis">popmail.py</span>, is a simple
+mail reader tool, which downloads and prints the contents of each
+email in an email account. This script is admittedly primitive, but
+it lets you read your email on any machine with Python and sockets;
+moreover, it leaves your email intact on the server. The second,
+<span class="docEmphasis">smtpmail.py</span>, is a one-shot script for writing
+and sending a new email message.
+</P>
+
+<A NAME="python2-CHP-11-SECT-3.1.1"></A>
+<H5 class="docSection3Title">11.3.1.1 Mail configuration module</H5>
+
+<P class="docText"><A NAME="IXT-11-337384"></A>
+<A NAME="IXT-11-337385"></A>
+<A NAME="IXT-11-337386"></A>Before we get to either of the two
+scripts, though, let's first take a look a common module they
+both import and use. The module in <A class="docLink" HREF="#python2-CHP-11-EX-15">Example 11-15</A> is
+used to configure email parameters appropriately for a particular
+user. It's simply a collection of assignments used by all the
+mail programs that appear in this book; isolating these configuration
+settings in this single module makes it easy to configure the
+book's email programs for a particular user.
+</P>
+
+<P class="docText">If you want to use any of this book's email programs to do mail
+processing of your own, be sure to change its assignments to reflect
+your servers, account usernames, and so on (as shown, they refer to
+my email accounts). Not all of this module's settings are used
+by the next two scripts; we'll come back to this module at
+later examples to explain some of the settings here.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-11-EX-15"></A>Example 11-15. PP2E\Internet\Email\mailconfig.py </H5>
+<PRE>################################################################
+# email scripts get their server names and other email config
+# options from this module: change me to reflect your machine
+# names, sig, etc.; could get some from the command line too;
+################################################################
+
+#-------------------------------------------
+# SMTP email server machine name (send)
+#-------------------------------------------
+
+smtpservername = 'smtp.rmi.net'          # or starship.python.net, 'localhost'
+
+#-------------------------------------------
+# POP3 email server machine, user (retrieve)
+#-------------------------------------------
+
+popservername  = 'pop.rmi.net'           # or starship.python.net, 'localhost'
+popusername    = 'lutz'                  # password fetched of asked wehen run
+
+#-------------------------------------------
+# local file where pymail saves pop mail
+# PyMailGui insead asks with a popup dialog
+#-------------------------------------------
+
+savemailfile   = r'c:\stuff\etc\savemail.txt'       # use dialog in PyMailGui
+
+#---------------------------------------------------------------
+# PyMailGui: optional name of local one-line text file with your 
+# pop password; if empty or file cannot be read, pswd requested 
+# when run; pswd is not encrypted so leave this empty on shared 
+# machines; PyMailCgi and pymail always ask for pswd when run.
+#---------------------------------------------------------------
+
+poppasswdfile  = r'c:\stuff\etc\pymailgui.txt'      # set to '' to be asked
+
+#---------------------------------------------------------------
+# personal information used by PyMailGui to fill in forms;
+# sig  -- can be a triple-quoted block, ignored if empty string;
+# addr -- used for initial value of "From" field if not empty,
+# else tries to guess From for replies, with varying success;
+#---------------------------------------------------------------
+
+myaddress   = 'lutz@rmi.net'
+mysignature = '--Mark Lutz  (http://rmi.net/~lutz)  [PyMailGui 1.0]'</PRE>
+
+
+
+
+<A NAME="python2-CHP-11-SECT-3.1.2"></A>
+<H5 class="docSection3Title">11.3.1.2 POP mail reader module</H5>
+
+<P class="docText"><A NAME="IXT-11-337387"></A>On to reading
+email in Python: the script in <A class="docLink" HREF="#python2-CHP-11-EX-16">Example 11-16</A> employs
+Python's standard <TT>poplib</TT> module, an
+implementation of the client-side interface to POP -- the Post
+Office Protocol. POP is just a well-defined way to fetch email from
+servers over sockets. This script connects to a POP server to
+implement a simple yet portable email download and display tool.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-11-EX-16"></A>Example 11-16. PP2E\Internet\Email\popmail.py </H5>
+<PRE>#!/usr/local/bin/python
+######################################################
+# use the Python POP3 mail interface module to view
+# your pop email account messages; this is just a 
+# simple listing--see pymail.py for a client with
+# more user interaction features, and smtpmail.py 
+# for a script which sends mail; pop is used to 
+# retrieve mail, and runs on a socket using port 
+# number 110 on the server machine, but Python's 
+# poplib hides all protocol details; to send mail, 
+# use the smtplib module (or os.popen('mail...').
+# see also: unix mailfile reader in App framework.
+######################################################
+
+import poplib, getpass, sys, mailconfig
+
+mailserver = mailconfig.popservername      # ex: 'pop.rmi.net'
+mailuser   = mailconfig.popusername        # ex: 'lutz'
+mailpasswd = getpass.getpass('Password for %s?' % mailserver)
+
+print 'Connecting...'
+server = poplib.POP3(mailserver)
+server.user(mailuser)                      # connect, login to mail server
+server.pass_(mailpasswd)                   # pass is a reserved word
+
+try:
+    print server.getwelcome()              # print returned greeting message 
+    msgCount, msgBytes = server.stat()
+    print 'There are', msgCount, 'mail messages in', msgBytes, 'bytes'
+    print server.list()
+    print '-'*80
+    if sys.platform[:3] == 'win': raw_input()      # windows getpass is odd
+    raw_input('[Press Enter key]')
+
+    for i in range(msgCount):
+        hdr, message, octets = server.retr(i+1)    # octets is byte count
+        for line in message: print line            # retrieve, print all mail
+        print '-'*80                               # mail box locked till quit
+        if i &lt; msgCount - 1: 
+           raw_input('[Press Enter key]')
+finally:                                           # make sure we unlock mbox
+    server.quit()                                  # else locked till timeout
+print 'Bye.'</PRE>
+
+
+<P class="docText"><A NAME="IXT-11-337388"></A>Though
+primitive, this script illustrates the basics of reading email in
+Python. To establish a connection to an email server, we start by
+making an instance of the <TT>poplib.POP3</TT> object,
+passing in the email server machine's name:
+</P>
+
+<PRE>server = poplib.POP3(mailserver)</PRE>
+
+<P class="docText"><A NAME="IXT-11-337389"></A>
+<A NAME="IXT-11-337390"></A> <A NAME="IXT-11-337391"></A>If this call doesn't raise an
+exception, we're connected (by socket) to the POP server
+listening for requests on POP port number 110 at the machine where
+our email account lives. The next thing we need to do before fetching
+messages is tell the server our username and password; notice that
+the password method is called <TT>pass_</TT> -- without
+the trailing underscore, <TT>pass</TT> would name a
+reserved word and trigger a syntax error:
+</P>
+
+<PRE>server.user(mailuser)                      # connect, login to mail server
+server.pass_(mailpasswd)                   # pass is a reserved word</PRE>
+
+<P class="docText">To keep things simple and relatively secure, this script always asks
+for the account password interactively; the
+<TT>getpass</TT> module we met in the FTP section of this
+chapter is used to input but not display a password string typed by
+the user.
+</P>
+
+<P class="docText">Once we've told the server our username and password,
+we're free to fetch mailbox information with the
+<TT>stat</TT> method (number messages, total bytes among
+all messages), and fetch a particular message with the
+<TT>retr</TT> method (pass the message number; they start
+at 1):
+</P>
+
+<PRE>msgCount, msgBytes = server.stat()
+hdr, message, octets = server.retr(i+1)    # octets is byte count</PRE>
+
+<P class="docText">When we're done, we close the email server connection by
+calling the POP object's <TT>quit</TT> method:
+</P>
+
+<PRE>server.quit()                              # else locked till timeout</PRE>
+
+<P class="docText">Notice that this call appears inside the <TT>finally</TT>
+clause of a <TT>try</TT> statement that wraps the bulk of
+the script. To minimize complications associated with changes, POP
+servers lock your email box between the time you first connect and
+the time you close your connection (or until an arbitrarily long
+system-defined time-out expires). Because the POP
+<TT>quit</TT> method also unlocks the mailbox, it's
+crucial that we do this before exiting, whether an exception is
+raised during email processing or not. By wrapping the action in a
+<TT>try/finally</TT> statement, we guarantee that the
+script calls <TT>quit</TT> on exit to unlock the mailbox to
+make it accessible to other processes (e.g., delivery of incoming
+email).<A NAME="IXT-11-337392"></A>
+<A NAME="IXT-11-337393"></A>
+</P>
+
+<P class="docText">Here is the popmail script in action, displaying two messages in my
+account's mailbox on machine
+<span class="docEmphasis">pop.rmi.net</span> -- the domain name of the mail
+server machine at <span class="docEmphasis">rmi.net</span>, configured in module
+<TT>mailconfig</TT>:
+</P>
+
+<PRE>C:\...\PP2E\Internet\Email&gt;<B>python popmail.py</B>
+Password for pop.rmi.net?
+Connecting...
++OK Cubic Circle's v1.31 1998/05/13 POP3 ready &lt;4860000073ed6c39@chevalier&gt;
+There are 2 mail messages in 1386 bytes
+('+OK 2 messages (1386 octets)', ['1 744', '2 642'], 14)
+--------------------------------------------------------------------------------
+
+
+[Press Enter key]
+Received: by chevalier (mbox lutz)
+ (with Cubic Circle's cucipop (v1.31 1998/05/13) Wed Jul 12 16:13:33 2000)
+X-From_: lumber.jack@TheLarch.com  Wed Jul 12 16:10:28 2000
+Return-Path: &lt;lumber.jack@TheLarch.com&gt;
+Received: from VAIO (dial-218.101.denco.rmi.net [166.93.218.101])
+        by chevalier.rmi.net (8.9.3/8.9.3) with ESMTP id QAA21434
+        for &lt;lutz@rmi.net&gt;; Wed, 12 Jul 2000 16:10:27 -0600 (MDT)
+From: lumber.jack@TheLarch.com
+Message-Id: &lt;200007122210.QAA21434@chevalier.rmi.net&gt;
+To: lutz@rmi.net
+Date: Wed Jul 12 16:03:59 2000
+Subject: I'm a Lumberjack, and I'm okay
+X-Mailer: PyMailGui Version 1.0 (Python)
+
+I cut down trees, I skip and jump,
+I like to press wild flowers...
+
+--------------------------------------------------------------------------------
+
+[Press Enter key]
+Received: by chevalier (mbox lutz)
+ (with Cubic Circle's cucipop (v1.31 1998/05/13) Wed Jul 12 16:13:54 2000)
+X-From_: lutz@rmi.net  Wed Jul 12 16:12:42 2000
+Return-Path: &lt;lutz@chevalier.rmi.net&gt;
+Received: from VAIO (dial-218.101.denco.rmi.net [166.93.218.101])
+        by chevalier.rmi.net (8.9.3/8.9.3) with ESMTP id QAA24093
+        for &lt;lutz@rmi.net&gt;; Wed, 12 Jul 2000 16:12:37 -0600 (MDT)
+Message-Id: &lt;200007122212.QAA24093@chevalier.rmi.net&gt;
+From: lutz@rmi.net
+To: lutz@rmi.net
+Date: Wed Jul 12 16:06:12 2000
+Subject: testing
+X-Mailer: PyMailGui Version 1.0 (Python)
+
+Testing Python mail tools.
+
+--------------------------------------------------------------------------------
+
+Bye.</PRE>
+
+<P class="docText"><A NAME="IXT-11-337394"></A>This interface
+is about as simple as it could be -- after connecting to the
+server, it prints the complete raw text of one message at a time,
+pausing between each until you type the enter key. The
+<TT>raw_input</TT> built-in is called to wait for the key
+press between message displays.<sup class="docFootnote"><A class="docLink" HREF="#">[6]</A></sup> The pause keeps messages from scrolling off the screen
+too fast; to make them visually distinct, emails are also separated
+by lines of dashes. We could make the display more fancy (e.g.,
+we'll pick out parts of messages in later examples with the
+<TT>rfc822</TT> module), but here we simply display the
+whole message that was sent.
+</P>
+<blockquote><p class="docFootnote"><sup><A NAME="">[6]</A></sup> An extra
+<TT>raw_input</TT> is inserted on Windows only, in order to
+clear the stream damage of the <TT>getpass</TT> call; see
+the note about this issue in the FTP section of this chapter.</p></blockquote>
+
+<P class="docText">If you look closely at these mails' text, you may notice that
+they were actually sent by another program called PyMailGui (a
+program we'll meet near the end of this chapter). The
+"X-Mailer" header line, if present, typically identifies
+the sending program. In fact, there are a variety of extra header
+lines that can be sent in a message's text. The
+"Received:" headers, for example, trace the machines that
+a message passed though on its way to the target mailbox. Because
+<TT>popmail</TT> prints the entire raw text of a message,
+you see all headers here, but you may see only a few by default in
+end-user-oriented mail GUIs such as Outlook.
+</P>
+
+<P class="docText">Before we move on, I should also point out that this script never
+deletes mail from the server. Mail is simply retrieved and printed
+and will be shown again the next time you run the script (barring
+deletion in another tool). To really remove mail permanently, we need
+to call other methods (e.g., <TT>server.dele(msgnum)</TT>)
+but such a capability is best deferred until we develop more
+interactive mail tools.<A NAME="IXTR3-217"></A> <A NAME="IXTR3-218"></A>
+</P>
+
+
+
+<A NAME="python2-CHP-11-SECT-3.2"></A>
+<H4 class="docSection2Title">11.3.2 SMTP: Sending Email</H4>
+
+<P class="docText"><A NAME="python2-IDXTERM-857"></A>
+<A NAME="python2-IDXTERM-858"></A>There is a proverb in hackerdom that
+states that every useful computer program eventually grows complex
+enough to send email. Whether such somewhat ancient wisdom rings true
+or not in practice, the ability to automatically initiate email from
+within a program is a powerful tool.
+</P>
+
+<P class="docText">For instance, test systems can automatically email failure reports,
+user interface programs can ship purchase orders to suppliers by
+email, and so on. Moreover, a portable Python mail script could be
+used to send messages from any computer in the world with Python and
+an Internet connection. Freedom from dependence on mail programs like
+Outlook is an attractive feature if you happen to make your living
+traveling around teaching Python on all sorts of computers.
+</P>
+
+<P class="docText">Luckily, sending email from within a Python script is just as easy as
+reading it. In fact, there are at least four ways to do so:
+</P>
+
+<A NAME="IXT-11-337395"></A>
+<A NAME="IXT-11-337396"></A>
+
+<A NAME="IXT-11-337397"></A><A NAME="python2-IDXTERM-862"></A><DL class="docList">
+<DT><I><span class="docPubcolor">Calling os.popen to launch a command-line mail program</span></I></DT>
+<DD>
+<P class="docList">On some systems, you can send email from a script with a call of the
+form:
+</P>
+
+<PRE>os.popen('mail -s "xxx" a@b.c', 'w').write(text) </PRE>
+
+<P class="docList">As we've seen earlier in the book, the <TT>popen</TT>
+tool runs the command-line string passed to its first argument, and
+returns a file-like object connected to it. If we use an open mode of
+"w", we are connected to the command's standard
+input stream -- here, we write the text of the new mail message to
+the standard Unix <TT>mail</TT> command-line program. The
+net effect is as if we had run <TT>mail</TT> interactively,
+but it happens inside a running Python script.
+</P>
+</DD><DT><I><span class="docPubcolor">Running the sendmail program</span></I></DT>
+<DD>
+<P class="docList"><A NAME="IXT-11-337397"></A>The open
+source <TT>sendmail</TT> program offers another way to
+initiate mail from a program. Assuming it is installed and configured
+on your system, you can launch it using Python tools like the
+<TT>os.popen</TT> call of the previous paragraph.
+</P>
+</DD><DT><I><span class="docPubcolor">Using the standard smtplib Python module</span></I></DT>
+<DD>
+<P class="docList"><A NAME="python2-IDXTERM-862"></A>Python's standard library comes
+with support for the client-side interface to SMTP -- the Simple
+Mail Transfer Protocol -- a higher-level Internet standard for
+sending mail over sockets. Like the <TT>poplib</TT> module
+we met in the previous section, <TT>smtplib</TT> hides all
+the socket and protocol details, and can be used to send mail on any
+machine with Python and a socket-based Internet link.
+</P>
+</DD><DT><I><span class="docPubcolor">Fetching and using third party packages and tools</span></I></DT>
+<DD>
+<P class="docList">Other tools in the open source library provide higher-level mail
+handling packages for Python (accessible from
+<A class="docLink" target="_blank" HREF="http://www.python.org/default.htm">http://www.python.org</A>). Most build upon one of
+the prior three techniques.
+</P>
+</DD>
+</DL>
+
+<P class="docText">Of these four options, <TT>smtplib</TT> is by far the most
+portable and powerful. Using <TT>popen</TT> to spawn a mail
+program usually works on Unix-like platforms only, not on Windows (it
+assumes a command-line mail program). And although the
+<TT>sendmail</TT> program is powerful, it is also somewhat
+Unix-biased, complex, and may not be installed even on all Unix-like
+machines.
+<A NAME="IXT-11-337398"></A>
+</P>
+
+<P class="docText">By contrast, the <TT>smtplib</TT> module works on any
+machine that has Python and an Internet link, including Unix, Linux,
+and Windows. Moreover, SMTP affords us much control over the
+formatting and routing of email. Since it is arguably the best option
+for sending mail from a Python script, let's explore a simple
+mailing program that illustrates its interfaces. The Python script
+shown in <A class="docLink" HREF="#python2-CHP-11-EX-17">Example 11-17</A> is intended to be used from an
+interactive command line; it reads a new mail message from the user
+and sends the new mail by SMTP using Python's
+<TT>smtplib</TT> module.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-11-EX-17"></A>Example 11-17. PP2E\Internet\Email\smtpmail.py </H5>
+<PRE>#!/usr/local/bin/python
+######################################################
+# use the Python SMTP mail interface module to send
+# email messages; this is just a simple one-shot 
+# send script--see pymail, PyMailGui, and PyMailCgi
+# for clients with more user interaction features, 
+# and popmail.py for a script which retrieves mail; 
+######################################################
+
+import smtplib, string, sys, time, mailconfig
+mailserver = mailconfig.smtpservername         # ex: starship.python.net
+
+From = string.strip(raw_input('From? '))       # ex: lutz@rmi.net
+To   = string.strip(raw_input('To?   '))       # ex: python-list@python.org
+To   = string.split(To, ';')                   # allow a list of recipients
+Subj = string.strip(raw_input('Subj? '))
+
+# prepend standard headers
+date = time.ctime(time.time())
+text = ('From: %s\nTo: %s\nDate: %s\nSubject: %s\n' 
+                         % (From, string.join(To, ';'), date, Subj))
+
+print 'Type message text, end with line=(ctrl + D or Z)'
+while 1:
+    line = sys.stdin.readline()
+    if not line: 
+        break                        # exit on ctrl-d/z
+  # if line[:4] == 'From':
+  #     line = '&gt;' + line            # servers escape for us
+    text = text + line
+
+if sys.platform[:3] == 'win': print
+print 'Connecting...'
+server = smtplib.SMTP(mailserver)              # connect, no login step
+failed = server.sendmail(From, To, text)
+server.quit() 
+if failed:                                     # smtplib may raise exceptions
+    print 'Failed recipients:', failed         # too, but let them pass here
+else:
+    print 'No errors.'
+print 'Bye.'</PRE>
+
+
+<P class="docText">Most of this script is user interface  -- it inputs the
+sender's address ("From"), one or more recipient
+addresses ("To", separated by ";" if more
+than one), and a subject line. The sending date is picked up from
+Python's standard <TT>time</TT> module, standard
+header lines are formatted, and the <TT>while</TT> loop
+reads message lines until the user types the end-of-file character
+(Ctrl-Z on Windows, Ctrl-D on Linux).
+</P>
+
+<P class="docText">The rest of the script is where all the SMTP magic occurs: to send a
+mail by SMTP, simply run these two sorts of
+calls:<A NAME="IXT-11-337399"></A>
+<A NAME="IXT-11-337400"></A>
+</P>
+
+<A NAME="IXT-11-337401"></A><DL class="docList">
+<DT><span class="docPubcolor"><span class="docPubcolor"><span class="docMonofont">server = smtplib.SMTP(mailserver)</span></span></span></DT>
+<DD>
+<P class="docList">Make an instance of the SMTP object, passing in the name of the SMTP
+server that will dispatch the message first. If this doesn't
+throw an exception, you're connected to the SMTP server via a
+socket when the call returns.
+</P>
+</DD><DT><span class="docPubcolor"><span class="docPubcolor"><span class="docMonofont">failed = server.sendmail(From,</span></span> <span class="docPubcolor"><span class="docMonofont">To,</span></span> <span class="docPubcolor"><span class="docMonofont">text)</span></span></span></DT>
+<DD>
+<P class="docList"><A NAME="IXT-11-337401"></A>Call the
+SMTP object's <TT>sendmail</TT> method, passing in
+the sender address, one or more recipient addresses, and the text of
+the message itself with as many standard mail header lines as you
+care to provide.
+</P>
+</DD>
+</DL>
+
+<P class="docText">When you're done, call the object's
+<TT>quit</TT> method to disconnect from the server. Notice
+that, on failure, the <TT>sendmail</TT> method may either
+raise an exception or return a list of the recipient addresses that
+failed; the script handles the latter case but lets exceptions kill
+the script with a Python error message.
+</P>
+
+<A NAME="python2-CHP-11-SECT-3.2.1"></A>
+<H5 class="docSection3Title">11.3.2.1 Sending messages</H5>
+
+<P class="docText">Okay -- let's ship a few messages across the world. The
+<TT>smtpmail</TT> script is a one-shot tool: each run
+allows you to send a single new mail message. Like most of the
+client-side tools in this chapter, it can be run from any computer
+with Python and an Internet link. Here it is running on Windows 98:
+</P>
+
+<PRE>C:\...\PP2E\Internet\Email&gt;<B>python smtpmail.py</B>
+From? Eric.the.Half.a.Bee@semibee.com
+To?   lutz@rmi.net
+Subj? A B C D E F G
+Type message text, end with line=(ctrl + D or Z)
+Fiddle de dum, Fiddle de dee,
+Eric the half a bee.
+
+Connecting...
+No errors.
+Bye.</PRE>
+
+<P class="docText">This mail is sent to my address (<A class="docLink" HREF="mailto:lutz@rmi.net">lutz@rmi.net</A>),
+so it ultimately shows up in my mailbox at my ISP, but only after
+being routed through an arbitrary number of machines on the Net, and
+across arbitrarily distant network links. It's complex at the
+bottom, but usually, the Internet "just works."
+</P>
+
+<P class="docText">Notice the "From" address, though -- it's
+completely fictitious (as far as I know, at least). It turns out that
+we can usually provide any "From" address we like because
+SMTP doesn't check its validity (only its general format is
+checked). Furthermore, unlike POP, there is no notion of a username
+or password in SMTP, so the sender is more difficult to determine. We
+need only pass email to any machine with a server listening on the
+SMTP port, and don't need an account on that machine. Here,
+<span class="docEmphasis">Eric.the.Half.a.Bee@semibee.com</span> works fine as
+the sender; <span class="docEmphasis">Marketing.Geek.From.Hell@spam.com</span>
+would work just as well.
+</P>
+
+<P class="docText">I'm going to tell you something now for instructional purposes
+only: it turns out that this behavior is the basis of all those
+annoying junk emails that show up in your mailbox without a real
+sender's address.<sup class="docFootnote"><A class="docLink" HREF="#">[7]</A></sup> Salesmen infected with e-millionaire
+mania will email advertising to all addresses on a list without
+providing a real "From" address, to cover their tracks.
+</P>
+<blockquote><p class="docFootnote"><sup><A NAME="">[7]</A></sup> <A NAME="IXT-11-337402"></A>Such junk mail is
+usually referred to as spam, a reference to a Monty Python skit where
+people trying to order breakfast at a restaurant were repeatedly
+drowned out by a group of Vikings singing an increasingly loud chorus
+of "spam, spam, spam,..." (no, really). While spam can be
+used in many ways, this usage differs both from its appearance in
+this book's examples, and its much-lauded role as a food
+product.</p></blockquote>
+
+<P class="docText">Normally, of course, you should use the same "To" address
+in the message and the SMTP call, and provide your real email address
+as the "From" value (that's the only way people
+will be able to reply to your message). Moreover, apart from teasing
+your significant other, sending phony addresses is just plain bad
+Internet citizenship. Let's run the script again to ship off
+another mail with more politically correct coordinates:
+</P>
+
+<PRE>C:\...\PP2E\Internet\Email&gt;<B>python smtpmail.py</B>
+From? lutz@rmi.net
+To?   lutz@rmi.net
+Subj? testing smtpmail
+Type message text, end with line=(ctrl + D or Z)
+Lovely Spam! Wonderful Spam!
+Connecting...
+No errors.
+Bye.</PRE>
+
+<P class="docText"><A NAME="IXT-11-337403"></A>At
+this point, we could run whatever email tool we normally use to
+access our mailbox to verify the results of these two send
+operations; the two new emails should show up in our mailbox
+regardless of which mail client is used to view them. Since
+we've already written a Python script for reading mail, though,
+let's put it to use as a verification tool -- running the
+<TT>popmail</TT> script from the last section reveals our
+two new messages at the end of the mail list:
+</P>
+
+<A NAME="IXTR3-219"></A><PRE>C:\...\PP2E\Internet\Email&gt;<B>python popmail.py </B>
+Password for pop.rmi.net?
+Connecting...
++OK Cubic Circle's v1.31 1998/05/13 POP3 ready &lt;c4050000b6ee6c39@chevalier&gt;
+There are 6 mail messages in 10941 bytes
+('+OK 6 messages (10941 octets)', ['1 744', '2 642', '3 4456', '4 697', '5 3791'
+, '6 611'], 44)
+--------------------------------------------------------------------------------
+...
+<I> ...lines omitted...</I>
+...
+[Press Enter key]
+Received: by chevalier (mbox lutz)
+ (with Cubic Circle's cucipop (v1.31 1998/05/13) Wed Jul 12 16:19:20 2000)
+X-From_: Eric.the.Half.a.Bee@semibee.com  Wed Jul 12 16:16:31 2000
+Return-Path: &lt;Eric.the.Half.a.Bee@semibee.com&gt;
+Received: from VAIO (dial-218.101.denco.rmi.net [166.93.218.101])
+        by chevalier.rmi.net (8.9.3/8.9.3) with ESMTP id QAA28647
+        for &lt;lutz@rmi.net&gt;; Wed, 12 Jul 2000 16:16:30 -0600 (MDT)
+From: Eric.the.Half.a.Bee@semibee.com
+Message-Id: &lt;200007122216.QAA28647@chevalier.rmi.net&gt;
+To: lutz@rmi.net
+Date: Wed Jul 12 16:09:21 2000
+Subject: A B C D E F G
+
+Fiddle de dum, Fiddle de dee,
+Eric the half a bee.
+
+--------------------------------------------------------------------------------
+
+[Press Enter key]
+Received: by chevalier (mbox lutz)
+ (with Cubic Circle's cucipop (v1.31 1998/05/13) Wed Jul 12 16:19:51 2000)
+X-From_: lutz@rmi.net  Wed Jul 12 16:17:58 2000
+Return-Path: &lt;lutz@chevalier.rmi.net&gt;
+Received: from VAIO (dial-218.101.denco.rmi.net [166.93.218.101])
+        by chevalier.rmi.net (8.9.3/8.9.3) with ESMTP id QAA00415
+        for &lt;lutz@rmi.net&gt;; Wed, 12 Jul 2000 16:17:57 -0600 (MDT)
+Message-Id: &lt;200007122217.QAA00415@chevalier.rmi.net&gt;
+From: lutz@rmi.net
+To: lutz@rmi.net
+Date: Wed Jul 12 16:10:55 2000
+Subject: testing smtpmail
+
+Lovely Spam! Wonderful Spam!
+
+--------------------------------------------------------------------------------
+
+Bye.</PRE>
+
+
+
+<A NAME="python2-CHP-11-SECT-3.2.2"></A>
+<H5 class="docSection3Title">11.3.2.2 More ways to abuse the Net</H5>
+
+<P class="docText">The first mail here was the one we sent with a fictitious address;
+the second was the more legitimate message. Like "From"
+addresses, header lines are a bit arbitrary under SMTP, too.
+<TT>smtpmail</TT> automatically adds "From:"
+and "To:" header lines in the message's text with
+the same addresses as passed to the SMTP interface, but only as a
+polite convention. Sometimes, though, you can't tell who a mail
+was sent to either -- to obscure the target audience, spammers
+also may play games with "Bcc" blind copies or the
+contents of headers in the message's text.
+</P>
+
+<P class="docText"><A NAME="IXT-11-337404"></A>For example, if we
+change <TT>smtpmail</TT> to not automatically generate a
+"To:" header line with the same address(es) sent to the
+SMTP interface call, we can manually type a "To:" header
+that differs from the address we're really sending to:
+</P>
+
+<PRE>C:\...\PP2E\Internet\Email&gt;<B>python smtpmail-noTo.py</B>
+From? Eric.the.Half.a.Bee@semibee.com
+<B>To?   lutz@starship.python.net</B>
+Subj? a b c d e f g
+Type message text, end with line=(ctrl + D or Z)
+<B>To: nobody.in.particular@marketing.com</B>
+Fiddle de dum, Fiddle de dee,
+Eric the half a bee.
+Connecting...
+No errors.
+Bye.</PRE>
+
+<P class="docText">In some ways, the "From" and "To" addresses
+in send method calls and message header lines are similar to
+addresses on envelopes and letters in envelopes. The former is used
+for routing, but the latter is what the reader sees. Here, I gave the
+"To" address as my mailbox on the
+<span class="docEmphasis">starship.python.net</span> server, but gave a
+fictitious name in the manually typed "To:" header line;
+the first address is where it really goes. A command-line mail tool
+running on <span class="docEmphasis">starship</span> by Telnet reveals two bogus
+mails sent -- one with a bad "From:", and the one with
+an additionally bad "To:" that we just sent:
+</P>
+
+<PRE>[lutz@starship lutz]$ <B>mail </B>
+Mail version 8.1 6/6/93.  Type ? for help.
+"/home/crew/lutz/Mailbox": 22 messages 12 new 22 unread
+<I> ...more...</I>
+&gt;N 21 Eric.the.Half.a.Bee@  Thu Jul 13 20:22  20/789   "A B C D E F G"
+ N 22 Eric.the.Half.a.Bee@  Thu Jul 13 20:26  19/766   "a b c d e f g"
+
+&amp; 21
+Message 21:
+From Eric.the.Half.a.Bee@semibee.com Thu Jul 13 20:21:18 2000
+Delivered-To: lutz@starship.python.net
+<B>From: Eric.the.Half.a.Bee@semibee.com </B>
+<B>To: lutz@starship.python.net </B>
+Date: Thu Jul 13 14:15:55 2000
+Subject: A B C D E F G
+
+Fiddle de dum, Fiddle de dee,
+Eric the half a bee.
+
+&amp; 22
+Message 22:
+From Eric.the.Half.a.Bee@semibee.com Thu Jul 13 20:26:34 2000
+Delivered-To: lutz@starship.python.net
+<B>From: Eric.the.Half.a.Bee@semibee.com </B>
+Date: Thu Jul 13 14:20:22 2000
+Subject: a b c d e f g
+<B>To: nobody.in.particular@marketing.com </B>
+
+Fiddle de dum, Fiddle de dee,
+Eric the half a bee.</PRE>
+
+<P class="docText">If your mail tool picks out the "To:" line, such mails
+look odd when viewed. For instance, here's another sent to my
+<span class="docEmphasis">rmi.net</span> mailbox:
+</P>
+
+<PRE>C:\...\PP2E\Internet\Email&gt;<B>python smtpmail-noTo.py</B>
+From? Arthur@knights.com
+To?   lutz@rmi.net
+Subj? Killer bunnies
+Type message text, end with line=(ctrl + D or Z)
+To: you@home.com
+Run away!  Run away! ...
+Connecting...
+No errors.
+Bye.</PRE>
+
+<P class="docText">When it shows up in my mailbox on <span class="docEmphasis">rmi.net</span>,
+it's difficult to tell much about its origin or destination in
+either Outlook or a Python-coded mail tool we'll meet near the
+end of this chapter (see <A class="docLink" HREF="#python2-CHP-11-FIG-8">Figure 11-8</A> and
+<A class="docLink" HREF="#python2-CHP-11-FIG-9">Figure 11-9</A>). And its raw text will only show the
+machines it has been routed through.
+</P>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="python2-CHP-11-FIG-8"></A>Figure 11-8. Bogus mail in Outlook</H5>
+<IMG BORDER="0" WIDTH="293" HEIGHT="214" src="FILES/ppy2_1108.gif" ALT="figs/ppy2_1108.gif"></CENTER>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="python2-CHP-11-FIG-9"></A>Figure 11-9. Bogus mail in a Python mail tool (PyMailGui)</H5>
+<IMG BORDER="0" WIDTH="352" HEIGHT="205" src="FILES/ppy2_1109.gif" ALT="figs/ppy2_1109.gif"></CENTER>
+
+<P class="docText">Once again, though -- don't do this unless you have good
+reason. I'm showing it for header-line illustration purposes
+(e.g., in a later section, we'll add an "X-mailer:"
+header line to identify the sending program). Furthermore, to stop a
+criminal, you sometimes need to think like one -- you can't
+do much about spam mail unless you understand how it is generated. To
+write an automatic spam filter that deletes incoming junk mail, for
+instance, you need to know the telltale signs to look for in a
+message's text. And "To" address juggling may be
+useful in the context of legitimate mailing lists.
+</P>
+
+<P class="docText">But really, sending email with bogus "From:" and
+"To:" lines is equivalent to making anonymous phone
+calls. Most mailers won't even let you change the
+"From" line, and don't distinguish between the
+"To" address and header line, but SMTP is wide open in
+this regard. Be good out there; okay?
+</P>
+
+
+
+<A NAME="python2-CHP-11-SECT-3.2.3"></A>
+<H5 class="docSection3Title">11.3.2.3 Back to the big Internet picture</H5>
+
+<P class="docText">So where are we at in the Internet abstraction model now? Because
+mail is transferred over sockets (remember sockets?), they are at the
+root of all of this email fetching and sending. All email read and
+written ultimately consists of formatted bytes shipped over sockets
+between computers on the Net. As we've seen, though, the POP
+and SMTP interfaces in Python hide all the details. Moreover, the
+scripts we've begun writing even hide the Python interfaces and
+provide higher-level interactive tools.
+</P>
+
+<P class="docText">Both <TT>popmail</TT> and <TT>smtpmail</TT>
+provide portable email tools, but aren't quite what we'd
+expect in terms of usability these days. In the next section,
+we'll use what we've seen thus far to implement a more
+interactive mail tool. At the end of this email section, we'll
+also code a Tk email GUI, and then we'll go on to build a
+web-based interface in a later chapter. All of these tools, though,
+vary primarily in terms of user interface only; each ultimately
+employs the mail modules we've met here to transfer mail
+message text over the Internet with sockets.<A NAME="IXTR3-220"></A> <A NAME="IXTR3-221"></A>
+</P>
+
+
+
+<A NAME="python2-CHP-11-SECT-3.3"></A>
+<H4 class="docSection2Title">11.3.3 A Command-Line Email Client</H4>
+
+<P class="docText"><A NAME="python2-IDXTERM-872"></A>
+<A NAME="python2-IDXTERM-873"></A>
+<A NAME="python2-IDXTERM-874"></A>Now,
+let's put together what we've learned about fetching and
+sending email in a simple but functional command-line email tool. The
+script in <A class="docLink" HREF="#python2-CHP-11-EX-18">Example 11-18</A> implements an interactive
+email session -- users may type commands to read, send, and delete
+email messages.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-11-EX-18"></A>Example 11-18. PP2E\Internet\Emal\pymail.py </H5>
+<PRE>#!/usr/local/bin/python
+######################################################
+# A simple command-line email interface client in 
+# Python; uses Python POP3 mail interface module to
+# view pop email account messages; uses rfc822 and
+# StringIO modules to extract mail message headers; 
+######################################################
+
+import poplib, rfc822, string, StringIO
+
+def connect(servername, user, passwd):
+    print 'Connecting...'
+    server = poplib.POP3(servername)
+    server.user(user)                    # connect, login to mail server
+    server.pass_(passwd)                 # pass is a reserved word
+    print server.getwelcome()            # print returned greeting message 
+    return server
+
+def loadmessages(servername, user, passwd, loadfrom=1):
+    server = connect(servername, user, passwd)
+    try:
+        print server.list()
+        (msgCount, msgBytes) = server.stat()
+        print 'There are', msgCount, 'mail messages in', msgBytes, 'bytes'
+        print 'Retrieving:',
+        msgList = []
+        for i in range(loadfrom, msgCount+1):            # empty if low &gt;= high
+            print i,                                     # fetch mail now
+            (hdr, message, octets) = server.retr(i)      # save text on list
+            msgList.append(string.join(message, '\n'))   # leave mail on server 
+        print
+    finally:
+        server.quit()                                    # unlock the mail box
+    assert len(msgList) == (msgCount - loadfrom) + 1     # msg nums start at 1
+    return msgList
+
+def deletemessages(servername, user, passwd, toDelete, verify=1):
+    print 'To be deleted:', toDelete
+    if verify and raw_input('Delete?')[:1] not in ['y', 'Y']:
+        print 'Delete cancelled.'
+    else:
+        server = connect(servername, user, passwd)
+        try:
+            print 'Deleting messages from server.'
+            for msgnum in toDelete:                 # reconnect to delete mail
+                server.dele(msgnum)                 # mbox locked until quit()
+        finally:
+            server.quit()
+
+def showindex(msgList):
+    count = 0   
+    for msg in msgList:                      # strip,show some mail headers
+        strfile = StringIO.StringIO(msg)     # make string look like a file
+        msghdrs = rfc822.Message(strfile)    # parse mail headers into a dict
+        count   = count + 1
+        print '%d:\t%d bytes' % (count, len(msg))
+        for hdr in ('From', 'Date', 'Subject'):
+            try:
+                print '\t%s=&gt;%s' % (hdr, msghdrs[hdr])
+            except KeyError:
+                print '\t%s=&gt;(unknown)' % hdr
+            #print '\n\t%s=&gt;%s' % (hdr, msghdrs.get(hdr, '(unknown)')
+        if count % 5 == 0:
+            raw_input('[Press Enter key]')  # pause after each 5 
+
+def showmessage(i, msgList):
+    if 1 &lt;= i &lt;= len(msgList):
+        print '-'*80
+        print msgList[i-1]              # this prints entire mail--hdrs+text
+        print '-'*80                    # to get text only, call file.read()
+    else:                               # after rfc822.Message reads hdr lines
+        print 'Bad message number'
+
+def savemessage(i, mailfile, msgList):
+    if 1 &lt;= i &lt;= len(msgList):
+        open(mailfile, 'a').write('\n' + msgList[i-1] + '-'*80 + '\n')
+    else:
+        print 'Bad message number'
+
+def msgnum(command):
+    try:
+        return string.atoi(string.split(command)[1])
+    except:
+        return -1   # assume this is bad
+
+helptext = """
+Available commands:
+i     - index display
+l n?  - list all messages (or just message n)
+d n?  - mark all messages for deletion (or just message n)
+s n?  - save all messages to a file (or just message n)
+m     - compose and send a new mail message
+q     - quit pymail
+?     - display this help text
+"""
+
+def interact(msgList, mailfile):
+    showindex(msgList)
+    toDelete = []
+    while 1:
+        try:
+            command = raw_input('[Pymail] Action? (i, l, d, s, m, q, ?) ')
+        except EOFError:
+            command = 'q'
+
+        # quit
+        if not command or command == 'q': 
+            break
+
+        # index
+        elif command[0] == 'i':          
+            showindex(msgList)
+
+        # list
+        elif command[0] == 'l':         
+            if len(command) == 1:
+                for i in range(1, len(msgList)+1): 
+                    showmessage(i, msgList)
+            else:
+                showmessage(msgnum(command), msgList)
+
+        # save
+        elif command[0] == 's':        
+            if len(command) == 1:
+                for i in range(1, len(msgList)+1): 
+                    savemessage(i, mailfile, msgList)
+            else:
+                savemessage(msgnum(command), mailfile, msgList)
+
+        # delete 
+        elif command[0] == 'd':               
+            if len(command) == 1:
+                toDelete = range(1, len(msgList)+1)     # delete all later
+            else:
+                delnum = msgnum(command)
+                if (1 &lt;= delnum &lt;= len(msgList)) and (delnum not in toDelete):
+                    toDelete.append(delnum)
+                else:
+                    print 'Bad message number'
+
+        # mail
+        elif command[0] == 'm':                # send a new mail via smtp
+            try:                               # reuse existing script
+                execfile('smtpmail.py', {})    # run file in own namespace
+            except:
+                print 'Error - mail not sent'  # don't die if script dies
+
+        elif command[0] == '?':
+            print helptext
+        else:
+            print 'What? -- type "?" for commands help'
+    return toDelete
+
+if __name__ == '__main__':
+    import sys, getpass, mailconfig
+    mailserver = mailconfig.popservername        # ex: 'starship.python.net'
+    mailuser   = mailconfig.popusername          # ex: 'lutz'
+    mailfile   = mailconfig.savemailfile         # ex:  r'c:\stuff\savemail'
+    mailpswd   = getpass.getpass('Password for %s?' % mailserver)
+
+    if sys.platform[:3] == 'win': raw_input()    # clear stream
+    print '[Pymail email client]'
+    msgList    = loadmessages(mailserver, mailuser, mailpswd)     # load all
+    toDelete   = interact(msgList, mailfile)
+    if toDelete: deletemessages(mailserver, mailuser, mailpswd, toDelete)
+    print 'Bye.'</PRE>
+
+
+<P class="docText">There isn't much new here -- just a combination of
+user-interface logic and tools we've already met, plus a
+handful of new tricks:
+</P>
+
+<A NAME="IXT-11-337405"></A><A NAME="IXT-11-337406"></A><A NAME="IXT-11-337407"></A><A NAME="IXT-11-337408"></A><A NAME="IXT-11-337409"></A><DL class="docList">
+<DT><I><span class="docPubcolor">Loads</span></I></DT>
+<DD>
+<P class="docList"><A NAME="IXT-11-337405"></A>This
+client loads all email from the server into an in-memory Python list
+only once, on startup; you must exit and restart to reload newly
+arrived email.
+</P>
+</DD><DT><I><span class="docPubcolor">Saves</span></I></DT>
+<DD>
+<P class="docList"><A NAME="IXT-11-337406"></A>On
+demand, <TT>pymail</TT> saves the raw text of a selected
+message into a local file, whose name you place in the
+<TT>mailconfig</TT> module.
+</P>
+</DD><DT><I><span class="docPubcolor">Deletions</span></I></DT>
+<DD>
+<P class="docList"><A NAME="IXT-11-337407"></A>
+<A NAME="IXT-11-337408"></A>We
+finally support on-request deletion of mail from the server here: in
+<TT>pymail</TT>, mails are selected for deletion by number,
+but are still only physically removed from your server on exit, and
+then only if you verify the operation. By deleting only on exit, we
+avoid changing mail message numbers during a session -- under POP,
+deleting a mail not at the end of the list decrements the number
+assigned to all mails following the one deleted. Since mail is cached
+in memory by <TT>pymail</TT>, future operations on the
+numbered messages in memory may be applied to the wrong mail if
+deletions were done immediately.<sup class="docFootnote"><A class="docLink" HREF="#">[8]</A></sup>
+</P> <blockquote><p class="docFootnote"><sup><A NAME="">[8]</A></sup> More on POP message
+numbers when we study PyMailGui later in this chapter. Interestingly,
+the list of message numbers to be deleted need not be sorted; they
+remain valid for the duration of the connection.</p></blockquote> 
+</DD><DT><I><span class="docPubcolor">Parsing messages</span></I></DT>
+<DD>
+<P class="docList"><A NAME="IXT-11-337409"></A>Pymail
+still displays the entire raw text of a message on listing commands,
+but the mail index listing only displays selected headers parsed out
+of each message. Python's <TT>rfc822</TT> module is
+used to extract headers from a message: the call
+<TT>rfc822.Message(strfile)</TT> returns an object with
+dictionary interfaces for fetching the value of a message header by
+name string (e.g., index the object on string "From" to
+get the value of the "From" header line).
+</P>
+
+<P class="docList">Although unused here, anything not consumed from
+<TT>strfile</TT> after a <TT>Message</TT> call is
+the body of the message, and can be had by calling
+<TT>strfile.read</TT>.<TT>Message</TT> reads the
+message headers portion only. Notice that <TT>strfile</TT>
+is really an instance of the standard
+<TT>StringIO.StringIO</TT> object. This object wraps the
+message's raw text (a simple string) in a file-like interface;
+<TT>rfc822.Message</TT> expects a file interface, but
+doesn't care if the object is a true file or not. Once again,
+interfaces are what we code to in Python, not specific types. Module
+<TT>StringIO</TT> is useful anytime you need to make a
+string look like a file.
+</P>
+</DD>
+</DL>
+
+<P class="docText">By now, I expect that you know enough Python to read this script for
+a deeper look, so rather than saying more about its design here,
+let's jump into an interactive <TT>pymail</TT>
+session to see how it works.
+</P>
+
+<P><A NAME="python2-CHP-11-SIDEBAR-1"></A><TABLE CELLSPACING="0" WIDTH="90%" BORDER="1"><TR><TD>
+<H2 class="docSidebarTitle">Does Anybody Really Know What Time It Is?</H2>
+
+<P class="docText"><A NAME="IXT-11-337410"></A>Minor caveat: the simple date format
+used in the <TT>smtpmail</TT> program (and others in this
+book) doesn't quite follow the SMTP date formatting standard.
+Most servers don't care, and will let any sort of date text
+appear in date header lines. In fact, I've never seen a mail
+fail due to date formats.
+</P>
+
+<P class="docText">If you want to be more in line with the standard, though, you could
+format the date header with code like this (adopted from standard
+module <TT>urllib</TT>, and parseable with standard tools
+such as the <TT>rfc822</TT> module and the
+<TT>time.strptime</TT> call):
+</P>
+
+<PRE>import time
+gmt = time.gmtime(time.time())
+fmt = '%a, %d %b %Y %H:%M:%S GMT'
+str = time.strftime(fmt, gmt)
+hdr = 'Date: ' + str
+print hdr</PRE>
+
+<P class="docText">The <TT>hdr</TT> variable looks like this when this code is
+run:
+</P>
+
+<PRE>Date: Fri, 02 Jun 2000 16:40:41 GMT</PRE>
+
+<P class="docText">instead of the date format currently used by the
+<TT>smtpmail</TT> program:
+</P>
+
+<PRE>&gt;&gt;&gt; import time
+&gt;&gt;&gt; time.ctime(time.time())
+'Fri Jun 02 10:23:51 2000'</PRE>
+
+<P class="docText"><A NAME="IXT-11-337411"></A>
+<A NAME="IXT-11-337412"></A>
+<A NAME="IXT-11-337413"></A>The
+<TT>time.strftime</TT> call allows arbitrary date and time
+formatting (<TT>time.ctime</TT> is just one standard
+format), but we will leave rooting out the workings of all these
+calls as a suggested exercise for the reader; consult the
+<TT>time</TT> module's library manual entry.
+We'll also leave placing such code in a reusable file to the
+more modular among you. Time and date formatting rules are necessary,
+but aren't pretty.
+</P>
+</TD></TR></TABLE></P>
+
+<A NAME="python2-CHP-11-SECT-3.3.1"></A>
+<H5 class="docSection3Title">11.3.3.1 Running the pymail command-line client</H5>
+
+<P class="docText">Let's start up <TT>pymail</TT> to read and delete
+email at our mail server and send new messages.
+<TT>Pymail</TT> runs on any machine with Python and
+sockets, fetches mail from any email server with a POP interface on
+which you have an account, and sends mail via the SMTP server
+you've named in the <TT>mailconfig</TT> module.
+</P>
+
+<P class="docText">Here it is in action running on my Windows 98 laptop machine; its
+operation is identical on other machines. First, we start the script,
+supply a POP password (remember, SMTP servers require no password),
+and wait for the <TT>pymail</TT> email list index to
+appear:
+</P>
+
+<PRE>C:\...\PP2E\Internet\Email&gt;<B>python pymail.py</B>
+Password for pop.rmi.net?
+
+[Pymail email client]
+Connecting...
++OK Cubic Circle's v1.31 1998/05/13 POP3 ready &lt;870f000002f56c39@chevalier&gt;
+('+OK 5 messages (7150 octets)', ['1 744', '2 642', '3 4456', '4 697', '5 611'],
+ 36)
+There are 5 mail messages in 7150 bytes
+Retrieving: 1 2 3 4 5
+There are 5 mail messages in 7150 bytes
+Retrieving: 1 2 3 4 5
+1:      676 bytes
+        From=&gt;lumber.jack@TheLarch.com
+        Date=&gt;Wed Jul 12 16:03:59 2000
+        Subject=&gt;I'm a Lumberjack, and I'm okay
+2:      587 bytes
+        From=&gt;lutz@rmi.net
+        Date=&gt;Wed Jul 12 16:06:12 2000
+        Subject=&gt;testing
+3:      4307 bytes
+        From=&gt;"Mark Hammond" &lt;MarkH@ActiveState.com&gt;
+        Date=&gt;Wed, 12 Jul 2000 18:11:58 -0400
+        Subject=&gt;[Python-Dev] Python .NET (was Preventing 1.5 extensions...
+4:      623 bytes
+        From=&gt;Eric.the.Half.a.Bee@semibee.com
+        Date=&gt;Wed Jul 12 16:09:21 2000
+        Subject=&gt;A B C D E F G
+5:      557 bytes
+        From=&gt;lutz@rmi.net
+        Date=&gt;Wed Jul 12 16:10:55 2000
+        Subject=&gt;testing smtpmail
+[Press Enter key]
+[Pymail] Action? (i, l, d, s, m, q, ?) <B>l 5</B>
+--------------------------------------------------------------------------------
+
+Received: by chevalier (mbox lutz)
+ (with Cubic Circle's cucipop (v1.31 1998/05/13) Wed Jul 12 16:45:38 2000)
+X-From_: lutz@rmi.net  Wed Jul 12 16:17:58 2000
+Return-Path: &lt;lutz@chevalier.rmi.net&gt;
+Received: from VAIO (dial-218.101.denco.rmi.net [166.93.218.101])
+        by chevalier.rmi.net (8.9.3/8.9.3) with ESMTP id QAA00415
+        for &lt;lutz@rmi.net&gt;; Wed, 12 Jul 2000 16:17:57 -0600 (MDT)
+Message-Id: &lt;200007122217.QAA00415@chevalier.rmi.net&gt;
+From: lutz@rmi.net
+To: lutz@rmi.net
+Date: Wed Jul 12 16:10:55 2000
+Subject: testing smtpmail
+
+Lovely Spam! Wonderful Spam!
+
+--------------------------------------------------------------------------------
+
+[Pymail] Action? (i, l, d, s, m, q, ?) <B>l 4</B>
+--------------------------------------------------------------------------------
+
+Received: by chevalier (mbox lutz)
+ (with Cubic Circle's cucipop (v1.31 1998/05/13) Wed Jul 12 16:45:38 2000)
+X-From_: Eric.the.Half.a.Bee@semibee.com  Wed Jul 12 16:16:31 2000
+Return-Path: &lt;Eric.the.Half.a.Bee@semibee.com&gt;
+Received: from VAIO (dial-218.101.denco.rmi.net [166.93.218.101])
+        by chevalier.rmi.net (8.9.3/8.9.3) with ESMTP id QAA28647
+        for &lt;lutz@rmi.net&gt;; Wed, 12 Jul 2000 16:16:30 -0600 (MDT)
+From: Eric.the.Half.a.Bee@semibee.com
+Message-Id: &lt;200007122216.QAA28647@chevalier.rmi.net&gt;
+To: lutz@rmi.net
+Date: Wed Jul 12 16:09:21 2000
+Subject: A B C D E F G
+
+Fiddle de dum, Fiddle de dee,
+Eric the half a bee.
+
+--------------------------------------------------------------------------------</PRE>
+
+<P class="docText">Once <TT>pymail</TT> downloads your email to a Python list
+on the local client machine, you type command letters to process it.
+The "l" command lists (prints) the contents of a given
+mail number; here, we used it to list the two emails we wrote with
+the <TT>smtpmail</TT> script in the last section.
+</P>
+
+<P class="docText">Pymail also lets us get command help, delete messages (deletions
+actually occur at the server on exit from the program), and save
+messages away in a local text file whose name is listed in the
+<TT>mailconfig</TT> module we saw earlier:
+</P>
+
+<PRE>[Pymail] Action? (i, l, d, s, m, q, ?) <B>?</B>
+
+Available commands:
+i     - index display
+l n?  - list all messages (or just message n)
+d n?  - mark all messages for deletion (or just message n)
+s n?  - save all messages to a file (or just message n)
+m     - compose and send a new mail message
+q     - quit pymail
+?     - display this help text
+
+[Pymail] Action? (i, l, d, s, m, q, ?) <B>d 1</B>
+[Pymail] Action? (i, l, d, s, m, q, ?) <B>s 4</B></PRE>
+
+<P class="docText">Now, let's pick the "m" mail compose
+option -- <TT>pymail</TT> simply executes the
+<TT>smptmail</TT> script we wrote in the prior section and
+resumes its command loop (why reinvent the wheel?). Because that
+script sends by SMTP, you can use arbitrary "From"
+addresses here; but again, you generally shouldn't do that
+(unless, of course, you're trying to come up with interesting
+examples for a book).
+</P>
+
+<P class="docText">The <TT>smtpmail</TT> script is run with the built-in
+<TT>execfile</TT> function; if you look at
+<TT>pymail</TT>'s code closely, you'll notice
+that it passes an empty dictionary to serve as the script's
+namespace to prevent its names from clashing with names in
+<TT>pymail</TT> code. <TT>execfile</TT> is a
+handy way to reuse existing code written as a top-level script, and
+thus is not really importable. Technically speaking, code in the file
+<span class="docEmphasis">smtplib.py</span> would run when imported, but only on
+the first import (later imports would simply return the loaded module
+object). Other scripts that check the <TT>__name__</TT>
+attribute for <TT>__main__</TT> won't generally run
+when imported at all:
+</P>
+
+<PRE>[Pymail] Action? (i, l, d, s, m, q, ?) <B>m</B>
+From? Cardinal@nice.red.suits.com
+To?   lutz@rmi.net
+Subj? Among our weapons are these:
+Type message text, end with line=(ctrl + D or Z)
+Nobody Expects the Spanish Inquisition!
+Connecting...
+No errors.
+Bye.
+[Pymail] Action? (i, l, d, s, m, q, ?) <B>q</B>
+To be deleted: [1]
+Delete?y
+Connecting...
++OK Cubic Circle's v1.31 1998/05/13 POP3 ready &lt;8e2e0000aff66c39@chevalier&gt;
+Deleting messages from server.
+Bye.</PRE>
+
+<P class="docText"><A NAME="IXT-11-337414"></A>
+<A NAME="IXT-11-337415"></A>
+<A NAME="IXT-11-337416"></A>As
+mentioned, deletions really happen only on exit; when we quit
+<TT>pymail</TT> with the "q" command, it tells
+us which messages are queued for deletion, and verifies the request.
+If verified, <TT>pymail</TT> finally contacts the mail
+server again and issues POP calls to delete the selected mail
+messages.
+</P>
+
+<P class="docText">Because <TT>pymail</TT> downloads mail from your server
+into a local Python list only once at startup, though, we need to
+start <TT>pymail</TT> again to re-fetch mail from the
+server if we want to see the result of the mail we sent and the
+deletion we made. Here, our new mail shows up as number 5, and the
+original mail assigned number 1 is gone:
+</P>
+
+<PRE>C:\...\PP2E\Internet\Email&gt;<B>python pymail.py</B>
+Password for pop.rmi.net?
+
+[Pymail email client]
+Connecting...
++OK Cubic Circle's v1.31 1998/05/13 POP3 ready &lt;40310000d5f66c39@chevalier&gt;
+...
+There are 5 mail messages in 7090 bytes
+Retrieving: 1 2 3 4 5
+1:      587 bytes
+        From=&gt;lutz@rmi.net
+        Date=&gt;Wed Jul 12 16:06:12 2000
+        Subject=&gt;testing
+2:      4307 bytes
+        From=&gt;"Mark Hammond" &lt;MarkH@ActiveState.com&gt;
+        Date=&gt;Wed, 12 Jul 2000 18:11:58 -0400
+        Subject=&gt;[Python-Dev] Python .NET (was Preventing 1.5 extensions...
+3:      623 bytes
+        From=&gt;Eric.the.Half.a.Bee@semibee.com
+        Date=&gt;Wed Jul 12 16:09:21 2000
+        Subject=&gt;A B C D E F G
+4:      557 bytes
+        From=&gt;lutz@rmi.net
+        Date=&gt;Wed Jul 12 16:10:55 2000
+        Subject=&gt;testing smtpmail
+5:      615 bytes
+        From=&gt;Cardinal@nice.red.suits.com
+        Date=&gt;Wed Jul 12 16:44:58 2000
+        Subject=&gt;Among our weapons are these:
+[Press Enter key]
+[Pymail] Action? (i, l, d, s, m, q, ?) <B>l 5</B>
+--------------------------------------------------------------------------------
+
+Received: by chevalier (mbox lutz)
+ (with Cubic Circle's cucipop (v1.31 1998/05/13) Wed Jul 12 16:53:24 2000)
+X-From_: Cardinal@nice.red.suits.com  Wed Jul 12 16:51:53 2000
+Return-Path: &lt;Cardinal@nice.red.suits.com&gt;
+Received: from VAIO (dial-218.101.denco.rmi.net [166.93.218.101])
+        by chevalier.rmi.net (8.9.3/8.9.3) with ESMTP id QAA11127
+        for &lt;lutz@rmi.net&gt;; Wed, 12 Jul 2000 16:51:52 -0600 (MDT)
+From: Cardinal@nice.red.suits.com
+Message-Id: &lt;200007122251.QAA11127@chevalier.rmi.net&gt;
+To: lutz@rmi.net
+Date: Wed Jul 12 16:44:58 2000
+Subject: Among our weapons are these:
+
+Nobody Expects the Spanish Inquisition!
+
+--------------------------------------------------------------------------------
+
+[Pymail] Action? (i, l, d, s, m, q, ?) <B>q</B>
+Bye.</PRE>
+
+<P class="docText"><A NAME="IXT-11-337417"></A>Finally,
+here is the mail save file, containing the one message we asked to be
+saved in the prior session; it's simply the raw text of saved
+emails, with separator lines. This is both human- and
+machine-readable -- in principle, another script could load saved
+mail from this file into a Python list, by calling the
+<TT>string.split</TT> function on the file's text
+with the separator line as a delimiter:
+</P>
+
+<A NAME="IXTR3-222"></A><A NAME="IXTR3-223"></A><A NAME="IXTR3-224"></A><PRE>C:\...\PP2E\Internet\Email&gt;<B>type c:\stuff\etc\savemail.txt</B>
+
+Received: by chevalier (mbox lutz)
+ (with Cubic Circle's cucipop (v1.31 1998/05/13) Wed Jul 12 16:45:38 2000)
+X-From_: Eric.the.Half.a.Bee@semibee.com  Wed Jul 12 16:16:31 2000
+Return-Path: &lt;Eric.the.Half.a.Bee@semibee.com&gt;
+Received: from VAIO (dial-218.101.denco.rmi.net [166.93.218.101])
+        by chevalier.rmi.net (8.9.3/8.9.3) with ESMTP id QAA28647
+        for &lt;lutz@rmi.net&gt;; Wed, 12 Jul 2000 16:16:30 -0600 (MDT)
+From: Eric.the.Half.a.Bee@semibee.com
+Message-Id: &lt;200007122216.QAA28647@chevalier.rmi.net&gt;
+To: lutz@rmi.net
+Date: Wed Jul 12 16:09:21 2000
+Subject: A B C D E F G
+
+Fiddle de dum, Fiddle de dee,
+Eric the half a bee.
+
+
+--------------------------------------------------------------------------------</PRE>
+
+
+
+<A NAME="python2-CHP-11-SECT-3.4"></A>
+<H4 class="docSection2Title">11.3.4 Decoding Mail Message Attachments</H4>
+
+<P class="docText"><A NAME="python2-IDXTERM-888"></A>In the last section, we learned how
+to parse out email message headers and bodies with the
+<TT>rfc822</TT> and <TT>StringIO</TT> modules.
+This isn't quite enough for some messages, though. In this
+section, I will introduce tools that go further, to handle complex
+information in the bodies of email messages.
+</P>
+
+<P class="docText">One of the drawbacks of stubbornly clinging to a Telnet command-line
+email interface is that people sometimes send email with all sorts of
+attached information -- pictures, MS Word files, uuencoded tar
+files, base64-encoded documents, HTML pages, and even executable
+scripts that can trash your computer if opened.<sup class="docFootnote"><A class="docLink" HREF="#">[9]</A></sup> Not all attachments are
+crucial, of course, but email isn't always just ASCII text
+these days.
+</P>
+<blockquote><p class="docFootnote"><sup><A NAME="">[9]</A></sup> <A NAME="IXT-11-337418"></A>
+<A NAME="IXT-11-337419"></A>I
+should explain this one: I'm referring to email viruses that
+appeared in 2000. The short story behind most of them is that
+Microsoft Outlook sported a "feature" that allowed email
+attachments to embed and contain executable scripts, and allowed
+these scripts to gain access to critical computer components when
+open and run. Furthermore, Outlook had another feature that
+automatically ran such attached scripts when an email was inspected,
+whether the attachment was manually opened or not. I'll leave
+the full weight of such a security hole for you to ponder, but I want
+to add that if you use Python's attachment tools in any of the
+mail programs in this book, please do not execute attached programs
+under any circumstance, unless you also run them with Python's
+restricted execution mode presented in <A class="docLink" HREF="0596000855_python2-CHP-15.html#python2-CHP-15">Chapter 15</A>.</p></blockquote>
+
+<P class="docText">Before I overcame my Telnet habits, I needed a way to extract and
+process all those attachments from a command line (I tried the
+alternative of simply ignoring all attachments completely, but that
+works only for a while). Luckily, Python's library tools make
+handling attachments and common encodings easy and portable. For
+simplicity, all of the following scripts work on the raw text of a
+saved email message (or parts of such), but they could just as easily
+be incorporated into the email programs in this book to extract email
+components automatically.
+</P>
+
+<A NAME="python2-CHP-11-SECT-3.4.1"></A>
+<H5 class="docSection3Title">11.3.4.1 Decoding base64 data</H5>
+
+<P class="docText"><A NAME="IXT-11-337420"></A>
+<A NAME="IXT-11-337421"></A>
+<A NAME="IXT-11-337422"></A>Let's start with something
+simple. Mail messages and attachments are frequently sent in an
+encoding format such as uu or base64; binary data files in particular
+must be encoded in a textual format for transit using one of these
+encoding schemes. On the receiving end, such encoded data must first
+be decoded before it can be viewed, opened, or otherwise used. The
+Python program in <A class="docLink" HREF="#python2-CHP-11-EX-19">Example 11-19</A> knows how to perform
+base64 decoding on data stored in a file.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-11-EX-19"></A>Example 11-19. PP2E\Internet\Email\decode64.py </H5>
+<PRE>#!/usr/bin/env python
+#################################################
+# Decode mail attachments sent in base64 form.
+# This version assumes that the base64 encoded 
+# data has been extracted into a separate file.
+# It doesn't understand mime headers or parts.
+# uudecoding is similar (uu.decode(iname)),
+# as is binhex decoding (binhex.hexbin(iname)).
+# You can also do this with module mimetools:
+# mimetools.decode(input, output, 'base64').
+#################################################
+
+import sys, base64
+
+iname = 'part.txt'
+oname = 'part.doc'
+
+if len(sys.argv) &gt; 1:
+    iname, oname = sys.argv[1:]      # % python prog [iname oname]?
+
+input  = open(iname, 'r')
+output = open(oname, 'wb')           # need wb on windows for docs
+base64.decode(input, output)         # this does most of the work
+print 'done'</PRE>
+
+
+<P class="docText"><A NAME="IXT-11-337423"></A> <A NAME="python2-IDXTERM-895"></A>There's not much to look at
+here, because all the low-level translation work happens in the
+Python <TT>base64</TT> module; we simply call its
+<TT>decode</TT> method with open input and output files.
+Other transmission encoding schemes are supported by different Python
+modules -- <TT>uu</TT> for uuencoding,
+<TT>binhex</TT> for binhex format, and so on. All of these
+export interfaces that are analogous to <TT>base64</TT>,
+and are as easy to use; <TT>uu</TT> and
+<TT>binhex</TT> use the output filename in the data (see
+the library manual for details).
+</P>
+
+<P class="docText">At a slightly higher level of generality, the
+<TT>mimetools</TT> module exports a
+<TT>decode</TT> method, which supports all encoding
+schemes. The desired decoding is given by a passed-in argument, but
+the net result is the same, as shown in <A class="docLink" HREF="#python2-CHP-11-EX-20">Example 11-20</A>.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-11-EX-20"></A>Example 11-20. PP2E\Internet\Email\decode64_b.py </H5>
+<PRE>#!/usr/bin/env python
+#################################################
+# Decode mail attachments sent in base64 form.
+# This version tests the mimetools module.     
+#################################################
+
+import sys, mimetools
+
+iname = 'part.txt'
+oname = 'part.doc'
+
+if len(sys.argv) &gt; 1:
+    iname, oname = sys.argv[1:]      # % python prog [iname oname]?
+
+input  = open(iname, 'r')
+output = open(oname, 'wb')
+mimetools.decode(input, output, 'base64')     # or 'uuencode', etc.
+print 'done'</PRE>
+
+
+<P class="docText">To use either of these scripts, you must first extract the
+base64-encoded data into a text file. Save a mail message in a text
+file using your favorite email tool, then edit the file to save only
+the base64-encoded portion with your favorite text editor. Finally,
+pass the data file to the script, along with a name for the output
+file where the decoded data will be saved. Here are the base64
+decoders at work on a saved data file; the generated output file
+turns out to be the same as the one saved for an attachment in MS
+Outlook earlier:
+</P>
+
+<PRE>C:\Stuff\Mark\etc\jobs\test&gt;<B>python ..\decode64.py t4.64 t4.doc</B>
+done
+
+C:\Stuff\Mark\etc\jobs\test&gt;<B>fc /B cand.agr10.22.doc t4.doc</B>
+Comparing files cand.agr10.22.doc and t4.doc
+FC: no differences encountered
+
+
+C:\Stuff\Mark\etc\jobs\test&gt;<B>python ..\decode64_b.py t4.64 t4.doc</B>
+done
+
+C:\Stuff\Mark\etc\jobs\test&gt;<B>fc /B cand.agr10.22.doc t4.doc</B>
+Comparing files cand.agr10.22.doc and t4.doc
+FC: no differences encountered</PRE>
+
+
+
+<A NAME="python2-CHP-11-SECT-3.4.2"></A>
+<H5 class="docSection3Title">11.3.4.2 Extracting and decoding all parts of a message</H5>
+
+<P class="docText"><A NAME="python2-IDXTERM-896"></A>The decoding procedure in the previous
+section is very manual and error-prone; moreover, it handles only one
+type of encoding (base64), and decodes only a single component of an
+email message. With a little extra logic, we can improve on this
+dramatically with the Python <TT>mhlib</TT> module's
+multipart message-decoding tools. For instance, the script in <A class="docLink" HREF="#python2-CHP-11-EX-21">Example 11-21</A> knows how to extract, decode, and save every
+component in an email message in one step.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-11-EX-21"></A>Example 11-21. PP2E\Internet\Email\decodeAll.py </H5>
+<PRE>#!/usr/bin/env python
+#####################################################
+# Decode all mail attachments sent in encoded form:
+# base64, uu, etc. To use, copy entire mail message
+# to mailfile and run:
+#    % python ..\decodeAll.py mailfile
+# which makes one or more mailfile.part* outputs.
+#####################################################
+
+import sys, mhlib
+from types import *
+iname = 'mailmessage.txt'
+
+if len(sys.argv) == 3:
+    iname, oname = sys.argv[1:]        # % python prog [iname [oname]?]?
+elif len(sys.argv) == 2:
+    iname = sys.argv[1]
+    oname = iname + '.part'
+
+def writeparts(part, oname):
+    global partnum
+    content = part.getbody()                   # decoded content or list
+    if type(content) == ListType:              # multiparts: recur for each
+        for subpart in content:
+            writeparts(subpart, oname) 
+    else:                                      # else single decoded part
+        assert type(content) == StringType     # use filename if in headers
+        print; print part.getparamnames()      # else make one with counter
+        fmode = 'wb'
+        fname = part.getparam('name')
+        if not fname:
+            fmode = 'w'
+            fname = oname + str(partnum)
+            if part.gettype() == 'text/plain':
+                fname = fname + '.txt'
+            elif part.gettype() == 'text/html':
+                fname = fname + '.html'
+        output = open(fname, fmode)            # mode must be 'wb' on windows
+        print 'writing:', output.name          # for word doc files, not 'w'
+        output.write(content)
+        partnum = partnum + 1
+
+partnum = 0
+input   = open(iname, 'r')                     # open mail file
+message = mhlib.Message('.', 0, input)         # folder, number args ignored
+writeparts(message, oname)
+print 'done: wrote %s parts' % partnum</PRE>
+
+
+<P class="docText">Because <TT>mhlib</TT> recognizes message components, this
+script processes an entire mail message; there is no need to edit the
+message to extract components manually. Moreover, the components of
+an <TT>mhlib.Message</TT> object represent the
+already-decoded parts of the mail message -- any necessary uu,
+base64, and other decoding steps have already been automatically
+applied to the mail components by the time we fetch them from the
+object. <TT>mhlib</TT> is smart enough to determine and
+perform decoding automatically; it supports all common encoding
+schemes at once, not just a particular format such as base64.
+</P>
+
+<P class="docText">To use this script, save the raw text of an email message in a local
+file (using whatever mail tool you like), and pass the file's
+name on the script's command line. Here the script is
+extracting and decoding the components of two saved mail message
+files, <I>t4.eml</I> and <I>t5.eml</I>:
+</P>
+
+<PRE>C:\Stuff\Mark\etc\jobs\test&gt;<B>python ..\decodeall.py t4.eml</B>
+
+['charset']
+writing: t4.eml.part0.txt
+
+['charset']
+writing: t4.eml.part1.html
+
+['name']
+writing: cand.agr10.22.doc
+done: wrote 3 parts
+
+
+C:\Stuff\Mark\etc\jobs\test&gt;<B>python ..\decodeall.py t5.eml</B>
+
+['charset']
+writing: t5.eml.part0.txt
+
+['name']
+writing: US West Letter.doc
+done: wrote 2 parts</PRE>
+
+<P class="docText">The end result of decoding a message is a set of one or more local
+files containing the decoded contents of each part of the message.
+Because the resulting local files are the crux of this script's
+purpose, it must assign meaningful names to files it creates. The
+following naming rules are applied by the script:<A NAME="IXTR3-225"></A>
+</P>
+
+<span style="font-weight:bold"><OL class="docList" TYPE="1">
+<LI><span style="font-weight:normal"><P class="docList"><A NAME="IXT-11-337424"></A>
+<A NAME="IXT-11-337425"></A>
+<A NAME="IXT-11-337426"></A>
+<A NAME="IXT-11-337427"></A>If a component has an associated
+"name" parameter in the message, the script stores the
+component's bytes in a local file of that name. This generally
+reuses the file's original name on the machine where the mail
+originated.
+</P></span></LI>
+<LI><span style="font-weight:normal"><P class="docList">Otherwise, the script generates a unique filename for the component
+by adding a "partN" suffix to the original mail
+file's name, and trying to guess a file extension based on the
+component's file type given in the message.
+</P></span></LI>
+</OL></span>
+<P class="docText">For instance, the message saved away as <I>t4.eml</I>
+consists of the message body, an alternative HTML encoding of the
+message body, and an attached Word doc file. When decoding
+<I>t4.eml</I>:
+</P>
+
+<UL>
+<LI><P class="docList">The first two message components have no "name"
+parameter, so the script generates names based on the filename and
+component types -- <I>t4.eml.part0.txt</I> and
+<I>t4.eml.part1.html </I> -- plain text and HTML
+code, respectively. On most machines, clicking on the HTML output
+file should open it in a web browser for formatted viewing.
+</P></LI>
+<LI><P class="docList">The last attachment was given an explicit name when
+attached -- <I>cand.agr10.22.doc </I> -- so it is
+used as the output file's name directly. Notice that this was
+an attached MS Word doc file when sent; assuming all went well in
+transit, double-clicking on the third output file generated by this
+script should open it in Word.
+</P></LI>
+</UL>
+<P class="docText">There are additional tools in the Python library for decoding data
+fetched over the Net, but we'll defer to the library manual for
+further details. Again, using this decoding script still involves
+some manual intervention -- users must save the mail file and type
+a command to split off its parts into distinct files -- but
+it's sufficient for handling multipart mail, and it works
+portably on any machine with Python. Moreover, the decoding
+interfaces it demonstrates can be adopted in a more automatic fashion
+by interactive mail clients.
+</P>
+
+<P class="docText">For instance, the decoded text of a message component could be
+automatically passed to handler programs (e.g., browsers, text
+editors, Word) when selected, rather than written to local files. It
+could also be saved in and automatically opened from local temporary
+files (on Windows, running a simple DOS <I>start</I>
+command with <TT>os.system</TT> would open the temporary
+file). In fact, popular email tools like Outlook use such schemes to
+support opening attachments. Python-coded email user interfaces could
+do so, too -- which is a hint about where this chapter is headed
+next.<A NAME="IXTR3-226"></A><A NAME="IXTR3-227"></A>
+</P>
+
+
+
+
+<ul></ul>
+</td>
+</tr>
+</table>
+<td></td>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+          <a href="0596000855_python2-CHP-11-SECT-2.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+          <a href="0596000855_python2-CHP-11-SECT-4.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+</body></html>

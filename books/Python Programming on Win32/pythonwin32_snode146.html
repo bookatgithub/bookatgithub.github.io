@@ -1,0 +1,441 @@
+<HTML><HEAD><META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=iso-8859-1">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="18.8 Providing Performance Monitor Information"-->
+<LINK REL="stylesheet" href="FILES/sbolM.css">
+</HEAD>
+<BODY link="#354278" vlink="#000066" alink="#000080" topmargin="0">
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right"><a href="pythonwin32_snode145.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a> <a href="pythonwin32_snode147.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a></td></table>
+<FONT>
+<h3>18.8
+Providing Performance Monitor Information</h3>
+
+
+<p>
+<a NAME="idx1839"></a>The
+next step in our service will be to generate performance information
+that can be used by the Windows NT Performance Monitor.</p>
+
+
+
+<p>The Performance Monitor itself is a fairly complex beast with many
+options. We will attempt to cover only the basics, enough to install
+a couple of counters into our sample service. If you require more
+advanced techniques, you should see the Win32 SDK documentation on
+the Performance Monitor.</p>
+
+
+
+<P>The Performance Monitor has been designed to have minimal impact on
+the applications providing data. Applications provide raw data (by
+way of <A NAme="idx1840"></a>counters),
+and the responsibility of formatting and translating that data falls
+to the application processing the data (e.g., the Performance Monitor
+application provided with Windows NT). When a counter is added to the
+Performance Monitor, it indicates the type of data it represents. For
+example, one counter may indicate a raw count, such as total
+connections made, or it may be a value that should be interpreted
+over time, such as bytes sent per second. In both cases, the
+application increments a counter, and the Performance Monitor itself
+determines how far the counter was incremented in the last second and
+calculates the actual value to be displayed.</p>
+
+
+
+<P>Counters are grouped together to form a Performance Monitor object.
+These objects exist purely to group related counters together. When
+you use the NT Performance Monitor Application, you must first select
+the object you wish to obtain data on, then the counters for that
+object. Windows NT comes with a number of objects and counters that
+obtain the performance of the operating system itself. For example,
+there is a standard processor object, and this object has counters
+such as percent of processor time, percent of interrupt time, and so
+forth.</P>
+
+
+
+<P>The Performance Monitor expects to obtain the counter and object
+information from a special DLL. This DLL has public entry-points
+specific to Performance Monitor, and this DLL is loaded whenever the
+Performance Monitor needs information on the specific object. In
+general, this DLL is not an integral part of the application itself,
+but is instead a custom DLL written expressly for the Performance
+Monitor. Memory mapped files are typically used to share the counter
+data between the application itself and the Performance Monitor DLL.</P>
+
+
+
+<p>When the application is installed, it must provide the Performance
+Monitor with definitions of the objects and counters it provides.
+These definitions include a name for the counter, and a description
+for the counter. The application must also provide the name of the
+DLL that provides the data.</p>
+
+
+
+
+<h4>18.8.1
+Performance Monitor Data from Python</h4>
+
+
+<p>
+<a name="idx1841"></a>The
+Python Win32 Extensions include support for providing Performance
+Monitor information. This support consists of the
+<tt class="monofont">perfmon</tt>
+<a NAME="idx1842"></A> module that your application uses to
+define the counters and provide the counter data. A DLL named
+<I>perfmondata.dll</i>
+<A NaME="idx1843"></a>
+is supplied as the Performance Monitor DLL; this is the DLL that the
+Performance Monitor loads to acquire your performance data.</P>
+
+
+
+
+<H5>18.8.1.1
+Installing Performance Monitor information</H5>
+
+
+<P>
+<A Name="idx1844"></a>As
+mentioned previously, it's necessary to register with the
+Performance Monitor when your application is installed. To install
+Performance Monitor information, you must provide the following
+information:</P>
+
+
+
+<UL>
+<Li><p>The name of a C header (<i>.h</i>) file providing
+information about the counters</P>
+</LI>
+<Li><p>The name of a Windows INI file providing the definitions of the
+counters</p>
+</lI>
+<LI><P>The name of the DLL providing Performance Monitor information</p>
+</li>
+</ul>
+<p>This information is necessary only at installation time: the
+<i>.h</i> and <i>.ini</i> files
+aren't required at runtime. The Performance Monitor APIs are
+very much C and C++ focussed, hence the requirement for the
+<i>.h</i> file. Often, this <i>.h</i>
+file would be included in the C/C++ project, but as we are using
+Python, we need to author a <i>.h</i> file that's
+used only for the installation process.</p>
+
+
+
+<p>The header file contains
+<tt cLASS="monofont">#define</TT>
+<a NAmE="idx1845"></A> statements for
+each counter. Each <tT CLASS="monofont">#define</tt> lists the offset of the
+specific counter in two-byte multiples. The offset zero defines the
+object itself.</p>
+
+
+
+<p>For our sample, we provide two counters, connections per second and
+the bytes received per second. Thus, the header file will have three
+entries: the object at offset 0, the first counter at offset 2, and
+the last counter at offset 4.</P>
+
+
+
+<P>For the sample application, use the <I>.h</I> file in
+the following code:</p>
+
+
+
+<pre CLASs="monofont">// PipeService2_install.h
+// File used at installation time to install
+// Performance Monitor Counters for our sample service.
+//
+// All these list the counters in order.
+// Important that you add these in this order in
+// the Python code.
+
+#define SERVICE 0
+#define CONNECTIONS 2 // Number of connections
+#define BYTES 4 // Number of bytes received.</pre>
+
+
+<P>You also need a Windows INI file that defines the counters
+themselves. This INI file has three required sections: the
+<TT Class="monofont">[info]</tt> section defines the name of the
+application, the <tt class="monofont">[languages]</tt> section defines the
+list of languages in which you are providing descriptions, and the
+<tt clasS="monofont">[text]</TT> section that describes the counters
+themselves. The INI file for the sample service looks like the
+following code:</P>
+
+
+
+<PRe CLaSS="monofont">; PipeService2_install.ini
+; File used at installation time to install
+; Performance Monitor Counters for our sample service.
+;
+[info]
+; drivername MUST be the same as the service name
+drivername=PythonPipeService
+symbolfile=PipeService2_install.h
+
+[languages]
+009=English
+
+[text]
+SERVICE_009_NAME=Python Demo Service
+SERVICE_009_HELP=Shows performance statistics for the sample Python service
+CONNECTIONS_009_NAME=Number of connections per second.
+CONNECTIONS_009_HELP=Indicates the load on the service.
+BYTES_009_NAME=Bytes read/sec
+BYTES_009_HELP=Number of bytes read per second by the service.</pRE>
+
+
+<P>Note that the text section provides the names and descriptions for
+both the object itself (Python Demo Service) and the counters. Also
+note that the <TT Class="monofont">drivername</TT> entry must be the same as
+the service.</P>
+
+
+
+<P>The final piece of the puzzle is the name of the DLL used to provide
+the Performance Monitor data. As described previously, a generic DLL
+is provided with the Win32 Extensions for this purpose. This file can
+be found at <i>Python\Win32\perfmondata.dll</i>.</p>
+
+
+
+<p>Now we have all the pieces, but how do we install the data? It
+shouldn't be a surprise to hear that Python makes this much
+easier for us. As Performance Monitor information is a common
+requirement for services, the Python service installation procedure
+supports additional parameters for this purpose.</P>
+
+
+
+<P>When installing a Python service, the command-line options are
+<TT clasS="monofont">--perfmonini</TT> (names the INI file) and optionally,
+<Tt class="monofont">--perfmondll</tt> (names the DLL that provides the
+data).</p>
+
+
+
+<p>Let's reinstall our service. Because the service uses the
+default DLL, you need to specify only the name of the
+<i>.ini</i> file. Use the command:</p>
+
+
+
+<pre class="monofont">C:\Scripts&gt; python.exe PipeService2.py --perfmonini=PipeService2_install.ini install
+Installing service PythonPipeService to Python class C:\Scripts\PipeService2.PipeService
+Changing service configuration
+Service updated</PRE>
+
+
+<P>The last message is "service updated" rather than
+"service installed." This is because the installation
+procedure realizes the service is already installed and simply
+updates the service configuration. When you remove the service later,
+the Performance Monitor information is automatically uninstalled.</P>
+
+
+
+<P>As mentioned previously, the <i>.h</I> and
+<I>.ini</i> files are needed only for this one-time
+installation process. If you wish, you can remove these files
+now.<A NaME="idx1846"></A></P>
+
+
+
+
+
+
+<H5>18.8.1.2
+Defining the counters</H5>
+
+
+<p>Now that you've successfully registered your service with the
+Performance Monitor, you need to define the
+<a naME="idx1847"></A>counters. Then you can
+finally update the counters while the service is running.</P>
+
+
+
+<p>The process for defining the counters is:</p>
+
+
+
+<ol TYPE="1">
+<li><p>Create each counter and set its attributes.</p>
+</LI>
+<LI><p>Create the Performance Monitor object and add the counters to it.</p>
+</li>
+<li><p>Create a Performance Monitor manager, passing the objects.</p>
+</li>
+</ol>
+
+<p>To do this, add the following two methods to your service class:</p>
+
+
+
+<pre clasS="monofont">def InitPerfMon(self):
+        # Magic numbers (2 and 4) must match header and ini file used
+        # at install - could lookup ini, but then Id need it a runtime
+        
+        # A counter for number of connections per second.
+        self.counterConnections=perfmon.CounterDefinition(2) 
+        # We arent expecting many, so we set the scale high (ie, x10)
+        # Note the scale is 10^DefaultScale = ie, to get 10, we use 1!
+        self.counterConnections.DefaultScale = 1
+
+        # Now a counter for the number of bytes received per second.
+        self.counterBytes=perfmon.CounterDefinition(4)
+        self.counterBytes.DefaultScale = 0
+
+        # Now register our counters with the performance monitor
+        perfObjectType = perfmon.ObjectType( 
+                          (self.counterConnections, self.counterBytes) )
+        
+        self.perfManager = perfmon.PerfMonManager(
+                        self._svc_name_,
+                        (perfObjectType,),
+                        "perfmondata")
+                        
+    def TermPerfMon(self):
+        self.perfManager.Close()
+        self.perfManager = None</PRE>
+
+
+<P>Note the magic numbers passed to the
+<Tt CLaSS="monofont">perfmon.CounterDefinition()</tT> calls. These must be
+the offsets as defined in the <I>.h</I> file used at
+installation. The <TT Class="monofont">perfmon.PerfMonManager()</TT> call
+also warrants some extra comments. The first parameter is the
+<TT clasS="monofont">drivername</TT> as specified in the
+<I>.ini</i> file. As mentioned previously, this must be
+the name of the service. The last parameter is the name of the
+memory-mapped file that communicates the data between the service and
+the Performance Monitor DLL. This must be the base name of the DLL
+providing Performance Monitor information. The standard DLL is named
+<i>perfmondata.dll</i>, so you pass
+<tT CLAss="monofont">perfmondata</tt>. If you chose to rename the DLL for
+your own application, you must reflect the new name here and also in
+the installation process.</p>
+
+
+
+<p>The <tt class="monofont">DefaultScale</tt> property of the counter is not
+intuitive. This property specifies the power of 10 by which to scale
+a chart line (i.e., the base 10 log of the scale). For example, for a
+default scale of 1, you use 0. For a default scale of 10, use 1; to
+get a scale of 100, use 2, etc.</p>
+
+
+
+
+
+
+<h5>18.8.1.3
+Updating the counters</h5>
+
+
+<p>Now that you've defined the
+<a nAME="idx1848"></A>counters in your code, all
+that remains is to update the counters with your data. This is a
+simple process. The counter object has a method
+<TT cLAsS="monofont">Increment()</Tt> taking a single optional parameter
+(defaulting to 1).</P>
+
+
+
+<P>Change the <TT CLass="monofont">SvcDoRun()</tT> method, so that just before
+you process the client connection, you execute the following code:</P>
+
+
+
+<PRe claSS="monofont"># But first, increment our Performance Monitor data
+ self.counterConnections.Increment()</PRe>
+
+
+<p>This increments the counter by 1, which is correct for your
+connections counter. Then, just after you write the response to the
+client, execute:</p>
+
+
+
+<pRE CLass="monofont"># Update our performance monitor "bytes read" counter
+self.counterBytes.Increment(len(data))</pre>
+
+
+<p>In this case, you increment the bytes counter by the length of the
+data received. And that's it: your service is now providing
+Performance Monitor information.</p>
+
+
+
+
+
+
+<h5>18.8.1.4
+Viewing Performance Monitor data</h5>
+
+
+<p>
+<a name="idx1849"></a>All that
+remains is to view the data the service provides. The service must be
+running before the data is available, so let's start the new
+service:</p>
+
+
+
+<pre CLASS="monofont">C:\Scripts&gt; python PipeService2.py debug
+Debugging service PythonPipeService
+Info 0x40001002 - The PythonPipeService service has started.</PrE>
+
+
+<P>Now you can start the Windows NT Performance Monitor, which can be
+found under the Administrative Tools folder on the Start menu. You
+are presented with an empty Performance Monitor that looks something
+like <a href="pythonwin32_snode146.html#9">Figure 18.4</A>.</P>
+
+
+
+<CENter>
+<h5>
+<A NAMe="9"></a>Figure 18.4. The Windows NT Performance Monitor after starting</h5>
+
+<iMG BOrder="0" WIDTh="502" height="325" src="FILES/ppw.1804.gif" alt="figs/ppw.1804.gif"></center>
+
+
+<p>Now select Edit <iMG BORDeR="0" AlIGn="absmiddle" WIDTH="20" HeighT="16" src="FILES/U2192.gif" alt="figs/U2192.gif"> Add to Chart. In the dialog displayed, select
+the Object drop-down and scroll to Python Demo Service, as shown in
+<a href="pythonwin32_snode146.html#10">Figure 18.5</a>. Select and add the two counters, and
+you can now start your service client and repeatedly send some data.
+If all goes well, your Performance Monitor display should look
+something<a naME="idx1850"></A> like<A name="idx1851"></a> <a href="pythonwin32_snode146.html#11">Figure 18.6</a>.</p>
+
+
+
+<center>
+<h5>
+<a nAME="10"></A>Figure 18.5. "Add to Chart" dialog showing our counters</H5>
+
+<ImG BoRDeR="0" WIDTH="502" heigHT="224" src="FILES/ppw.1805.gif" alt="figs/ppw.1805.gif"></CENTer>
+
+
+<ceNTER>
+<h5>
+<a name="11"></a>Figure 18.6. Collecting performance data for the sample service</h5>
+
+<img border="0" widtH="502" HEIGHt="325" src="FILES/ppw.1806.gif" ALt="figs/ppw.1806.gif"></CENTER>
+
+
+
+</font>
+ 
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right"><a href="pythonwin32_snode145.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a> <a href="pythonwin32_snode147.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a></td></table>
+</BODY></HTML>

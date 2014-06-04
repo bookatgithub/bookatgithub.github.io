@@ -1,0 +1,477 @@
+<html><head>
+<META http-equiv="Content-Type" content="text/html">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="7.4 The asyncore Module"-->
+<link rel="STYLESHEET" type="text/css" href="FILES/style.css">
+<link rel="STYLESHEET" type="text/css" href="FILES/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+	<a href="0596000960_pythonsl-CHP-7-SECT-3.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+	<a href="0596000960_pythonsl-CHP-7-SECT-5.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr>
+<td valign="top"><A NAME="pythonsl-CHP-7-SECT-4"></A>
+<H3 class="docSection1Title">7.4 The asyncore Module</H3>
+
+<P class="docText">
+
+<A NAME="pythonsl-IDXTERM-565"></A>
+<A NAME="pythonsl-IDXTERM-566"></A>
+
+  
+
+The <TT>asyncore</TT> module provides a 
+"reactive" socket implementation.
+Instead of creating socket objects and calling methods on them to do
+things, this module allows you to write code that is called when something
+can be done.  To implement an asynchronous  
+
+socket handler, subclass
+the<A NAME="IXT-7-189705"></A>
+ <I>dispatcher</I> class, and override one or more
+of the following methods:
+
+
+<A NAME="IXT-7-189706"></A>
+<A NAME="IXT-7-189707"></A>
+<A NAME="IXT-7-189708"></A>
+<A NAME="IXT-7-189709"></A>
+<A NAME="IXT-7-189710"></A>
+<A NAME="IXT-7-189711"></A>
+<A NAME="IXT-7-189712"></A>
+
+</P>
+
+<UL>
+<LI><P class="docList"><TT>handle_connect</TT> is called when a connection is
+successfully established.</P></LI>
+<LI><P class="docList"><TT>handle_expt</TT> is called when a connection fails.</P></LI>
+<LI><P class="docList"><TT>handle_accept</TT> is called when a connection request
+is made to a listening socket.  The callback should call the
+<TT>accept</TT> method to get the client socket.</P></LI>
+<LI><P class="docList"><TT>handle_read</TT> is called when there is data waiting to
+be read from the socket.  The callback should call the
+<TT>recv</TT> method to get the data.</P></LI>
+<LI><P class="docList"><TT>handle_write</TT> is called when data can be written to
+the socket.  Use the <TT>send</TT> method to write data.</P></LI>
+<LI><P class="docList"><TT>handle_close</TT> is called when the socket is closed or
+reset.</P></LI>
+<LI><P class="docList"><TT>handle_error(type</TT>, <TT>value</TT>, <TT>traceback)</TT> is called if a
+Python error occurs in any of the other callbacks.  The default
+implementation prints an abbreviated traceback to
+<TT>sys.stdout</TT>.</P></LI>
+</UL><P class="docText"><A class="docLink" HREF="#pythonsl-CHP-7-EX-7">Example 7-7</A> shows a time client, similar to the one for the
+<TT>socket</TT> module.</P>
+
+
+<H5 class="docExampleTitle"><A NAME="pythonsl-CHP-7-EX-7"></A>Example 7-7. Using the asyncore Module to Get the Time from a Time Server</H5>
+
+<PRE>
+File: asyncore-example-1.py
+
+import asyncore
+import socket, time
+
+# reference time (in seconds since 1900-01-01 00:00:00)
+TIME1970 = 2208988800L # 1970-01-01 00:00:00
+
+class TimeRequest(asyncore.dispatcher):
+    # time requestor (as defined in RFC 868)
+
+    def _ _init_ _(self, host, port=37):
+        asyncore.dispatcher._ _init_ _(self)
+        self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.connect((host, port))
+
+    def writable(self):
+        return 0 # don't have anything to write
+
+    def handle_connect(self):
+        pass # connection succeeded
+
+    def handle_expt(self):
+        self.close() # connection failed, shutdown
+
+    def handle_read(self):
+        # get local time
+        here = int(time.time()) + TIME1970
+
+        # get and unpack server time
+        s = self.recv(4)
+        there = ord(s[3]) + (ord(s[2])&lt;&lt;8) + (ord(s[1])&lt;&lt;16) + (ord(s[0])&lt;&lt;24L)
+
+        self.adjust_time(int(here - there))
+
+        self.handle_close() # we don't expect more data
+
+    def handle_close(self):
+        self.close()
+
+    def adjust_time(self, delta):
+        # override this method!
+        print "time difference is", delta
+
+#
+# try it out
+
+request = TimeRequest("www.python.org")
+
+asyncore.loop()
+
+<B>log: adding channel &lt;TimeRequest  at 8cbe90&gt;
+time difference is 28
+log: closing channel 192:&lt;TimeRequest connected at 8cbe90&gt;</B></PRE>
+
+
+<P class="docText">
+
+<A NAME="IXT-7-189713"></A>
+
+
+If you don't want the log messages, override the
+<TT>log</TT> method in your
+<I>dispatcher</I> subclass.</P>
+
+<P class="docText"><A class="docLink" HREF="#pythonsl-CHP-7-EX-8">Example 7-8</A> shows the corresponding time server.  Note that it uses two
+<I>dispatcher</I> subclasses, one for the listening
+socket, and one for the client channel.</P>
+
+
+<H5 class="docExampleTitle"><A NAME="pythonsl-CHP-7-EX-8"></A>Example 7-8. Using the asyncore Module to Implement a Time Server</H5>
+
+<PRE>
+File: asyncore-example-2.py
+
+import asyncore
+import socket, time
+
+# reference time
+TIME1970 = 2208988800L
+
+class TimeChannel(asyncore.dispatcher):
+
+    def handle_write(self):
+        t = int(time.time()) + TIME1970
+        t = chr(t&gt;&gt;24&amp;255) + chr(t&gt;&gt;16&amp;255) + chr(t&gt;&gt;8&amp;255) + chr(t&amp;255)
+        self.send(t)
+        self.close()
+
+class TimeServer(asyncore.dispatcher):
+
+    def _ _init_ _(self, port=37):
+        self.port = port
+        self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.bind(("", port))
+        self.listen(5)
+        print "listening on port", self.port
+
+    def handle_accept(self):
+        channel, addr = self.accept()
+        TimeChannel(channel)
+
+server = TimeServer(8037)
+asyncore.loop()
+
+<B>log: adding channel &lt;TimeServer  at 8cb940&gt;
+listening on port 8037
+log: adding channel &lt;TimeChannel  at 8b2fd0&gt;
+log: closing channel 52:&lt;TimeChannel connected at 8b2fd0&gt;</B></PRE>
+
+
+<P class="docText">
+
+<A NAME="IXT-7-189714"></A>
+
+In addition to the plain <I>dispatcher</I>, this
+module also includes a <I>dispatcher_with_send</I>
+class.  This class allows you send larger amounts of data, without
+clogging up the network transport buffers.</P>
+
+<P class="docText">The module in <A class="docLink" HREF="#pythonsl-CHP-7-EX-9">Example 7-9</A> defines an <I>AsyncHTTP</I> class
+based on the <I>dispatcher_with_send</I> class.  When
+you create an instance of this class, it issues an HTTP GET request
+and sends the incoming data to a 
+"consumer" target
+object.</P>
+
+
+<H5 class="docExampleTitle"><A NAME="pythonsl-CHP-7-EX-9"></A>Example 7-9. Using the asyncore Module to Do HTTP Requests</H5>
+
+<PRE>
+File: SimpleAsyncHTTP.py
+
+import asyncore
+import string, socket
+import StringIO
+import mimetools, urlparse
+
+class AsyncHTTP(asyncore.dispatcher_with_send):
+    # HTTP requester
+
+    def _ _init_ _(self, uri, consumer):
+        asyncore.dispatcher_with_send._ _init_ _(self)
+
+        self.uri = uri
+        self.consumer = consumer
+
+        # turn the uri into a valid request
+        scheme, host, path, params, query, fragment = urlparse.urlparse(uri)
+        assert scheme == "http", "only supports HTTP requests"
+        try:
+            host, port = string.split(host, ":", 1)
+            port = int(port)
+        except (TypeError, ValueError):
+            port = 80 # default port
+        if not path:
+            path = "/"
+        if params:
+            path = path + ";" + params
+        if query:
+            path = path + "?" + query
+
+        self.request = "GET %s HTTP/1.0\r\nHost: %s\r\n\r\n" % (path, host)
+
+        self.host = host
+        self.port = port
+
+        self.status = None
+        self.header = None
+
+        self.data = ""
+
+        # get things going!
+        self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.connect((host, port))
+
+    def handle_connect(self):
+        # connection succeeded
+        self.send(self.request)
+
+    def handle_expt(self):
+        # connection failed; notify consumer (status is None)
+        self.close()
+        try:
+            http_header = self.consumer.http_header
+        except AttributeError:
+            pass
+        else:
+            http_header(self)
+
+    def handle_read(self):
+        data = self.recv(2048)
+        if not self.header:
+            self.data = self.data + data
+            try:
+                i = string.index(self.data, "\r\n\r\n")
+            except ValueError:
+                return # continue
+            else:
+                # parse header
+                fp = StringIO.StringIO(self.data[:i+4])
+                # status line is "HTTP/version status message"
+                status = fp.readline()
+                self.status = string.split(status, " ", 2)
+                # followed by a rfc822-style message header
+                self.header = mimetools.Message(fp)
+                # followed by a newline, and the payload (if any)
+                data = self.data[i+4:]
+                self.data = ""
+                # notify consumer (status is non-zero)
+                try:
+                    http_header = self.consumer.http_header
+                except AttributeError:
+                    pass
+                else:
+                    http_header(self)
+                if not self.connected:
+                    return # channel was closed by consumer
+
+        self.consumer.feed(data)
+
+    def handle_close(self):
+        self.consumer.close()
+        self.close()</PRE>
+
+
+<P class="docText"><A class="docLink" HREF="#pythonsl-CHP-7-EX-10">Example 7-10</A> shows a simple script that uses that class.</P>
+
+
+<H5 class="docExampleTitle"><A NAME="pythonsl-CHP-7-EX-10"></A>Example 7-10. Using the SimpleAsyncHTTP Class</H5>
+
+<PRE>
+File: asyncore-example-3.py
+
+import SimpleAsyncHTTP
+import asyncore
+
+class DummyConsumer:
+    size = 0
+
+    def http_header(self, request):
+        # handle header
+        if request.status is None:
+            print "connection failed"
+        else:
+            print "status", "=&gt;", request.status
+            for key, value in request.header.items():
+                print key, "=", value
+
+    def feed(self, data):
+        # handle incoming data
+        self.size = self.size + len(data)
+
+    def close(self):
+        # end of data
+        print self.size, "bytes in body"
+
+#
+# try it out
+
+consumer = DummyConsumer()
+
+request = SimpleAsyncHTTP.AsyncHTTP(
+    "http://www.pythonware.com",
+    consumer
+    )
+
+asyncore.loop()
+
+<B>log: adding channel &lt;AsyncHTTP  at 8e2850&gt;
+status =&gt; ['HTTP/1.1', '200', 'OK\015\012']
+server = Apache/Unix (Unix)
+content-type = text/html
+content-length = 3730
+...
+3730 bytes in body
+log: closing channel 156:&lt;AsyncHTTP connected at 8e2850&gt;</B></PRE>
+
+
+<P class="docText">
+
+<A NAME="IXT-7-189715"></A>
+<A NAME="IXT-7-189716"></A>
+<A NAME="IXT-7-189717"></A>
+<A NAME="IXT-7-189718"></A>
+<A NAME="IXT-7-189719"></A>
+<A NAME="IXT-7-189720"></A>
+
+Note that the consumer interface is designed to be compatible with the
+<TT>htmllib</TT> and <TT>xmllib</TT> parsers,
+allowing you to parse HTML or XML data on the fly.  Note that the
+<TT>http_header</TT> method is optional; if it isn't
+defined, it's simply ignored.</P>
+
+<P class="docText">A problem with <A class="docLink" HREF="#pythonsl-CHP-7-EX-10">Example 7-10</A> is that it doesn't work for
+redirected resources.  <A class="docLink" HREF="#pythonsl-CHP-7-EX-11">Example 7-11</A> adds an extra consumer
+layer, which handles the redirection.</P>
+
+
+<H5 class="docExampleTitle"><A NAME="pythonsl-CHP-7-EX-11"></A>Example 7-11. Using the SimpleAsyncHTTP Class with Redirection</H5>
+
+<PRE>
+File: asyncore-example-4.py
+
+import SimpleAsyncHTTP
+import asyncore
+
+class DummyConsumer:
+    size = 0
+
+    def http_header(self, request):
+        # handle header
+        if request.status is None:
+            print "connection failed"
+        else:
+            print "status", "=&gt;", request.status
+            for key, value in request.header.items():
+                print key, "=", value
+
+    def feed(self, data):
+        # handle incoming data
+        self.size = self.size + len(data)
+
+    def close(self):
+        # end of data
+        print self.size, "bytes in body"
+
+class RedirectingConsumer:
+
+    def _ _init_ _(self, consumer):
+        self.consumer = consumer
+
+    def http_header(self, request):
+        # handle header
+        if request.status is None or\
+           request.status[1] not in ("301", "302"):
+            try:
+                http_header = self.consumer.http_header
+            except AttributeError:
+                pass
+            else:
+                return http_header(request)
+        else:
+            # redirect!
+            uri = request.header["location"]
+            print "redirecting to", uri, "..."
+            request.close()
+            SimpleAsyncHTTP.AsyncHTTP(uri, self)
+
+    def feed(self, data):
+        self.consumer.feed(data)
+
+    def close(self):
+        self.consumer.close()
+
+#
+# try it out
+
+consumer = RedirectingConsumer(DummyConsumer())
+
+request = SimpleAsyncHTTP.AsyncHTTP(
+    "http://www.pythonware.com/library",
+    consumer
+    )
+
+asyncore.loop()
+
+<B>log: adding channel &lt;AsyncHTTP  at 8e64b0&gt;
+redirecting to http://www.pythonware.com/library/ ...
+log: closing channel 48:&lt;AsyncHTTP connected at 8e64b0&gt;
+log: adding channel &lt;AsyncHTTP  at 8ea790&gt;
+status =&gt; ['HTTP/1.1', '200', 'OK\015\012']
+server = Apache/Unix (Unix)
+content-type = text/html
+content-length = 387
+...
+387 bytes in body
+log: closing channel 236:&lt;AsyncHTTP connected at 8ea790&gt;</B></PRE>
+
+
+<P class="docText">
+
+<A NAME="IXTR3-75"></A>
+<A NAME="IXTR3-76"></A>
+
+
+
+If the server returns status 301 (permanent redirection) or 302
+(temporary redirection), the redirecting consumer closes the current
+request and then issues a new one for the new address.  All other calls to
+the consumer are delegated to the original consumer.</P>
+
+<a href="0596000960_"><img src="FILES/pixel.gif" width="1" height="1" border="0"></a><ul></ul>
+</td>
+</tr>
+</table>
+<td></td>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+          <a href="0596000960_pythonsl-CHP-7-SECT-3.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+          <a href="0596000960_pythonsl-CHP-7-SECT-5.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+</body></html>

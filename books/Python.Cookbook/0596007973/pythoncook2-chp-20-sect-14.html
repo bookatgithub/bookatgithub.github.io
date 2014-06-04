@@ -1,0 +1,254 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;20.14.&nbsp;Automatic Initialization of Instance Attributes</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-20-sect-13.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-20-sect-15.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-20-SECT-14"></a>
+<h3 class="docSection1Title">Recipe 20.14. Automatic Initialization of Instance Attributes</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: S&eacute;bastien Keim, Troy Melhase, Peter
+Cogolo</span></p>
+
+<a name="pythoncook2-CHP-20-SECT-14.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-20-ITERM-3138"></a>You
+want to set some attributes to constant values, during object
+initialization, without forcing your subclasses to call your
+<tt>_ _init_ _</tt> method.</P>
+
+
+<a name="pythoncook2-CHP-20-SECT-14.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">For constant values of immutable types, you can just set them in the
+class. For example, instead of the natural looking:</p>
+
+<pre>class counter(object):
+    def _ _init_ _(self):
+        self.count = 0
+    def increase(self, addend=1):
+        self.count += addend</pre><BR>
+
+
+<p class="docText">you can code:</p>
+
+<pre>class counter(object):
+    count = 0
+    def increase(self, addend=1):
+        self.count += addend</pre><BR>
+
+
+<p class="docText">This style works because <tt>self.count += addend</tt>,
+when <I>self.count</i> belongs to an immutable type, is
+exactly equivalent to <tt>self.count = self.count +
+addend</tt>. The first time this code executes for a particular
+instance <I>self</I>, <i>self.count</i> is not
+yet initialized as a per-instance attribute, so the per-class
+attribute is used, on the <span class="docEmphasis">right</span> of the
+<tt>equal</tt> sign (=); but the per-instance attribute is
+nevertheless the one assigned to (on the <span class="docEmphasis">left</span> of
+the sign). Any further use, once the per-instance attribute has been
+initialized in this way, gets or sets the per-instance attribute.</p>
+
+<p class="docText">This style does <span class="docEmphasis">not</span> work for values of mutable
+types, such as lists or dictionaries. Coding this way would then
+result in all instances of the class sharing the
+<span class="docEmphasis">same</span> mutable-type object as their attribute.
+However, a custom descriptor works fine:</p>
+
+<pre>class auto_attr(object):
+    def _ _init_ _(self, name, factory, *a, **k):
+        self.data = name, factory, a, k
+    def _ _get_ _(self, obj, clas=None):
+        name, factory, a, k = self.data
+        setattr(obj, name, factory(*a, **k))
+        return getattr(obj, name)</pre><BR>
+
+
+<p class="docText">With class <i>auto_attr</i> at hand, you can now code, for
+example:</P>
+
+<pre>class recorder(object):
+    count = 0
+    events = auto_attr('events', list)
+    def record(self, event):
+        self.count += 1
+        self.events.append((self.count, event))</pre><br>
+
+
+
+<a name="pythoncook2-CHP-20-SECT-14.3"></a>
+<H4 class="docSection2Title">Discussion</h4>
+
+<p class="docText">The simple and standard approach of defining constant initial values
+of attributes by setting them as class attributes is just fine, as
+long as we're talking about constants of immutable
+types, such as numbers or strings. In such cases, it does no harm for
+all instances of the class to share the same initial-value object for
+such attributes, and, when you do such operations as
+<tt>self.count += 1</tt>, you intrinsically rebind the
+specific, per-instance value of the attribute, without affecting the
+attributes of other instances.</P>
+
+<p class="docText">However, when you want an attribute to have an initial value of a
+<span class="docEmphasis">mutable</span> type, such as a list or a dictionary,
+you need a little bit moresuch as the
+<I>auto_attr</i> custom descriptor type in this recipe.
+Each instance of <i>auto_attr</i> needs to know to what
+attribute name it's being bound, so we pass that
+<i>name</i> as the first argument when we instantiate
+<i>auto_attr</i>. Then, we have the
+<i>factory</i>, a callable that will produce the desired
+initial value when called (often <i>factory</i> will be a
+type object, such as <tt>list</tt> or
+<tt>dict</tt>); and finally optional positional and keyword
+arguments to be passed when <i>factory</i> gets called.</P>
+
+<p class="docText">The first time you access an attribute named
+<tt><I>name</i></tt> on a given instance
+<tt><i>obj</I></tt>, Python finds in
+<tt><i>obj</i></tt>'s class the
+descriptor (an instance of <i>auto_attr</i>) and calls the
+descriptor's method <tt>_ _get_ _</tt>,
+with <tt><i>obj</i></tt> as an argument.
+<I>auto_attr</i>'s <tt>_ _get_
+_</tt> calls the factory and sets the result under the right
+name as an instance attribute, so that any further access to the
+attribute of that name in the instance gets the actual value.</P>
+
+<p class="docText">In other words, the descriptor is designed to <span class="docEmphasis">hide
+itself</span> when it's first accessed on each
+instance, to get out of the way from further accesses to the
+attribute of the same name on that same instance. For this purpose,
+it's absolutely crucial that
+<i>auto_attr</I> is technically a
+<span class="docEmphasis">non</span>data descriptor class, meaning it
+doesn't define a <tt>_ _set_ _</tt>
+method. As a consequence, an attribute of the same name may be set in
+the instance: the per-instance attribute overrides (i.e., takes
+precedence over) the per-class attribute (i.e., the instance of a
+nondata descriptor class).</p>
+
+<p class="docText">You can regard this recipe's approach as
+"just-in-time generation" of
+instance attributes, the first time a certain attribute gets accessed
+on a certain instance. Beyond allowing attribute initialization to
+occur without an <tt>_ _init_ _</tt> method, this approach
+may therefore be useful as an optimization: consider it when each
+instance has a potentially large set of attributes, maybe costly to
+initialize, and most of the attributes may end up never being
+accessed on each given instance.</P>
+
+<p class="docText">It is somewhat unfortunate that this recipe requires you to pass to
+<I>auto_attr</i> the name of the attribute
+it's getting bound to; unfortunately,
+<I>auto_attr</I> has no way to find out for itself.
+However, if you're willing to add a custom metaclass
+to the mix, you can fix this little inconvenience, too, as follows:</p>
+
+<pre>class smart_attr(object):
+    name = None
+    def _ _init_ _(self, factory, *a, **k):
+        self.creation_data = factory, a, k
+    def _ _get_ _(self, obj, clas=None):
+        if self.name is None:
+            raise RuntimeError, ("class %r uses a smart_attr, so its "
+                "metaclass should be MetaSmart, but is %r instead" %
+                (clas, type(clas)))
+        factory, a, k = self.creation_data
+        setattr(obj, name, factory(*a, **k))
+        return getattr(obj, name)
+class MetaSmart(type):
+    def _ _new_ _(mcl, clasname, bases, clasdict):
+        # set all names for smart_attr attributes
+        for k, v in clasdict.iteritems( ):
+            if isinstance(v, smart_attr):
+                v.name = k
+        # delegate the rest to the supermetaclass
+        return super(MetaSmart, mcl)._ _new_ _(mcl, clasname, bases, clasdict)
+# let's let any class use our custom metaclass by inheriting from smart_object
+class smart_object:
+    _ _metaclass_ _ = MetaSmart</pre><br>
+
+
+<p class="docText">Using this variant, you could code:</p>
+
+<pre>class recorder(smart_object):
+    count = 0
+    events = smart_attr(list)
+    def record(self, event):
+        self.count += 1
+        self.events.append((self.count, event))</pre><br>
+
+
+<p class="docText">Once you start considering custom metaclasses, you have more options
+for this recipe's task, automatic initialization of
+instance attributes. While a custom descriptor remains the best
+approach when you <span class="docEmphasis">do</span> want
+"just-in-time" generation of
+initial values, if you prefer to generate all the initial values at
+the time the instance is being initialized, then you can use a simple
+placeholder instead of <I>smart_attr</i>, and do more work
+in the metaclass:</p>
+
+<pre>class attr(object):
+    def _ _init_ _(self, factory, *a, **k):
+        self.creation_data = factory, a, k
+import inspect
+def is_attr(member):
+    return isinstance(member, attr)
+class MetaAuto(type):
+    def _ _call_ _(cls, *a, **k):
+        obj = super(MetaAuto, cls)._ _call_ _(cls, *a, **k)
+        # set all values for 'attr' attributes
+        for n, v in inspect.getmembers(cls, is_attr):
+            factory, a, k = v.creation_data
+            setattr(obj, n, factory(*a, **k))
+        return obj
+# lets' let any class use our custom metaclass by inheriting from auto_object
+class auto_object:
+    _ _metaclass_ _ = MetaAuto</pre><BR>
+
+
+<p class="docText">Code using this more concise variant looks just about the same as
+with the previous one:</p>
+
+<pre>class recorder(auto_object):
+    count = 0
+    events = attr(list)
+    def record(self, event):
+        self.count += 1
+        self.events.append((self.count, event))</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-20-SECT-14.4"></a>
+<h4 class="docSection2Title">See Also</H4>
+
+<p class="docText"><a class="docLink" href="pythoncook2-CHP-20-SECT-13.html#pythoncook2-CHP-20-SECT-13">Recipe 20.13</a> for another
+approach that avoids <tt>_ _init_ _</tt> for attribute
+initialization needs; <span class="docEmphasis">Library Reference</span> and
+<span class="docEmphasis">Python in a Nutshell</span> docs on special method
+<tt>_ _init_ _</tt>, and built-ins <tt>super</tt>
+and <tt>setattr</tt>.<a name="pythoncook2-CHP-20-ITERM-3139"></a></P>
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-20-sect-13.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-20-sect-15.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

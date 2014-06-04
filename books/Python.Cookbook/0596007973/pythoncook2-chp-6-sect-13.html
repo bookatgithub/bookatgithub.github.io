@@ -1,0 +1,253 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;6.13.&nbsp;Checking Whether an Object Has Necessary Attributes</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-6-sect-12.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-6-sect-14.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-6-SECT-13"></a>
+<h3 class="docSection1Title">Recipe 6.13. Checking Whether an Object Has Necessary Attributes</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Alex Martelli</span></p>
+
+<a name="pythoncook2-CHP-6-SECT-13.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-6-ITERM-2170"></a> <a name="pythoncook2-CHP-6-ITERM-2171"></a>You need to check whether an
+object has certain necessary attributes before performing
+state-altering operations. However, you want to avoid type-testing
+because you know it interferes with
+polymorphism.<a name="pythoncook2-CHP-6-ITERM-2172"></a></P>
+
+
+<a name="pythoncook2-CHP-6-SECT-13.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">In Python, you normally just try performing whatever operations you
+need to perform. For example, here's the simplest,
+no-checks code for doing a certain sequence of manipulations on a
+list argument:</p>
+
+<pre>def munge1(alist):
+    alist.append(23)
+    alist.extend(range(5))
+    alist.append(42)
+    alist[4] = alist[3]
+    alist.extend(range(2))</pre><BR>
+
+
+<p class="docText">If <tt>alist</tt> is missing any of the methods
+you're calling (explicitly, such as
+<tt>append</tt> and <tt>extend</tt>; or
+implicitly, such as the calls to <tt>_ _getitem_ _</tt> and
+<tt>_ _setitem_ _</tt> implied by the assignment statement
+<tt>alist[4] = alist[3]</tt>), the attempt to access and
+call a missing method raises an exception. Function
+<i>munge1</I> makes no attempt to catch the exception, so
+the execution of <I>munge1</i> terminates, and the
+exception propagates to the caller of <I>munge1</I>. The
+caller may choose to catch the exception and deal with it, or
+terminate execution and let the exception propagate further back
+along the chain of calls, as appropriate.</p>
+
+<p class="docText">This approach is usually just fine, but problems may occasionally
+occur. Suppose, for example, that the <tt>alist</tt> object
+has an <tt>append</tt> method but not an
+<tt>extend</tt> method. In this peculiar case, the
+<i>munge1</i> function partially alters
+<tt>alist</tt> before an exception is raised. Such partial
+alterations are generally not cleanly undoable; depending on your
+application, they can sometimes be a bother.</p>
+
+<p class="docText">To forestall the "partial
+alterations" problem, the first approach that comes
+to mind is to check the type of <tt>alist</tt>. Such a
+naive "Look Before You Leap" (LBYL)
+approach may look safer than doing no checks at all, but LBYL has a
+serious defect: it loses polymorphism! The worst approach of all is
+checking for equality of types:<a name="pythoncook2-CHP-6-ITERM-2173"></a>
+<a name="pythoncook2-CHP-6-ITERM-2174"></a></P>
+
+<pre>def munge2(alist):
+    if type(alist) is list:       # a <span class="docEmphBold">very</span> bad idea
+        munge1(alist)
+    else: raise TypeError, "expected list, got %s" % type(alist)</pre><br>
+
+
+<p class="docText">This even fails, without any good reason, when
+<tt>alist</tt> is an instance of a
+<span class="docEmphasis">subclass</span> of <tt>list</tt>. You can at
+least remove that huge defect by using <tt>isinstance</tt>
+instead:</p>
+
+<pre>def munge3(alist):
+    if isinstance(alist, list):
+        munge1(alist)
+    else: raise TypeError, "expected list, got %s" % type(alist)</pre><BR>
+
+
+<p class="docText">However, <i>munge3</I> still fails, needlessly, when
+<tt>alist</tt> is an instance of a type or class that
+mimics <tt>list</tt> but doesn't inherit
+from it. In other words, such type-checking sacrifices one of
+Python's great strengths: signature-based
+polymorphism. For example, you cannot pass to <i>munge3</I>
+an instance of Python 2.4's
+<tt>collections.deque</tt>, which is a real pity because
+such a <tt>deque</tt> does supply all needed functionality
+and indeed can be passed to the original <I>munge1</i> and
+work just fine. Probably a zillion sequence types are out there that,
+like <tt>deque</tt>, are quite acceptable to
+<i>munge1</i> but not to <i>munge3</i>.
+Type-checking, even with <tt>isinstance</tt>, exacts an
+enormous price.</p>
+
+<p class="docText">A far better solution is accurate LBYL, which is both safe
+<span class="docEmphasis">and</span> fully polymorphic:</p>
+
+<pre>def munge4(alist):
+    # Extract all bound methods you need (get immediate exception,
+    # without partial alteration, if any needed method is missing):
+    append = alist.append
+    extend = alist.extend
+    # Check operations, such as indexing, to get an exception ASAP
+    # if signature compatibility is missing:
+    try: alist[0] = alist[0]
+    except IndexError: pass    # An empty alist is okay
+    # Operate: no exceptions are expected from this point onwards
+    append(23)
+    extend(range(5))
+    append(42)
+    alist[4] = alist[3]
+    extend(range(2))</pre><br>
+
+
+
+<a name="pythoncook2-CHP-6-SECT-13.3"></a>
+<h4 class="docSection2Title">Discussion</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-6-ITERM-2175"></a>
+<a name="pythoncook2-CHP-6-ITERM-2176"></a>Python functions are naturally polymorphic
+on their arguments because they essentially depend on the methods and
+behaviors of the arguments, <tt>not</tt> on the
+arguments' <span class="docEmphasis">types</span>. If you check
+the types of arguments, you sacrifice this precious polymorphism, so,
+<span class="docEmphasis">don't</span>! However, you may perform
+a few early checks to obtain some extra safety (particularly against
+partial alterations) without substantial costs.</p>
+
+<a name="pythoncook2-CHP-6-SIDEBAR-3"></a><p><table cellspacing="0" width="90%" border="1" cellpadding="5"><tr><TD>
+<H2 class="docSidebarTitle">What Is Polymorphism?</h2>
+
+<p class="docText"><i>Polymorphism</I> (from Greek roots meaning
+"many shapes") is the ability of
+code to deal with objects of different types in ways that are
+appropriate to each applicable type. Unfortunately, this useful term
+has been overloaded with all sorts of implications, to the point that
+many people think it's somehow connected with such
+concepts as <i>overloading</i> (specifying different
+functions depending on call-time signatures) or
+<i>subtyping</i> (i.e., subclassing), which it most
+definitely isn't.</p>
+
+<p class="docText">Subclassing is often a useful implementation technique, but
+it's not a necessary condition for polymorphism.
+Overloading is right out: Python just doesn't let
+multiple objects with the same name live at the same time in the same
+scope, so you can't have several functions or
+methods with the same name and scope, distinguished only by their
+signaturesa minor annoyance, at worst: just rename those
+functions or methods so that their name suffices to distinguish them.</p>
+
+<p class="docText">Python's functions are polymorphic (unless you take
+specific steps to break this very useful feature) because they just
+call methods on their arguments (explicitly or implicitly by
+performing operations such as arithmetic and indexing): as long as
+the arguments supply the needed methods, callable with the needed
+signatures, and those calls perform the appropriate behavior,
+everything just works.</P>
+</td></TR></table></p><BR>
+
+<p class="docText">The normal Pythonic way of life can be described as the
+<i>Easier to Ask Forgiveness than Permission</I>
+(EAFP) approach: just try to perform whatever operations you need,
+and either handle or propagate any exceptions that may result. It
+usually works great. The only real problem that occasionally arises
+is "partial alteration": when you
+need to perform several operations on an object, just trying to do
+them all in natural order <span class="docEmphasis">could</span> result in some
+of them succeeding, and partially altering the object, before an
+exception is raised.</P>
+
+<p class="docText">For example, suppose that <i>munge1</I>, as shown at the
+start of this recipe's Solution, is called with an
+actual argument value for <tt>alist</tt> that has an
+<tt>append</tt> method but lacks <tt>extend</tt>.
+In this case, <tt>alist</tt> is altered by the first call
+to <tt>append</tt>; but then, the attempt to obtain and
+call <tt>extend</tt> raises an exception, leaving
+<tt>alist</tt>'s state partially altered,
+a situation that may be hard to recover from. Sometimes, a sequence
+of operations should ideally be <I>atomic</i>: either
+all of the alterations happen, and everything is fine, or none of
+them do, and an exception gets raised.</p>
+
+<p class="docText">You can get closer to ideal atomicity by switching to the LBYL
+approach, but in an accurate, careful way. Extract all bound methods
+you'll need, then noninvasively test the necessary
+operations (such as indexing on both sides of the assignment
+operator). Move on to actually changing the object state only if all
+of this succeeds. From that point onward, it's far
+less likely (although not impossible) that exceptions will occur in
+midstream, leaving state partially altered. You could not reach 100%
+safety even with the strictest type-checking, after all: for example,
+you <span class="docEmphasis">might</span> run out of memory just smack in the
+middle of your operations. So, with or without type-checking, you
+don't really ever guarantee atomicityyou just
+approach asymptotically to that desirable property.</p>
+
+<p class="docText">Accurate LBYL generally offers a good trade-off in comparison to
+EAFP, assuming we need safeguards against partial alterations. The
+extra complication is modest, and the slowdown due to the checks is
+typically compensated by the extra speed gained by using bound
+methods through local names rather than explicit attribute access (at
+least if the operations include loops, which is often the case).
+It's important to avoid overdoing the checks, and
+the <tt>assert</tt> statement can help with that. For
+example, you can add such checks as <tt>assert
+callable(append)</tt> to <i>munge4</I>. In this case,
+the compiler removes the <tt>assert</tt> entirely when you
+run the program with optimization (i.e., with flags
+<tt>-O</tt> or <tt>-OO</tt> passed to the
+<i>python</i> command), while performing the checks when
+the program is run for testing and debugging (i.e., without the
+optimization flags).<a name="pythoncook2-CHP-6-ITERM-2177"></a></P>
+
+
+<a name="pythoncook2-CHP-6-SECT-13.4"></a>
+<h4 class="docSection2Title">See Also</H4>
+
+<p class="docText"><span class="docEmphasis">Language Reference</span> and <span class="docEmphasis">Python in a
+Nutshell</span> about <tt>assert</tt> and the meaning
+of the <tt>-O</tt> and <tt>-OO</tt> command-line
+arguments; <span class="docEmphasis">Library Reference</span> and
+<span class="docEmphasis">Python in a Nutshell</span> about sequence types, and
+lists in particular.<a name="pythoncook2-CHP-6-ITERM-2178"></a> <a name="pythoncook2-CHP-6-ITERM-2179"></a></p>
+
+
+
+<UL></UL></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-6-sect-12.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-6-sect-14.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

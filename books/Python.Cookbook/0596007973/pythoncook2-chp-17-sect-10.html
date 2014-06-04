@@ -1,0 +1,140 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;17.10.&nbsp;Debugging Memory Problems</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-17-sect-9.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-18.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-17-SECT-10"></a>
+<h3 class="docSection1Title">Recipe 17.10. Debugging Memory Problems</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Will Ware</span></p>
+
+<a name="pythoncook2-CHP-17-SECT-10.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-17-ITERM-3077"></a>You're developing C
+extensions, and you experience memory problems. You suspect
+mismanagement of reference counts and want to check whether your C
+extension code is correctly managing reference counts.</P>
+
+
+<a name="pythoncook2-CHP-17-SECT-10.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">To chase these problems in an optimal way, you need to alter
+Python's sources and rebuild Python. Specifically,
+add the following function in <i>Objects/object.c</I>,
+immediately before the <tt>_Py_PrintReferences</tt>
+function:</p>
+
+<pre>void
+_Py_CountReferences(FILE *fp)
+{
+    int nr, no;
+    PyObject *op;
+    for (nr = no = 0, op = refchain._ob_next;
+         op != &amp;refchain;
+         op = op-&gt;_ob_next, nr += op-&gt;ob_refcnt, no += 1)
+    { }
+    fprintf(fp, "%d refs (%d), %d objs\n", nr, _Py_RefTotal, no);
+}</pre><BR>
+
+
+<p class="docText">I place the following macros in my C extensions:</P>
+
+<pre>#if defined(Py_DEBUG) || defined(DEBUG)
+extern void _Py_CountReferences(FILE*);
+#define CURIOUS(x) { fprintf(stderr, _ _FILE_ _ ":%d ", _ _LINE_ _); x; }
+#else
+#define CURIOUS(x)
+#endif
+#define MARKER( )        CURIOUS(fprintf(stderr, "\n"))
+#define DESCRIBE(x)     CURIOUS(fprintf(stderr, "  " #x "=%d\n", x))
+#define DESCRIBE_HEX(x) CURIOUS(fprintf(stderr, "  " #x "=%08x\n", x))
+#define COUNTREFS( )     CURIOUS(_Py_CountReferences(stderr))</pre><br>
+
+
+<p class="docText">To debug, I rebuild Python using <I>make
+OPT="-DPy_DEBUG"</I>, which causes the code
+under <tt>Py_TRACE_REFS</tt> to be built. My own makefile
+for my extensions uses the same trick by including these lines:</p>
+
+<pre>debug:
+        make clean; make OPT="-g -DPy_DEBUG" all
+CFLAGS = $(OPT) -fpic -O2 -I/usr/local/include -I/usr/include/python2.3</pre><br>
+
+
+
+<a name="pythoncook2-CHP-17-SECT-10.3"></a>
+<h4 class="docSection2Title">Discussion</h4>
+
+<p class="docText">When I'm developing C extensions and running into
+memory problems, I find that the typical cause is mismanagement of
+reference counts, particularly misuse of <tt>Py_INCREF</tt>
+and <tt>Py_DECREF</tt>, as well as forgetfulness of the
+reference-count effects of functions like
+<tt>Py_BuildValue</tt>,
+<tt>PyArg_ParseTuple</tt>, and
+<tt>PyTuple/List_SetItem/GetItem</tt>. The Python sources
+offer help with this problem (search for
+<tt>Py_TRACE_REFS</tt>), and function
+<tt>sys.getrefcounts</tt> in the Python Standard Library is
+also helpful. Nevertheless, it's useful to add this
+recipe's function in
+<I>Objects/object.c</i> just before
+<tt>_Py_PrintReferences</tt>.</p>
+
+<p class="docText">Unlike <tt>_Py_PrintReferences</tt>, this
+recipe's <I>_Py_CountReferences</i>
+function prints only the totals of all the refcounts and number of
+objects in the system, so it can be sensibly called, even in loops
+that repeat millions of times, while
+<tt>_Py_PrintReferences</tt> would print out way too much
+stuff to be useful. The information printed by
+<I>_Py_CountReferences</i> can help you identify errantly
+wandering <tt>Py_INCREF</tt>s and
+<tt>Py_DECREF</tt>s. <I>_Py_CountReferences</I>
+plays it safe by performing its own counts of objects references,
+which it prints side by side with the
+"official" count of references that
+Python itself maintains (when compiled for debugging) as global
+variable <tt>_Py_RefTotal</tt>. Should any discrepancy
+arise, you <span class="docEmphasis">know</span> something deeply wrong is going
+on.</p>
+
+<p class="docText">When I suspect that one of my C-coded functions is responsible for
+memory problems, I liberally sprinkle the suspect function with calls
+to the <i>COUNTREFS</i> macro. Doing so allows me to keep
+track of exactly how many references are being created or destroyed
+as I go through my function. This information is particularly useful
+in tight loops, in which dumb mistakes can cause reference counts to
+grow ridiculously fast. Also, reference counts that shrink too fast
+(because of overzealous use of <tt>Py_DECREF</tt>) can
+cause core dumps because the memory for objects that should still
+exist has been reallocated for new objects.</p>
+
+
+<a name="pythoncook2-CHP-17-SECT-10.4"></a>
+<h4 class="docSection2Title">See Also</h4>
+
+<p class="docText">The only documentation in this case is Python's own
+source code. Use the source, Luke!<a name="pythoncook2-CHP-17-ITERM-3078"></a> <a name="pythoncook2-CHP-17-ITERM-3079"></a> <a name="pythoncook2-CHP-17-ITERM-3080"></a></p>
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-17-sect-9.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-18.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

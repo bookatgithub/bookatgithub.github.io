@@ -1,0 +1,294 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
+<title>13.3 Using inheritance to solve our problem</title>
+<link rel="stylesheet" type="text/css" href="./acc.css" />
+</head>
+
+<body>
+<div class="prevnext">
+<a href="82.htm"><img src="images/Prev1.gif" /></a>&nbsp;&nbsp;<a href="84.htm"><img src="images/Next1.gif" /></a>
+</div>
+<h3>13.3 Using inheritance to solve our problem</h3>
+<p>Now that we have classes that model our different kinds of students, we would like to use 
+these classes to solve the grading problem from &sect;9.6/166. That program read a file that 
+contained student grade records, computed the final grade for each student, and wrote a 
+formatted report in alphabetical order by student name. We'd like to solve the same 
+problem, but do so for a file that contains records for both kinds of students.</p>
+<p>Before solving the whole problem, we'll solve two simpler problems: We will write 
+programs that can read files that consist entirely of one kind of record or the other. Both 
+of these programs will look just like our original except for the type declarations:</p>
+<div class="prebox"><pre>
+int main()
+{
+    vector&lt;Core&gt; students;     // <i>read and process Core records</i>
+    Core record;
+    string::size_type maxlen = 0;
+
+    // <i>read and store the data</i>
+    while (record.read(cin)) {
+        maxlen = max(maxlen, record.name().size());
+        students.push_back(record);
+    }
+
+    // <i>alphabetize the student records</i>
+    sort(students.begin(), students.end(), compare);
+
+    // <i>write the names and grades</i>
+    for (vector&lt;Core&gt;::size_type i = 0; i != students.size(); ++i) {
+        cout &lt;&lt; students[i].name()
+             &lt;&lt; string(maxlen + 1 - students[i].name.size(), ' ');
+    try {
+        double final_grade = students[i].grade(); // Core::grade
+        streamsize prec = cout.precision();
+        cout &lt;&lt; setprecision(3) &lt;&lt; final_grade
+             &lt;&lt; setprecision(prec) &lt;&lt; endl;
+        } catch (domain_error e) {
+            cout &lt;&lt; e.what() &lt;&lt; endl;
+        }
+    }
+    return 0;
+}
+</pre></div>
+<p>We can write the same program to handle <code>Grad</code> records by changing the type definitions:</p>
+<div class="prebox"><pre>
+int main()
+{
+    vector&lt;Grad&gt; students;        // <i>different type in the</i> vector
+    Grad record;                  // <i>different type into which to</i> read
+    string::size_type maxlen = 0;
+
+    // read and store the data
+    while (record.read(cin)) {     // read from Grad, not Core
+        maxlen = max(maxlen, record.name().size());
+        students.push_back(record);
+    }
+
+    // <i>alphabetize the student records</i>
+    sort(students.begin(), students.end(), compare);
+
+    // <i>write the names and grades</i>
+    for (vector&lt;Grad&gt;::size_type i = 0; i != students.size(); ++i) {
+        cout &lt;&lt; students[i].name()
+             &lt;&lt; string(maxlen + 1 - students[i].name.size(), ' ');
+        try {
+            double final_grade = students[i].grade();  // Grad::grade
+            streamsize prec = cout.precision();
+            cout &lt;&lt; setprecision(3) &lt;&lt; final_grade
+                 &lt;&lt; setprecision(prec) &lt;&lt; endl;
+        } catch (domain_error e) {
+            cout &lt;&lt; e.what() &lt;&lt; endl;
+        }
+    }
+    return 0;
+}
+</pre></div>
+<p>Of course, the functions that are run in each instance depend on the type of <code>record</code>, and 
+on the type of the objects contained in the <code>vector</code>. For example, the expression</p>
+<div class="prebox"><pre>
+record.read(cin)
+</pre></div>
+<p>calls <code>Core::read</code> or <code>Grad::read</code>, depending on the type of <code>record</code>. It is worth noting 
+that this call is statically bound: The dependence on the type of <code>record</code> has nothing to do 
+with the <code>virtual</code> nature of the <code>read</code> function. We are invoking the function on behalf of 
+an object, not a pointer or reference to an object. Thus, <code>record</code> is either a <code>Core</code> or a 
+<code>Grad</code>, depending on which version of the program is being run. However, once we 
+define <code>record</code>, its type is fixed, and so the call to <code>record.read(cin)</code> is likewise bound 
+at compile time. Similarly, the <code>grade</code> function that we call when generating output,</p>
+<div class="prebox"><pre>
+students[i].grade()
+</pre></div>
+<p>will be statically bound to the one from class <code>Core</code> when we run the first program, and to 
+the one from <code>Grad</code> when we run the second program.</p>
+<p>In both versions of the program, the uses of <code>name()</code> refer to the (nonvirtual) version 
+defined in class <code>Core</code>. That function is inherited by <code>Grad</code>, so that when we run it for a 
+<code>Grad</code> object, we are still running the version that we defined in <code>Core</code>. The <code>compare</code> 
+function that we pass to <code>sort</code> operates on references to <code>Core</code>. When the version of the 
+program that operates on <code>Grad</code> records runs, it will <code>compare</code> the <code>Core</code> parts.</p>
+<p>Obviously, it is tedious to write separate versions of our program. What we really 
+want to do is to write a single version that can handle either <code>Core</code> or <code>Grad</code> objects.</p>
+<p>In order to write a single function that can <code>read</code> a file of either <code>Core</code> records or <code>Grad</code> 
+records, we need to look closely at the code, and identify those places where the type of 
+the record matters. In order to write a single version of the program, we will have to 
+eliminate these type dependencies:</p>
+<ul>
+<li>The definition of the <code>vector</code> in which we store the elements as we read them</li>
+<li>The definition of the local temporary into which we read the records</li>
+<li>The <code>read</code> function</li>
+<li>The <code>grade</code> function</li>
+</ul>
+<p>The remaining code is either type independent (the code to <code>sort</code> the <code>vector</code> or to iterate 
+through it) or it is invariant between the <code>Grad</code> and <code>Core</code> versions (such as the <code>name</code> and 
+<code>compare</code> functions). Because we defined the <code>grade</code> and <code>read</code> functions as virtuals, 
+we have already solved the last two parts of our problem.</p>
+<p>It turns out that the first two subproblems—what type to use for the local temporary 
+and what type to store in the container—can be handled by the same strategy. It also 
+turns out that there are two different approaches to solving these subproblems. The first 
+approach is straightforward, so we'll look at it in the next section. The other solution represents 
+a common, important C++ programming idiom, which we'll cover in &sect;13.4/243.</p>
+<h4>13.3.1 Containers of (virtually) unknown type</h4>
+<p>The problem that we need to solve is to relax the type dependencies in the following:</p>
+<div class="prebox"><pre>
+vector&lt;Core&gt; students;    // <i>must hold Core objects, not polymorphic types</i>
+Core record;              // Core <i>object, not a type derived from </i>Core
+</pre></div>
+<p></p>
+<p>The type dependencies in this code should be fairly clear. When we define <code>record</code>, we 
+say exactly what type of object <code>record</code> is: It is a <code>Core</code>, because that's what we said it was. 
+Similarly, when we define students, we say that it is a <code>vector</code> that holds objects of type 
+<code>Core</code>. We'll have more to say about such containers in &sect;13.6.1/249, but for now what's 
+important is to realize that when we define a <code>vector&lt;Core&gt;</code>, we are saying that each 
+object in the <code>vector</code> will be a <code>Core</code> object—not an object of a type derived from <code>Core</code>.</p>
+<p>When we outlined the type dependencies in our two programs, we noted that we'd 
+solved half the type issues because <code>read</code> and <code>grade</code> were <code>virtual</code> functions. The other 
+half of the problem is that, as written, our programs make statically bound calls to these 
+<code>virtual</code>s. In order to invoke the dynamic behavior that we need, we need to call <code>read</code> 
+and <code>grade</code> through a pointer or reference to <code>Core</code>. That way, the type of the object 
+bound can differ from the type of the pointer or reference. This observation leads us to a 
+solution to all four subproblems: We can write the program to manage pointers instead of 
+objects. We can have a <code>vector&lt;Core*&gt;</code>, and we can define <code>record</code> to be a pointer as 
+well. In this way, we can obtain the dynamic behavior we need, while eliminating the 
+type dependence involved in the definitions of the <code>vector</code> and our local temporary. 
+Unfortunately, as we shall see, this solution pushes a lot of complexity onto our users. For 
+example, the obvious try at a solution doesn't work at all:</p>
+<div class="prebox"><pre>
+int main()
+{
+    vector&lt;Core*&gt; students;
+    
+    Core* record;
+    while (record-&gt;read(cin))   {      // <i>crash!</i>
+       // ...
+    }
+}
+</pre></div>
+<p>The trouble with this program is that it fails horribly, because we never caused <code>record</code> to 
+point to an object!</p>
+<p>We can fix this problem, but only by requiring that our users actively manage the 
+space consumed by the objects that they read from the file. Our users will also have to be 
+able to detect what kind of records the program is reading. We'll assume that each record 
+will contain an indicator to distinguish the kind of record that it contains: Records for 
+graduate students will start with a <code>G</code>, and those for an undergraduate will start with a <code>U</code>.</p>
+<p>Before we rewrite the program to use pointers, there is one more problem that we 
+must solve: How do we sort a <code>vector</code> of pointers? The easy answer is that we'll need a 
+new comparison function that takes two pointers to <code>Core</code> objects. The tricky part is that 
+we cannot name this function <code>compare</code>. Recall that in &sect;8.1.3/142 we discussed various 
+subtleties in getting the right types for values that we pass as template arguments. For 
+similar reasons, we cannot pass an overloaded function name as a template argument. If 
+we did so, the compiler would have no way to determine which version of the function 
+we wanted. Evidently, we'll need to write a comparison function that will give us a non-
+overloaded name to pass to <code>sort</code>:</p>
+<div class="prebox"><pre>
+bool compare_Core_ptrs(const Core* cp1, const Core* cp2)
+{
+    return compare(*cp1, *cp2);
+}
+</pre></div>
+<p>Having written a specialized comparison function, we can now rewrite the program:</p>
+<div class="prebox"><pre>
+// this code almost works; see &sect;13.3.2/242
+int main()                 
+{
+    vector&lt;Core*&gt; students;        // <i>store pointers, not objects</i>
+    Core* record;                  // <i>temporary must be a pointer as well</i>
+    char ch;
+    string::size_type maxlen = 0;
+
+    // <i>read and store the data</i>
+    while (cin &gt;&gt; ch) {
+        if (ch == 'U')
+            record = new Core;      // <i>allocate a Core object</i>
+        else
+            record = new Grad;      // <i>allocate a Grad object</i>
+        record-&gt;read(cin);          // virtual <i>call</i>
+        maxlen = max (maxlen, record-&gt;name().size()); // <i>dereference</i>
+        students.push_back(record);
+    }
+
+    // <i>pass the version of compare that works on pointers</i>
+    sort(students.begin(), students.end(), compare_Core_ptrs);
+
+    // <i>write the names and grades</i>
+    for (vector&lt;Core*&gt;::size_type i = 0;
+         i != students.size(); ++i) {
+        // students[i] <i>is a pointer that we dereference to call the functions</i>
+        cout &lt;&lt; students[i]-&gt;name()
+             &lt;&lt; string(maxlen + 1 - students[i]-&gt;name.size(), ' ');
+        try {
+            double final_grade = students[i]-&gt;grade();
+            streamsize prec = cout.precision();
+            cout &lt;&lt; setprecision(3) &lt;&lt; final_grade
+                 &lt;&lt; setprecision(prec) &lt;&lt; endl;
+        } catch (domain_error e) {
+            cout &lt;&lt; e.what() &lt;&lt; endl;
+        }
+        delete students[i];     // <i>free the object allocated when reading</i>
+    }
+    return 0;
+}
+</pre></div>
+<p>We have noted in comments the many differences between this code and our original. 
+These changes all result from the fact that we must manipulate pointers and not objects.</p>
+<p>The <code>while</code> loop changes to read the first character from the input, which we subsequently 
+test to determine which kind of record we are about to read. Once we know what kind 
+of object we need, we allocate an object of the appropriate type, and use that object to 
+<code>read</code> from the standard input. The <code>read</code> function is <code>virtual</code>, so the right version will 
+be called, depending on whether <code>record</code> points to a <code>Grad</code> or a <code>Core</code> object. In both 
+cases, <code>read</code> will give the object the values from the next input <code>record</code>. Note that we must 
+remember to dereference <code>record</code>, which is a pointer, to access <code>read</code>. The code to calculate 
+the length of the longest name also changes to dereference the pointer, but otherwise 
+the next few lines of code are unchanged.</p>
+<p>When we get to the loop that does output, we have to remember <code>that students[i]</code> 
+yields a pointer. Once we have fetched <code>students[i]</code>, we have a pointer that must itself 
+be dereferenced to get at the underlying object. As with the call to <code>read</code>, the call to 
+<code>grade</code> is a <code>virtual</code> call, so the right version of <code>grade</code> is automatically invoked to calculate 
+the <code>grade</code>, including a thesis if the object is a <code>Grad</code> and not otherwise. The final 
+change is to remember to return to the implementation the space that the object consumed, 
+which we do by calling <code>delete</code> on the pointer that <code>students[i] </code>contains.</p>
+<h4>13.3.2 Virtual destructors</h4>
+<p>Our program almost works. The only problem occurs when we <code>delete</code> the objects, as we 
+do inside the output loop. When we allocated these objects, we allocated both <code>Grad</code> and 
+<code>Core</code> objects, but we stored pointers to these objects as <code>Core*</code>, and not as <code>Grad*</code> pointers. 
+Thus, when we <code>delete</code> them, we are deleting a pointer to <code>Core</code>, and never a pointer 
+to <code>Grad</code>, even if the pointer actually points to a <code>Grad</code> object. Fortunately, this problem is 
+easily fixed.</p>
+<p>When we call <code>delete</code> on a pointer, two things happen: The destructor is run on the 
+object, and the space that held the object is freed. When the program <code>delete</code>s the pointer 
+in <code>students[i]</code>, it could be pointing at either a <code>Core</code> object or a <code>Grad</code> object. Neither 
+<code>Core</code> nor <code>Grad</code> explicitly defined a destructor, which means that when the <code>delete</code> runs, 
+it will invoke the synthesized destructor and then return the space that the object consumed. 
+The synthesized destructor will run the destructor for each data element in the 
+class. But when the <code>delete</code> is executed, which destructor should the system run? Should 
+the destructor destroy the members of a <code>Core</code> or a <code>Grad</code>? And when the space is freed, 
+how much space should be returned—enough to hold a <code>Core</code> or a <code>Grad</code>?</p>
+<p>These questions sound like the kind that the <code>virtual</code> mechanism can resolve—and 
+indeed it can. In order to have a <code>virtual</code> destructor, the class must have a destructor, 
+which we can then make <code>virtual</code>:</p>
+<div class="prebox"><pre>
+class Core {
+public:
+    virtual ~Core() { }
+//<i> as before </i>
+};
+</pre></div>
+<p>Now when we execute <code>delete</code> <code>students[i]</code>, the destructor that will be run will 
+depend on the type of object to which <code>students[i]</code> actually points. Similarly, the type 
+of the memory that we return to the system will be determined by the type to which 
+<code>students[i]</code> actually points.</p>
+<p>Note that the body of the destructor is empty. The only work needed to destroy a 
+<code>Core</code> is to destroy its members, and the system does this work automatically. Empty, 
+<code>virtual</code> destructors are not uncommon. A <code>virtual</code> destructor is needed any time it is 
+possible that an object of derived type is destroyed through a pointer to base. If there is 
+no other reason for the destructor to be defined, then that destructor has no work to do 
+and should be empty.</p>
+<p>There is no need to update the <code>Grad</code> class to add a destructor. As with all <code>virtual</code> 
+functions, the fact that the destructor is <code>virtual</code> is inherited. Because neither class has 
+any explicit work to do in order to destroy objects, there is no need to redefine the 
+destructor in the derived class. Because the derived class inherits the <code>virtual</code> property 
+of its base-class destructor, all we have to do is recompile the program.</p>
+<div class="prevnext">
+<a href="82.htm"><img src="images/Prev1.gif" /></a>&nbsp;&nbsp;<a href="84.htm"><img src="images/Next1.gif" /></a>
+</div>
+</body>
+</html>

@@ -1,0 +1,227 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
+<title>Writing generic functions</title>
+<link rel="stylesheet" type="text/css" href="./acc.css" />
+</head>
+
+<body>
+<div class="prevnext">
+<a href="43.htm"><img src="images/Prev1.gif" /></a>&nbsp;&nbsp;<a href="45.htm"><img src="images/Next1.gif" /></a>
+</div>
+<div class="chapname">
+<h1>8</h1>
+</div>
+<div id="chapter">
+<h2>Writing generic functions</h2>
+</div>
+<p>The first part of this book concentrated on writing programs that use the fundamentals of 
+the C++ language, and the abstractions that the standard library provides, to solve concrete 
+problems. Starting with this chapter, we'll turn our attention to learning how to 
+write our own abstractions.</p>
+<p>These abstractions take several forms. This chapter discusses generic functions, which 
+are functions with parameter types that we do not know until we call the functions. 
+Chapters 9 through 12 show how to implement abstract data types. Finally, starting in 
+Chapter 13, we will learn about object-oriented programming (OOP).</p>
+<a name="generic">
+<h3>8.1 What is a generic function?</h3>
+</a>
+<p>Whenever we have written a function so far, we've known the types of the function's 
+parameters and return value. This knowledge may seem at first like an integral part of 
+any function's description. Nonetheless, a closer look will reveal that we have already 
+used—but not written—functions with argument and return types that we do not know 
+until we use the functions.</p>
+<p>For example, in &sect;6.1.3/107, we used a library function named <code>find</code>, which takes two 
+iterators and a value as arguments. We can use the same <code>find</code> function to find values of 
+any appropriate type in any kind of container. This usage implies that we do not know 
+what <code>find</code>'s argument or result types will be until we use it. Such a function is called a 
+<i><b>generic function</b>, </i>and the ability to use and create generic functions is a key feature of the 
+C++ language.</p>
+<p>The language support for generic functions is not hard to understand. What is difficult 
+is understanding exactly what we mean when we say that <code>find</code> can accept arguments of 
+&quot;any appropriate type.&quot; For example, how can we describe how <code>find</code> behaves in a way 
+that will enable someone who wishes to use it to know whether it will work with particular 
+arguments? The answer to this question lies partly within the C++ language and 
+partly outside it.</p>
+<p>The part that is inside the language is the idea that the ways in which a function uses a 
+parameter of unknown type constrain that parameter's type. For example, if a function 
+has parameters <code>x</code> and <code>y</code>, and computes <code>x + y</code>, then the mere existence of that computation 
+implicitly requires that <code>x</code> and <code>y</code> have types for which <code>x + y</code> is defined. Whenever you call 
+such a function, the implementation checks that your arguments' types meet the constraints 
+implied by the ways in which the function uses its parameters.</p>
+<p>The part of the answer that lies outside the C++ language is the way in which the standard 
+library organizes the constraints on its functions' parameters. We have already 
+shown you one example of this organization—namely, the notion of an iterator. Some 
+types are iterators; others aren't. The <code>find</code> function takes three arguments, of which the 
+first two are required to be iterators.</p>
+<p>When we say that a particular type is an iterator, we are really saying something about 
+the operations that the type supports: A type is an iterator if and only if it supports a particular 
+collection of operations in a particular way. If we were to set out to write the <code>find</code> 
+function ourselves, we would do so in a way that relies only on the operations that every 
+iterator must support. If we were to write our own container—as we shall do in 
+Chapter 11—then we would have to supply iterators that support all the appropriate 
+operations.</p>
+<p>The notion of an iterator is not part of the C++ language proper. However, it is a fundamental 
+part of the standard library's organization, and it is that part that makes generic 
+functions as useful as they are. This chapter shows some examples of how the library 
+might implement generic functions. Along the way, it explains just what an iterator is— 
+or, more precisely, what iterators are, because they come in five different varieties.</p>
+<p>This chapter is more abstract than the ones we've seen so far, because it is in the very 
+nature of generic functions to be abstract. If we wrote functions that solved specific problems, 
+those functions wouldn't be generic. Nevertheless, you will find that most of the 
+functions that we describe are familiar, because we have used them in earlier examples. 
+Moreover, it shouldn't be hard to imagine how you might use even the unfamiliar ones.</p>
+<h4>8.1.1 Medians of unknown type</h4>
+<p>The language feature that implements generic functions is called <i><b>template functions</b>. </i>Templates 
+let us write a single definition for a family of functions—or types—that behave similarly, 
+except for differences that we can attribute to the types of their <i><b>template parameters</b>. </i>
+We'll explore template functions in this chapter, and template classes in Chapter 11.</p>
+<p>The key idea behind templates is that objects of different types may nevertheless share 
+common behavior. Template parameters let us write programs in terms of that common 
+behavior, even though we do not know the specific types that correspond to the template 
+parameters when we define the template. We do know the types when we use a template, 
+and that knowledge is available when we compile and link our programs. For generic 
+parameters, the implementation doesn't need to worry about what to do about objects 
+with types that might vary during execution—only during compilation.</p>
+<p>Although templates are a cornerstone of the standard library, we can use them for our 
+own programs as well. For example, we wrote a function in &sect;4.1.1/53 to calculate the 
+median of a <code>vector&lt;double&gt;</code>. That function relied on the ability to <code>sort</code> a <code>vector</code>, 
+and then to fetch a specific element given its index, so we cannot easily make that function 
+work on arbitrary sequences of values. Even so, there is no reason to restrict the function 
+<p>to <code>vector&lt;double&gt;</code>; we can take the median of <code>vector</code>s of other types as well. Template 
+functions allow us to do so:</p>
+<div class="prebox"><pre>
+template&lt;class T&gt;
+T median(vector&lt;T&gt; v)
+{
+    typedef typename vector&lt;T&gt;::size_type vec_sz;
+
+    vec_sz size = v.size();
+    if (size == 0)
+        throw domain_error(&quot;median of an empty vector&quot;);
+
+    sort(v.begin(), v.end());
+    
+    vec_sz mid = size/2;
+
+    return size % 2 == 0 ? (v[mid] + v[mid-1]) / 2 : v[mid];
+}
+</pre></div>
+<p>The first novelties here are the template header,</p>
+<div class="prebox"><pre>
+template&lt;class T&gt;
+</pre></div>
+<p>and the use of <code>T</code> in the parameter list and return type. The template header tells the 
+implementation that we are defining a template function, and that the function will take a 
+<i><b>type parameter</b>. </i>Type parameters operate much like function parameters: They define 
+names that can be used within the scope of the function. However, type parameters refer 
+to types, not to variables. Thus, wherever <code>T</code> appears in the function, the implementation 
+will assume that <code>T</code> names a type. In the <code>median</code> function, we use the type parameter 
+explicitly to say what type of objects the <code>vector</code> named <code>v</code> holds, and to specify the return 
+type of the function.</p>
+<p>When we call this <code>median</code> function, the implementation will bind <code>T</code> to a type that it 
+determines at that point, during compilation. For example, we might take the median of 
+a <code>vector&lt;int&gt;</code> object named <code>vi</code> by calling <code>median(vi)</code>. From this call, the implementation 
+can infer that <code>T</code> is <code>int</code>. Wherever we use <code>T</code> in this function, the implementation 
+generates code as if we had written <code>int</code>. In effect, the implementation <i><b>instantiates</b> </i>our 
+code as if we had written a specific version of <code>median</code> that took a <code>vector&lt;int&gt;</code> and 
+returned an <code>int</code>. We'll have more to say about instantiation shortly.</p>
+<p>The next novelty is the use of <b>typename </b>in the definition of <code>vec_sz</code>. It is there to tell 
+the implementation that <code>vector&lt;T&gt;::size_type</code> is the name of a type, even though 
+the implementation doesn't yet know what type <code>T</code> represents. Whenever you have a type, 
+such as <code>vector&lt;T&gt;</code>, that depends on a template parameter, and you want to use a member 
+of that type, such as <code>size_type</code>, that is itself a type, you must precede the entire 
+name by typename to let the implementation know to treat the name as a type. Although 
+the standard library ensures that <code>vector&lt;T&gt;::size_type</code> is the name of a type for any 
+<code>T</code>, the implementation, having no special knowledge of the standard-library types, has no 
+way of knowing this fact.</p>
+<p>As you read a template, you will usually see that the type parameters pervade its definition, 
+even if many of the type dependencies are implicit. In our <code>median</code> function, we 
+use the type parameters explicitly only in the function return type and parameter list, and 
+in the definition of <code>vec_sz</code>. However, because <code>v</code> has type <code>vector&lt;T&gt;</code>, any operation 
+involving <code>v</code> implicitly involves this type. For example, in the expression</p>
+<div class="prebox"><pre>
+(v[mid] + v[mid-l]) / 2
+</pre></div>
+<p>we have to know the type of <code>v</code>'s elements in order to know the types of <code>v[mid]</code> and 
+<code>v[mid-1]</code>. These types, in turn, determine the type of the <code>+</code> and <code>/</code> operators. If we call 
+<code>median</code> on a <code>vector&lt;int&gt;</code>, then we can see that <code>+</code> and <code>/</code> take <code>int</code> operands and return 
+<code>int</code> results. Calling <code>median</code> for a <code>vector&lt;double&gt;</code> does the arithmetic on <code>double</code> values. 
+We can't call <code>median</code> for a <code>vector&lt;string&gt;</code>, because the <code>median</code> function uses 
+division, and the <code>string</code> type does not have a division operator. This behavior is what 
+we want. After all, what would it mean to find the <code>median</code> of a <code>vector&lt;string&gt;</code>?</p>
+<h4>8.1.2 Template instantiation</h4>
+<p>When we call <code>median</code> on behalf of a <code>vector&lt;int&gt;</code>, the implementation will effectively 
+create and compile an instance of the function that replaces every use of <code>T</code> by <code>int</code>. If we 
+also call <code>median</code> for a <code>vector&lt;double&gt;</code>, then the implementation will again infer the 
+types from the call. In this case, <code>T</code> will be bound to <code>double</code>, and the implementation will 
+generate another version of <code>median</code> using <code>double</code> in place of <code>T</code>.</p>
+<p>The C++ standard says nothing about how implementations should manage template i
+nstantiation, so every implementation handles instantiation in its own particular way. 
+While we cannot say exactly how your compiler will handle instantiation, there are two 
+important points to keep in mind: The first is that for C++ implementations that follow the 
+traditional edit-compile-link model, instantiation often happens not at compile time, but 
+at link time. It is not until the templates are instantiated that the implementation can verify 
+that the template code can be used with the types that were specified. Hence, it is possible 
+to get what seem like compile-time errors at link time.</p>
+<p>The second point matters if you write your own templates: Most current implementations 
+require that in order to instantiate a template, the definition of the template, not just 
+the declaration, has to be accessible to the implementation. Generally, this requirement 
+implies access to the source files that define the template, as well as the header file. How 
+the implementation locates the source file differs from one implementation to another. 
+Many implementations expect the header file for the template to include the source file, 
+either directly or via a <code>#include</code>. The most certain way to know what your implementation 
+expects is to check its documentation.</p>
+<h4>8.1.3 Generic functions and types</h4>
+<p>We said in &sect;8.1/139 that the difficult part of designing and using templates is understanding 
+precisely the interaction between a template and the &quot;appropriate types&quot; that can be 
+used with the template. We saw one obvious type dependency in our definition of the 
+template version of <code>median</code>: The types stored in the <code>vector</code>s that are passed to the 
+<code>median</code> function must support addition and division, and these operations had better 
+map to their normal arithmetic meanings. Fortunately, most types that define division are 
+arithmetic types, so such dependencies are unlikely to create problems in practice.</p>
+<p>More subtle type issues arise in the interactions between templates and type conversions. 
+For example, when we called find to check whether students had done all their 
+homework, we wrote</p>
+<div class="prebox"><pre>
+find(s.homework.begin(), s.homework.end(), 0);
+</pre></div>
+<p>In this case, <code>homework</code> is a <code>vector&lt;double&gt;</code>, but we told find to look for an <code>int</code>. This 
+particular type mismatch is of no consequence: We can compare an <code>int</code> value with a 
+<code>double</code> value with no loss of meaning. However, when we called <code>accumulate</code></p>
+<div class="prebox"><pre>
+accumulate(v.begin(), v.end(), 0.0)
+</pre></div>
+<p>we noted that the correctness of our program depended on our using the <code>double</code> form of 
+zero, rather than the <code>int</code>. The reason is that the <code>accumulate</code> function uses the type of 
+its third argument as the type of its accumulator. If that type is <code>int</code>—even if we're 
+adding a sequence of <code>double</code>s—the addition will be truncated to just the integer part. In 
+this case, the implementation would let us pass an <code>int</code>, but the sum that we obtained 
+would lack precision.</p>
+<p>Finally, when we called max</p>
+<div class="prebox"><pre>
+string::size_type maxlen = 0;
+maxlen = max(maxlen, name.size());
+</pre></div>
+<p>we noted that it was essential that the type of <code>maxlen</code> match exactly the type returned by 
+<code>name.size()</code>. If the types don't match, the call will not compile. Now that we know 
+that template parameter types are inferred from the argument types, we can understand 
+why this behavior exists. Consider a plausible implementation of the max function:</p>
+<div class="prebox"><pre>
+template&lt;class T&gt;
+T max(const T&amp; left, const T&amp; right)
+{
+    return left &gt; right ? left : right;
+}
+</pre></div>
+<p>If we pass an <code>int</code> and a <code>double</code> to this function, the implementation has no way to infer 
+which argument to convert to the other argument's type. Should it resolve the call as 
+comparing the values as <code>int</code>s, and so return an <code>int</code>, or should it treat both arguments as 
+<code>double</code> and return a <code>double</code>? There's no way for the implementation to make this 
+determination, so the call fails at compile time.</p>
+<div class="prevnext">
+<a href="43.htm"><img src="images/Prev1.gif" /></a>&nbsp;&nbsp;<a href="45.htm"><img src="images/Next1.gif" /></a>
+</div>
+</body>
+</html>

@@ -1,0 +1,217 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;18.16.&nbsp;Simulating Floating Point</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-18-sect-15.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-18-sect-17.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-18-SECT-16"></a>
+<h3 class="docSection1Title">Recipe 18.16. Simulating Floating Point</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Raymond Hettinger</span><a name="pythoncook2-CHP-18-ITERM-3113"></a> <a name="pythoncook2-CHP-18-ITERM-3114"></a></p>
+
+<a name="pythoncook2-CHP-18-SECT-16.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText">You need to simulate floating-point arithmetic in software, either to
+show to students the details of the various classic problems with
+floating point (e.g., representation error, loss of precision,
+failure of distributive, commutative, and associative laws), or to
+explore the numerical robustness of alternative algorithms.</P>
+
+
+<a name="pythoncook2-CHP-18-SECT-16.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">We can reproduce every floating-point operation, with explicitly
+bounded precision, by coding a Python class that overloads all the
+special methods used in arithmetic operators:</p>
+
+<pre>prec = 8             # number of decimal digits (must be under 15)
+class F(object):
+    def _ _init_ _(self, value, full=None):
+        self.value = float('%.*e' % (prec-1, value))
+        if full is None:
+            full = self.value
+        self.full = full
+    def _ _str_ _(self):
+        return str(self.value)
+    def _ _repr_ _(self):
+        return "F(%s, %r)" % (self, self.full)
+    def error(self):
+        ulp = float('1'+('%.4e' % self.value)[-5:]) * 10 ** (1-prec)
+        return int(abs(self.value - self.full) / ulp)
+    def _ _coerce_ _(self, other):
+        if not isinstance(other, F):
+            return (self, F(other))
+        return (self, other)
+    def _ _add_ _(self, other):
+        return F(self.value + other.value, self.full + other.full)
+    def _ _sub_ _(self, other):
+        return F(self.value - other.value, self.full - other.full)
+    def _ _mul_ _(self, other):
+        return F(self.value * other.value, self.full * other.full)
+    def _ _div_ _(self, other):
+        return F(self.value / other.value, self.full / other.full)
+    def _ _neg_ _(self):
+        return F(-self.value, -self.full)
+    def _ _abs_ _(self):
+        return F(abs(self.value), abs(self.full))
+    def _ _pow_ _(self, other):
+        return F(pow(self.value, other.value), pow(self.full, other.full))
+    def _ _cmp_ _(self, other):
+        return cmp(self.value, other.value)</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-18-SECT-16.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">The initializer of class <I>F</i> rounds the input value to
+the given precision (the global constant <I>prec</I>). This
+rounding produces what is known as <i>representation
+error</i> because the result is the nearest possible
+representable value for the specified number of digits. For instance,
+at three digits of precision, 3.527104 is stored as 3.53, so the
+representation error is 0.002896.</p>
+
+<p class="docText">Since the underlying representation used in this recipe is
+Python's ordinary <tt>float</tt>, the
+simulation works only up to 15 digits (the typical limit for
+double-precision floating point). If you need more than 15 digits,
+you can use Python 2.4's
+<tt>decimal.Decimal</tt> type as the underlying
+representation. This way, you can get any precision you ask for,
+although the computation occurs in decimal rather than in binary.
+Alternatively, to get binary floating point with arbitrarily high
+precision, use the <tt>gmpy</tt> Python wrapper for the GMP
+(Gnu Multiple Precision) multiple-precision arithmetic library,
+specifically the <tt>gmpy.mpf</tt> type. One way or
+another, you need change only the two calls to
+<tt>float</tt> in this recipe's Solution
+into calls to Python 2.4's
+<tt>decimal.Decimal</tt>, or to <tt>gmpy.mpf</tt>
+(requesting the appropriate number of
+"digits" or bits), to use class
+<i>F</I> with higher precision than 15 digits.
+<tt>gmpy</tt> is at <a class="docLink" target="_blank" href="http://gmpy.sourceforge.net">http://gmpy.sourceforge.net</a>.<a name="pythoncook2-CHP-18-ITERM-3115"></a>
+<a name="pythoncook2-CHP-18-ITERM-3116"></a></p>
+
+<p class="docText">One key use of this recipe is to show to students the classic failure
+of associative, commutative, and distributive laws (Knuth,
+<span class="docEmphasis">The Art of Computer Programming</span>, vol. 2, pp.
+214-15)for example:</p>
+
+<pre># Show failure of the associative law
+u, v, w = F(11111113), F(-11111111), F(7.51111111)
+assert (u+v)+w == 9.5111111
+assert u+(v+w) == 10
+# Show failure of the commutative law for addition
+assert u+v+w != v+w+u
+# Show failure of the distributive law
+u, v, w = F(20000), F(-6), F(6.0000003)
+assert u*v == -120000
+assert u*w == 120000.01
+assert v+w == .0000003
+assert (u*v) + (u*w) == .01
+assert u * (v+w) == .006</pre><BR>
+
+
+<p class="docText">The other main way to use the code in this recipe is to compare the
+numerical accuracy of different algorithms that compute the same
+results. For example, we can compare the following three approaches
+to computing averages:</p>
+
+<pre>def avgsum(data):       # Sum all of the elements, then divide
+    return sum(data, F(0)) / len(data)
+def avgrun(data):       # Make small adjustments to a running mean
+    m = data[0]
+    k = 1
+    for x in data[1:]:
+        k += 1
+        m += (x-m)/k    # Recurrence formula for mean
+    return m
+def avgrun_kahan(data): # Adjustment method with Kahan error correction term
+    m = data[0]
+    k = 1
+    dm = 0
+    for x in data[1:]:
+        k += 1
+        adjm = (x-m)/k - dm
+        newm = m + adjm
+        dm = (newm - m) - adjm
+        m = newm
+    return m</pre><BR>
+
+
+<p class="docText">Here is a way to exercise these approaches and display their errors:</p>
+
+<pre>import random
+prec = 5
+data = [F(random.random( )*10-5) for i in xrange(1000)]
+print '%s\t%s\t%s' %('Computed', 'ULP Error', 'Method')
+print '%s\t%s\t%s' %('--------', '---------', '------')
+for f in avgsum, avgrun, avgrun_kahan:
+    result = f(data)
+    print '%s\t%6d\t\t%s' % (result, result.error( ), f._ _name_ _)
+print '\n%r\tbaseline average using full precision' % result.full</pre><BR>
+
+
+<p class="docText">Here is typical output from this snippet (the exact numbers in play
+will be different each time you run it, since what we are summing are
+random numbers):</P>
+
+<pre>Computed        ULP Error        Method
+--------        ---------        ------
+-0.020086            15                avgsum
+-0.020061             9                avgrun
+-0.020072             1                avgrun_kahan
+-0.020070327734999997        baseline average using full precision</pre><br>
+
+
+<p class="docText">The last example demonstrates how to extract a full-precision
+floating-point result from an instance of <i>F</i>, by
+using the <i>full</i> attribute of the instance. This
+example is helpful for running an algorithm to full precision, as a
+baseline for seeing the effects of using less precision.</p>
+
+<p class="docText">The full-precision result excludes the representation error in the
+"or"iginal inputs. For example,
+with <tt>prec = 3</tt> and <tt>d = F(3.8761) /
+F(2.7181)</tt>, <i>d.full</i> is
+<tt>1.4264705882352939</tt>, the same result as regular
+division would yield, starting from the nearest representable values,
+<tt>3.88 / 2.72</tt>. This helpful choice isolates
+accumulated floating-point operation errors from the artifacts of the
+"or"iginal data entry. This
+separation is reasonable because real floating-point systems have to
+start with representable constants; however, if the
+"or"iginal representation error has
+to be tracked, you can do so by entering the number twice in the call
+to <i>F</i>for example, use <tt>F(2.7181,
+2.7181</tt>) rather than <tt>F(2.7181</tt>).</p>
+
+
+<a name="pythoncook2-CHP-18-SECT-16.4"></a>
+<h4 class="docSection2Title">See Also</h4>
+
+<p class="docText"><a class="docLink" href="pythoncook2-CHP-18-SECT-15.html#pythoncook2-CHP-18-SECT-15">Recipe 18.15</a> for algorithms
+for accurate sums; <tt>gmpy</tt> is at <a class="docLink" target="_blank" href="http://gmpy.sourceforge.net">http://gmpy.sourceforge.net</a>.<a name="pythoncook2-CHP-18-ITERM-3117"></a></P>
+
+
+
+<UL></ul></td></TR></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-18-sect-15.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-18-sect-17.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

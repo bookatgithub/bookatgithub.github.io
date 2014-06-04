@@ -1,0 +1,238 @@
+<html><head>
+<META http-equiv="Content-Type" content="text/html">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="6.4 The MimeWriter Module"-->
+<link rel="STYLESHEET" type="text/css" href="FILES/style.css">
+<link rel="STYLESHEET" type="text/css" href="FILES/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+	<a href="0596000960_pythonsl-CHP-6-SECT-3.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+	<a href="0596000960_pythonsl-CHP-6-SECT-5.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr>
+<td valign="top"><A NAME="pythonsl-CHP-6-SECT-4"></A>
+<H3 class="docSection1Title">6.4 The MimeWriter Module</H3>
+
+<P class="docText">
+
+<A NAME="pythonsl-IDXTERM-517"></A>
+<A NAME="pythonsl-IDXTERM-518"></A>
+
+
+The <TT>MimeWriter</TT> module (shown in <A class="docLink" HREF="#pythonsl-CHP-6-EX-4">Example 6-4</A>) can be used to write 
+"multipart" messages, as
+defined by the MIME mail standard.</P>
+
+
+
+<H5 class="docExampleTitle"><A NAME="pythonsl-CHP-6-EX-4"></A>Example 6-4. Using the MimeWriter Module</H5>
+
+<PRE>
+File: mimewriter-example-1.py
+
+import MimeWriter
+
+# data encoders
+import quopri
+import base64
+import StringIO
+
+import sys
+
+TEXT = """
+here comes the image you asked for.  hope
+it's what you expected.
+
+&lt;/F&gt;"""
+
+FILE = "samples/sample.jpg"
+
+file = sys.stdout
+
+#
+# create a mime multipart writer instance
+
+mime = MimeWriter.MimeWriter(file)
+mime.addheader("Mime-Version", "1.0")
+
+mime.startmultipartbody("mixed")
+
+# add a text message
+
+part = mime.nextpart()
+part.addheader("Content-Transfer-Encoding", "quoted-printable")
+part.startbody("text/plain")
+
+quopri.encode(StringIO.StringIO(TEXT), file, 0)
+
+# add an image
+
+part = mime.nextpart()
+part.addheader("Content-Transfer-Encoding", "base64")
+part.startbody("image/jpeg")
+
+base64.encode(open(FILE, "rb"), file)
+
+mime.lastpart()</PRE>
+
+
+<P class="docText">The output looks something like:</P>
+
+<PRE>Content-Type: multipart/mixed;
+    boundary='host.1.-852461.936831373.130.24813'
+
+--host.1.-852461.936831373.130.24813
+Content-Type: text/plain
+Context-Transfer-Encoding: quoted-printable
+
+here comes the image you asked for.  hope
+it's what you expected.
+
+&lt;/F&gt;
+
+--host.1.-852461.936831373.130.24813
+Content-Type: image/jpeg
+Context-Transfer-Encoding: base64
+
+/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRof
+HBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIy
+...
+1e5vLrSYbJnEVpEgjCLx5mPU0qsVK0UaxjdNlS+1U6pfzTR8IzEhj2HrVG6m8m18xc8cIKSC
+tCuFyC746j/Cq2pTia4WztfmKjGBXTCmo6IUpt==
+
+--host.1.-852461.936831373.130.24813--</PRE>
+
+<P class="docText">
+
+<A NAME="IXT-6-189670"></A>
+
+
+<A class="docLink" HREF="#pythonsl-CHP-6-EX-5">Example 6-5</A>, which is a bit larger, uses a helper class that stores each
+subpart in the most suitable way.</P>
+
+
+<H5 class="docExampleTitle"><A NAME="pythonsl-CHP-6-EX-5"></A>Example 6-5. A Helper Class for the MimeWriter Module</H5>
+
+<PRE>
+File: mimewriter-example-2.py
+
+import MimeWriter
+import string, StringIO, sys
+import re, quopri, base64
+
+# check if string contains non-ascii characters
+must_quote = re.compile("[\177-\377]").search
+
+
+#
+# encoders
+
+def encode_quoted_printable(infile, outfile):
+    quopri.encode(infile, outfile, 0)
+
+class Writer:
+
+    def _ _init_ _(self, file=None, blurb=None):
+        if file is None:
+            file = sys.stdout
+        self.file = file
+        self.mime = MimeWriter.MimeWriter(file)
+        self.mime.addheader("Mime-Version", "1.0")
+
+        file = self.mime.startmultipartbody("mixed")
+        if blurb:
+            file.write(blurb)
+
+    def close(self):
+        "End of message"
+        self.mime.lastpart()
+        self.mime = self.file = None
+
+    def write(self, data, mimetype="text/plain"):
+        "Write data from string or file to message"
+
+        # data is either an opened file or a string
+        if type(data) is type(""):
+            file = StringIO.StringIO(data)
+        else:
+            file = data
+            data = None
+
+        part = self.mime.nextpart()
+
+        typ, subtyp = string.split(mimetype, "/", 1)
+
+        if typ == "text":
+
+            # text data
+            encoding = "quoted-printable"
+            encoder = lambda i, o: quopri.encode(i, o, 0)
+
+            if data and not must_quote(data):
+                # copy, don't encode
+                encoding = "7bit"
+                encoder = None
+
+        else:
+
+            # binary data (image, audio, application, ...)
+            encoding = "base64"
+            encoder = base64.encode
+
+        #
+        # write part headers
+
+        if encoding:
+            part.addheader("Content-Transfer-Encoding", encoding)
+
+        part.startbody(mimetype)
+
+        #
+        # write part body
+
+        if encoder:
+            encoder(file, self.file)
+        elif data:
+            self.file.write(data)
+        else:
+            while 1:
+                data = infile.read(16384)
+                if not data:
+                    break
+                outfile.write(data)
+
+#
+# try it out
+
+BLURB = "if you can read this, your mailer is not MIME-aware\n"
+
+mime = Writer(sys.stdout, BLURB)
+
+# add a text message
+mime.write("""\
+here comes the image you asked for.  hope
+it's what you expected.
+""", "text/plain")
+
+# add an image
+mime.write(open("samples/sample.jpg", "rb"), "image/jpeg")
+
+mime.close()</PRE>
+
+
+<ul></ul>
+</td>
+</tr>
+</table>
+<td></td>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+          <a href="0596000960_pythonsl-CHP-6-SECT-3.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+          <a href="0596000960_pythonsl-CHP-6-SECT-5.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+</body></html>

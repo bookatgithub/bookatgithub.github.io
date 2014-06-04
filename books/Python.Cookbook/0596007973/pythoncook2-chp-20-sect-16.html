@@ -1,0 +1,332 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;20.16.&nbsp;Binding Constants at Compile Time</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-20-sect-15.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-20-sect-17.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-20-SECT-16"></a>
+<h3 class="docSection1Title">Recipe 20.16. Binding Constants at Compile Time</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Raymond Hettinger, Skip Montanaro</span></p>
+
+<a name="pythoncook2-CHP-20-SECT-16.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText">Runtime lookup of global and built-in names is slower than lookup of
+local names. So, you would like to bind constant global and built-in
+names into local constant names at compile time.</P>
+
+
+<a name="pythoncook2-CHP-20-SECT-16.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText"><a name="pythoncook2-CHP-20-ITERM-3144"></a>
+<a name="pythoncook2-CHP-20-ITERM-3145"></a>To perform this task, we must
+examine and rewrite bytecodes in the function's code
+object. First, we get three names from the standard library module
+<tt>opcode</tt>, so we can operate symbolically on
+bytecodes, and define two auxiliary functions for bytecode
+operations:</p>
+
+<pre>from opcode import opmap, HAVE_ARGUMENT, EXTENDED_ARG
+globals( ).update(opmap)
+def _insert_constant(value, i, code, constants):
+    ''' insert LOAD_CONST for value at code[i:i+3].  Reuse an existing
+        constant if values coincide, otherwise append new value to the
+        list of constants; return index of the value in constants. '''
+    for pos, v in enumerate(constants):
+        if v is value: break
+    else:
+        pos = len(constants)
+        constants.append(value)
+    code[i] = LOAD_CONST
+    code[i+1] = pos &amp; 0xFF
+    code[i+2] = pos &gt;&gt; 8
+    return pos
+def _arg_at(i, code):
+    ''' return argument number of the opcode at code[i] '''
+    return code[i+1] | (code[i+2] &lt;&lt; 8)</pre><BR>
+
+
+<p class="docText">Next comes the workhorse, the internal function that does all the
+binding and folding work:</p>
+
+<pre>def _make_constants(f, builtin_only=False, stoplist=( ), verbose=False):
+    # bail out at once, innocuously, if we're in Jython, IronPython, etc
+    try: co = f.func_code
+    except AttributeError: return f
+    # we'll modify the bytecodes and consts, so make lists of them
+    newcode = map(ord, co.co_code)
+    codelen = len(newcode)
+    newconsts = list(co.co_consts)
+    names = co.co_names
+    # Depending on whether we're binding only builtins, or ordinary globals
+    # too, we build dictionary 'env' to look up name-&gt;value mappings, and we
+    # build set 'stoplist' to selectively override and cancel such lookups
+    import _ _builtin_ _
+    env = vars(_ _builtin_ _).copy( )
+    if builtin_only:
+        stoplist = set(stoplist)
+        stoplist.update(f.func_globals)
+    else:
+        env.update(f.func_globals)
+    # First pass converts global lookups into lookups of constants
+    i = 0
+    while i &lt; codelen:
+        opcode = newcode[i]
+        # bail out in difficult cases: optimize common cases only
+        if opcode in (EXTENDED_ARG, STORE_GLOBAL):
+            return f
+        if opcode == LOAD_GLOBAL:
+            oparg = _arg_at(i, newcode)
+            name = names[oparg]
+            if name in env and name not in stoplist:
+                # get the constant index to use instead
+                pos = _insert_constant(env[name], i, newcode, newconsts)
+                if verbose: print '%r -&gt; %r[%d]' % (name, newconsts[pos], pos)
+        # move accurately to the next bytecode, skipping arg if any
+        i += 1
+        if opcode &gt;= HAVE_ARGUMENT:
+            i += 2
+    # Second pass folds tuples of constants and constant attribute lookups
+    i = 0
+    while i &lt; codelen:
+        newtuple = [  ]
+        while newcode[i] == LOAD_CONST:
+            oparg = _arg_at(i, newcode)
+            newtuple.append(newconsts[oparg])
+            i += 3
+        opcode = newcode[i]
+        if not newtuple:
+            i += 1
+            if opcode &gt;= HAVE_ARGUMENT:
+                i += 2
+            continue
+        if opcode == LOAD_ATTR:
+            obj = newtuple[-1]
+            oparg = _arg_at(i, newcode)
+            name = names[oparg]
+            try:
+                value = getattr(obj, name)
+            except AttributeError:
+                continue
+            deletions = 1
+        elif opcode == BUILD_TUPLE:
+            oparg = _arg_at(i, newcode)
+            if oparg != len(newtuple):
+                continue
+            deletions = len(newtuple)
+            value = tuple(newtuple)
+        else:
+            continue
+        reljump = deletions * 3
+        newcode[i-reljump] = JUMP_FORWARD
+        newcode[i-reljump+1] = (reljump-3) &amp; 0xFF
+        newcode[i-reljump+2] = (reljump-3) &gt;&gt; 8
+        pos = _insert_constant(value, i, newcode, newconsts)
+        if verbose: print "new folded constant: %r[%d]" % (value, pos)
+        i += 3
+    codestr = ''.join(map(chr, newcode))
+    codeobj = type(co)(co.co_argcount, co.co_nlocals, co.co_stacksize,
+                    co.co_flags, codestr, tuple(newconsts), co.co_names,
+                    co.co_varnames, co.co_filename, co.co_name,
+                    co.co_firstlineno, co.co_lnotab, co.co_freevars,
+                    co.co_cellvars)
+    return type(f)(codeobj, f.func_globals, f.func_name, f.func_defaults,
+                    f.func_closure)</pre><BR>
+
+
+<p class="docText">Finally, we use <I>_make_constants</i> to optimize itself
+and its auxiliary function, and define the functions that are meant
+to be called from outside this module to perform the optimizations
+that this module supplies:</P>
+
+<pre># optimize thyself!
+_insert_constant = _make_constants(_insert_constant)
+_make_constants = _make_constants(_make_constants)
+import types
+@_make_constants
+def bind_all(mc, builtin_only=False, stoplist=( ), verbose=False):
+    """ Recursively apply constant binding to functions in a module or class.
+    """
+    try:
+        d = vars(mc)
+    except TypeError:
+        return
+    for k, v in d.items( ):
+        if type(v) is types.FunctionType:
+            newv = _make_constants(v, builtin_only, stoplist,  verbose)
+            setattr(mc, k, newv)
+        elif type(v) in (type, types.ClassType):
+            bind_all(v, builtin_only, stoplist, verbose)
+@_make_constants
+def make_constants(builtin_only=False, stoplist=[  ], verbose=False):
+    """ Call this metadecorator to obtain a decorator which optimizes
+        global references by constant binding on a specific function.
+    """
+    if type(builtin_only) == type(types.FunctionType):
+        raise ValueError, 'must CALL, not just MENTION, make_constants'
+    return lambda f: _make_constants(f, builtin_only, stoplist, verbose)</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-20-SECT-16.3"></a>
+<h4 class="docSection2Title">Discussion</h4>
+
+<p class="docText">Assuming you have saved the code in this recipe's
+Solution as module <i>optimize.py</i> somewhere on your
+Python <tt>sys.path</tt>, the following example
+demonstrates how to use the <I>make_constants</i>
+<span class="docEmphasis">decorator with arguments</span> (i.e., metadecorator)
+to optimize a functionin this case, a reimplementation of
+<tt>random.sample</tt>:</p>
+
+<pre>import random
+import optimize
+@optimize.make_constants(verbose=True)
+def sample(population, k):
+    " Choose `k' unique random elements from a `population' sequence. "
+    if not isinstance(population, (list, tuple, str)):
+        raise TypeError('Cannot handle type', type(population))
+    n = len(population)
+    if not 0 &lt;= k &lt;= n:
+        raise ValueError, "sample larger than population"
+    result = [None] * k
+    pool = list(population)
+    for i in xrange(k):         # invariant:  non-selected at [0,n-i)
+        j = int(random.random( ) * (n-i))
+        result[i] = pool[j]
+        pool[j] = pool[n-i-1]   # move non-selected item into vacancy
+    return result</pre><BR>
+
+
+<p class="docText">Importing this module emits the following output. (Some details, such
+as the addresses and paths, will, of course, vary.)</p>
+
+<pre>'isinstance' -&gt; &lt;built-in function isinstance&gt;[6]
+'list' -&gt; &lt;type 'list'&gt;[7]
+'tuple' -&gt; &lt;type 'tuple'&gt;[8]
+'str' -&gt; &lt;type 'str'&gt;[9]
+'TypeError' -&gt; &lt;class exceptions.TypeError at 0x402952cc&gt;[10]
+'type' -&gt; &lt;type 'type'&gt;[11]
+'len' -&gt; &lt;built-in function len&gt;[12]
+'ValueError' -&gt; &lt;class exceptions.ValueError at 0x40295adc&gt;[13]
+'list' -&gt; &lt;type 'list'&gt;[7]
+'xrange' -&gt; &lt;type 'xrange'&gt;[14]
+'int' -&gt; &lt;type 'int'&gt;[15]
+'random' -&gt; &lt;module 'random' from '/usr/local/lib/python2.4/random.pyc'&gt;[16]
+new folded constant: (&lt;type 'list'&gt;, &lt;type 'tuple'&gt;, &lt;type 'str'&gt;)[17]
+new folded constant: &lt;built-in method random of Random object at 0x819853c&gt;[18]</pre><BR>
+
+
+<p class="docText">On my machine, <span class="docEmphasis">with</span> the decorator
+<tt>optimize.make_constants</tt> as shown in this snippet,
+<tt>sample(range(1000), 100)</tt> takes 287 microseconds;
+<span class="docEmphasis">without</span> the decorator (and thus with the usual
+bytecode that the Python 2.4 compiler produces), the same operation
+takes 333 microseconds. Thus, using the decorator improves
+performance by approximately 14% in this exampleand it does so
+while allowing your own functions' source code to
+remain pristine, without any optimization-induced obfuscation. On
+functions making use of more constant names within loops, the
+performance benefit of using this recipe's decorator
+can be correspondingly greater.</p>
+
+<p class="docText">A common and important technique for manual optimization of a Python
+function, once that function is shown by profiling to be a bottleneck
+of program performance, is to ensure that all global and built-in
+name lookups are turned into lookups of local names. In the source of
+functions that have been thus optimized, you see strange arguments
+with default values, such as <tt>_len=len</tt>, and the
+body of the function uses this local name <I>_len</I> to
+refer to the built-in function <tt>len</tt>. This kind of
+optimization is worthwhile because lookup of local names is much
+faster than lookup of global and built-in names. However, functions
+thus optimized can become cluttered and less readable. Moreover,
+optimizing by hand can be tedious and error prone.</p>
+
+<p class="docText">This recipe automates this important optimization technique: by just
+mentioning a decorator before the <tt>def</tt> statement,
+you get all the constant bindings and foldings, while leaving the
+function source uncluttered, readable, and maintainable. After
+binding globals to constants, the decorator makes a second pass and
+folds constant attribute lookups and tuples of constants. Constant
+attribute lookups often occur when you use a function or other
+attribute from an imported module, such as the use of
+<tt>random.random</tt> in the
+<tt><i>sample</i></tt> function in the example snippet.
+Tuples of constants commonly occur in <tt>for</tt> loops
+and conditionals using the <tt>in</tt> operator, such as
+<tt>for x in ('a', 'b', 'c')</tt>. The best way to
+appreciate the bytecode transformations performed by the decorator in
+this recipe is to run
+"<tt>dis.dis(sample)</tt>"
+and view the disassembly into bytecodes, both with and without the
+decorator.</p>
+
+<p class="docText">If you want to optimize every function and method in a module, you
+can call <tt>optimize.bind_all(sys.modules[_ _name_
+_])</tt> as the last instruction in the
+module's body, before the tests. To optimize every
+method in a class, you can call
+<tt>optimize.bind_all(theclass)</tt> just after the end of
+the body of the <tt>class theclass</tt> statement. Such
+wholesale optimization is handy (it does not require you to deal with
+any details) but generally not the best approach.
+It's best to bind, selectively, only functions whose
+speed is important. Functions that particularly benefit from
+constant-binding optimizations are those that refer to many global
+and built-in names, particularly with references in loops.</p>
+
+<p class="docText">To ensure that the constant-binding optimizations do not alter the
+behavior of your code, apply them only where dynamic updates of
+globals are not desired (i.e., the globals do not change). In more
+dynamic environments, a more conservative approach is to pass
+argument <i>builtin_only</i> as <tt>true</tt>, so
+that only the built-ins get optimized (built-ins include functions
+such as <tt>len</tt>, exceptions such as
+<tt>IndexError</tt>, and such constants as
+<tt>true</tt> or <tt>False</tt>). Alternatively,
+you can pass a sequence of names as the <i>stoplist</i>
+argument, to tell the binding optimization functions to leave
+unchanged any reference to those names.</p>
+
+<p class="docText">While this recipe is meant for use with Python 2.4, you can also use
+this approach in Python 2.3, with a few obvious caveats. In
+particular, in version 2.3, you cannot use the new 2.4
+<tt>@decorator</tt> syntax. Therefore, to use in Python
+2.3, you'll have to tweak the
+recipe's code a little, to expose
+<i>_make_constants</I> directly, without a leading
+underscore, and use <tt>f=make_constants(f)</tt> in your
+code, right after the end of the body of the <tt>def f</tt>
+statement. However, if you are interested in optimization, you should
+consider moving to Python 2.4 anyway: Python 2.4 is very compatible
+with Python 2.3, with just a few useful additions, and version 2.4 is
+generally measurably faster than Python 2.3.</P>
+
+
+<a name="pythoncook2-CHP-20-SECT-16.4"></a>
+<h4 class="docSection2Title">See Also</h4>
+
+<p class="docText"><span class="docEmphasis">Library Reference</span> and <span class="docEmphasis">Python in a
+Nutshell</span> docs on the <tt>opcode</tt> module.</P>
+
+
+
+<a href="5991535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-20-sect-15.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-20-sect-17.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

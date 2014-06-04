@@ -1,0 +1,191 @@
+<html><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<link href="styles/globalstyle.css" type="text/css" rel="stylesheet"/>
+<link title="medium" href="styles/two.css" type="text/css" rel="stylesheet"/>
+<script src="scripts/main.js" type="text/javascript" language="javascript"></script>
+<title>Chapter 16. The Linux Kernel Driver Model: The Benefits of Working Together</title>
+</head><body>
+<DIV class=h3 style="MARGIN-TOP: 0px; PADDING-BOTTOM: 1em; WIDTH: 100%; PADDING-TOP: 0px"><SPAN>The Linux Kernel Driver Model: The Benefits of Working Together</SPAN><SPAN> &gt; Humble Beginnings</SPAN></DIV>
+<DIV></DIV>
+<DIV>
+<DIV><A name=the_linux_kernel_driver_model_the_benefits_of_working_togeth></A>
+<H2 class=docChapterTitle id=title-ID0EOPDK>16. The Linux Kernel Driver Model: The Benefits of Working Together</H2>
+<P class=docText><SPAN class=docEmphasis><A name="Greg Kroah"></A>Greg Kroah-Hartman</SPAN> <A name=idx-CHP-16-1306></A><A name=idx-CHP-16-1307></A></P>
+<P class=docText><SPAN class=docEmphSmaller><A name="driver model"></A>The linux kernel driver model attempts to create a system-wide tree</SPAN><A name="types of"></A> of all different types of <A name=idx-CHP-16-1308></A><A name="by the"></A>devices managed by the operating system. The core data structures and code used to do this have changed over the years from a very simplistic system meant for handling a few <A name=idx-CHP-16-1309></A><A name="highly scalable"></A>devices to a highly scalable system that can control every different type of device that the real world needs to interact with.</P>
+<P class=docText><A name="and more"></A>As the Linux kernel has evolved over the years, handling more and more different types of devices,<SUP class=docFootnote><A class=docLink href="javascript:moveTo('CHP-16-FNOTE-1');">[*]</A></SUP><A name="of the"></A> the core of the kernel has had to change and evolve in order to come up with easier and more manageable ways to handle the range of device types.</P>
+<BLOCKQUOTE>
+<P class=docFootnote><SUP><A name=CHP-16-FNOTE-1>[*]</A></SUP><A name="different types"></A> Linux now supports more different types of devices and processors than any other operating system ever has in the history of computing.</P></BLOCKQUOTE>
+<P class=docText><A name="two different"></A>Almost all devices consist of two different portions: the physical portion that defines how the operating system talks to the device (be it through the PCI bus, SCSI bus, ISA bus, USB bus, etc.) and the virtual portion that defines how the operating system presents the device to the user so that it can be operated properly (keyboard, mouse, video, sound, etc.). Through the 2.4 kernel releases, each physical portion of devices was controlled by a bus-specific portion of code. This bus code was responsible for a wide range of different tasks, and each individual bus code had no interaction with any other bus code.</P>
+<P class=docText><A name=idx-CHP-16-1310></A><A name="In "></A>In 2001, Pat Mochel was working on solving the issue of <A name=idx-CHP-16-1311></A><A name=the></A>power management in the <A name=idx-CHP-16-1312></A><A name="to realize"></A>Linux kernel. He came to realize that in order to shut down or power up individual <A name=idx-CHP-16-1313></A><A name="kernel had"></A>devices properly, the kernel had to <A name=idx-CHP-16-1314></A><A name="between the"></A>know the linkages between the different <A name=idx-CHP-16-1315></A><A name="the PCI"></A>devices. For example, a USB disk drive should be shut down before the PCI controller card for the USB controller is shut down, in order to properly save the data on the device. To solve this issue, the kernel needed to know the tree of all devices in the system, showing what device controlled what other device, and the order in which everything was connected.</P>
+<P class=docText><A name="same time"></A>Around the same time, I was running into another device-related problem: Linux did not properly handle devices in a persistent manner. I wanted my two USB printers to always have the same name, no matter which one was turned on first, or the order in which they were discovered by the Linux kernel.</P>
+<P class=docText><A name="have solved"></A>Some other operating systems have solved this issue by placing a small <A name=idx-CHP-16-1316></A><A name="handle device"></A>database in the kernel to handle device naming, or have attempted to export all possible unique characteristics of a device through a <SPAN class=docEmphasis>devfs</SPAN><A name="type of"></A> type of filesystem<SUP class=docFootnote><A class=docLink href="javascript:moveTo('CHP-16-FNOTE-2');">[<IMG alt=dagger src="images/U2020.GIF">]</A></SUP><A name="used to"></A> that can be used to directly access the device. For Linux, placing a database inside the kernel was not going to be an acceptable solution. Also, the Linux's <SPAN class=docEmphasis>devfs</SPAN><A name="a number"></A> filesystem implementation contained a number of well-known and incurable race conditions, preventing almost all Linux distributions from relying on it. The <SPAN class=docEmphasis>devfs</SPAN><A name="forced a"></A> solution also forced a specific naming policy on the user. Although some people considered this an advantage, it went against the published Linux device-naming standard, and did not allow anyone to use a different naming policy if they so desired.<A name=idx-CHP-16-1317></A><A name=idx-CHP-16-1318></A></P>
+<BLOCKQUOTE>
+<P class=docFootnote><SUP><A name=CHP-16-FNOTE-2>[<IMG alt=dagger src="images/U2020.GIF">]</A></SUP> <SPAN class=docEmphasis>devfs</SPAN><A name="for an"></A> is one way for an operating system to show users all the different devices that are available to be used. It does this by showing all of the different device names, and sometimes a limited relationship between those devices.</P></BLOCKQUOTE>
+<P class=docText><A name="be solved"></A>Pat and I realized that both of our problems could be solved by a <A name=idx-CHP-16-1319></A><A name="and device"></A>unified driver and device model within the Linux kernel. Such a unified model was not a new idea by any means, as other operating systems had embodied such unified models in the past. Now it was time for Linux to do the same. Such a model would allow for the creation of a tree of all devices and also allow a userspace program outside the kernel to handle persistent device naming of any device, in any way that the user desired.</P>
+<P class=docText><A name="the evolution"></A>This chapter will describe the evolution of the data structures and supporting functions inside the Linux kernel to do this work, and how this evolution caused changes that could have never been <A name=idx-CHP-16-1320></A><A name="beginning of"></A>anticipated by anyone at the beginning of the development process.</P><A name=humble_beginnings></A>
+<H3 class=docSection1Title id=-100000>16.1. Humble Beginnings</H3>
+<P class=docText><A name="To start"></A>To start with, a simple structure, <TT>struct device</TT><A name="the "></A>, was created as the "base" class for all devices in the kernel. This structure started out looking like the following:<A name=idx-CHP-16-1321></A></P>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedHeight>	struct device {
+	        struct list_head node;           /* node in sibling list */
+	        struct list_head children;
+	        struct device *parent;
+	        char   name[DEVICE_NAME_SIZE];   /* descriptive ascii string */
+	        char   bus_id[BUS_ID_SIZE];      /* position on parent bus */
+
+	        spinlock_t       lock;           /* lock for the device to ensure two
+	                                            different layers don't access it at
+	                                            the same time. */
+	        atomic_t         refcount;       /* refcount to make sure the device
+	                                          * persists for the right amount of time */
+
+	        struct driver_dir_entry * dir;
+
+	        struct device_driver *driver;    /* which driver has allocated this
+	                                            device */
+	        void            *driver_data;    /* data private to the driver */
+	        void            *platform_data;  /* Platform-specific data (e.g. ACPI,
+	                                            BIOS data relevant to device */
+
+	       u32             current_state;    /* Current operating state. In
+	                                            ACPI-speak, this is D0-D3, D0
+	                                            being fully functional, <A name=idx-CHP-16-1322></A>and D3
+	                                            being off. */
+
+	      unsigned char *saved_state;        /* saved device state */
+	};
+
+
+					    </PRE><BR>
+<P class=docText><A name="structure was"></A>Every time this structure was created and registered with the kernel driver core, a new entry in a virtual filesystem was created that showed the device and any different attributes it contained. This allowed all devices in the system to be shown to userspace, in the order in which they were connected. This virtual filesystem is now called <SPAN class=docEmphasis>sysfs</SPAN><A name="be seen"></A> and can be seen on a <A name=idx-CHP-16-1323></A><A name=the></A>Linux machine in the <SPAN class=docEmphasis>/sys/devices</SPAN> directory. An example of this structure showing a few <A name=idx-CHP-16-1324></A>PCI and USB devices follows:<A name=idx-CHP-16-1325></A></P>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedHeight>	<B>$ tree -d /sys/devices/</B>
+	/sys/devices/pci0000:00/
+	|-- 0000:00:00.0
+	|-- 0000:00:02.0
+	|-- 0000:00:07.0
+	|-- 0000:00:1b.0
+	|   |-- card0
+	|   |   |-- adsp
+	|   |   |-- audio
+	|   |   |-- controlC0
+	|   |   |-- dsp
+	|   |   |-- mixer
+	|   |   |-- pcmC0D0c
+	|   |   |-- pcmC0D0p
+	|   |   |-- pcmC0D1p
+	|   |   `-- subsystem -&gt; ../../../../class/sound
+	|   `-- driver -&gt; ../../../bus/pci/drivers/HDA Intel
+	|-- 0000:00:1c.0
+	|   |-- 0000:00:1c.0:pcie00
+	|   |-- 0000:00:1c.0:pcie02
+	|   |-- 0000:00:1c.0:pcie03
+	|   |-- 0000:01:00.0
+	|   | `-- driver -&gt; ../../../../bus/pci/drivers/sky2
+	|   `-- driver -&gt; ../../../bus/pci/drivers/pcieport-driver
+	|-- 0000:00:1d.0
+	|   |-- driver -&gt; ../../../bus/pci/drivers/uhci_hcd
+	|   `-- usb2
+	|       |-- 2-0:1.0
+	|       |   |-- driver -&gt; ../../../../../bus/usb/drivers/hub
+	|       |   |-- subsystem -&gt; ../../../../../bus/usb
+	|       |   `-- usbdev2.1_ep81
+	|       |-- driver -&gt; ../../../../bus/usb/drivers/usb
+	|       `-- usbdev2.1_ep00
+	|-- 0000:00:1d.2
+	|   |-- driver -&gt; ../../../bus/pci/drivers/uhci_hcd
+	|   `-- usb4
+	|       |-- 4-0:1.0
+	|       |   |-- driver -&gt; ../../../../../bus/usb/drivers/hub
+	|       |   `-- usbdev4.1_ep81
+	|       |-- 4-1
+	|       |   |-- 4-1:1.0
+	|       |   |   |-- driver -&gt; ../../../../../../bus/usb/drivers/usbhid
+	|       |   |   `-- usbdev4.2_ep81
+	|       |   |-- driver -&gt; ../../../../../bus/usb/drivers/usb
+	|       |   |-- power
+	|       |   `-- usbdev4.2_ep00
+	|       |-- 4-2
+	|       |   |-- 4-2.1
+	|       |   |   |-- 4-2.1:1.0
+	|       |   |   |   |-- driver -&gt; ../../../../../../../bus/usb/drivers/usbhid
+	|       |   |   |   `-- usbdev4.4_ep81
+	|       |   |   |-- 4-2.1:1.1
+	|       |   |   |   |-- driver -&gt; ../../../../../../../bus/usb/drivers/usbhid
+	|       |   |   |   `-- usbdev4.4_ep82
+	|       |   |   |-- driver -&gt; ../../../../../../bus/usb/drivers/usb
+	|       |   |   `-- usbdev4.4_ep00
+	|       |   |-- 4-2.2
+	|       |   |   |-- 4-2.2:1.0
+	|       |   |   |   |-- driver -&gt; ../../../../../../../bus/usb/drivers/usblp
+	|       |   |   |   |-- usbdev4.5_ep01
+	|       |   |   |   `-- usbdev4.5_ep81
+	|       |   |   |-- driver -&gt; ../../../../../../bus/usb/drivers/usb
+	|       |   |   `-- usbdev4.5_ep00
+	|       |   |-- 4-2:1.0
+	|       |   |   |-- driver -&gt; ../../../../../../bus/usb/drivers/hub
+	|       |   | `-- usbdev4.3_ep81
+	|       |   |-- driver -&gt; ../../../../../bus/usb/drivers/usb
+	|       |   `-- usbdev4.3_ep00
+	|       |-- driver -&gt; ../../../../bus/usb/drivers/usb
+	|       `-- usbdev4.1_ep00
+	...
+
+
+					    </PRE><BR>
+<P class=docText><A name="within another"></A>To use this structure, it is required that you embed it within another structure, causing the new structure to "inherit," in a sense, from the base structure:</P>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedWidth>	struct usb_interface {
+	        struct usb_interface_descriptor *altsetting;
+	
+	        int act_altsetting;             /* active alternate setting */
+	        int num_altsetting;             /* number of alternate settings*/
+	        int max_altsetting;             /* total memory allocated */
+	        struct usb_driver *driver;      /* driver */
+	        struct device dev;              /* interface specific device info */
+	};
+
+
+					    </PRE><BR>
+<P class=docText><A name="core operates"></A>The driver core operates by passing <A name=idx-CHP-16-1326></A>around <A name=idx-CHP-16-1327></A>pointers <A name=idx-CHP-16-1328></A>to a <TT>struct device</TT><A name="fields that"></A>, operating on the basic fields that are in that structure <A name=idx-CHP-16-1329></A><A name="all types"></A>and thus are common to all types of devices. When the pointer is handed off to the bus-specific code for various functions, it needs to be converted to the real type of structure that contains it. To handle this conversion, the bus-specific code casts the pointer back to the original structure, based on where it is in memory. This is accomplished by the following fun macro:</P><PRE>	#define <A name=idx-CHP-16-1330></A>container_of(ptr, type, member) ({                      \
+	        const typeof( ((type *)0)-&gt;member ) *__mptr = (ptr); \
+	        (type *)( (char *)__mptr - <A name=idx-CHP-16-1331></A>offsetof(type,member) );})
+</PRE><BR>
+<P class=docText><A name="This macro"></A>This macro deserves some explanation, for those not up on their pointer arithmetic in the C language. To take an example, the previous <TT>struct usb_interface</TT><A name="pointer to"></A> could convert a pointer to the <TT>struct device</TT><A name="structure back"></A> member of the structure back to the original pointer through:<A name=idx-CHP-16-1332></A></P><PRE>	int probe(struct device *d) {
+	        struct usb_interface *intf;
+
+	        intf = container_of(d, struct usb_interface, dev);
+
+	    ...
+	}
+</PRE><BR>
+<P class=docText>where <TT>d</TT><A name="pointer to"></A> is a pointer to a <TT>struct device</TT>.</P>
+<P class=docText>Expanding the <TT>container_of</TT><A name="creates the"></A> macro just shown creates the following code:</P>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedWidth>	intf = ({
+	   const typeof( ((struct usb_interface *)0)-&gt;dev) *__mptr = d;
+	  (struct usb_interface *)( (char *)__mptr - offsetof(struct usb_interface, dev));
+	});
+
+
+					    </PRE><BR>
+<P class=docText>To understand this, remember that <TT>dev</TT> is a member of the <TT>struct usb_interface</TT><A name="that points"></A> structure. The first line of the macro sets up a pointer that points to the <TT>struct device</TT><A name="the code"></A> passed to the code. The second line of the macro finds the real location in memory of the <TT>struct usb_ interface</TT> that we want to access.</P>
+<P class=docText><A name=the></A>So, with the type of the <TT>dev</TT><A name="reduced to"></A> structure known, the macro can be reduced to:</P>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedWidth>	intf = ({
+	    const struct device *__mptr = d;
+	    (struct usb_interface *)( (char *)__mptr - offsetof(struct usb_interface, dev));
+	});
+
+
+					    </PRE><BR>
+<P class=docText><A name="Based on"></A>Based on the definition of the <TT>struct usb_interface</TT> recently shown, the <TT>dev</TT><A name="placed "></A> variable is probably placed 16 bytes into the structure on a 32-bit processor. This is automatically calculated by the compiler with the <TT>offsetof</TT><A name="in the"></A> macro. Replacing this information in the macro now yields:</P><PRE>	intf = ({
+	    const struct device *__mptr = d;
+	    (struct usb_interface *)( (char *)__mptr - 16));
+	});
+</PRE><BR>
+<P class=docText>The <TT>container_of</TT><A name="now been"></A> macro has now been reduced to simple <A name=idx-CHP-16-1333></A><A name="the original"></A>pointer arithmetic, subtracting 16 from the original pointer to get to the desired <TT>struct usb_interface</TT> pointer. The compiler does this quickly at <A name=idx-CHP-16-1334></A>runtime.</P>
+<P class=docText>With this very simple method, the <A name=idx-CHP-16-1335></A>Linux kernel allows normal C structures to be inherited <A name=idx-CHP-16-1336></A><A name="you know"></A>and manipulated in very powerful ways. Well, very powerful as long as you know exactly what you are doing.</P>
+<P class=docText><A name="there is"></A>If you notice, there is no runtime <A name=idx-CHP-16-1337></A><A name="that the"></A>type checking to ensure that the pointer that was originally passed as a <TT>struct device</TT> really was of the <TT>struct usb_interface</TT><A name="kind of"></A> type. Traditionally, most systems that do this kind of pointer manipulation also have a field in the <A name=idx-CHP-16-1338></A><A name="base structure"></A>base structure that defines the type of the pointer being manipulated, to catch sloppy programming errors. It also allows for code to be written to dynamically determine the type of the pointer and do different things with it based on the type.</P>
+<P class=docText><A name="developers made"></A>The Linux kernel developers made the decision to do none of this checking or type definition. These types of checks can catch basic programming errors at the initial time of development, but allow programmers to create hacks that can have much more subtle problems later on that can't be easily caught.</P>
+<P class=docText><A name="runtime checking"></A>The lack of runtime checking forces the developers who are manipulating these pointers to be absolutely sure they know exactly what type of pointer they are manipulating and passing around the system. Sure, at moments, a developer really wishes that there would be some way to determine what type of <TT>struct device</TT><A name="staring at"></A> he is staring at, but the feeling eventually passes when the problem is properly debugged.</P>
+<P class=docText>Is this <A name=idx-CHP-16-1339></A><A name="checking good"></A>lack of type checking good enough to be called "beautiful code"? After working with it for over five years, yes, I think it is. It keeps easy hacks from springing up within the kernel and forces everyone to be very exact in their logic, never falling back on any checks for types that might prevent bugs from happening later.</P>
+<P class=docText><A name="of developers"></A>I should note here that only a relatively small number of developers—those who code up subsystems for common buses—work on these parts of the kernel, and that they are expected to develop considerable expertise; that is why no hand-holding in the form of type-checking is done here.</P>
+<P class=docText><A name="method of"></A>With this method of <A name=idx-CHP-16-1340></A>inheriting the basic <TT>struct device</TT><A name="subsystems were"></A> structure, all the different driver subsystems were unified during the 2.5 kernel development process. They now shared the common core code, which allowed the kernel to show users how all devices were interconnected. This enabled the creation of tools such as <TT>udev</TT><A name="in a"></A>, which does persistent device naming in a small userspace program, and power management tools, which can walk the tree of devices and shut devices down in the proper order.<A name=idx-CHP-16-1341></A><A name=I_indexterm16_tt349></A></P></DIV></DIV>
+<p>&nbsp;</p><p>&nbsp;</p><!-- 仁·义 -->
+</body></html>

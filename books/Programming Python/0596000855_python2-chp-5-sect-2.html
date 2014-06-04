@@ -1,0 +1,902 @@
+<html><head>
+<META http-equiv="Content-Type" content="text/html">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="5.2 Fixing DOS Line Ends"-->
+<link rel="STYLESHEET" type="text/css" href="FILES/style.css">
+<link rel="STYLESHEET" type="text/css" href="FILES/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+	<a href="0596000855_python2-CHP-5-SECT-1.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+	<a href="0596000855_python2-CHP-5-SECT-3.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr>
+<td valign="top"><A NAME="python2-CHP-5-SECT-2"></A>
+<H3 class="docSection1Title">5.2 Fixing DOS Line Ends</H3>
+
+<P class="docText">When I wrote the first edition of this book, I shipped two copies of
+every example file on the CD-ROM (view CD-ROM content online at <A class="docLink" target="_blank" HREF="http://examples.oreilly.com/python2">http://examples.oreilly.com/python2</A>) -- one with Unix line-end
+markers, and one with DOS markers. The idea was that this would make
+it easy to view and edit the files on either platform. Readers would
+simply copy the examples directory tree designed for their platform
+onto their hard drive, and ignore the other one.
+</P>
+
+<P class="docText">If you read <A class="docLink" HREF="0596000855_python2-CHP-2.html#python2-CHP-2">Chapter 2</A>, you know the issue here:
+DOS (and by proxy, Windows) marks line ends in text files with the
+two characters <TT>\r\n</TT> (carriage-return, line-feed),
+but Unix uses just a single <TT>\n</TT>. Most modern text
+editors don't care -- they happily display text files
+encoded in either format. Some tools are less forgiving, though. I
+still occasionally see odd <TT>\r</TT> characters when
+viewing DOS files on Unix, or an entire file in a single line when
+looking at Unix files on DOS (the Notepad accessory does this on
+Windows, for example).
+</P>
+
+<P class="docText">Because this is only an occasional annoyance, and because it's
+easy to forget to keep two distinct example trees in sync, I adopted
+a different policy for this second edition: we're shipping a
+single copy of the examples (in DOS format), along with a portable
+converter tool for changing to and from other line-end formats.
+</P>
+
+<P class="docText">The main obstacle, of course, is how to go about providing a portable
+and easy to use converter -- one that runs "out of the
+box" on almost every computer, without changes or recompiles.
+Some Unix platforms have commands like <I>fromdos</I> and
+<I>dos2unix</I>, but they are not universally available
+even on Unix. DOS batch files and <TT>csh</TT> scripts
+could do the job on Windows and Unix, respectively, but neither
+solution works on both platforms.
+</P>
+
+<P class="docText">Fortunately, Python does. The scripts presented in Examples <A class="docLink" HREF="#python2-CHP-5-EX-1">Example 5-1</A>, <A class="docLink" HREF="#python2-CHP-5-EX-3">Example 5-3</A>, and <A class="docLink" HREF="#python2-CHP-5-EX-4">Example 5-4</A> convert end-of-line markers between DOS and
+Unix formats; they convert a single file, a directory of files, and a
+directory tree of files. In this section, we briefly look at each of
+the three scripts, and contrast some of the system tools they apply.
+Each reuses the prior's code, and becomes progressively more
+powerful in the process.
+</P>
+
+<P class="docText">The last of these three scripts, <A class="docLink" HREF="#python2-CHP-5-EX-4">Example 5-4</A>, is the
+portable converter tool I was looking for; it converts line ends in
+the entire examples tree, in a single step. Because it is pure
+Python, it also works on <span class="docEmphasis">both</span> DOS and Unix
+unchanged; as long as Python is installed, it is the only line
+converter you may ever need to remember.
+</P>
+
+<A NAME="python2-CHP-5-SECT-2.1"></A>
+<H4 class="docSection2Title">5.2.1 Converting Line Ends in One File</H4>
+
+<P class="docText">These three scripts were developed in stages on purpose, so I could
+first focus on getting line-feed conversions right, before worrying
+about directories and tree walking logic. With that scheme in mind,
+<A class="docLink" HREF="#python2-CHP-5-EX-1">Example 5-1</A> addresses just the task of converting
+lines in a single text file.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-5-EX-1"></A>Example 5-1. PP2E\PyTools\fixeoln_one.py </H5>
+<PRE>###################################################################
+# Use: "python fixeoln_one.py [tounix|todos] filename".
+# Convert end-of-lines in the single text file whose name is passed
+# in on the command line, to the target format (tounix or todos).  
+# The _one, _dir, and _all converters reuse the convert function 
+# here.  convertEndlines changes end-lines only if necessary:
+# lines that are already in the target format are left unchanged,
+# so it's okay to convert a file &gt; once with any of the 3 fixeoln 
+# scripts.  Notes: must use binary file open modes for this to 
+# work on Windows, else default text mode automatically deletes 
+# the \r on reads, and adds an extra \r for each \n on writes;
+# Mac format not supported; PyTools\dumpfile.py shows raw bytes;
+###################################################################
+
+import os
+listonly = 0   # 1=show file to be changed, don't rewrite
+
+def convertEndlines(format, fname):                      # convert one file
+    if not os.path.isfile(fname):                        # todos:  \n   =&gt; \r\n 
+        print 'Not a text file', fname                   # tounix: \r\n =&gt; \n
+        return                                           # skip directory names
+
+    newlines = []
+    changed  = 0 
+    for line in open(fname, 'rb').readlines(  ):           # use binary i/o modes
+        if format == 'todos':                            # else \r lost on Win
+            if line[-1:] == '\n' and line[-2:-1] != '\r':
+                line = line[:-1] + '\r\n'
+                changed = 1
+        elif format == 'tounix':                         # avoids IndexError
+            if line[-2:] == '\r\n':                      # slices are scaled
+                line = line[:-2] + '\n'
+                changed = 1
+        newlines.append(line)
+
+    if changed:
+        try:                                             # might be read-only
+            print 'Changing', fname
+            if not listonly: open(fname, 'wb').writelines(newlines) 
+        except IOError, why:
+            print 'Error writing to file %s: skipped (%s)' % (fname, why)
+
+if __name__ == '__main__':
+    import sys
+    errmsg = 'Required arguments missing: ["todos"|"tounix"] filename'
+    assert (len(sys.argv) == 3 and sys.argv[1] in ['todos', 'tounix']), errmsg
+    convertEndlines(sys.argv[1], sys.argv[2])
+    print 'Converted', sys.argv[2]</PRE>
+
+
+<P class="docText">This script is fairly straightforward as system utilities go; it
+relies primarily on the built-in file object's methods. Given a
+target format flag and filename, it loads the file into a lines list
+using the <TT>readlines</TT> method, converts input lines
+to the target format if needed, and writes the result back to the
+file with the <TT>writelines</TT> method if any lines were
+changed:
+</P>
+
+<PRE>C:\temp\examples&gt;<B>python %X%\PyTools\fixeoln_one.py tounix PyDemos.pyw</B>
+Changing PyDemos.pyw
+Converted PyDemos.pyw
+
+C:\temp\examples&gt;<B>python %X%\PyTools\fixeoln_one.py todos PyDemos.pyw</B>
+Changing PyDemos.pyw
+Converted PyDemos.pyw
+
+C:\temp\examples&gt;<B>fc PyDemos.pyw %X%\PyDemos.pyw</B>
+Comparing files PyDemos.pyw and C:\PP2ndEd\examples\PP2E\PyDemos.pyw
+FC: no differences encountered
+
+C:\temp\examples&gt;<B>python %X%\PyTools\fixeoln_one.py todos PyDemos.pyw</B>
+Converted PyDemos.pyw
+
+C:\temp\examples&gt;<B>python %X%\PyTools\fixeoln_one.py toother nonesuch.txt</B>
+Traceback (innermost last):
+  File "C:\PP2ndEd\examples\PP2E\PyTools\fixeoln_one.py", line 45, in ?
+    assert (len(sys.argv) == 3 and sys.argv[1] in ['todos', 'tounix']), errmsg
+AssertionError: Required arguments missing: ["todos"|"tounix"] filename</PRE>
+
+<P class="docText">Here, the first command converts the file to Unix line-end format
+(<I>tounix</I>), and the second and fourth convert to the
+DOS convention -- all regardless of the platform on which this
+script is run. To make typical usage easier, converted text is
+written back to the file <span class="docEmphasis">in place</span>, instead of to
+a newly created output file. Notice that this script's filename
+has a "_" in it, not a "-"; because it is
+meant to be both run as a script and imported as a library, its
+filename must translate to a legal Python
+<span class="docEmphasis">variable</span> name in importers
+(<I>fixeoln-one.py</I> won't work for both
+roles).
+</P>
+
+<P><table border="0" bgcolor="black" cellspacing="0" cellpadding="1" width="90%" align="center"><tr><td>
+<table bgcolor="white" width="100%" border="0" cellspacing="0" cellpadding="6"><tr>
+<td width="60" valign="top"><img src="FILES/tip_yellow.gif" width="50" height="54"></td>
+<td valign="top">
+<P class="docText">In all the examples in this chapter that change files in directory
+trees, the <I>C:\temp\examples</I> and
+<I>C:\temp\cpexamples</I> directories used in testing
+are full copies of the real <I>PP2E</I> examples root
+directory. I don't always show the copy commands used to create
+these test directories along the way (at least not until we've
+written our own in Python).
+</P>
+</td>
+</tr></table></td></tr></table></P>
+
+<A NAME="python2-CHP-5-SECT-2.1.1"></A>
+<H5 class="docSection3Title">5.2.1.1 Slinging bytes and verifying results</H5>
+
+<P class="docText">The <I>fc</I> DOS file-compare command in the preceding
+interaction confirms the conversions, but to better verify the
+results of this Python script, I wrote another, shown in <A class="docLink" HREF="#python2-CHP-5-EX-2">Example 5-2</A>.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-5-EX-2"></A>Example 5-2. PP2E\PyTools\dumpfile.py </H5>
+<PRE>import sys
+bytes = open(sys.argv[1], 'rb').read(  )
+print '-'*40
+print repr(bytes)
+
+print '-'*40
+while bytes:
+    bytes, chunk = bytes[4:], bytes[:4]          # show 4-bytes per line
+    for c in chunk: print oct(ord(c)), '\t',     # show octal of binary value
+    print 
+
+print '-'*40
+for line in open(sys.argv[1], 'rb').readlines(  ):
+    print repr(line)</PRE>
+
+
+<P class="docText">To give a clear picture of a file's contents, this script opens
+a file in binary mode (to suppress automatic line-feed conversions),
+prints its raw contents (<TT>bytes</TT>) all at once,
+displays the octal numeric ASCII codes of it contents four bytes per
+line, and shows its raw lines. Let's use this to trace
+conversions. First of all, use a simple text file to make wading
+through bytes a bit more humane:
+</P>
+
+<PRE>C:\temp&gt;<B>type test.txt</B>
+a
+b
+c
+
+C:\temp&gt;<B>python %X%\PyTools\dumpfile.py test.txt</B>
+----------------------------------------
+'a\015\012b\015\012c\015\012'
+----------------------------------------
+0141    015     012     0142
+015     012     0143    015
+012
+----------------------------------------
+'a\015\012'
+'b\015\012'
+'c\015\012'</PRE>
+
+<P class="docText">The <I>test.txt</I> file here is in DOS line-end
+format -- the escape sequence <TT>\015\012</TT>
+displayed by the <TT>dumpfile</TT> script is simply the DOS
+<TT>\r\n</TT> line-end marker in octal character-code
+escapes format. Now, converting to Unix format changes all the DOS
+<TT>\r\n</TT> markers to a single <TT>\n</TT>
+(<TT>\012</TT>) as advertised:
+</P>
+
+<PRE>C:\temp&gt;<B>python %X%\PyTools\fixeoln_one.py tounix test.txt</B>
+Changing test.txt
+Converted test.txt
+
+C:\temp&gt;<B>python %X%\PyTools\dumpfile.py test.txt</B>
+----------------------------------------
+'a\012b\012c\012'
+----------------------------------------
+0141    012     0142    012
+0143    012
+----------------------------------------
+'a\012'
+'b\012'
+'c\012'</PRE>
+
+<P class="docText">And converting back to DOS restores the original file format:</P>
+
+<PRE>C:\temp&gt;<B>python %X%\PyTools\fixeoln_one.py todos test.txt</B>
+Changing test.txt
+Converted test.txt
+
+C:\temp&gt;<B>python %X%\PyTools\dumpfile.py test.txt</B>
+----------------------------------------
+'a\015\012b\015\012c\015\012'
+----------------------------------------
+0141    015     012     0142
+015     012     0143    015
+012
+----------------------------------------
+'a\015\012'
+'b\015\012'
+'c\015\012'
+
+C:\temp&gt;<B>python %X%\PyTools\fixeoln_one.py todos test.txt</B>    # makes no changes
+Converted test.txt</PRE>
+
+
+
+<A NAME="python2-CHP-5-SECT-2.1.2"></A>
+<H5 class="docSection3Title">5.2.1.2 Nonintrusive conversions</H5>
+
+<P class="docText">Notice that no "Changing" message is emitted for the last
+command just run, because no changes were actually made to the file
+(it was already in DOS format). Because this program is smart enough
+to avoid converting a line that is already in the target format, it
+is safe to rerun on a file even if you can't recall what format
+the file already uses. More naive conversion logic might be simpler,
+but may not be repeatable. For instance, a
+<TT>string.replace</TT> call can be used to expand a Unix
+<TT>\n</TT> to a DOS <TT>\r\n</TT>
+(<TT>\015\012</TT>), but only once:
+</P>
+
+<PRE>&gt;&gt;&gt; <B>import string</B>
+&gt;&gt;&gt; <B>lines = 'aaa\nbbb\nccc\n'</B>
+&gt;&gt;&gt; <B>lines = string.replace(lines, '\n', '\r\n')         </B># okay: \r added
+&gt;&gt;&gt; <B>lines</B>
+'aaa\015\012bbb\015\012ccc\015\012'
+&gt;&gt;&gt; <B>lines = string.replace(lines, '\n', '\r\n')         </B># bad: double \r
+&gt;&gt;&gt; <B>lines</B>
+'aaa\015\015\012bbb\015\015\012ccc\015\015\012'</PRE>
+
+<P class="docText">Such logic could easily trash a file if applied to it
+twice.<sup class="docFootnote"><A class="docLink" HREF="#">[1]</A></sup> To really understand how the
+script gets around this problem, though, we need to take a closer
+look at its use of slices and binary file modes.
+</P>
+<blockquote><p class="docFootnote"><sup><A NAME="">[1]</A></sup> In fact, see the files
+<I>old_todos.py</I>,
+<I>old_tounix.py</I>, and
+<I>old_toboth.py</I> in the
+<I>PyTools</I> directory on the examples CD (see <A class="docLink" target="_blank" HREF="http://examples.oreilly.com/python2">http://examples.oreilly.com/python2</A>) for a
+complete earlier implementation built around
+<TT>string.replace</TT>. It was repeatable for to-Unix
+changes, but not for to-DOS conversion (only the latter may add
+characters). The <TT>fixeoln</TT> scripts here were
+developed as a replacement, after I got burned by running to-DOS
+conversions twice.</p></blockquote>
+
+
+
+<A NAME="python2-CHP-5-SECT-2.1.3"></A>
+<H5 class="docSection3Title">5.2.1.3 Slicing strings out-of-bounds</H5>
+
+<P class="docText">This script relies on subtle aspects of string slicing behavior to
+inspect parts of each line without size checks. For instance:
+</P>
+
+<UL>
+<LI><P class="docList">The expression <TT>line[-2:]</TT> returns the last two
+characters at the end of the line (or one or zero characters, if the
+line isn't at least two characters long).
+</P></LI>
+<LI><P class="docList">A slice like <TT>line[-2:-1]</TT> returns the second to
+last character (or an empty string, if the line is too small to have
+a second to last character).
+</P></LI>
+<LI><P class="docList">The operation <TT>line[:-2]</TT> returns all characters
+except the last two at the end (or an empty string, if there are
+fewer than three characters).
+</P></LI>
+</UL>
+<P class="docText">Because out-of-bounds slices scale slice limits to be in-bounds, the
+script doesn't need to add explicit tests to guarantee that the
+line is big enough to have end-line characters at the end. For
+example:
+</P>
+
+<PRE>&gt;&gt;&gt; <B>'aaaXY'[-2:], 'XY'[-2:], 'Y'[-2:], ''[-2:]</B>
+('XY', 'XY', 'Y', '')
+
+&gt;&gt;&gt; <B>'aaaXY'[-2:-1], 'XY'[-2:-1], 'Y'[-2:-1], ''[-2:-1]</B>
+('X', 'X', '', '')
+
+&gt;&gt;&gt; <B>'aaaXY'[:-2], 'aaaY'[:-1], 'XY'[:-2], 'Y'[:-1]</B>
+('aaa', 'aaa', '', '')</PRE>
+
+<P class="docText">If you imagine characters like <TT>\r</TT> and
+<TT>\n</TT> instead of the <TT>X</TT> and
+<TT>Y</TT> here, you'll understand how the script
+exploits slice scaling to good effect.
+</P>
+
+
+
+<A NAME="python2-CHP-5-SECT-2.1.4"></A>
+<H5 class="docSection3Title">5.2.1.4 Binary file mode revisited</H5>
+
+<P class="docText">Because this script aims to be portable to Windows, it also takes
+care to open files in binary mode, even though they contain text
+data. As we've seen, when files are opened in text mode on
+Windows, <TT>\r</TT> is stripped from
+<TT>\r\n</TT> markers on input, and <TT>\r</TT>
+is added before <TT>\n</TT> markers on output. This
+automatic conversion allows scripts to represent the end-of-line
+marker as <TT>\n</TT> on all platforms. Here, though, it
+would also mean that the script would never see the
+<TT>\r</TT> it's looking for to detect a DOS-encoded
+line -- the <TT>\r</TT> would be dropped before it ever
+reached the script:
+</P>
+
+<PRE>&gt;&gt;&gt; <B>open('temp.txt', 'w').writelines(['aaa\n', 'bbb\n'])</B>
+&gt;&gt;&gt; <B>open('temp.txt', 'rb').read(  )</B>
+'aaa\015\012bbb\015\012'
+&gt;&gt;&gt; <B>open('temp.txt', 'r').read(  )</B>
+'aaa\012bbb\012'</PRE>
+
+<P class="docText">Without binary open mode, this can lead to fairly subtle and
+incorrect behavior on Windows. For example, if files are opened in
+text mode, converting in "todos" mode on Windows would
+actually produce double <TT>\r</TT> characters: the script
+might convert the stripped <TT>\n</TT> to
+<TT>\r\n</TT>, which is then expanded on output to
+<TT>\r\r\n</TT> !
+</P>
+
+<PRE>&gt;&gt;&gt; <B>open('temp.txt', 'w').writelines(['aaa\r\n', 'bbb\r\n'])</B>
+&gt;&gt;&gt; <B>open('temp.txt', 'rb').read(  )</B>
+'aaa\015\015\012bbb\015\015\012'</PRE>
+
+<P class="docText">With binary mode, the script inputs a full <TT>\r\n</TT>,
+so no conversion is performed. Binary mode is also required for
+output on Windows, to suppress the insertion of <TT>\r</TT>
+characters; without it, the "tounix<I>"</I>
+conversion would fail on that platform.<sup class="docFootnote"><A class="docLink" HREF="#">[2]</A></sup>
+</P>
+<blockquote><p class="docFootnote"><sup><A NAME="">[2]</A></sup> But
+wait -- it gets worse. Because of the auto-deletion and insertion
+of <TT>\r</TT> characters in Windows text mode, we might
+simply read and write files in text mode to perform the
+"todos" line conversion when run on Windows; the file
+interface will automatically add the <TT>\r</TT> on output
+if it's missing. However, this fails for other usage
+modes -- "tounix" conversions on Windows (only binary
+writes can omit the <TT>\r</TT>), and "todos"
+when running on Unix (no <TT>\r</TT> is inserted). Magic is
+not always our friend.</p></blockquote>
+
+<P class="docText">If all that is too subtle to bear, just remember to use the
+"b" in file open mode strings if your scripts might be
+run on Windows, and you mean to process either true binary data or
+text data as it is actually stored in the file.
+</P>
+
+<P><A NAME="python2-CHP-5-SIDEBAR-1"></A><TABLE CELLSPACING="0" WIDTH="90%" BORDER="1"><TR><TD>
+<H2 class="docSidebarTitle">Macintosh Line Conversions</H2>
+
+<P class="docText">As coded, the <TT>convertEndlines</TT> function does not
+support Macintosh single <TT>\r</TT> line terminators at
+all. It neither converts <span class="docEmphasis">to</span> Macintosh
+terminators from DOS and Unix format (<TT>\r\n</TT> and
+<TT>\n</TT> to <TT>\r</TT>), nor converts
+<span class="docEmphasis">from</span> Macintosh terminators to DOS or Unix format
+(<TT>\r</TT> to <TT>\r\n</TT> or
+<TT>\n</TT>). Files in Mac format pass untouched through
+both the "todos" and "tounix" conversions in
+this script (study the code to see why). I don't use a Mac, but
+some readers may.
+</P>
+
+<P class="docText">Since adding Mac support would make this code more complex, and since
+I don't like publishing code in books unless it's been
+well tested, I'll leave such an extension as an exercise for
+the Mac Python users in the audience. But for implementation hints,
+see file <I>PP2E\PyTools\fixeoln_one_mac.py</I> on the
+CD (see <A class="docLink" target="_blank" HREF="http://examples.oreilly.com/python2">http://examples.oreilly.com/python2</A>). When run on Windows, it does to-Mac conversions:
+</P>
+
+<PRE>C:\temp&gt;<B>python %X%\PyTools\fixeoln_one_mac.py tomac test.txt</B>
+Changing test.txt
+Converted test.txt
+
+C:\temp&gt;<B>python %X%\PyTools\dumpfile.py test.txt</B>
+----------------------------------------
+'a\015b\015c\015'
+----------------------------------------
+0141    015     0142    015
+0143    015
+----------------------------------------
+'a\015b\015c\015'</PRE>
+
+<P class="docText">but fails to convert files already in Mac format to Unix or DOS,
+because the file <TT>readlines</TT> method does not treat a
+bare <TT>\r</TT> as a line break on that platform. The last
+output line is a single file line, as far as Windows is concerned;
+converting back to DOS just adds a single <TT>\n</TT> at
+its end.
+</P>
+</TD></TR></TABLE></P>
+
+
+
+<A NAME="python2-CHP-5-SECT-2.2"></A>
+<H4 class="docSection2Title">5.2.2 Converting Line Ends in One Directory</H4>
+
+<P class="docText">Armed with a fully debugged single file converter, it's an easy
+step to add support for converting all files in a single directory.
+Simply call the single file converter on every filename returned by a
+directory listing tool. The script in <A class="docLink" HREF="#python2-CHP-5-EX-3">Example 5-3</A>
+uses the <TT>glob</TT> module we met in <A class="docLink" HREF="0596000855_python2-CHP-2.html#python2-CHP-2">Chapter 2</A><A class="docLink" HREF="0596000855_python2-CHP-2.html#python2-CHP-2">Chapter 2</A> to grab a list of
+files to convert.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-5-EX-3"></A>Example 5-3. PP2E\PyTools\fixeoln_dir.py </H5>
+<PRE>#########################################################
+# Use: "python fixeoln_dir.py [tounix|todos] patterns?".
+# convert end-lines in all the text files in the current
+# directory (only: does not recurse to subdirectories). 
+# Reuses converter in the single-file _one version.
+#########################################################
+
+import sys, glob
+from fixeoln_one import convertEndlines
+listonly = 0
+patts = ['*.py', '*.pyw', '*.txt', '*.cgi', '*.html',    # text file names
+         '*.c',  '*.cxx', '*.h',   '*.i',   '*.out',     # in this package
+         'README*', 'makefile*', 'output*', '*.note']
+
+if __name__ == '__main__':
+    errmsg = 'Required first argument missing: "todos" or "tounix"'
+    assert (len(sys.argv) &gt;= 2 and sys.argv[1] in ['todos', 'tounix']), errmsg
+
+    if len(sys.argv) &gt; 2:                 # glob anyhow: '*' not applied on dos
+        patts = sys.argv[2:]              # though not really needed on linux
+    filelists = map(glob.glob, patts)     # name matches in this dir only 
+
+    count = 0
+    for list in filelists:
+        for fname in list:
+            if listonly:
+                print count+1, '=&gt;', fname
+            else:
+                convertEndlines(sys.argv[1], fname)
+            count = count + 1
+
+    print 'Visited %d files' % count</PRE>
+
+
+<P class="docText">This module defines a list, <TT>patts</TT>, containing
+filename patterns that match all the kinds of text files that appear
+in the book examples tree; each pattern is passed to the built-in
+<TT>glob.glob</TT> call by <TT>map</TT>, to be
+separately expanded into a list of matching files. That's why
+there are nested <TT>for</TT> loops near the end -- the
+outer loop steps through each <TT>glob</TT> result list,
+and the inner steps through each name within each list. Try the
+<TT>map</TT> call interactively if this doesn't make
+sense:
+</P>
+
+<PRE>&gt;&gt;&gt; import glob
+&gt;&gt;&gt; map(glob.glob, ['*.py', '*.html'])
+[['helloshell.py'], ['about-pp.html', 'about-pp2e.html', 'about-ppr2e.html']]</PRE>
+
+<P class="docText">This script requires a convert mode flag on the command line, and
+assumes that it is run in the directory where files to be converted
+live; <I>cd</I> to the directory to be converted before
+running this script (or change it to accept a directory name argument
+too):
+</P>
+
+<PRE>C:\temp\examples&gt;<B>python %X%\PyTools\fixeoln_dir.py tounix </B>
+Changing Launcher.py
+Changing Launch_PyGadgets.py
+Changing LaunchBrowser.py
+<I> ...lines deleted...</I>
+Changing PyDemos.pyw
+Changing PyGadgets_bar.pyw
+Changing README-PP2E.txt
+Visited 21 files
+
+C:\temp\examples&gt;<B>python %X%\PyTools\fixeoln_dir.py todos </B>
+Changing Launcher.py
+Changing Launch_PyGadgets.py
+Changing LaunchBrowser.py
+<I> ...lines deleted...</I>
+Changing PyDemos.pyw
+Changing PyGadgets_bar.pyw
+Changing README-PP2E.txt
+Visited 21 files
+
+C:\temp\examples&gt;<B>python %X%\PyTools\fixeoln_dir.py todos </B>    # makes no changes
+Visited 21 files
+
+C:\temp\examples&gt;<B>fc PyDemos.pyw %X%\PyDemos.pyw </B>
+Comparing files PyDemos.pyw and C:\PP2ndEd\examples\PP2E\PyDemos.pyw
+FC: no differences encountered</PRE>
+
+<P class="docText">Notice that the third command generated no "Changing"
+messages again. Because the <TT>convertEndlines</TT>
+function of the single-file module is reused here to perform the
+actual updates, this script inherits that function's
+<span class="docEmphasis">repeatability</span> : it's okay to rerun this
+script on the same directory any number of times. Only lines that
+require conversion will be converted. This script also accepts an
+optional list of filename patterns on the command line, to override
+the default <TT>patts</TT> list of files to be changed:
+</P>
+
+<PRE>C:\temp\examples&gt;<B>python %X%\PyTools\fixeoln_dir.py tounix *.pyw *.csh</B>
+Changing echoEnvironment.pyw
+Changing Launch_PyDemos.pyw
+Changing Launch_PyGadgets_bar.pyw
+Changing PyDemos.pyw
+Changing PyGadgets_bar.pyw
+Changing cleanall.csh
+Changing makeall.csh
+Changing package.csh
+Changing setup-pp.csh
+Changing setup-pp-embed.csh
+Changing xferall.linux.csh
+Visited 11 files
+
+C:\temp\examples&gt;<B>python %X%\PyTools\fixeoln_dir.py tounix *.pyw *.csh</B>
+Visited 11 files</PRE>
+
+<P class="docText">Also notice that the single-file script's
+<TT>convertEndlines</TT> function performs an initial
+<TT>os.path.isfile</TT> test to make sure the passed-in
+filename represents a <span class="docEmphasis">file</span>, not a directory;
+when we start globbing with patterns to collect files to convert,
+it's not impossible that a pattern's expansion might
+include the name of a directory along with the desired files.
+</P>
+
+<P><table border="0" bgcolor="black" cellspacing="0" cellpadding="1" width="90%" align="center"><tr><td>
+<table bgcolor="white" width="100%" border="0" cellspacing="0" cellpadding="6"><tr>
+<td width="60" valign="top"><img src="FILES/tip_yellow.gif" width="50" height="54"></td>
+<td valign="top">
+<P class="docText"><span class="docEmphasis">Unix and Linux users</span>: Unix-like shells
+automatically glob (i.e., expand) filename pattern operators like
+<TT>*</TT> in command lines before they ever reach your
+script. You generally need to <span class="docEmphasis">quote</span> such
+patterns to pass them in to scripts verbatim (e.g.,
+<TT>"*.py"</TT>).The <TT>fixeoln_dir</TT> script
+will still work if you don't—its
+<TT>glob.glob</TT> calls will simply find a single matching
+filename for each already-globbed name, and so have no effect:</P>
+
+<PRE>&gt;&gt;&gt;<B>glob.glob('PyDemos.pyw')</B>
+['PyDemos.pyw']</PRE> 
+
+<P class="docText">Patterns are not
+pre-globbed in the DOS shell, though, so the
+<TT>glob.glob</TT> calls here are still a good idea in
+scripts that aspire to be as portable as this one.
+</P>
+</td>
+</tr></table></td></tr></table></P>
+
+
+<A NAME="python2-CHP-5-SECT-2.3"></A>
+<H4 class="docSection2Title">5.2.3 Converting Line Ends in an Entire Tree</H4>
+
+<P class="docText">Finally, <A class="docLink" HREF="#python2-CHP-5-EX-4">Example 5-4</A> applies what we've
+already learned to an entire directory tree. It simply runs the
+file-converter function to every filename produced by tree-walking
+logic. In fact, this script really just orchestrates calls to the
+original and already debugged <TT>convertEndlines</TT>
+function.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-5-EX-4"></A>Example 5-4. PP2E\PyTools\fixeoln_all.py </H5>
+<PRE>#########################################################
+# Use: "python fixeoln_all.py [tounix|todos] patterns?".
+# find and convert end-of-lines in all text files at and
+# below the directory where this script is run (the dir 
+# you are in when you type 'python'). If needed, tries to 
+# use the Python find.py library module, else reads the 
+# output of a unix-style find command; uses a default 
+# filename patterns list if patterns argument is absent.
+# This script only changes files that need to be changed, 
+# so it's safe to run brute-force from a root-level dir.
+#########################################################
+
+import os, sys, string
+debug    = 0
+pyfind   = 0      # force py find
+listonly = 0      # 1=show find results only
+
+def findFiles(patts, debug=debug, pyfind=pyfind):
+    try:
+        if sys.platform[:3] == 'win' or pyfind:
+            print 'Using Python find'
+            try:
+                import find                        # use python-code find.py
+            except ImportError:                    # use mine if deprecated!
+                from PP2E.PyTools import find      # may get from my dir anyhow
+            matches = map(find.find, patts)        # startdir default = '.'
+        else:
+            print 'Using find executable'
+            matches = []
+            for patt in patts:
+                findcmd = 'find . -name "%s" -print' % patt  # run find command
+                lines = os.popen(findcmd).readlines(  )        # remove endlines
+                matches.append(map(string.strip, lines))     # lambda x: x[:-1]
+    except:
+        assert 0, 'Sorry - cannot find files'
+    if debug: print matches
+    return matches
+
+if __name__ == '__main__':
+    from fixeoln_dir import patts
+    from fixeoln_one import convertEndlines
+
+    errmsg = 'Required first argument missing: "todos" or "tounix"'
+    assert (len(sys.argv) &gt;= 2 and sys.argv[1] in ['todos', 'tounix']), errmsg
+
+    if len(sys.argv) &gt; 2:                  # quote in unix shell 
+        patts = sys.argv[2:]               # else tries to expand
+    matches = findFiles(patts)
+
+    count = 0
+    for matchlist in matches:                 # a list of lists
+        for fname in matchlist:               # one per pattern
+            if listonly:
+                print count+1, '=&gt;', fname 
+            else:  
+                convertEndlines(sys.argv[1], fname)
+            count = count + 1
+    print 'Visited %d files' % count</PRE>
+
+
+<P class="docText">On Windows, the script uses the portable <TT>find.find</TT>
+built-in tool we met in <A class="docLink" HREF="0596000855_python2-CHP-2.html#python2-CHP-2">Chapter 2</A> (either
+Python's or the hand-rolled equivalent)<sup class="docFootnote"><A class="docLink" HREF="#">[3]</A></sup> to
+generate a list of all matching file and directory names in the tree;
+on other platforms, it resorts to spawning a less portable and
+probably slower <I>find</I> shell command just for
+illustration purposes.
+</P>
+<blockquote><p class="docFootnote"><sup><A NAME="">[3]</A></sup> Recall
+that the home directory of a running script is always added to the
+front of <TT>sys.path</TT> to give the script import
+visibility to other files in the script's directory. Because of
+that, this script would normally load the
+<I>PP2E\PyTools\find.py </I>module anyhow (not the one
+in the Python library), by just saying <TT>import</TT>
+<TT>find</TT>; it need not specify the full package path in
+the import. The <TT>try</TT> handler and full path import
+are useful here only if this script is moved to a different source
+directory. Since I move files a lot, I tend to code with
+self-inflicted worst-case scenarios in mind.</p></blockquote>
+
+<P class="docText">Once the file pathname lists are compiled, this script simply
+converts each found file in turn using the single-file converter
+module's tools. Here is the collection of scripts at work
+converting the book examples tree on Windows; notice that this script
+also processes the current working directory (CWD;
+<I>cd</I> to the directory to be converted before typing
+the command line), and that Python treats forward and backward
+slashes the same in the program filename:
+</P>
+
+<PRE>C:\temp\examples&gt;<B>python %X%/PyTools/fixeoln_all.py tounix </B>
+Using Python find
+Changing .\LaunchBrowser.py
+Changing .\Launch_PyGadgets.py
+Changing .\Launcher.py
+Changing .\Other\cgimail.py
+<I> ...lots of lines deleted...</I>
+Changing .\EmbExt\Exports\ClassAndMod\output.prog1
+Changing .\EmbExt\Exports\output.prog1
+Changing .\EmbExt\Regist\output
+Visited 1051 files
+
+C:\temp\examples&gt;<B>python %X%/PyTools/fixeoln_all.py todos </B>
+Using Python find
+Changing .\LaunchBrowser.py
+Changing .\Launch_PyGadgets.py
+Changing .\Launcher.py
+Changing .\Other\cgimail.py
+<I> ...lots of lines deleted...</I>
+Changing .\EmbExt\Exports\ClassAndMod\output.prog1
+Changing .\EmbExt\Exports\output.prog1
+Changing .\EmbExt\Regist\output
+Visited 1051 files
+
+C:\temp\examples&gt;<B>python %X%/PyTools/fixeoln_all.py todos </B>
+Using Python find
+Not a text file .\Embed\Inventory\Output
+Not a text file .\Embed\Inventory\WithDbase\Output
+Visited 1051 files</PRE>
+
+<P class="docText">The first two commands convert over 1000 files, and usually take some
+eight seconds of real-world time to finish on my 650 MHz Windows 98
+machine; the third takes only six seconds, because no files have to
+be updated (and fewer messages have to be scrolled on the screen).
+Don't take these figures too seriously, though; they can vary
+by system load, and much of this time is probably spent scrolling the
+script's output to the screen.
+</P>
+
+<A NAME="python2-CHP-5-SECT-2.3.1"></A>
+<H5 class="docSection3Title">5.2.3.1 The view from the top</H5>
+
+<P class="docText">This script and its ancestors are shipped on the book's CD, as
+that portable converter tool I was looking for. To convert all
+examples files in the tree to Unix line-terminator format, simply
+copy the entire <I>PP2E</I> examples tree to some
+"examples" directory on your hard drive, and type these
+two commands in a shell:
+</P>
+
+<PRE><B>cd examples/PP2E</B>
+<B>python PyTools/fixeoln_all.py tounix</B></PRE>
+
+<P class="docText">Of course, this assumes Python is already installed (see the
+CD's README file for details; see <A class="docLink" target="_blank" HREF="http://examples.oreilly.com/python2">http://examples.oreilly.com/python2</A>), but will work on almost every
+platform in use today.<sup class="docFootnote"><A class="docLink" HREF="#">[4]</A></sup> To convert
+back to DOS, just replace "tounix" with
+"todos" and rerun. I ship this tool with a training CD
+for Python classes I teach too; to convert those files, we simply
+type:
+</P>
+<blockquote><p class="docFootnote"><sup><A NAME="">[4]</A></sup> Except Macs, perhaps
+-- see <A class="docLink" HREF="#python2-CHP-5-SIDEBAR-1">Macintosh Line Conversions</A> earlier in this
+chapter. To convert to Mac format, try replacing the script's
+import of <TT>fixeoln_one</TT> to load
+<TT>fixeoln_one_mac</TT>.</p></blockquote>
+
+<PRE><B>cd Html\Examples</B>
+<B>python ..\..\Tools\fixeoln_all.py tounix</B></PRE>
+
+<P class="docText">Once you get accustomed to the command lines, you can use this in all
+sorts of contexts. Finally, to make the conversion easier for
+beginners to run, the top-level examples directory includes
+<I>tounix.py</I> and <I>todos.py</I>
+scripts that can be simply double-clicked in a file explorer GUI;
+<A class="docLink" HREF="#python2-CHP-5-EX-5">Example 5-5</A> shows the "tounix"
+converter.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-5-EX-5"></A>Example 5-5. PP2E\tounix.py </H5>
+<PRE>#!/usr/local/bin/python
+######################################################################
+# Run me to convert all text files to UNIX/Linux line-feed format.
+# You only need to do this if you see odd '\r' characters at the end
+# of lines in text files in this distribution, when they are viewed 
+# with your text editor (e.g., vi).  This script converts all files 
+# at and below the examples root, and only converts files that have  
+# not already been converted (it's okay to run this multiple times).
+#
+# Since this is a Python script which runs another Python script, 
+# you must install Python first to run this program; then from your
+# system command-line (e.g., a xterm window), cd to the directory 
+# where this script lives, and then type "python tounix.py".  You 
+# may also be able to simply click on this file's icon in your file
+# system explorer, if it knows what '.py' file are.
+###################################################################### 
+
+import os
+prompt = """
+This program converts all text files in the book
+examples distribution to UNIX line-feed format.
+Are you sure you want to do this (y=yes)? """
+
+answer = raw_input(prompt) 
+if answer not in ['y', 'Y', 'yes']:
+    print 'Cancelled'
+else:
+    os.system('python PyTools/fixeoln_all.py tounix')</PRE>
+
+
+<P class="docText">This script addresses the <span class="docEmphasis">end user's</span>
+perception of usability, but other factors impact
+<span class="docEmphasis">programmer</span> usability -- just as important to
+systems that will be read or changed by others. For example, the
+file, directory, and tree converters are coded in separate script
+files, but there is no law against combining them into a single
+program that relies on a command-line arguments pattern to know which
+of the three modes to run. The first argument could be a mode flag,
+tested by such a program:
+</P>
+
+<PRE>if   mode == '-one':
+    ...
+elif mode == '-dir':
+    ...
+elif mode == '-all:
+    ...</PRE>
+
+<P class="docText">That seems more confusing than separate files per mode, though;
+it's usually much easier to botch a complex command line than
+to type a specific program file's name. It will also make for a
+confusing mix of global names, and one very big piece of code at the
+bottom of the file. As always, simpler is usually better.
+</P>
+
+
+
+
+<ul></ul>
+</td>
+</tr>
+</table>
+<td></td>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+          <a href="0596000855_python2-CHP-5-SECT-1.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+          <a href="0596000855_python2-CHP-5-SECT-3.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+</body></html>

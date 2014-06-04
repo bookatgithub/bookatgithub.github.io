@@ -1,0 +1,195 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;9.12.&nbsp;Capturing the Output and Error Streams from a Unix Shell Command</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-9-sect-11.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-9-sect-13.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-9-SECT-12"></a>
+<h3 class="docSection1Title">Recipe 9.12. Capturing the Output and Error Streams from a Unix Shell Command</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Brent Burley, Bradey Honsinger, Tobias Polzin,
+Jonathan Cano, Padraig Brady</span></p>
+
+<a name="pythoncook2-CHP-9-SECT-12.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-9-ITERM-2578"></a> <a name="pythoncook2-CHP-9-ITERM-2579"></a> <a name="pythoncook2-CHP-9-ITERM-2580"></a>You
+need to run an external process in a Unix-like environment and
+capture both the output and error streams from that external
+process.<a name="pythoncook2-CHP-9-ITERM-2581"></a> <a name="pythoncook2-CHP-9-ITERM-2582"></a></P>
+
+
+<a name="pythoncook2-CHP-9-SECT-12.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">The <tt>popen2</tt> module lets you capture both streams,
+but you also need help from module <tt>fcntl</tt>, to make
+the streams nonblocking and thus avoid deadlocks, and from module
+<tt>select</tt>, to orchestrate the action:</p>
+
+<pre>import os, popen2, fcntl, select
+def makeNonBlocking(fd):
+    fl = fcntl.fcntl(fd, os.F_GETFL)
+    try:
+        fcntl.fcntl(fd, os.F_SETFL, fl | os.O_NDELAY)
+    except AttributeError:
+        fcntl.fcntl(fd, os.F_SETFL, fl | os.FNDELAY)
+def getCommandOutput(command):
+    child = popen2.Popen3(command, 1) # Capture stdout and stderr from command
+    child.tochild.close( )             # don't need to write to child's stdin
+    outfile = child.fromchild
+    outfd = outfile.fileno( )
+    errfile = child.childerr
+    errfd = errfile.fileno( )
+    makeNonBlocking(outfd)            # Don't deadlock! Make fd's nonblocking.
+    makeNonBlocking(errfd)
+    outdata, errdata = [  ], [  ]
+    outeof = erreof = False
+    while True:
+        to_check = [outfd]*(not outeof) + [errfd]*(not erreof)
+        ready = select.select(to_check, [  ], [  ]) # Wait for input
+        if outfd in ready[0]:
+            outchunk = outfile.read( )
+            if outchunk == '':
+                outeof = True
+            else:
+                outdata.append(outchunk)
+        if errfd in ready[0]:
+            errchunk = errfile.read( )
+            if errchunk == '':
+                erreof = True
+            else:
+                errdata.append(errchunk)
+        if outeof and erreof:
+            break
+        select.select([  ],[  ],[  ],.1) # Allow a little time for buffers to fill
+    err = child.wait( )
+    if err != 0:
+        raise RuntimeError, '%r failed with exit code %d\n%s' % (
+            command, err, ''.join(errdata))
+    return ''.join(outdata)
+def getCommandOutput2(command):
+    child = os.popen(command)
+    data = child.read( )
+    err = child.close( )
+    if err:
+        raise RuntimeError, '%r failed with exit code %d' % (command, err)</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-9-SECT-12.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">This recipe shows how to execute a Unix shell command and capture the
+output and error streams in Python. By contrast,
+<tt>os.system</tt> sends both streams directly to the
+terminal. The function <I>getCommandOutput</i> presented in
+this recipe executes a command and returns the
+command's output. If the command fails,
+<I>getCommandOutput</I> raises an exception, using the text
+captured from the command's
+<tt>stderr</tt> as part of the exception's
+arguments.</p>
+
+<p class="docText">Most of the complexity of this code is due to the difficulty of
+capturing both the output and error streams of the child process
+independently and at the same time. Normal (blocking) read calls may
+deadlock if the child is trying to write to one stream, and the
+parent is waiting for data on the other stream; so, the streams must
+be set to nonblocking, and <tt>select</tt> must be used to
+wait for data on either of the streams.</p>
+
+<p class="docText">Note that the second <tt>select</tt> call is included just
+to add a 0.1-second sleep after each read. Counter intuitively, this
+allows the code to run much faster, since it gives the child time to
+put more data in the buffer. Without it, the parent may try to read
+only a few bytes at a time, which can be very expensive. Calling
+<tt>time.sleep(0.1)</tt> should be exactly equivalent, but
+since I was already, necessarily, calling
+<tt>select.select</tt> elsewhere in the
+recipe's code, I decided not to also import module
+<tt>time</tt> needlessly.</p>
+
+<p class="docText">If you want to capture only the output and don't
+mind the error stream going to the terminal, you can use the much
+simpler code presented in <i>getCommandOutput2</I>. If you
+want to suppress the error stream altogether, that's
+easy, toojust append <tt>2&gt;/dev/null</tt> to the
+command. For example:</p>
+
+<pre>listing = getCommandOutput2('ls -1 2&gt;/dev/null')</pre><br>
+
+
+<p class="docText">Another possibility is given by the <tt>os.popen4</tt>
+function, which combines the output and error streams of the child
+process. However, in that case the streams are combined in a
+potentially messy way, depending on how they are buffered in the
+child process, so this recipe can help.</P>
+
+<p class="docText">In Python 2.4, you can use class <tt>Popen</tt>, instead of
+<tt>popen2.Popen3</tt>, from the new standard library
+module <tt>subprocess</tt>. However, the issues highlighted
+in this recipe (namely, the need to use modules
+<tt>fcntl</tt> and <tt>select</tt> to make files
+nonblocking and coordinate the loop that interacts with the child
+process) aren't really affected by whether you use
+<tt>popen2</tt> or <tt>subprocess</tt>.</p>
+
+<p class="docText">This recipe <span class="docEmphasis">does</span>, as advertised, require a
+rather Unix-like underlying platform. Cygwin, which does a generally
+great job of emulating Unix on top of Windows, is not sufficient; for
+example, it offers no way to set files to nonblocking mode, nor to
+<tt>select</tt> on general files. (Under Windows, you are
+allowed to <tt>select</tt> only on sockets, not on other
+files.) If you must run on such problematic, non-Unix platforms, you
+may prefer a very different approach, based on using temporary files:</P>
+
+<pre>import os, tempfile
+def getCommandOutput(command):
+    outfile = tempfile.mktemp( )
+    errfile = tempfile.mktemp( )
+    cmd = "( %s ) &gt; %s 2&gt; %s" % (command, outfile, errfile)
+    err = os.system(cmd) &gt;&gt; 8
+    try:
+        if err != 0:
+            raise RuntimeError, '%r failed with exit code %d\n%s' % (
+                command, err, file(errfile).read( ))
+        return file(outfile).read( )
+    finally:
+        os.remove(outfile)
+        os.remove(errfile)</pre><br>
+
+
+
+<a name="pythoncook2-CHP-9-SECT-12.4"></a>
+<H4 class="docSection2Title">See Also</H4>
+
+<p class="docText"><a name="pythoncook2-CHP-9-ITERM-2583"></a>
+<a name="pythoncook2-CHP-9-ITERM-2584"></a>
+<a name="pythoncook2-CHP-9-ITERM-2585"></a>Documentation of the standard library
+modules <tt>os</tt>, <tt>popen2</tt>,
+<tt>fcntl</tt>, <tt>select</tt>, and
+<tt>tempfile</tt> in the <span class="docEmphasis">Library
+Reference</span> and <span class="docEmphasis">Python in a
+Nutshell</span>; (Python 2.4 only) module
+<tt>subprocess</tt> in the <span class="docEmphasis">Library
+Reference</span>.<a name="pythoncook2-CHP-9-ITERM-2586"></a> <a name="pythoncook2-CHP-9-ITERM-2587"></a></p>
+
+
+
+<a href="5991535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-9-sect-11.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-9-sect-13.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

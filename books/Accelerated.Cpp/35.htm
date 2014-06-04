@@ -1,0 +1,144 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
+<title>6.3 Classifying students, revisited</title>
+<link rel="stylesheet" type="text/css" href="./acc.css" />
+</head>
+
+<body>
+<div class="prevnext">
+<a href="34.htm"><img src="images/Prev1.gif" /></a>&nbsp;&nbsp;<a href="36.htm"><img src="images/Next1.gif" /></a>
+</div>
+<h3>6.3 Classifying students, revisited</h3>
+<p>In Chapter 5, we looked at the problem of copying records with failing grades into a separate 
+<code>vector</code> and then removing those records from the existing vector. The obvious, 
+easy approach to this problem proved to have abysmal performance as the input size 
+grew. We went on to show how to solve the performance problem by using a <code>list</code> 
+instead of a <code>vector</code>, but we also promised to revisit the problem and show an algorithmic 
+solution that would perform similarly to the revised data structure.</p>
+<p>We can use the algorithm library to demonstrate two other solutions. The first is 
+slightly slower because it uses a pair of library algorithms and visits every element twice. 
+We can do better by using a more specialized library algorithm that will let us solve the 
+problem in a single pass.</p>
+<h4>6.3.1 A two-pass solution</h4>
+<p>Our first approach will use a strategy similar to the one that we used in &sect;6.2.4/115, when 
+we wanted only the nonzero homework grades. In that case, we didn't want to change 
+<code>homework</code> itself, so we used <code>remove_copy</code> to put copies of the nonzero homework 
+grades into a separate <code>vector</code>. In our current problem, we need both to copy and 
+remove the nonzero elements:</p>
+<div class="prebox"><pre>
+vector&lt;Student_info&gt;
+    extract_fails(vector&lt;Student_info&gt;&amp; students) {
+    vector&lt;Student_info&gt; fail;
+    remove_copy_if(students.begin(), students.end(),
+                   back_inserter(fail), pgrade);
+    students.erase(remove_if(students.begin()), students.end(),
+                             fgrade), students.end());
+    return fail;
+}
+</pre></div>
+<p>The interface to the program is identical to that from &sect;5.3/82, which presented the obvious 
+<code>vector</code>-based solution that used iterators instead of indices. As in that solution, 
+we'll use the <code>vector</code> that we were passed to hold grades for students who passed, and 
+define <code>fail</code> to hold the failing grades. There the similarities end.</p>
+<p>In the original program, we used an iterator named <code>iter</code> to march through the container, 
+copying the records with failing grades into <code>fail</code>, and using the <code>erase</code> member 
+to erase them from <code>students</code>. This time, we use the <code>remove_copy_if</code> function to copy 
+the failing grades into <code>fail</code>. That function operates as did the <code>remove_copy</code> function 
+that we used in &sect;6.2.4/116, except that it uses a predicate as its test, rather than a value. 
+We give it a predicate that inverts the result of calling <code>fgrade</code> (&sect;5.1/75):</p>
+<div class="prebox"><pre>
+bool pgrade(const Student_info&amp; s)
+{
+    return !fgrade(s);
+}
+</pre></div>
+<p>When we pass a predicate to <code>remove_copy_if</code>, we are asking it &quot;remove&quot; each element 
+that satisfies the predicate. In this context, &quot;removing&quot; an element means not copying it, 
+so we copy only those elements that <i>do not </i>satisfy the predicate. Therefore, passing 
+<code>pgrade</code> to <code>remove_copy_if</code> copies only the student records with failing grades.</p>
+<p>The next statement is somewhat complicated. First, we call <code>remove_if</code> to &quot;remove&quot; 
+the elements that correspond to failing grades. Again, the quotes around &quot;remove&quot; are 
+because nothing is actually removed. Instead, <code>remove_if</code> copies all the elements that <i>do not </i>
+satisfy the predicate—in this case, all the student records with passing grades.</p>
+<p>This call is tricky to understand because <code>remove_if</code> uses the same sequence as its 
+source and destination. What it really does is copy to the beginning of the sequence the 
+elements that don't meet the predicate. For example, suppose we started with seven students 
+with grades as follows:</p>
+<center>
+<img src="images/pg118a.jpg" />
+</center>
+<p>Then the call to <code>remove_if</code> would leave the first two records untouched, because they're 
+already in the right places. It would &quot;remove&quot; the next two records by treating them as 
+free space to be overwritten by the next records that should be kept. So, when it sees the 
+fifth record, which represents a student who passed, it would copy that record into the 
+now free position that used to hold the first of the &quot;removed&quot; failing records, and so on:</p>
+<center>
+<img src="images/pg118b.jpg" />
+</center>
+<p>The result in this case would be to copy the four passing records to the beginning of the 
+sequence, leaving the remaining three records untouched. So that we can know how 
+much of the sequence is still relevant, <code>remove_if</code> returns an iterator that refers to one 
+past the last element that it did not &quot;remove&quot;:</p>
+<center>
+<img src="images/pg118c.jpg" />
+</center>
+<p>Next, we need to <code>erase</code> these unneeded records from <code>students</code>. We have not used this 
+version of <code>erase</code> before. It takes two iterators, and erases all the elements in the range 
+delimited by those iterators. If we <code>erase</code> the elements between the iterator returned from 
+the call to <code>remove_if</code> and <code>students.end()</code>, we are left with just the passing records:</p>
+<center>
+<img src="images/118d.jpg" />
+</center>
+<h4>6.3.2 A single-pass solution</h4>
+<p>Our first algorithmic solution performs pretty well, but we should be able to do slightly 
+better. The reason is that the solution in &sect;6.3.1/117 calculates the grade for every element 
+in students twice: once from <code>remove_copy_if</code> and a second time from <code>remove_if</code>.</p>
+<p>Although there is no library algorithm that does exactly what we want, there is one 
+that approaches our problem from a different angle: It takes a sequence and rearranges its 
+elements so that the ones that satisfy a predicate precede the ones that do not satisfy it.</p>
+<p>There are really two versions of this algorithm, which are named <code>partition</code> and 
+<code>stable_partition</code>. The difference is that <code>partition</code> might rearrange the elements 
+within each category, and <code>stable_partition</code> keeps them in the same order aside from 
+the partitioning. So, for example, if the student names were already in alphabetical order, 
+and we wanted to keep them that way within each category, we would need to use 
+<code>stable_partition</code> rather than partition.</p>
+<p>Each of these algorithms returns an iterator that represents the first element of the second 
+section. Therefore, we can extract the failing grades this way:</p>
+<div class="prebox"><pre>
+vector&lt;Student_info&gt;
+extract_fails(vector&lt;Student_info&gt;&amp; students)
+{
+    vector&lt;Student_info&gt;::iterator iter =
+        stable_partition(students.begin(), students.end(), pgrade);
+    vector&lt;Student_info&gt; fail(iter, students.end());
+    students.erase(iter, students.end());
+    
+    return fail;
+}
+</pre></div>
+<p>To understand what is going on here, let's start with our hypothetical input data again:</p>
+<center>
+<img src="images/119a.jpg" />
+</center>
+<p>After calling <code>stable_partition</code>, we would have</p>
+<center>
+<img src="images/119b.jpg" />
+</center>
+<p>We construct fail from a copy of the failing records, which are the ones in the range
+<code>[iter, students.end())</code>., and then erase those elements from <code>students</code>.</p>
+<p>When we ran our algorithm-based solutions, they had roughly the same overall performance 
+as the <code>list</code>-based solution. As expected, once the input was large enough, the 
+algorithm and <code>list</code>-based solutions were substantially better than the <code>vector</code> solution 
+that used erase. The two algorithmic solutions are good enough that the time consumed 
+by the input library dominated the timings for input files up to about 75,000 records. To 
+compare the effects of the two strategies in <code>extract_fails</code>, we separately analyzed the 
+performance of just this portion of the program. Our timings confirmed that the one-pass 
+algorithm ran about twice as fast as the two-pass solution.</p>
+<div class="prevnext">
+<a href="34.htm"><img src="images/Prev1.gif" /></a>&nbsp;&nbsp;<a href="36.htm"><img src="images/Next1.gif" /></a>
+</div>
+</body>
+</html>
+

@@ -1,0 +1,219 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Section 6.6.&nbsp; Techniques for Faster Expressions</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=regex3-CHP-6-SECT-5.html><img src="images/prev.gif" width="60" height="17" border="0" align="absmiddle" alt="Previous Page"></a>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=regex3-CHP-6-SECT-7.html><img src="images/next.gif" width="60" height="17" border="0" align="absmiddle" alt="Next Page"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><a name="regex3-CHP-6-SECT-6"></a>
+<H3 id="title-IDAIVCYH" class="docSection1Title">6.6. Techniques for Faster Expressions</H3>
+<a name="IDX-CHP-6-1964"></a> 
+<a name="IDX-CHP-6-1965"></a> 
+
+<p class="docText">The previous pages list the kinds of optimizations that I've seen implemented in Traditional NFA engines. No one program has them all, and whichever ones your favorite program happens to have now, they're certain to change sometime in the future. But, just understanding the kinds of optimizations that can be done gives you an edge in writing more efficient expressions. Combined with the understanding of how a Traditional NFA engine works, this knowledge can be applied in three powerful ways:</P>
+<UL><li><p class="docList"><span class="docEmphStrong">Write to the optimizations</span>. Compose expressions such that known optimizations (or ones that might be added in the future) can kick in. For example, using <img src=images/U2308.jpg border=0><tt>xx*</tt><img src=images/U230B.jpg border=0> instead of <img src=images/U2308.jpg border=0><tt>x+</tt><img src=images/U230B.jpg border=0> can allow a variety of optimizations to more readily kick in, such as the check of a required character or string (&#9758;245), or initial-character discrimination (&#9758;247).</P></li><li><p class="docList"><span class="docEmphStrong">Mimic the optimizations</span>. There are situations where you know your program doesn't have a particular optimization, but by mimicking the optimization yourself, you can potentially see a huge savings. As an example that we'll expand on soon, consider adding <img src=images/U2308.jpg border=0><tt>(?=t)</tt><img src=images/U230B.jpg border=0> to the start of <img src=images/U2308.jpg border=0><tt>this|that</tt><img src=images/U230B.jpg border=0>, to somewhat mimic the initial-character discrimination (&#9758;247) in systems that don't already determine from the regex that any match must begin with '<tt>t</tt>'.</P></LI><li><p class="docList"><span class="docEmphStrong">Lead the engine to a match</span>. Use your knowledge of how a Traditional NFA engine works to lead the engine to a match more quickly. Consider the <img src=images/U2308.jpg border=0><tt>this|that</tt><img src=images/U230B.jpg border=0> example. Each alternative begins with <img src=images/U2308.jpg border=0><tt>th</tt><img src=images/U230B.jpg border=0>; if the first's alternative can't match its <img src=images/U2308.jpg border=0><tt>th</tt><img src=images/U230B.jpg border=0>, the second alternative's <img src=images/U2308.jpg border=0><tt>th</tt><img src=images/U230B.jpg border=0> certainly can't match, so the attempt to do so is wasted. To avert that, you can use <img src=images/U2308.jpg border=0><tt>th(?:is|at)</tt><img src=images/U230B.jpg border=0> instead. That way, the <img src=images/U2308.jpg border=0><tt>th</tt><img src=images/U230B.jpg border=0> is tested only once, and the relatively expensive alternation is avoided until it's actually needed. And as a bonus, the leading raw-text <img src=images/U2308.jpg border=0><tt>th</tt><img src=images/U230B.jpg border=0> of <img src=images/U2308.jpg border=0><tt>th(?:is|at)</tt><img src=images/U230B.jpg border=0> is exposed, potentially allowing a number of other optimizations to kick in.</p></LI></UL>
+<p class="docText">It's important to realize that efficiency and optimizations can sometimes be touchy. There are a number of issues to keep in mind as you read through the rest of this section:</P>
+<ul><LI><p class="docList">Making a change that would seem to be certainly helpful can, in some situations, slow things down because you've just untweaked some other optimization that you didn't know was being applied.</P></li><li><p class="docList">If you add something to mimic an optimization that you know doesn't exist, it may well turn out that the work required to process what you added actually takes more time than it saves.</p></li><LI><p class="docList">If you add something to mimic an optimization that you know doesn't currently exist, it may defeat or duplicate the real optimization if it's later added when the tool is upgraded.</p></li><LI><p class="docList">Along the same lines, contorting an expression to try to pique one kind of optimization today may prohibit some future, more advantageous optimization from kicking in when the tool is upgraded.</p></li><li><p class="docList">Contorting an expression for the sake of efficiency may make the expression more difficult to understand and maintain.</p></li><li><p class="docList">The magnitude of the benefit (or harm) a particular change can have is almost certainly strongly dependent on the data it's applied to. A change that is beneficial with one set of data may actually be harmful with another type of data.</p></li></ul>
+<p class="docText">Let me give a somewhat crazy example: you find <img src=images/U2308.jpg border=0><tt>(000|999)$</tt><img src=images/U230B.jpg border=0> in a Perl script, and decide to turn those capturing parentheses into non-capturing parentheses. This should make things a bit faster, you think, since the overhead of capturing can now be eliminated. But surprise, this small and seemingly beneficial change can slow this regex down by <span class="docEmphasis">several orders of magnitude</span> (thousands and thousands of times slower). <span class="docEmphasis">What!?</span> It turns out that a number of factors come together just right in this example to cause the <span class="docEmphasis">end of string/line anchor</span> optimization (&#9758;246) to be turned off when non-capturing parentheses are used. I don't want to dissuade you from using non-capturing parentheses with Perltheir use is beneficial in the vast majority of casesbut in this particular case, it's a disaster.</p>
+<p class="docText">So, testing and benchmarking with the kind of data you expect to use in practice can help tell you how beneficial or harmful any change will be, but you've still got to weigh all the issues for yourself. That being said, I'll touch on some techniques that can be used toward squeezing out the last bit of efficiency out of an engine.</p>
+<a name="regex3-CHP-6-SECT-6.1"></a>
+<h4 id="title-IDAWYCYH" class="docSection2Title">6.6.1. Common Sense Techniques</h4>
+<p class="docText">Some of the most beneficial things you can do require only common sense.</p>
+<a name="regex3-CHP-6-SECT-6.1.1"></a>
+<h5 id="title-IDA4YCYH" class="docSection3Title">6.6.1.1. Avoid recompiling</h5>
+<p class="docText">Compile or define the regular expression as few times as possible. With object-oriented handling (&#9758;95), you have the explicit control to do this. If, for example, you want to apply a regex in a loop, create the regex object <span class="docEmphasis">outside</span> of the loop, then <span class="docEmphasis">use</span> it repeatedly inside the loop.</p>
+<p class="docText">With a procedural approach, as with GNU Emacs and Tcl, try to keep the number of regular expressions used within a loop below the cached threshold of the tool (&#9758;244).</P>
+<p class="docText">With an integrated approach like Perl, try not to use variable interpolation within a regex inside a loop, because at a minimum, it causes the regex value to be reevaluated at each iteration, even if you know the value never changes. (Perl does, however, provide efficient ways around the problem &#9758;348.)</p>
+
+<a name="regex3-CHP-6-SECT-6.1.2"></a>
+<H5 id="title-IDAQZCYH" class="docSection3Title">6.6.1.2. Use non-capturing parentheses</h5>
+<p class="docText">If you don't use the capturing aspect of capturing parentheses, use non-capturing <img src=images/U2308.jpg border=0><tt>(?:&#8943;)</tt><img src=images/U230B.jpg border=0> parentheses (&#9758;45). Besides the direct savings of not having to capture, there can be residual savings because it can make the state needed for backtracking less complex, and hence faster. It can also open up additional optimizations, such as needless-parentheses elimination (&#9758;248).</p>
+
+<a name="regex3-CHP-6-SECT-6.1.3"></a>
+<H5 id="title-IDA2ZCYH" class="docSection3Title">6.6.1.3. Don't add superfluous parentheses</H5>
+<p class="docText">Use parentheses as you need them, but adding them otherwise can prohibit optimizations from kicking in. Unless you need to know the last character matched by <img src=images/U2308.jpg border=0><tt>.*</tt><img src=images/U230B.jpg border=0>, don't use <img src=images/U2308.jpg border=0><tt>(.)*</tt><img src=images/U230B.jpg border=0>. This may seem obvious, but after all, this is the "<a class="docLink" href="#regex3-CHP-6-SECT-6.1">common sense techniques</a>" section.</P>
+
+<a name="regex3-CHP-6-SECT-6.1.4"></a>
+<H5 id="title-IDAP0CYH" class="docSection3Title">6.6.1.4. Don't use superfluous character classes</h5>
+<p class="docText">This may seem to be overly obvious as well, but I've often seen expressions like <img src=images/U2308.jpg border=0><tt>^.*[:]</tt><img src=images/U230B.jpg border=0> from novice programmers. I'm not sure why one would ever use a class with a single character in itit incurs the processing overhead of a class without gaining any multi-character matching benefits of a class. I suppose that when the character is a metacharacter, such as <img src=images/U2308.jpg border=0><tt>[.]</tt><img src=images/U230B.jpg border=0> and <img src=images/U2308.jpg border=0><tt>[*]</tt><img src=images/U230B.jpg border=0>, it's probably because the author didn't know about escaping, as with <img src=images/U2308.jpg border=0><tt>\.</tt><img src=images/U230B.jpg border=0> and <img src=images/U2308.jpg border=0><tt>\*</tt><img src=images/U230B.jpg border=0>. I see this most often with whitespace in a free-spacing mode (&#9758;111).</P>
+<p class="docText">Somewhat related, users of Perl that read the first edition of this book may sometimes write something like <img src=images/U2308.jpg border=0><tt>^[Ff][Rr][Oo][Mm]:</tt><img src=images/U230B.jpg border=0> instead of a case-insensitive use of <img src=images/U2308.jpg border=0><tt>^from:</tt><img src=images/U230B.jpg border=0>. Old versions of Perl were very inefficient with their case-insensitive matching, so I recommended the use of classes like this in some cases. That recommendation has been lifted, as the case-insensitive inefficiency has been fixed for some years now.</p>
+
+<a name="regex3-CHP-6-SECT-6.1.5"></a>
+<h5 id="title-IDAK1CYH" class="docSection3Title">6.6.1.5. Use leading anchors</H5>
+<a name="IDX-CHP-6-1966"></a> 
+<a name="IDX-CHP-6-1967"></a> 
+<a name="IDX-CHP-6-1968"></a> 
+<a name="IDX-CHP-6-1969"></a> 
+<a name="IDX-CHP-6-1970"></a> 
+
+<p class="docText">Except in the most rare cases, any regex that begins with <img src=images/U2308.jpg border=0><tt>.*</tt><img src=images/U230B.jpg border=0> should probably have <img src=images/U2308.jpg border=0><tt>^</tt><img src=images/U230B.jpg border=0> or <img src=images/U2308.jpg border=0><tt>\A</tt><img src=images/U230B.jpg border=0> (&#9758;129) added to the front. If such a regex can't match when applied at the beginning of the string, it won't be able to match any better when the bump-along applies it starting at the second character, third character, and so on. Adding the anchor (either explicitly, or auto-added via an optimization<a name="IDX-CHP-6-1971"></a> 
+ &#9758;246) allows the common start-of-line anchor optimization to kick in, saving a lot of wasted effort.</P>
+
+
+<a name="regex3-CHP-6-SECT-6.2"></a>
+<h4 id="title-IDAW2CYH" class="docSection2Title">6.6.2. Expose Literal Text</h4>
+<p class="docText">Many of the native optimizations we've seen in this chapter hinge on the regex engine's ability to recognize that there is some span of literal text that must be part of any successful match. Some engines are better at figuring this out than others, so here are some hand-optimization techniques that help "expose" literal text, increasing the chances that an engine can recognize more of it, allowing the various literal-text optimizations to kick in.</P>
+<a name="regex3-CHP-6-SECT-6.2.1"></a>
+<H5 id="title-IDA42CYH" class="docSection3Title">6.6.2.1. "Factor out" required components from quantifiers</H5>
+<p class="docText">Using <img src=images/U2308.jpg border=0><tt>xx*</tt><img src=images/U230B.jpg border=0> instead of <img src=images/U2308.jpg border=0><tt>x+</tt><img src=images/U230B.jpg border=0> exposes '<tt>x</tt>' as being required. The same logic applies to the rewriting of <img src=images/U2308.jpg border=0><tt>-{5,7}</tt><img src=images/U230B.jpg border=0> as <img src=images/U2308.jpg border=0><tt>------{0,2}</tt><img src=images/U230B.jpg border=0>.</p>
+
+<a name="regex3-CHP-6-SECT-6.2.2"></a>
+<H5 id="title-IDAS3CYH" class="docSection3Title">6.6.2.2. "Factor out" required components from the front of alternation</H5>
+<p class="docText">Using <img src=images/U2308.jpg border=0><tt>th(?:is|at)</tt><img src=images/U230B.jpg border=0> rather than <img src=images/U2308.jpg border=0><tt>(?:this|that)</tt><img src=images/U230B.jpg border=0> exposes that <img src=images/U2308.jpg border=0><tt>th</tt><img src=images/U230B.jpg border=0> is required. You can also "factor out"<a name="IDX-CHP-6-1972"></a> 
+ on the right side, when the common text follows the differing text: <img src=images/U2308.jpg border=0><tt>(?:optim|standard)ization</tt><img src=images/U230B.jpg border=0>. As the next section describes, these can be particularly important when what is being factored out includes an anchor.</p>
+
+
+<a name="regex3-CHP-6-SECT-6.3"></a>
+<h4 id="title-IDAK4CYH" class="docSection2Title">6.6.3. Expose Anchors</h4>
+<a name="IDX-CHP-6-1973"></a> 
+<a name="IDX-CHP-6-1974"></a> 
+<a name="IDX-CHP-6-1975"></a> 
+
+<p class="docText">Some of the most fruitful internal regex optimizations are those that take advantage of anchors (like <img src=images/U2308.jpg border=0><tt>^</tt><img src=images/U230B.jpg border=0>, <img src=images/U2308.jpg border=0><tt>$</tt><img src=images/U230B.jpg border=0>, and <img src=images/U2308.jpg border=0><tt>\G</tt><img src=images/U230B.jpg border=0>) that tie the expression to one end of the target string or another. Some engines are not as good as others at understanding when such an optimization can take place, but there are techniques you can use to help.</p>
+<a name="regex3-CHP-6-SECT-6.3.1"></a>
+<H5 id="title-IDAI5CYH" class="docSection3Title">6.6.3.1. Expose <tt>^</tt> and <tt>\G</tt> at the front of expressions</h5>
+<p class="docText"><img src=images/U2308.jpg border=0><tt>^(?:abc|123)</tt><img src=images/U230B.jpg border=0> and <img src=images/U2308.jpg border=0><tt>^abc|^123</tt><img src=images/U230B.jpg border=0> are logically the same expression, but many more regex engines can apply the <span class="docEmphasis">Start of string/line anchor</span> optimization (&#9758;246) with the first than the second. So, choosing to write it the first way can make it much more efficient. PCRE (and tools that use it) is efficient with either, but most other NFA tools are much more efficient with the exposed version.</p>
+<p class="docText">Another difference can be seen by comparing <img src=images/U2308.jpg border=0><tt>(^abc)</tt><img src=images/U230B.jpg border=0> and <img src=images/U2308.jpg border=0><tt>^(abc)</tt><img src=images/U230B.jpg border=0>. The former doesn't have many redeeming qualities, as it both "hides" the anchor, and causes the capturing parentheses to be entered before the anchor is even checked, which can be inefficient with some systems. Some systems (PCRE, Perl, the .NET languages) are efficient with either, but others (Ruby and Sun's Java regex library) recognize the optimization only with the exposed version.</P>
+<p class="docText">Python doesn't seem to have the anchor optimization, so these techniques don't currently matter for it. Of course, most optimizations in this chapter don't apply to Tcl (&#9758;243).</p>
+
+<a name="regex3-CHP-6-SECT-6.3.2"></a>
+<h5 id="title-IDAJADYH" class="docSection3Title">6.6.3.2. Expose <tt>$</tt> at the end of expressions</h5>
+<p class="docText">This is conceptually very similar to the previous section, where <img src=images/U2308.jpg border=0><tt>abc$|123$</tt><img src=images/U230B.jpg border=0> and <img src=images/U2308.jpg border=0><tt>(?:abc|123)$</tt><img src=images/U230B.jpg border=0> are logically the same expression, but can be treated differently by the optimizers. Currently, there is a difference only for Perl, as only Perl currently has the <span class="docEmphasis">End of string/line anchor</span> optimization (&#9758;246). The optimization kicks in with <img src=images/U2308.jpg border=0><tt>(&#8943;|&#8943;)$</tt><img src=images/U230B.jpg border=0> but not with <img src=images/U2308.jpg border=0><tt>(&#8943;$|&#8943;$)</tt><img src=images/U230B.jpg border=0>.</p>
+
+
+<a name="regex3-CHP-6-SECT-6.4"></a>
+<h4 id="title-IDABBDYH" class="docSection2Title">6.6.4. Lazy Versus Greedy: Be Specific</h4>
+<p class="docText">Usually, the choice between lazy and greedy quantifiers is dictated by the specific needs of the regex. For example, <img src=images/U2308.jpg border=0><tt>^<span class="docEmphStrong">.*:</span></tt><img src=images/U230B.jpg border=0> differs substantially from <img src=images/U2308.jpg border=0><tt>^<span class="docEmphStrong">.*?:</span></tt><img src=images/U230B.jpg border=0> in that the former one matches until the final colon, while the latter one matches until the first. But, suppose that you knew that your target data had exactly one colon on it. If that's the case, the semantics of both are the same ("match until the colon"), so it's probably smart to pick the one that will run fastest.</p>
+<p class="docText">It's not always obvious which is best, but as a rule of thumb when the target strings are long, if you expect the colon to generally be near the start of the string, using the lazy quantifier<a name="IDX-CHP-6-1976"></a> 
+ allows the engine to find the colon sooner. Use the greedy quantifier if you expect the colon to be toward the end of the string. If the data is random, and you have no idea which will be more likely, use a greedy quantifier, as they are generally optimized a bit better than non-greedy quantifier, especially when what follows in the regex disallows the <span class="docEmphasis">character following lazy quantifier</span> optimization<a name="IDX-CHP-6-1977"></a> 
+ (&#9758;248).</p>
+<p class="docText">When the strings to be tested are short, it becomes even less clear. When it comes down to it, either way is pretty fast, but if you need every last bit of speed, benchmark against representative data.</p>
+<p class="docText">A somewhat related issue is in situations where either a lazy quantifier or a negated class can be used (such as <img src=images/U2308.jpg border=0><tt>^.*?:</tt><img src=images/U230B.jpg border=0> versus <img src=images/U2308.jpg border=0><tt>^[^:]*:</tt><img src=images/U230B.jpg border=0>), which should be used? Again, this is dependent on the data and the language, but with most engines, using a negated class is much more efficient than a lazy quantifier. Perl is an exception, because it has that <span class="docEmphasis">character following lazy quantifier</span> optimization.</p>
+
+<a name="regex3-CHP-6-SECT-6.5"></a>
+<h4 id="title-IDARCDYH" class="docSection2Title">6.6.5. Split Into Multiple Regular Expressions</h4>
+<a name="IDX-CHP-6-1978"></a> 
+<a name="IDX-CHP-6-1979"></a> 
+<a name="IDX-CHP-6-1980"></a> 
+<a name="IDX-CHP-6-1981"></a> 
+<a name="IDX-CHP-6-1982"></a> 
+<a name="IDX-CHP-6-1983"></a> 
+<a name="IDX-CHP-6-1984"></a> 
+<a name="IDX-CHP-6-1985"></a> 
+<a name="IDX-CHP-6-1986"></a> 
+<a name="IDX-CHP-6-1987"></a> 
+<a name="IDX-CHP-6-1988"></a> 
+<a name="IDX-CHP-6-1989"></a> 
+<a name="IDX-CHP-6-1990"></a> 
+
+<p class="docText">There are cases where it's much faster to apply many small regular expressions instead of one large one. For a somewhat contrived example, if you wanted to check a large string to see if it had any of the month names, it would probably be much faster to use separate checks of <img src=images/U2308.jpg border=0><tt>January</tt><img src=images/U230B.jpg border=0>, <img src=images/U2308.jpg border=0><tt>February</tt><img src=images/U230B.jpg border=0>, <img src=images/U2308.jpg border=0><tt>March</tt><img src=images/U230B.jpg border=0>, etc., than to use one <img src=images/U2308.jpg border=0><tt>January|February|March|&#8943;</tt><img src=images/U230B.jpg border=0>. With the latter, there's no literal text known to be required for any match, so an <span class="docEmphasis">embedded literal string check</span> optimization (&#9758;247) is not possible. With the all-in-one regex, the mechanics of testing each subexpression at each point in the text can be quite slow.</p>
+<p class="docText">Here's an interesting situation I ran into at about the same time that I was writing this section. When working with a Perl data-handling module, I realized that I had a bug with my client program that caused it to sent bogus data that looked like '<tt>HASH(0x80f60ac)</tt>'<a name="IDX-CHP-6-1991"></a> 
+ instead of the actual data. So, I thought I'd augment the module to look for that kind of bogus data and report an error. The straightforward regex for what I wanted is <img src=images/U2308.jpg border=0><tt>\b(?:SCALAR|ARRAY|&#8943;|HASH)\(0x[0-9a-fA-F]+\)</tt><img src=images/U230B.jpg border=0>.</p>
+<p class="docText">This was a situation where efficiency was extremely important. Would this be fast? Perl has a debugging mode that can tell you about some of the optimizations it uses with any particular regex (&#9758;361), so I checked. I hoped to find that the <span class="docEmphasis">pre-check of required string</span> optimization (&#9758;245) would kick in, since an advanced enough engine should be able to figure out that '(<tt>0x</tt>' is required in any match. Knowing the data that I'd apply this to would almost never have '(<tt>0x</tt>', I knew that such a pre-check would eliminate virtually every line. Unfortunately, Perl didn't pick this out, so I was left with a regex that would entail a lot of alternation at every character of every target string. That's slower than I wanted.</p>
+<p class="docText">Since I was in the middle of researching and writing about optimizations, I thought hard about how I could rewrite the regex to garner some of the better optimizations. One thought I had was to rewrite it along the form of the somewhat complex <img src=images/U2308.jpg border=0><tt>\(0x<img border="0" alt="" width="212" height="13" SRC="images/regex3_u0610.jpg">[0-9a-fA-F]+\)</tt><img src=images/U230B.jpg border=0>. The approach here is that once <img src=images/U2308.jpg border=0><tt>\(0x</tt><img src=images/U230B.jpg border=0> has matched, the positive lookbehind (underlined for clarity) makes sure that what came before is allowed, and then checks that what comes after is expected as well. The whole reason to go through these regex gymnastics is to get the regex to lead with non-optional literal text <img src=images/U2308.jpg border=0><tt>\(0x</tt><img src=images/U230B.jpg border=0>, which allows a lot of good optimizations to kick in. In particular, I'd expect that <span class="docEmphasis">pre-check of required string</span> optimization to kick in, as well as the <span class="docEmphasis">initial character/substring discrimination</span> optimization (&#9758;247). I'm sure that these would have made it very fast, but Perl doesn't allow variable-length lookbehind (&#9758;133), so I was back to square one.</p>
+<p class="docText">However, I realized that since Perl wasn't doing the pre-check for <img src=images/U2308.jpg border=0><tt>\(0x</tt><img src=images/U230B.jpg border=0> for me, I could just do it myself:</p>
+<pre>
+    if ($data =~ m/\(0x/
+        and
+        $data =~ m/(?:SCALAR|ARRAY|&#8943;|HASH)\(0x[0-9a-fA-F]+\)/)
+    {
+        # warn about bogus data&#8943;
+    }
+</pre><BR>
+
+<p class="docText">The check of <img src=images/U2308.jpg border=0><tt>\(0x</tt><img src=images/U230B.jpg border=0> eliminates virtually every line, so this leaves the check of the relatively slow full regex for only when the likelihood of a match is high. This created a wonderful balance of efficiency (very high) and readability (very high).<sup class="docFootnote"><a class="docLink" href="#regex3-CHP-6-FN-7">[<img src=images/U2020.jpg border=0>]</a></sup>
+</p><blockquote><p class="docFootnote"><sup><a name="regex3-CHP-6-FN-7">[<img src=images/U2020.jpg border=0>]</a></sup> <img src=images/U2020.jpg border=0> You can see this in action for yourself. The module in question, <tt>DBIx::DWIW</tt><a name="IDX-CHP-6-1992"></a> 
+<a name="IDX-CHP-6-1993"></a> 
+ (available on CPAN), allows very easy access to a MySQL database. Jeremy Zawodny and I developed it at Yahoo!.<a name="IDX-CHP-6-1994"></a> 
+</P></blockquote>
+
+<a name="regex3-CHP-6-SECT-6.6"></a>
+<h4 id="title-IDAHHDYH" class="docSection2Title">6.6.6. Mimic Initial-Character Discrimination</h4>
+<a name="IDX-CHP-6-1995"></a> 
+<a name="IDX-CHP-6-1996"></a> 
+<a name="IDX-CHP-6-1997"></a> 
+<a name="IDX-CHP-6-1998"></a> 
+<a name="IDX-CHP-6-1999"></a> 
+
+<p class="docText">If the <span class="docEmphasis">initial-character discrimination</span> optimization (&#9758;247) is not done by your implementation, you can mimic<a name="IDX-CHP-6-2000"></a> 
+ it yourself by adding appropriate lookahead (&#9758;133) to the start of the regex. The lookahead can "pre-check" that you're at an appropriate starting character before you let the rest of the regex match.</P>
+<p class="docText">For example, for <img src=images/U2308.jpg border=0><tt>Jan|Feb|&#8943;|Dec</tt><img src=images/U230B.jpg border=0>, use <img src=images/U2308.jpg border=0><tt><span class="docEmphStrong">(?=[JFMASOND])(?:</span>Jan|Feb|&#8943;|Dec)</tt><img src=images/U230B.jpg border=0>. The leading <img src=images/U2308.jpg border=0><tt>[JFMASOND]</tt><img src=images/U230B.jpg border=0> represents letters that can begin the month names in English. This must be done with care, though, because the added overhead of the lookahead may overshadow the savings. In this particular example, where the lookahead is pre-checking for many alternatives that are likely to fail, it is beneficial for most systems I've tested (Java, Perl, Python, Ruby, .NET languages), none of which apparently are able to derive <img src=images/U2308.jpg border=0><tt>[JFMASOND]</tt><img src=images/U230B.jpg border=0> from <img src=images/U2308.jpg border=0><tt>Jan|Feb|&#8943;|Dec</tt><img src=images/U230B.jpg border=0> themselves.</P>
+<p class="docText">PHP/PCRE does not apply this optimization by default, but it can with the use of PCRE's <tt>pcre_study</tt><a name="IDX-CHP-6-2001"></a> 
+ (in PHP, the <span class="docEmphStrong">S</span><a name="IDX-CHP-6-2002"></a> 
+ pattern modifier &#9758;478). Tcl, of course, can do it perfectly (&#9758;243).</P>
+<p class="docText">A behind-the-scenes check of <img src=images/U2308.jpg border=0><tt>[JFMASOND]</tt><img src=images/U230B.jpg border=0> by an engine's native optimization is certainly faster than the same check explicitly added by us to the regex proper. Is there a way we can modify the regex so that the engine will check natively? Well, with many systems, you can by using the horribly contorted:</P>
+<pre>
+    <img src=images/U2308.jpg border=0>[JFMASOND]<span class="docEmphStrong">(?:</span>(?&lt;=J)an|(?&lt;=F)eb|&#8943;|(?&lt;=D)ec<span class="docEmphStrong">)</span><img src=images/U230B.jpg border=0>
+</pre><br>
+
+<p class="docText">I don't expect you to be able to understand that regex at first sight, but taking the time to understand what it does, and how, is a good exercise. The simple class leading the expression can be picked up by most systems' <span class="docEmphasis">initial-character discrimination</span> optimization, thereby allowing the transmission itself to effectively pre-check <img src=images/U2308.jpg border=0><tt>[JFMASOND]</tt><img src=images/U230B.jpg border=0>. If the target string has few matching characters, the result can be substantially faster than the <img src=images/U2308.jpg border=0><tt>Jan|&#8943;|Dec</tt><img src=images/U230B.jpg border=0> original, or our prepended-lookahead. But, if the target string has many first-character matches, the extra overhead of all the added lookbehind can actually make things slower. On top of this worry, it's certainly a <span class="docEmphasis">much</span> less readable regular expression. But, the exercise is interesting and instructive nevertheless.</P>
+<a name="regex3-CHP-6-SECT-6.6.1"></a>
+<h5 id="title-IDANKDYH" class="docSection3Title">6.6.6.1. Don't do this with Tcl</h5>
+<a name="IDX-CHP-6-2003"></a> 
+<a name="IDX-CHP-6-2004"></a> 
+<a name="IDX-CHP-6-2005"></a> 
+<a name="IDX-CHP-6-2006"></a> 
+
+<p class="docText">The previous example shows how hand tweaking has the potential to really make things worse. The sidebar on page 243 notes that regular expressions in Tcl are mostly immune to the form of the expression, so for the most part attempts to hand optimize are meaningless. Well, here's an example where it <span class="docEmphasis">does</span> matter. Adding the explicit <img src=images/U2308.jpg border=0><tt>(?=[JFMASOND])</tt><img src=images/U230B.jpg border=0> pre-check causes Tcl to slow down by a factor of about 100x in my tests.</P>
+
+<a name="regex3-CHP-6-SECT-6.6.2"></a>
+<H5 id="title-IDAQLDYH" class="docSection3Title">6.6.6.2. Don't do this with PHP</h5>
+<p class="docText">As mentioned earlier, this shouldn't be done in PHP because you can enable the optimization with PHP's "study" option, the S pattern modifier. Details are in <a class="docLink" href="regex3-CHP-10.html#regex3-CHP-10">Chapter 10</a>, starting on page 478.</p>
+
+
+<a name="regex3-CHP-6-SECT-6.7"></a>
+<H4 id="title-IDABMDYH" class="docSection2Title">6.6.7. Use Atomic Grouping and Possessive Quantifiers</H4>
+<p class="docText">There are many cases when atomic grouping (&#9758;139) and possessive quantifiers (&#9758;142) can greatly increase the match speed, even though they don't change the kind of matches that are possible. For example, if <img src=images/U2308.jpg border=0><tt>^[^:]+:</tt><img src=images/U230B.jpg border=0> can't match the first time the colon is attempted, it certainly can't match after backtracking back into the <img src=images/U2308.jpg border=0><tt>[^:]+</tt><img src=images/U230B.jpg border=0>, since any character "given up" by that backtracking, by definition, can't match a colon. The use of atomic grouping <img src=images/U2308.jpg border=0><tt>^<span class="docEmphStrong">(?&gt;</span>[^:]+<span class="docEmphStrong">):</span></tt><img src=images/U230B.jpg border=0> or a possessive quantifier <img src=images/U2308.jpg border=0><tt>^[^:]++:</tt><img src=images/U230B.jpg border=0> causes the states from the plus to be thrown away, or not created in the first place. Since this leaves nothing for the engine to backtrack to, it ensures that it doesn't backtrack unfruitfully. (The sidebar on page 251 suggests that this can be done automatically by a smart enough engine.)</P>
+<p class="docText">However, I must stress that misusing either of these constructs can inadvertently change what kind of matches are allowed, so great care must be taken. For example, using them with <img src=images/U2308.jpg border=0><tt>^.*:</tt><img src=images/U230B.jpg border=0>, as with <img src=images/U2308.jpg border=0><tt>^<span class="docEmphStrong">(?&gt;.*):</span></tt><img src=images/U230B.jpg border=0>, guarantees failure. The entire line is matched by <img src=images/U2308.jpg border=0><tt>.*</tt><img src=images/U230B.jpg border=0>, and this includes any colon that the later <img src=images/U2308.jpg border=0><tt>:</tt><img src=images/U230B.jpg border=0> needs. The atomic grouping removes the ability for the backtracking required to let <img src=images/U2308.jpg border=0><tt>:</tt><img src=images/U230B.jpg border=0> match, so failure is guaranteed.</p>
+
+<a name="regex3-CHP-6-SECT-6.8"></a>
+<H4 id="title-IDAMNDYH" class="docSection2Title">6.6.8. Lead the Engine to a Match</H4>
+<a name="IDX-CHP-6-2007"></a> 
+<a name="IDX-CHP-6-2008"></a> 
+<a name="IDX-CHP-6-2009"></a> 
+<a name="IDX-CHP-6-2010"></a> 
+<a name="IDX-CHP-6-2011"></a> 
+<a name="IDX-CHP-6-2012"></a> 
+<a name="IDX-CHP-6-2013"></a> 
+<a name="IDX-CHP-6-2014"></a> 
+<a name="IDX-CHP-6-2015"></a> 
+<a name="IDX-CHP-6-2016"></a> 
+
+<p class="docText">One concept that goes a long way toward more efficient NFA regular expressions is pushing "control" issues as far back in the matching process as possible. One example we've seen already is the use of <img src=images/U2308.jpg border=0><tt>th(?:is|at)</tt><img src=images/U230B.jpg border=0> instead of <img src=images/U2308.jpg border=0><tt>this|that</tt><img src=images/U230B.jpg border=0>. With the latter, the alternation is a top-level control issue, but with the former, the relatively expensive alternation is not considered until <img src=images/U2308.jpg border=0><tt>th</tt><img src=images/U230B.jpg border=0> has been matched.</p>
+<p class="docText">The next section, "<a class="docLink" href="regex3-CHP-6-SECT-7.html#regex3-CHP-6-SECT-7">Unrolling the Loop</a>," is an advanced form of this, but there are a few simple techniques I can mention here.</p>
+<a name="regex3-CHP-6-SECT-6.8.1"></a>
+<h5 id="title-IDASPDYH" class="docSection3Title">6.6.8.1. Put the most likely alternative first</h5>
+<p class="docText">Throughout the book, we've seen a number of situations where the order in which alternatives are presented matters greatly (&#9758;28, 176, 189, 216). In such situations, the correctness of the match take precedence over optimization, but otherwise, if the order doesn't matter to the correctness, you can gain some efficiency by placing the most-likely alternatives first.</P>
+<p class="docText">For example, when building a regex to match a hostname<a name="IDX-CHP-6-2017"></a> 
+ (&#9758;205) and listing the final domain parts, some might find it appealing to list them in alphabetical order, as with <img src=images/U2308.jpg border=0><tt>(?:aero|biz|com|coop|&#8943;)</tt><img src=images/U230B.jpg border=0>. However, some of those early in the list are new and not currently popular, so why waste the time to check for them first when you know they will likely fail most of the time? An arrangement with the more popular first, such as <img src=images/U2308.jpg border=0><tt>(?:com|edu|org|net|&#8943;)</tt><img src=images/U230B.jpg border=0>, is likely to lead to a match more quickly, more often.</p>
+<p class="docText">Of course, this matters only for a Traditional NFA engine, and then, only for when there <span class="docEmphasis">is</span> a match. With a POSIX NFA, or with a failure, all alternatives must be checked and so the ordering doesn't matter.</p>
+
+<a name="regex3-CHP-6-SECT-6.8.2"></a>
+<H5 id="title-IDAPQDYH" class="docSection3Title">6.6.8.2. Distribute into the end of alternation</h5>
+<a name="IDX-CHP-6-2018"></a> 
+
+<a name="IDX-CHP-6-2019"></a> 
+
+<p class="docText">Continuing with a convenient example, compare <img src=images/U2308.jpg border=0><tt><span class="docEmphStrong">(?:</span>com|edu|&#8943;|[a-z][a-z]<span class="docEmphStrong">)\b</span></tt><img src=images/U230B.jpg border=0> with <img src=images/U2308.jpg border=0><tt>com<span class="docEmphStrong">\b</span>|edu<span class="docEmphStrong">\b</span>|&#8943;<span class="docEmphStrong">\b</span>|[a-z][a-z]<span class="docEmphStrong">\b</span></tt><img src=images/U230B.jpg border=0>. In the latter, the <img src=images/U2308.jpg border=0><tt>\b</tt><img src=images/U230B.jpg border=0> after the alternation has been distributed onto the end of each alternative. The possible benefit is that it may allow an alternative that matches, but whose match would have been undone by the <img src=images/U2308.jpg border=0><tt>\b</tt><img src=images/U230B.jpg border=0> after the alternation, to fail a bit quicker, inside the alternation. This allows the failure to be recognized before the overhead of exiting the alternation is needed.</p>
+<p class="docText">This is perhaps not the best example to show the value of this technique, since it shows promise only for the specific situation when an alternative is likely to match, but what comes right after is likely to fail. We'll see a better example of this concept later in this chapterlook for the discussion of <tt>$OTHER*</tt> on page 280.</p>
+<p class="docText"><span class="docEmphasis"><span class="docEmphStrong">This optimization can be dangerous</span></span>. One very important concern in applying this hand optimization is that you take care not to defeat more profitable native optimizations. For example, if the "distributed" subexpression is literal text, as with the distribution of the colon from <img src=images/U2308.jpg border=0><tt><span class="docEmphStrong">(?:</span>this|that<span class="docEmphStrong">):</span>)</tt><img src=images/U230B.jpg border=0> to <img src=images/U2308.jpg border=0><tt>this:|that:</tt><img src=images/U230B.jpg border=0>, you're directly conflicting with some of the ideas in the "<a class="docLink" href="#regex3-CHP-6-SECT-6.2">Expose Literal Text</a>" section (&#9758;255). All things being equal, I think that those optimizations would be much more fruitful, so be careful not to defeat them in favor of this one.</p>
+<p class="docText">A similar warning applies to distributing a regex-ending <img src=images/U2308.jpg border=0><tt>$</tt><img src=images/U230B.jpg border=0> on systems that benefit from an exposed end-anchor (&#9758;256). On such systems, <img src=images/U2308.jpg border=0><tt><span class="docEmphStrong">(?:</span>com|edu|&#8943;<span class="docEmphStrong">)$</span></tt><img src=images/U230B.jpg border=0> is much faster than the distributed <img src=images/U2308.jpg border=0><tt>com<span class="docEmphStrong">$</span>|edu<span class="docEmphStrong">$</span>|&#8943;<span class="docEmphStrong">$</span></tt><img src=images/U230B.jpg border=0>. (Among the many systems I tested, only Perl currently supports this.)</p>
+
+
+
+<a href="7041536.html"><img src="images/pixel.jpg" alt="" width="1" height="1" border="0"></a></TD></TR></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=regex3-CHP-6-SECT-5.html><img src="images/prev.gif" width="60" height="17" border="0" align="absmiddle" alt="Previous Page"></a>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=regex3-CHP-6-SECT-7.html><img src="images/next.gif" width="60" height="17" border="0" align="absmiddle" alt="Next Page"></a>
+</div></td></tr></table>
+</body></html>

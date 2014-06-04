@@ -1,0 +1,253 @@
+<html><head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="4.1 An Introduction to Parsers"-->
+<link rel="STYLESHEET" type="text/css" href="FILES/style.css">
+<link rel="STYLESHEET" type="text/css" href="FILES/docsafari.css">
+<style type="text/css">	.tt1    {font-size: 10pt;}</style>
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<td class="tt1"><a href="NFO/lib.html">[ Team LiB ]</a></td><td valign="top" class="tt1" align="right">
+	<a href="0321112547_ch04.html"><img src="FILES/btn_prev.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+	<a href="0321112547_ch04lev1sec2.html"><img src="FILES/btn_next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="ch04lev1sec1"></A><H3 class="docSection1Title">4.1 An Introduction to Parsers</H3>
+<A NAME="ch04lev2sec1"></A><H4 class="docSection2Title">4.1.1 When Data Becomes Deep and Texts Become Stateful</H4>
+<P class="docText">Regular expressions can match quite complicated patterns, but they fall short when it comes to matching arbitrarily nested subpatterns. Such nested subpatterns occur quite often in programming languages and textual markup languages (and other places sometimes). For example, in HTML documents, you can find lists or tables nested inside each other. For that matter, character-level markup is also allowed to nest arbitrarily—the following defines a valid HTML fragment:</P>
+<pre>
+&gt;&gt;&gt;  s = '''&lt;p&gt;Plain text, &lt;i&gt;italicized phrase,
+            &lt;i&gt;italicized subphrase&lt;/i&gt;, &lt;b&gt;bold
+            subphrase&lt;/b&gt;&lt;/i&gt;, &lt;i&gt;other italic
+            phrase&lt;/i&gt;&lt;/p&gt;'''
+</pre>
+<P class="docText">The problem with this fragment is that most any regular expression will match either less or more than a desired <TT>&lt;i&gt;</TT> element body. For example:</P>
+<pre>
+&gt;&gt;&gt; ital = r'''(?sx)&lt;i&gt;.+&lt;/i&gt;'''
+&gt;&gt;&gt; for phrs in re.findall(ital, s):
+...     print phrs, '\n-----'
+...
+&lt;i&gt;italicized phrase,
+       &lt;i&gt;italicized subphrase&lt;/i&gt;, &lt;b&gt;bold
+       subphrase&lt;/b&gt;&lt;/i&gt;, &lt;i&gt;other italic
+       phrase&lt;/i&gt;
+-----
+&gt;&gt;&gt; ital2 = r'''(?sx)&lt;i&gt;.+?&lt;/i&gt;'''
+&gt;&gt;&gt; for phrs in re.findall(ital2, s):
+...     print phrs, '\n-----'
+...
+&lt;i&gt;italicized phrase,
+       &lt;i&gt;italicized subphrase&lt;/i&gt;
+-----
+&lt;i&gt;other italic
+       phrase&lt;/i&gt;
+-----
+</pre>
+<P class="docText">What is missing in the proposed regular expressions is a concept of <span class="docEmphasis">state</span>. If you imagine reading through a string character-by-character (which a regular expression match must do within the underlying regex engine), it would be useful to keep track of "How many layers of italics tags am I in?" With such a count of nesting depth, it would be possible to figure out which opening tag <TT>&lt;i&gt;</TT> a given closing tag <TT>&lt;/i&gt;</TT> was meant to match. But regular expressions are not stateful in the right way to do this.</P>
+<P class="docText">You encounter a similar nesting in most programming languages. For example, suppose we have a hypothetical (somewhat BASIC-like) language with an IF/THEN/END structure. To simplify, suppose that every condition is spelled to match the regex <TT>cond\d+</TT>, and every action matches <TT>act\d+</TT>. But the wrinkle is that IF/THEN/END structures can nest within each other also. So for example, let us define the following three top-level structures:</P>
+<pre>
+&gt;&gt;&gt; s = '''
+IF cond1 THEN act1 END
+-----
+IF cond2 THEN
+  IF cond3 THEN act3 END
+END
+-----
+IF cond4 THEN
+  act4
+END
+'''
+</pre>
+<P class="docText">As with the markup example, you might first try to identify the three structures using a regular expression like:</P>
+<pre>
+&gt;&gt;&gt; pat = r'''(?sx)
+IF \s+
+cond\d+ \s+
+THEN \s+
+act\d+ \s+
+END'''
+&gt;&gt;&gt; for stmt in re.findall(pat, s):
+...     print stmt, '\n-----'
+...
+IF cond1 THEN act1 END
+-----
+IF cond3 THEN act3 END
+-----
+IF cond4 THEN
+  act4
+END
+-----
+</pre>
+<P class="docText">This indeed finds three structures, but the wrong three. The second top-level structure should be the compound statement that used <TT>cond2</TT>, not its child using <TT>cond3</TT>. It is not too difficult to allow a nested IF/THEN/END structure to optionally substitute for a simple action; for example:</P>
+<pre>
+&gt;&gt;&gt; pat2 = '''(?sx)(
+IF \s+
+cond\d+ \s+
+THEN \s+
+(  (IF \s+ cond\d+ \s+ THEN \s+ act\d+ \s+ END)
+ | (act\d+)
+) \s+
+END
+)'''
+&gt;&gt;&gt; for stmt in re.findall(pat2, s):
+...     print stmt[0], '\n-----'
+...
+IF cond1 THEN act1 END
+-----
+IF cond2 THEN
+  IF cond3 THEN act3 END
+END
+-----
+IF cond4 THEN
+  act4
+END
+-----
+</pre>
+<P class="docText">By manually nesting a "first order" IF/THEN/END structure as an alternative to a simple action, we can indeed match the example in the desired fashion. But we have assumed that nesting of IF/THEN/END structures goes only one level deep. What if a "second order" structure is nested inside a "third order" structure—and so on, ad infinitum? What we would like is a means of describing arbitrarily nested structures in a text, in a manner similar to, but more general than, what regular expressions can describe.</P>
+<A NAME="ch04lev2sec2"></A><H4 class="docSection2Title">4.1.2 What Is a Grammar?</H4>
+<P class="docText">In order to parse nested structures in a text, you usually use something called a "grammar." A grammar is a specification of a set of "nodes" (also called "productions") arranged into a strictly hierarchical "tree" data structure. A node can have a name—and perhaps some other properties—and it can also have an ordered collection of child nodes. When a document is parsed under a grammar, no resultant node can ever be a descendent of itself; this is another way of saying that a grammar produces a tree rather than a graph.</P>
+<P class="docText">In many actual implementations, such as the famous C-based tools <TT>lex</TT> and <TT>yacc</TT>, a grammar is expressed at two layers. At the first layer, a "lexer" (or "tokenizer") produces a stream of "tokens" for a "parser" to operate on. Such tokens are frequently what you might think of as words or fields, but in principle they can split the text differently than does our normal idea of a "word." In any case tokens are nonoverlapping subsequences of the original text. Depending on the specific tool and specification used, some subsequences may be dropped from the token stream. A "zero-case" lexer is one that simply treats the actual input bytes as the tokens a parser operates on (some modules discussed do this, without losing generality).</P>
+<P class="docText">The second layer of a grammar is the actual parser. A parser reads a stream or sequence of tokens and generates a "parse tree" out of it. Or rather, a tree is generated under the assumption that the underlying input text is "well-formed" according to the grammar—that is, there is a way to consume the tokens within the grammar specification. With most parser tools, a grammar is specified using a variant on EBNF.</P>
+<P class="docText">An EBNF grammar consists of a set of rule declarations, where each rule allows similar quantification and alternation as that in regular expressions. Different tools use slightly different syntax for specifying grammars, and different tools also differ in expressivity and available quantifiers. But almost all tools have a fairly similar feel in their grammar specifications. Even the DTDs used in XML dialect specifications (see <A class="docLink" HREF="0321112547_ch05.html#ch05">Chapter 5</A>) have a very similar syntax to other grammar languages—which makes sense since an XML dialect is a particular grammar. A DTD entry looks like:</P>
+<pre>
+&lt;!ELEMENT body  ((example-column | image-column)?, text-column) &gt;
+</pre>
+<P class="docText">In brief, under the sample DTD, a <TT>&lt;body&gt;</TT> element may contain either one or zero occurrences of a "first thing"—that first thing being <span class="docEmphasis">either</span> an <TT>&lt;example-column&gt;</TT> or an <TT>&lt;image-column&gt;</TT>. Following the optional first component, exactly one <TT>&lt;text-column&gt;</TT> must occur. Of course, we would need to see the rest of the DTD to see what can go in a <TT>&lt;text-column&gt;</TT>, or to see what other element(s) a <TT>&lt;body&gt;</TT> might be contained in. But each such rule is similar in form.</P>
+<P class="docText">A familiar EBNF grammar to Python programmers is the grammar for Python itself. On many Python installations, this grammar as a single file can be found at a disk location like <TT>[...]/Python22/Doc/ref/grammar.txt</TT>. The online and downloadable <span class="docEmphasis">Python Language Reference</span> excerpts from the grammar at various points. As an example, a floating point number in Python is identified by the specification:</P>
+<H5 class="docExampleTitle"><A NAME="ch04list01"></A> EBNF-style description of Python floating point</H5>
+
+<PRE>
+floatnumber   ::= pointfloat | exponentfloat
+pointfloat    ::= [intpart] fraction | intpart "."
+exponentfloat ::= (intpart | pointfloat) exponent
+intpart       ::= digit+
+fraction      ::= "." digit+
+exponent      ::= ("e" | "E") ["+" | "-"] digit+
+digit         ::= "0"..."9"
+</PRE>
+<P class="docText">The Python grammar is given in an EBNF variant that allows considerable expressivity. Most of the tools this chapter discusses are comparatively limited (but are still ultimately capable of expressing just as general grammars, albeit more verbosely). Both literal strings and character ranges may be specified as part of a production. Alternation is expressed with "|". Quantifications with both "+" and "*" are used. These features are very similar to those in regular expression syntax. Additionally, optional groups are indicated with square brackets ("[" and "]"), and mandatory groups with parentheses. Conceptually the former is the same as the regex "?" quantifier.</P>
+<P class="docText">Where an EBNF grammar goes beyond a regular expression pattern is in its use of named terms as parts of patterns. At first glance, it might appear possible simply to substitute regular expression patterns for named subexpressions. In fact, in the floating point pattern presented, we could simply do this as:</P>
+<H5 class="docExampleTitle"><A NAME="ch04list02"></A> Regular expression to identify a floating point</H5>
+
+<PRE>
+pat = r'''(?x)
+      (                   # exponentfloat
+        (                 # intpart or pointfloat
+          (               # pointfloat
+            (\d+)?[.]\d+  # optional intpart with fraction
+            |
+            \d+[.]        # intpart with period
+          )               # end pointfloat
+          |
+          \d+             # intpart
+        )                 # end intpart or pointfloat
+        [eE][+-]?\d+      # exponent
+      )                   # end exponentfloat
+      |
+      (                   # pointfloat
+        (\d+)?[.]\d+      # optional intpart with fraction
+        |
+        \d+[.]            # intpart with period
+      )                   # end pointfloat
+      '''
+</PRE>
+<P class="docText">As a regular expression, the description is harder to read, even with the documentation added to a verbose regex. The EBNF grammar is more or less self-documenting. Moreover, some care had to be taken about the order of the regular expression—the <TT>exponentfloat</TT> alternative is required to be listed before the <TT>pointfloat</TT> alternative since the latter can form a subsequence of the latter. But aside from the need for a little tweaking and documentation, the regular expression above is exactly as general—and exactly equivalent—to the Python grammar for a floating point number.</P>
+<P class="docText">You might wonder, therefore, what the point of a grammar is. It turns out that a floating point number is an unusually simple structure in one very specific respect. A <TT>floatnumber</TT> requires no recursion or self-reference in its definition. Everything that makes up a <TT>floatnumber</TT> is something simpler, and everything that makes up one of those simpler components is itself made up of still simpler ones. You reach a bottom in defining a Python floating point number.</P>
+<P class="docText">In the general case, structures can recursively contain themselves, either directly or by containing other structures that in turn contain the first structures. It is not even entirely absurd to imagine floating point numbers with such a grammar (whatever language had them would not be Python, however). For example, the famous number a "googol" was defined in 1938 by Edward Kasner as 10 to the 100th power (otherwise called "10 dotrigintillion"). As a Python floating point, you could write this as <TT>1e100</TT>. Kasner also defined a "googolplex" as 10 to the googol power (a number much larger than anyone needs for any practical reason). While you can create a Python expression to name a googolplex—for example, <TT>10**1e100</TT>—it is not difficult to conceive a programming language that allowed the term <TT>1e1e100</TT> as a name for a googolplex. By the way: If you try to actually <span class="docEmphasis">compute</span> a googolplex in Python (or any other programming language), you will be in for disappointment; expect a frozen computer and/or some sort of crash or overflow. The numbers you can express in most language grammars are quite a bit more numerous than those your computer can actually do anything with.</P>
+<P class="docText">Suppose that you wanted to allow these new "extended" floating point terms in a language. In terms of the grammar, you could just change a line of the EBNF description:</P>
+<pre>
+exponent ::= ("e" | "E") ["+" | "-"] floatnumber
+</pre>
+<P class="docText">In the regular expression, the change is a problem. A portion of the regular expression identifies the (optional) exponent:</P>
+<pre>
+[eE][+-]?\d+      # exponent
+</pre>
+<P class="docText">In this case, an exponent is just a series of digit characters. But for "extended" floating point terms, the regular expression would need to substitute the entire <TT>pat</TT> regular expression in place of <TT>\d+</TT>. Unfortunately, this is impossible, since each replacement would still contain the insufficient <TT>\d+</TT> description, which would again require substitution. The sequence of substitutions continues ad infinitum, until the regular expression is infinitely long.</P>
+<A NAME="ch04lev2sec3"></A><H4 class="docSection2Title">4.1.3 An EBNF Grammar for IF/THEN/END Structures</H4>
+<P class="docText">The IF/THEN/END language structure presented above is a more typical and realistic example of nestable grammatical structures than are our "extended" floating point numbers. In fact, Python—along with almost every other programming language—allows precisely such <TT>if</TT> statements inside other <TT>if</TT> statements. It is worthwhile to look at how we might describe our hypothetical simplified IF/THEN/END structure in the same EBNF variant used for Python's grammar.</P>
+<P class="docText">Recall first our simplified rules for allowable structures: The keywords are <TT>IF</TT>, <TT>THEN</TT>, and <TT>END</TT>, and they always occur in that order within a completed structure. Keywords in this language are always in all capitals. Any whitespace in a source text is insignificant, except that each term is separated from others by at least some whitespace. Every condition is spelled to match the regular expression <TT>cond\d+.</TT> Every IF "body" either contains an action that matches the regular expression <TT>act\d+</TT>, <span class="docEmphasis">or</span> it contains another IF/THEN/END structure. In our example, we created three IF/THEN/END structures, one of which contained a nested structure:</P>
+<pre>
+IF cond1 THEN act1 END
+-----
+IF cond2 THEN
+  IF cond3 THEN act3 END
+END
+-----
+IF cond4 THEN
+  act4
+END
+</pre>
+<P class="docText">Let us try a grammar:</P>
+<H5 class="docExampleTitle"><A NAME="ch04list03"></A> EBNF grammar for IF/THEN/END structures</H5>
+
+<PRE>
+if_expr   ::= "IF" ws cond ws "THEN" ws action ws "END"
+whitechar ::= " " | "\t" | "\n" | "\r" | "\f" | "\v"
+ws        ::= whitechar+
+digit     ::= "0"..."9"
+number    ::= digit+
+cond      ::= "cond" number
+action    ::= simpleact | if_expr
+simpleact ::= "act" number
+</PRE>
+<P class="docText">This grammar is fairly easy to follow. It defines a few "convenience" productions like <TT>ws</TT> and <TT>number</TT> that consist of repetitions of simpler productions. <TT>whitechar</TT> is defined as an explicit alternation of individual characters, as is <TT>digit</TT> for a continuous range. Taken to the extreme, every production could actually be included in a much more verbose <TT>if_expr</TT> production—you would just substitute all the right-hand sides of nested productions for the names in the <TT>if_expr</TT> production. But as given, the grammar is much easier to read. The most notable aspect of this grammar is the <TT>action</TT> production, since an <TT>action</TT> can itself recursively contain an <TT>if_expr</TT>.</P>
+<P class="docText">For this problem, the reader is encouraged to develop grammars for some more robust variations on the very simple IF/THEN/END language we have looked at. As is evident, it is difficult to actually do much with this language by itself, even if its actions and conditions are given semantic meaning outside the structure. Readers can invent their own variations, but a few are proposed below.</P>
+<A NAME="ch04lev2sec4"></A><H4 class="docSection2Title">4.1.4 Pencil-and-Paper Parsing</H4>
+<P class="docText">To test a grammar at this point, just try to expand each successive character into some production that is allowed at that point in the parent production, using pencil and paper. Think of the text of test cases as a tape: Each symbol either completes a production (if so, write the satisfied production down next to the subsequence), or the symbol is added to the "unsatisfied register." There is one more rule to follow with pencil and paper, however: It is better to satisfy a production with a longer subsequence than a shorter one. If a parent production consists of child productions, the children must be satisfied in the specified order (and in the quantity required). For now, assume only one character of lookahead in trying to follow this rule. For example, suppose you find the following sequence in a test case:</P>
+<pre>
+"IF   cond1..."
+</pre>
+<P class="docText">Your steps with the pencil would be something like this:</P>
+<A NAME="ch04pr01"></A>
+
+
+
+
+
+
+<span style="font-weight:bold"><OL class="docList" START="1"><LI><span style="font-weight:normal" value="1"><P class="docText">Read the "I"—no production is satisfied.</P></span></LI><LI><span style="font-weight:normal" value="2"><P class="docText">Read the "F", unsatisfied becomes "I"-"F". Note that "I"-"F" matches the literal term in <TT>if_expr</TT> (a literal is considered a production). Since the literal term contains no quantifiers or alternates, write down the "IF" production. Unsatisfied becomes empty.</P></span></LI><LI><span style="font-weight:normal" value="3"><P class="docText">Read the space, Unsatisfied becomes simply a space. Space satisfies the production <TT>ws</TT>, but hold off for a character since <TT>ws</TT> contains a quantifier that allows a longer substring to satisfy it.</P></span></LI><LI><span style="font-weight:normal" value="4"><P class="docText">Read the second space, unsatisfied becomes space-space. Space-space satisfies the production <TT>ws</TT>. But again hold off for a character.</P></span></LI><LI><span style="font-weight:normal" value="5"><P class="docText">Read the third space, unsatisfied becomes space-space-space. This again satisfies the production <TT>ws</TT>. But keep holding off for the next character.</P></span></LI><LI><span style="font-weight:normal" value="6"><P class="docText">Read the "c", unsatisfied becomes "space-space-space-c". This does not satisfy any production, so revert to the production in 5. Unsatisfied becomes "c".</P></span></LI><LI><span style="font-weight:normal" value="7"><P class="docText">Et cetera.</P></span></LI></OL></span>
+<P class="docText">If you get to the last character, and everything fits into some production, the test case is valid under the grammar. Otherwise, the test case is nongrammatical. Try a few IF/THEN/END structures that you think are and are not valid against the provided grammar.</P>
+<A NAME="ch04lev2sec5"></A><H4 class="docSection2Title">4.1.5 Exercise: Some variations on the language</H4>
+<span style="font-weight:bold"><OL class="docList" TYPE="1"><LI><span style="font-weight:normal"><P class="docList">Create and test an IF/THEN/END grammar that allows multiple actions to occur between the THEN and the END. For example, the following structures are valid under this variation:</P><pre>
+IF cond1 THEN act1 act2 act3 END
+-----
+IF cond2 THEN
+  IF cond3 THEN act3 END
+  IF cond4 THEN act4 END
+END
+-----
+IF cond5 THEN IF cond6 THEN act6 act7 END act8 END
+</pre></span></LI><LI><span style="font-weight:normal"><P class="docList">Create and test an IF/THEN/END grammar that allows for arithmetic comparisons of numbers as conditions (as an enhancement of variation 1, if you wish). Specifically, a comparison consists of two numbers with one of "<TT>&lt;</TT>", "<TT>&gt;</TT>", or "=" between them. There might or might not be any whitespace between a comparison symbol and surrounding numbers. Use your judgment about what a number consists of (the Python floating point grammar might provide an example, but yours could be simpler).</P></span></LI><LI><span style="font-weight:normal"><P class="docList">Create and test an IF/THEN/END grammar that includes a loop expression as a valid action. A loop consists of the keyword <TT>LOOP</TT>, followed by a positive integer, followed by action(s), and terminated by the <TT>END</TT> keyword. Loops should be considered actions, and therefore ifs and loops can be contained inside one another; for example:</P><pre>
+IF cond1 THEN
+  LOOP 100
+    IF cond2 THEN
+      act2
+    END
+  END
+END
+</pre><P class="docList">You can make this LOOP-enhanced grammar an enhancement of whichever variant you wish.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">Create and test an IF/THEN/END grammar that includes an optional <TT>ELSE</TT> keyword. If an <TT>ELSE</TT> occurs, it is within an <TT>IF</TT> body, but <TT>ELSE</TT> might not occur. An <TT>ELSE</TT> has its own body that can contain action(s). For example (assuming variant 1):</P><pre>
+IF cond1 THEN
+  act1
+  act2
+ELSE
+  act3
+  act4
+END
+</pre></span></LI><LI><span style="font-weight:normal"><P class="docList">Create and test an IF/THEN/END grammar that may include <span class="docEmphasis">zero</span> actions inside an <TT>IF</TT>, <TT>ELSE</TT>, or <TT>LOOP</TT> body. For example, the following structures are valid under this variant:</P><pre>
+IF cond1 THEN
+ELSE act2
+END
+-*-
+IF cond1 THEN
+  LOOP 100 END
+ELSE
+END
+</pre></span></LI></OL></span>
+<ul></ul></td></tr></table>
+<td></td>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<td class="tt1"><a href="NFO/lib.html">[ Team LiB ]</a></td><td valign="top" class="tt1" align="right">
+          <a href="0321112547_ch04.html"><img src="FILES/btn_prev.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+          <a href="0321112547_ch04lev1sec2.html"><img src="FILES/btn_next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+</body></html>

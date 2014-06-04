@@ -1,0 +1,133 @@
+<html><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<link href="styles/globalstyle.css" type="text/css" rel="stylesheet"/>
+<link title="medium" href="styles/two.css" type="text/css" rel="stylesheet"/>
+<script src="scripts/main.js" type="text/javascript" language="javascript"></script>
+<title>Section 4.3. Problem: Who Fetched What, When?</title>
+</head><body>
+<DIV class=h3 style="MARGIN-TOP: 0px; PADDING-BOTTOM: 1em; WIDTH: 100%; PADDING-TOP: 0px"><SPAN>Finding Things</SPAN><SPAN> &gt; Problem: Who Fetched What, When?</SPAN></DIV>
+<DIV></DIV>
+<DIV>
+<DIV><A name=problem_who_fetched_what_when></A>
+<H3 class=docSection1Title id=-100000>4.3. Problem: Who Fetched What, When?</H3>
+<P class=docText><A name="Running a"></A>Running a couple of quick scripts over the logfile data reveals that there are 12,600,064 instances of an article fetch coming from 2,345,571 different hosts. Suppose we are interested in who was fetching what, and when? An auditor, a police officer, or a marketing professional might be interested.</P>
+<P class=docText><A name="report what"></A>So, here's the problem: given a hostname, report what articles were fetched from that host, and when. The result is a list; if the list is empty, no articles were fetched.</P>
+<P class=docText><A name="a language"></A>We've already seen that a language's built-in hash or equivalent data structure gives the programmer a quick and easy way to store and look up key/value pairs. So, you might ask, why not use it?</P>
+<P class=docText><A name="and we"></A>That's an excellent question, and we should give the idea a try. There are reasons to worry that it might not work very well, so in the back of our minds, we should be thinking of a Plan B. As you may recall if you've ever studied hash tables, in order to go fast, they need to have a small load factor; in other words, they need to be mostly empty. However, a hash table that holds 2.35 million entries and is still mostly empty is going to require the use of a whole lot of memory.</P>
+<P class=docText><A name="wrote a"></A>To simplify things, I wrote a program that ran over all the logfiles and pulled out all the article fetches into a simple file; each line has the hostname, the time of the transaction, and the article name. Here are the first few lines:</P><PRE>	crawl-66-249-72-77.googlebot.com 1166406026 2003/04/08/Riffs
+	egspd42470.ask.com 1166406027 2006/05/03/MARS-T-Shirt
+	84.7.249.205 1166406040 2003/03/27/Scanner
+</PRE><BR>
+<P class=docText><A name="number of"></A>(The second field, the 10-digit number, is the standard Unix/Linux representation of time as the number of seconds since the beginning of 1970.)</P>
+<P class=docText><A name="wrote a"></A>Then I wrote a simple program to read this file and load a great big hash. <A class=docLink href="javascript:moveTo('loading_a_big_hash');">Example 4-5</A> shows the program.</P><A name=loading_a_big_hash></A>
+<H5 class=docExampleTitle id=title-ID0E5VCK>Example 4-5. Loading a big hash</H5>
+<P>
+<TABLE cellSpacing=0 cellPadding=5 width=* border=1>
+<TBODY>
+<TR>
+<TD>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedHeight>1 class BigHash
+2
+3   def initialize(file)
+4     @hash = {} 
+5     lines = 0   
+6     File.open(file).each_line do |line| 
+7       s = line.split 
+8       article = s[2].intern
+9       if @hash[s[0]]
+10        @hash[s[0]] &lt;&lt; [ s[1], article ]  
+11      else
+12        @hash[s[0]] = [ s[1], article ] 
+13      end
+14      lines += 1
+15      STDERR.puts "Line: #{lines}" if (lines % 100000) == 0
+16    end
+17  end
+18
+19  def find(key)
+20    @hash[key]
+21  end
+22
+23 end
+
+
+					    </PRE><BR></TD></TR></TBODY></TABLE></P>
+<P class=docText><A name="fairly self"></A>The program should be fairly self-explanatory, but line 15 is worth a note. When you're running a big program that's going to take a lot of time, it's very disturbing when it works away silently, maybe for hours. What if something's wrong? What if it's going incredibly slow and will never finish? So, line 15 prints out a <A name=idx-CHP-4-0196></A><A name="of input"></A>progress report after every 100,000 lines of input, which is reassuring.</P>
+<P class=docText><A name="Running this"></A>Running this program was interesting. It took about 55 minutes of CPU time to load up the hash, and the program grew to occupy 1.56 GB of memory. A little calculation suggests that it costs around 680 bytes to store the information for each host, or slicing the data another way, about 126 bytes per fetch. This is a little scary, but probably reasonable for a hash table.</P>
+<P class=docText><A name="I ran"></A>Retrieval performance was excellent. I ran 2,000 queries, half of which were randomly selected hosts from the log and thus succeeded, while the other half were those same hostnames reversed, none of which succeeded. The 2,000 queries completed in an average of about .02 seconds, so <A name=idx-CHP-4-0197></A><A name="look up"></A>Ruby's hash implementation can look up records in a hash containing 12 million or so records thousands of times per second.</P>
+<P class=docText><A name="to load"></A>Those 55 minutes to load up the data are troubling, but there are some tricks to address that. You could, for example, load it up once, then serialize the hash out and read it back in. And I didn't try particularly hard to optimize the program.</P>
+<P class=docText><A name="easy and"></A>The program was easy and quick to write, and it runs fast once it's initialized, so its performance is good both in terms of waiting-for-the-program time and waiting-for-the-programmer time. Still, I'm unsatisfied. I have the feeling that there ought to be a way to get this kind of performance while burning less memory, less startup time, or both. It involves writing our own search code, though.</P><A name=binary_search></A>
+<H4 class=docSection2Title id=title-ID0EAXCK>4.3.1. Binary Search</H4>
+<P class=docText><A name="variety of"></A>Nobody gets a Computer Science degree without studying a wide variety of <A name=idx-CHP-4-0198></A><A name="My favorite"></A>search algorithms: trees, heaps, hashes, lists, and more. My favorite among all these is <A name=idx-CHP-4-0199></A><A name="the who"></A>binary search. Let's try it on the who-fetched-what-when problem and then look at what makes it beautiful.<A name=idx-CHP-4-0200></A></P>
+<P class=docText>My first attempt at putting <A name=idx-CHP-4-0201></A><A name="quite disappointing"></A>binary search to use was quite disappointing; while the data took 10 minutes less to load, it required almost 100 MB more memory than with the hash. Clearly, there are some surprising things about the Ruby <A name=idx-CHP-4-0202></A><A name="array implementation"></A>array implementation. The search also ran several times slower (but still in the range of thousands per second), but this is not surprising at all because the algorithm is running in Ruby code rather than with the underlying hardcoded hash implementation.</P>
+<P class=docText><A name="that in"></A>The problem is that in Ruby everything is an object, and <A name=idx-CHP-4-0203></A><A name="abstracted things"></A>arrays are fairly abstracted things with lots of built-in magic. So, let's reimplement the program in Java, in which integers are just integers, and arrays come with very few extras.<SUP class=docFootnote><A class=docLink href="javascript:moveTo('CHP-4-FNOTE-2');">[<IMG alt=dagger src="images/U2020.GIF">]</A></SUP></P>
+<BLOCKQUOTE>
+<P class=docFootnote><SUP><A name=CHP-4-FNOTE-2>[<IMG alt=dagger src="images/U2020.GIF">]</A></SUP><A name=of></A> This discussion of <A name=idx-CHP-4-0204></A><A name="heavily from"></A>binary search borrows heavily from my 2003 piece, "<A name=idx-CHP-4-0205></A>On the Goodness of Binary Search," available online at <A name=idx-CHP-4-0206></A><A class=docLink href="http://www.tbray.org/ongoing/When/200x/2003/03/22/Binary" target=_blank>http://www.tbray.org/ongoing/When/200x/2003/03/22/Binary</A>.</P></BLOCKQUOTE>
+<P class=docText><A name="in two"></A>Nothing could be simpler, conceptually, than binary search. You divide your search space in two and see whether you should be looking in the top or bottom half; then you repeat the exercise until done. Instructively, there are a great many ways to code this algorithm incorrectly, and several widely published versions contain bugs. The implementation mentioned in "On the Goodness of Binary Search," and shown in Java in <A class=docLink href="javascript:moveTo('binary_search');">Section 4.3.1</A><A name="on one"></A>, is based on one I learned from Gaston Gonnet, the lead developer of the Maple language for symbolic mathematics and currently Professor of Computer Science at ETH in Zürich.</P><A name=binary_search-id001></A>
+<H5 class=docExampleTitle id=title-ID0EZZCK>Example 4-6. Binary search</H5>
+<P>
+<TABLE cellSpacing=0 cellPadding=5 width=* border=1>
+<TBODY>
+<TR>
+<TD><PRE>1 package binary;
+2
+3  public class Finder {
+4    public static int find(String[] keys, String target) {
+5      int high = keys.length;
+6      int low = -1;
+7      while (high - low &gt; 1) {
+8        int probe = (low + high) &gt;&gt;&gt; 1;
+9        if (keys[probe].compareTo(target) &gt; 0)
+10         high = probe;
+11       else
+12         low = probe;
+13     }
+14     if (low == -1 || keys[low].compareTo(target) != 0)
+15       return -1;
+16     else
+17       return low;
+18   }
+19 }
+</PRE><BR></TD></TR></TBODY></TABLE></P>
+<P class=docText><A name="program are"></A>Key aspects of this program are as follows:</P>
+<UL>
+<LI>
+<P class=docList>In lines 5–6, note that the <TT>high</TT> and <TT>low</TT><A name="the ends"></A> bounds are set one off the ends of the array, so neither are initially valid indices. This eliminates all sorts of corner cases.</P></LI>
+<LI>
+<P class=docList><A name="The loop"></A>The loop that starts in line 7 runs until the high and low bounds are adjacent; there is no testing to see whether the target has been found. Think for a minute whether you agree with this choice; we'll return to the question later.</P></LI>
+<LI>
+<P class=docList><A name="two invariants"></A>The loop has two invariants. <TT>low</TT><A name="points to"></A> is either –1 or points to something less than or equal to the target value. <TT>high</TT><A name="one off"></A> is either one off the top of the array or points to something strictly greater than the target value.</P></LI>
+<LI>
+<P class=docList><A name="In an"></A>Line 8 is particularly interesting. In an earlier version it read:</P><PRE>probe = (high + low) / 2;
+</PRE><BR>
+<P class=docList><A name="obscure circumstances"></A>but in June 2006, Java guru Josh Bloch showed how, in certain obscure circumstances, that code could lead to integer overflow (see <A class=docLink href="http://googleresearch.blogspot.com/2006/06/extra-extra-read-all-about-it-nearly.html" target=_blank>http://googleresearch.blogspot.com/2006/06/extra-extra-read-all-about-it-nearly.html</A><A name="sobering indeed"></A>). It is sobering indeed that, many decades into the lifetime of computer science, we are still finding bugs in our core algorithms. (The issue is also discussed by Alberto Savoia in <A class=docLink href="048.beautiful_tests.html#beautiful_tests">Chapter 7</A>.)</P>
+<P class=docList><A name="point out"></A>At this point, Rubyists will point out that modern dynamic languages such as Ruby and Python take care of integer overflow for you, and thus don't have this bug.</P></LI>
+<LI>
+<P class=docList><A name="done with"></A>Because of the loop invariant, once I'm done with the loop, I just need to check <TT>low</TT><A name="If it"></A> (lines 14–17). If it's not –1, either it points to something that matches the target, or the target isn't there.</P></LI></UL>
+<P class=docText><A name="took only"></A>The Java version took only six and a half minutes to load, and it ran successfully, using less than 1 GB of heap. Also, while it's harder to measure CPU time in Java than in Ruby, there was no perceptible delay in running the same 2,000 <A name=idx-CHP-4-0207></A>searches.</P><A name=binary_search_trade-offs></A>
+<H4 class=docSection2Title id=title-ID0EJ3CK>4.3.2. Binary Search Trade-offs</H4>
+<P class=docText><A name="some very"></A>Binary search has some very large <A name=idx-CHP-4-0208></A><A name="its performance"></A>advantages. First of all, its performance is <TT><I>O</I></TT>(<TT>log<SUB>2</SUB></TT> <TT><I>N</I></TT><A name="grasp how"></A>). People often don't really grasp how powerful this is. On a 32-bit computer, the biggest log2 you'll ever encounter is 32 (similarly, 64 on a 64-bit computer), and any algorithm that competes in an upper bound of a few dozen steps will be "good enough" for many real-world scenarios.<A name=idx-CHP-4-0209></A></P>
+<P class=docText><A name="simple is"></A>Second, the binary-search code is short and simple. Code that is short and simple is beautiful, for a bunch of reasons. Maybe the most important is that it's easier to understand, and understanding code is harder than writing it. There are fewer places for bugs to hide. Also, compact code plays better with instruction sets, I-caches, and JIT compilers, and thus tends to run faster.</P>
+<P class=docText><A name="that sorted"></A>Third, once you've got that sorted array, you don't need any more index structures; binary search is very space-efficient.</P>
+<P class=docText><A name="binary search"></A>The big downside to binary search is that the data has to be kept in order in memory. There are some data sets for which this is impossible, but fewer than you might think. If you think you have too much data to fit in memory, check the price of RAM these days and make sure. Any search strategy that requires going to disk is going to be immensely more complex, and in many scenarios slower.</P>
+<P class=docText><A name="the data"></A>Suppose you need to update the data set; you might think that would rule out binary search because you have to update a huge, contiguous array in memory. But that turns out to be easier than you might think. In fact, your program's memory is scattered randomly all over the computer's physical RAM, with the operating system's paging software making it look sequential; you can do the same kind of trick with your own data.</P>
+<P class=docText><A name="Some might"></A>Some might argue that since a hash table is <TT><I>O</I></TT>(<TT>1</TT><A name="be better"></A>), that has to be better than binary search's <TT><I>O</I></TT>(<TT>log<SUB>2</SUB></TT> <TT><I>N</I></TT><A name="may not"></A>). In practice, the difference may not be that significant; set up an experiment sometime and do some measurements. Also, consider that hash tables, with the necessary collision-resolution code, are considerably more complex to implement.</P>
+<P class=docText><A name="to be"></A>I don't want to be dogmatic, but in recent years, I've started to take the following approach to search problems:</P>
+<DIV style="FONT-WEIGHT: bold">
+<OL class=docList type=1>
+<LI>
+<DIV style="FONT-WEIGHT: normal">
+<P class=docList><A name="it using"></A>Try to solve it using your language's built-in hash tables.</P></DIV></LI>
+<LI>
+<DIV style="FONT-WEIGHT: normal">
+<P class=docList>Then try to solve it with binary search.</P></DIV></LI>
+<LI>
+<DIV style="FONT-WEIGHT: normal">
+<P class=docList><A name="complex options"></A>Only then should you reluctantly start to consider other more complex options.</P></DIV></LI></OL></DIV><A name=escaping_the_loop></A>
+<H4 class=docSection2Title id=title-ID0ET5CK>4.3.3. Escaping the Loop</H4>
+<P class=docText><A name="at my"></A>Some look at my binary-search algorithm and ask why the loop always runs to the end without checking whether it's found the target. In fact, this is the correct behavior; the math is beyond the scope of this chapter, but with a little work, you should be able to get an intuitive feeling for it—and this is the kind of intuition I've observed in some of the great programmers I've worked with.<A name=idx-CHP-4-0210></A></P>
+<P class=docText><A name="of the"></A>Let's think about the progress of the loop. Suppose you have <SPAN class=docEmphasis>n</SPAN> elements in the array, where <SPAN class=docEmphasis>n</SPAN><A name="chance of"></A> is some really large number. The chance of finding the target the first time through is 1/<SPAN class=docEmphasis>n</SPAN><A name="a really"></A>, a really small number. The next iteration (after you divide the search set in half) is 1/(<SPAN class=docEmphasis>n</SPAN><A name="chance of"></A>/2)—still small—and so on. In fact, the chance of hitting the target becomes significant only when you're down to 10 or 20 elements, which is to say maybe the last four times through the loop. And in the case where the search fails (which is common in many applications), those extra tests are pure overhead.</P>
+<P class=docText><A name="the math"></A>You could do the math to figure out when the probability of hitting the target approaches 50 percent, but qualitatively, ask yourself: does it make sense to add extra complexity to each step of an <TT><I>O</I></TT>(<TT>log<SUB>2</SUB></TT> <TT><I>N</I></TT><A name="the chances"></A>) algorithm when the chances are it will save only a small number of steps at the end?</P>
+<P class=docText><A name="that binary"></A>The take-away lesson is that binary search, done properly, is a two-step process. First, write an efficient loop that positions your <TT>low</TT> and <TT>high</TT><A name="hit or"></A> bounds properly, then add a simple check to see whether you hit or missed.</P></DIV></DIV>
+<p>&nbsp;</p><p>&nbsp;</p><!-- 仁·义 -->
+</body></html>

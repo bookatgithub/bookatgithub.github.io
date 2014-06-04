@@ -1,0 +1,325 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;13.11.&nbsp;Detecting Inactive Computers</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-13-sect-10.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-13-sect-12.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-13-SECT-11"></a>
+<h3 class="docSection1Title">Recipe 13.11. Detecting Inactive Computers</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Nicola Larosa</span></p>
+
+<a name="pythoncook2-CHP-13-SECT-11.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-13-ITERM-2865"></a>You need to monitor the working
+state of a number of computers connected to a TCP/IP network.</P>
+
+
+<a name="pythoncook2-CHP-13-SECT-11.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText"><a name="pythoncook2-CHP-13-ITERM-2866"></a>
+<a name="pythoncook2-CHP-13-ITERM-2867"></a>The key
+idea in this recipe is to have every computer periodically send a
+heartbeat UDP packet to a computer acting as the server for this
+heartbeat-monitoring service. The server keeps track of how much time
+has passed since each computer last sent a heartbeat and reports on
+computers that have been silent for too long.</p>
+
+<p class="docText">Here is the "client" program,
+<I>HeartbeatClient.py</i>, which must run on every
+computer we need to monitor:</P>
+
+<pre>""" Heartbeat client, sends out a UDP packet periodically """
+import socket, time
+SERVER_IP = '192.168.0.15'; SERVER_PORT = 43278; BEAT_PERIOD = 5
+print 'Sending heartbeat to IP %s , port %d' % (SERVER_IP, SERVER_PORT)
+print 'press Ctrl-C to stop'
+while True:
+    hbSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    hbSocket.sendto('PyHB', (SERVER_IP, SERVER_PORT))
+    if _ _debug_ _:
+        print 'Time: %s' % time.ctime( )
+    time.sleep(BEAT_PERIOD)</pre><BR>
+
+
+<p class="docText">The server program, which receives and keeps track of these
+"heartbeats", must run on the
+machine whose address is given as <i>SERVER_IP</I> in the
+"client" program. The server must
+support concurrency, since many heartbeats from different computers
+might arrive simultaneously. A server program has essentially two
+ways to support concurrency: multithreading, or asynchronous
+operation. Here is a multithreaded
+<I>ThreadedBeatServer.py</i>, using only modules from
+the Python Standard Library:</p>
+
+<pre>""" Threaded heartbeat server """
+import socket, threading, time
+UDP_PORT = 43278; CHECK_PERIOD = 20; CHECK_TIMEOUT = 15
+class Heartbeats(dict):
+    """ Manage shared heartbeats dictionary with thread locking """
+    def _ _init_ _(self):
+        super(Heartbeats, self)._ _init_ _( )
+        self._lock = threading.Lock( )
+    def _ _setitem_ _(self, key, value):
+        """ Create or update the dictionary entry for a client """
+        self._lock.acquire( )
+        try:
+            super(Heartbeats, self)._ _setitem_ _(key, value)
+        finally:
+            self._lock.release( )
+    def getSilent(self):
+        """ Return a list of clients with heartbeat older than CHECK_TIMEOUT """
+        limit = time.time( ) - CHECK_TIMEOUT
+        self._lock.acquire( )
+        try:
+            silent = [ip for (ip, ipTime) in self.items( ) if ipTime &lt; limit]
+        finally:
+            self._lock.release( )
+        return silent
+class Receiver(threading.Thread):
+    """ Receive UDP packets and log them in the heartbeats dictionary """
+    def _ _init_ _(self, goOnEvent, heartbeats):
+        super(Receiver, self)._ _init_ _( )
+        self.goOnEvent = goOnEvent
+        self.heartbeats = heartbeats
+        self.recSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.recSocket.settimeout(CHECK_TIMEOUT)
+        self.recSocket.bind(('', UDP_PORT))
+    def run(self):
+        while self.goOnEvent.isSet( ):
+            try:
+                data, addr = self.recSocket.recvfrom(5)
+                if data == 'PyHB':
+                    self.heartbeats[addr[0]] = time.time( )
+            except socket.timeout:
+                pass
+def main(num_receivers=3):
+    receiverEvent = threading.Event( )
+    receiverEvent.set( )
+    heartbeats = Heartbeats( )
+    receivers = [  ]
+    for i in range(num_receivers):
+        receiver = Receiver(goOnEvent=receiverEvent, heartbeats=heartbeats)
+        receiver.start( )
+        receivers.append(receiver)
+    print 'Threaded heartbeat server listening on port %d' % UDP_PORT
+    print 'press Ctrl-C to stop'
+    try:
+        while True:
+            silent = heartbeats.getSilent( )
+            print 'Silent clients: %s' % silent
+            time.sleep(CHECK_PERIOD)
+    except KeyboardInterrupt:
+        print 'Exiting, please wait...'
+        receiverEvent.clear( )
+        for receiver in receivers:
+            receiver.join( )
+        print 'Finished.'
+if _ _name_ _ == '_ _main_ _':
+    main( )</pre><br>
+
+
+<p class="docText">As an alternative, here is an asynchronous
+<i>AsyncBeatServer.py</I> program based on the powerful
+Twisted framework:</p>
+
+<pre>import time
+from twisted.application import internet, service
+from twisted.internet import protocol
+from twisted.python import log
+UDP_PORT = 43278; CHECK_PERIOD = 20; CHECK_TIMEOUT = 15
+class Receiver(protocol.DatagramProtocol):
+    """ Receive UDP packets and log them in the "client"s dictionary """
+    def datagramReceived(self, data, (ip, port)):
+        if data == 'PyHB':
+            self.callback(ip)
+class DetectorService(internet.TimerService):
+    """ Detect clients not sending heartbeats for too long """
+    def _ _init_ _(self):
+        internet.TimerService._ _init_ _(self, CHECK_PERIOD, self.detect)
+        self.beats = {  }
+    def update(self, ip):
+        self.beats[ip] = time.time( )
+    def detect(self):
+        """ Log a list of clients with heartbeat older than CHECK_TIMEOUT """
+        limit = time.time( ) - CHECK_TIMEOUT
+        silent = [ip for (ip, ipTime) in self.beats.items( ) if ipTime &lt; limit]
+        log.msg('Silent clients: %s' % silent)
+application = service.Application('Heartbeat')
+# define and link the silent clients' detector service
+detectorSvc = DetectorService( )
+detectorSvc.setServiceParent(application)
+# create an instance of the Receiver protocol, and give it the callback
+receiver = Receiver( )
+receiver.callback = detectorSvc.update
+# define and link the UDP server service, passing the receiver in
+udpServer = internet.UDPServer(UDP_PORT, receiver)
+udpServer.setServiceParent(application)
+# each service is started automatically by Twisted at launch time
+log.msg('Asynchronous heartbeat server listening on port %d\n'
+    'press Ctrl-C to stop\n' % UDP_PORT)</pre><br>
+
+
+
+<a name="pythoncook2-CHP-13-SECT-11.3"></a>
+<H4 class="docSection2Title">Discussion</h4>
+
+<p class="docText">When a number of computers are connected by a TCP/IP network, we are
+often interested in monitoring their working state. The client and
+server programs presented in this recipe help you detect when a
+computer stops working, while having minimal impact on network
+traffic and requiring very little setup. Note that this recipe does
+not monitor the working state of single, specific services running on
+a machine, just that of the TCP/IP stack and the underlying operating
+system and hardware components.</P>
+
+<p class="docText">This <i>PyHeartBeat</I> approach is made up of two files: a
+client program, <I>HeartbeatClient.py</i>, sends UDP
+packets to the server, while a server program, either
+<i>ThreadedBeatServer.py</i> (using only modules from
+the Python Standard Library to implement a multithreaded approach) or
+<i>AsyncBeatServer.py</i> (implementing an asynchronous
+approach based on the powerful Twisted framework), runs on a central
+computer to listen for such packets and detect inactive clients.
+Client programs, running on any number of computers, periodically
+send UDP packets to the server program that runs on the central
+computer. The server program, in either version, dynamically builds a
+dictionary that stores the IP addresses of the
+"client" computers and the
+timestamp of the last packet received from each one. At the same
+time, the server program periodically checks the dictionary, checking
+whether any of the timestamps are older than a defined timeout, to
+identify clients that have been silent too long.</p>
+
+<p class="docText">In this kind of application, there is no need to use reliable TCP
+connections since the loss of a packet now and then does not produce
+false alarms, as long as the server-checking timeout is kept suitably
+larger than the "client"-sending
+period. Since we may have hundreds of computers to monitor, it is
+best to keep the bandwidth used and the load on the server at a
+minimum: we do this by periodically sending a small UDP packet,
+instead of setting up a relatively expensive TCP connection per
+client.</p>
+
+<p class="docText">The packets are sent from each client every 5 seconds, while the
+server checks the dictionary every 20 seconds, and the
+server's timeout defaults to 15 seconds. These
+parameters, along with the server IP number and port used, can be
+adapted to one's needs.</p>
+
+<a name="pythoncook2-CHP-13-SECT-11.3.1"></a>
+<h5 class="docSection3Title">Threaded server</h5>
+
+<p class="docText">In the threaded server, a small number of worker threads listen to
+the UDP packets coming from the
+"client"s, while the main thread
+periodically checks the recorded heartbeats. The shared data
+structure, a dictionary, must be locked and released at each access,
+both while writing and reading, to avoid data corruption on
+concurrent access. Such data corruption would typically manifest
+itself as intermittent, time-dependent bugs that are difficult to
+reproduce, investigate, and correct.</p>
+
+<p class="docText">A very sound alternative to such meticulous use of locking around
+access to a resource is to dedicate a specialized thread to be the
+only one interacting with the resource (in this case, the
+dictionary), while all other threads send work requests to the
+specialized thread with a <tt>Queue.Queue</tt> instance. A
+<tt>Queue</tt>-based approach is more scalable when
+per-resource locking gets too complicated to manage easily:
+<tt>Queue</tt> is less bug-prone and, in particular, avoids
+worries about deadlocks. See <a class="docLink" href="pythoncook2-CHP-9-SECT-3.html#pythoncook2-CHP-9-SECT-3">Recipe 9.3</a>, <a class="docLink" href="pythoncook2-CHP-9-SECT-5.html#pythoncook2-CHP-9-SECT-5">Recipe 9.5</a>, <a class="docLink" href="pythoncook2-CHP-9-SECT-4.html#pythoncook2-CHP-9-SECT-4">Recipe 9.4</a>, and <a class="docLink" href="pythoncook2-CHP-11-SECT-9.html#pythoncook2-CHP-11-SECT-9">Recipe 11.9</a> for more information about
+<tt>Queue</tt> and examples of using
+<tt>Queue</tt> to structure the architecture of a
+multithreaded program.</p>
+
+
+
+<a name="pythoncook2-CHP-13-SECT-11.3.2"></a>
+<h5 class="docSection3Title">Asynchronous server</H5>
+
+<p class="docText">The Twisted server employs an asynchronous, event-driven model based
+on the Twisted framework (<a class="docLink" target="_blank" href="http://www.twistedmatrix.com/">http://www.twistedmatrix.com/</a>). The framework
+is built around a central "reactor"
+that dispatches events from a queue in a single thread, and monitors
+network and host resources. The user program is composed of short
+code fragments invoked by the reactor when dispatching the matching
+events. Such a working model guarantees that only one user code
+fragment is executing at any given time, eliminating at the root all
+problems of concurrent access to shared data structures. Asynchronous
+servers can provide excellent performance and scalability under very
+heavy loads, by avoiding the threading and locking overheads of
+multithreader servers.</P>
+
+<p class="docText">The asynchronous server program presented in this recipe is composed
+of one application and two services, the UDPServer and the
+DetectorService, respectively. It is invoked at any command shell by
+means of the <i>twistd</i> command, with the following
+options:</P>
+
+<pre>$ twistd -ony AsyncBeatServer.py</pre><br>
+
+
+<p class="docText">The <i>twistd</i> command controls the reactor, and many
+other delicate facets of a server's operation,
+leaving the script it loads the sole responsibility of defining a
+global variable named <tt>application</tt>, implementing
+the needed services, and connecting the service objects to the
+application object.</p>
+
+<p class="docText">Normally, <i>twistd</i> runs as a daemon and logs to a
+file (or to other logging facilities, depending on configuration
+options), but in this case, with the <I>-ony</i> flags,
+we're specifically asking <I>twistd</i>
+to run in the foreground and with logging to standard output, so we
+can better see what's going on. Note that the most
+popular file extension for scripts to be loaded by
+<I>twistd</i> is <I>.tac</I>, although in
+this recipe I have used the more generally familiar extension
+<i>.py</I>. The choice of file extension is just a
+convention, in this case: <I>twistd</i> can work with
+Python source files with any file extension, since you pass the full
+filename, extension included, as an explicit command-line argument
+anyway.</p>
+
+
+
+<a name="pythoncook2-CHP-13-SECT-11.4"></a>
+<h4 class="docSection2Title">See Also</h4>
+
+<p class="docText">Documentation for the standard library modules
+<tt>socket</tt>, <tt>tHReading</tt>,
+<tt>Queue</tt> and <tt>time</tt> in the
+<span class="docEmphasis">Library Reference</span> and <span class="docEmphasis">Python in a
+Nutshell</span>; <tt>twisted</tt> is at <a class="docLink" target="_blank" href="http://www.twistedmatrix.com">http://www.twistedmatrix.com</a>; Jeff Bauer has
+a related program, known as <i>Mr. Creosote
+</i>(<a class="docLink" target="_blank" href="http://starship.python.net/crew/jbauer/creosote/">http://starship.python.net/crew/jbauer/creosote/</a>),
+using UDP for logging information; UDP is described in depth in W.
+Richard Stevens, <span class="docEmphasis">UNIX Network Programming, Volume 1:
+Networking APIs-Sockets and XTI, </span>2d ed. (Prentice-Hall);
+for the truly curious, the UDP protocol is defined in the two-page
+RFC 768 (<a class="docLink" target="_blank" href="http://www.ietf.org/rfc/rfc768.txt">http://www.ietf.org/rfc/rfc768.txt</a>), which,
+when compared with current RFCs, shows how much the Internet
+infrastructure has evolved in 20 years.<a name="pythoncook2-CHP-13-ITERM-2868"></a></P>
+
+
+
+<a href="5991535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><ul></UL></td></TR></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-13-sect-10.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-13-sect-12.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

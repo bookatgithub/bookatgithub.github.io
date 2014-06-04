@@ -1,0 +1,218 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;13.14.&nbsp;Tunneling SSL Through a Proxy</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-13-sect-13.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-13-sect-15.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-13-SECT-14"></a>
+<h3 class="docSection1Title">Recipe 13.14. Tunneling SSL Through a Proxy</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: John Nielsen</span><a name="pythoncook2-CHP-13-ITERM-2877"></a>
+<a name="pythoncook2-CHP-13-ITERM-2878"></a> <a name="pythoncook2-CHP-13-ITERM-2879"></a></p>
+
+<a name="pythoncook2-CHP-13-SECT-14.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText">You need to tunnel SSL (Secure Socket Layer) communications through a
+proxy, but the Python Standard Library doesn't
+support that functionality out of the box.</P>
+
+
+<a name="pythoncook2-CHP-13-SECT-14.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">We can code a generic proxy, defaulting to SSL but, in fact, good for
+all kinds of network protocols. Save the following code as module
+file <i>pytunnel.py</I> somewhere along your Python
+<tt>sys.path</tt>:</p>
+
+<pre>import threading, socket, traceback, sys, base64, time
+def recv_all(the_socket, timeout=1):
+    ''' receive all data available from the_socket, waiting no more than
+        ``timeout'' seconds for new data to arrive; return data as string.'''
+    # use non-blocking sockets
+    the_socket.setblocking(0)
+    total_data = [  ]
+    begin = time.time( )
+    while True:
+        ''' loop until timeout '''
+        if total_data and time.time( )-begin &gt; timeout:
+            break     # if you got some data, then break after timeout seconds
+        elif time.time( )-begin &gt; timeout*2:
+            break     # if you got no data at all yet, wait a little longer
+        try:
+            data = the_socket.recv(4096)
+            if data:
+                total_data.append(data)
+                begin = time.time( )       # reset start-of-wait time
+            else:
+                time.sleep(0.1)           # give data some time to arrive
+        except:
+            pass
+    return ''.join(total_data)
+class thread_it(threading.Thread):
+    ''' thread instance to run a tunnel, or a tunnel-client '''
+    done = False
+    def _ _init_ _(self, tid='', proxy='', server='', tunnel_client='', 
+                 port=0, ip='', timeout=1):
+        threading.Thread._ _init_ _(self)
+        self.tid = tid
+        self.proxy = proxy
+        self.port = port
+        self.server = server
+        self.tunnel_client = tunnel_client
+        self.ip = ip; self._port = port
+        self.data = {  }     #   store data here to get later
+        self.timeout = timeout
+    def run(self):
+        try:
+            if self.proxy and self.server:
+                ''' running tunnel operation, so bridge server &lt;-&gt; proxy '''
+                new_socket = False
+                while not thread_it.done:    # loop until termination
+                    if not new_socket:
+                        new_socket, address = self.server.accept( )
+                    else:
+                        self.proxy.sendall(
+                            recv_all(new_socket, timeout=self.timeout))
+                        new_socket.sendall(
+                            recv_all(self.proxy, timeout=self.timeout))
+            elif self.tunnel_client:
+                ''' running tunnel client, just mark down when it's done '''
+                self.tunnel_client(self.ip, self.port)
+                thread_it.done = True     # normal termination
+        except Exception, error:
+            print traceback.print_exc(sys.exc_info( )), error
+            thread_it.done = True         # orderly termination upon exception
+class build(object):
+    ''' build a tunnel object, ready to run two threads as needed '''
+    def _ _init_ _(self, host='', port=443, proxy_host='', proxy_port=80, 
+                 proxy_user='', proxy_pass='', proxy_type='', timeout=1):
+        self._port=port; self.host=host; self._phost=proxy_host
+        self._puser=proxy_user; self._pport=proxy_port; self._ppass=proxy_pass
+        self._ptype=proxy_type; self.ip='127.0.0.1'; self.timeout=timeout
+        self._server, self.server_port = self.get_server( )
+    def get_proxy(self):
+        if not self._ptype:
+            proxy = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            proxy.connect((self._phost, self._pport))
+            proxy_authorization = ''
+            if self._puser:
+                proxy_authorization = 'Proxy-authorization: Basic '+\
+                    base64.encodestring(self._puser+':'+self._ppass
+                                       ).strip( )+'\r\n'
+            proxy_connect = 'CONNECT %s:%sHTTP/1.0\r\n' % (
+                             self.host, self._port)
+            user_agent = 'User-Agent: pytunnel\r\n'
+            proxy_pieces = proxy_connect+proxy_authorization+user_agent+'\r\n'
+            proxy.sendall(proxy_pieces+'\r\n')
+            response = recv_all(proxy, timeout=0.5)
+            status = response.split(None, 1)[1]
+            if int(status)/100 != 2:
+                print 'error', response
+                raise RuntimeError(status)
+            return proxy
+    def get_server(self):
+        port = 2222
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.bind(('localhost', port))
+        server.listen(5)
+        return server, port
+    def run(self, func):
+        Threads = [  ]
+        Threads.append(thread_it(tid=0, proxy=self.get_proxy( ),
+                                 server=self._server, timeout=self.timeout))
+        Threads.append(thread_it(tid=1, tunnel_client=func, ip=self.ip,
+                                 port=self.server_port, timeout=0.5))
+        for Thread in Threads:
+            Thread.start( )
+        for Thread in Threads:
+            Thread.join( )</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-13-SECT-14.3"></a>
+<H4 class="docSection2Title">Discussion</h4>
+
+<p class="docText">Here is how you would typically use this <I>pytunnel</I>
+module in a small example script that tunnels an SSL connection
+through a proxy:</p>
+
+<pre>import pytunnel, httplib
+def tunnel_this(ip, port):
+    conn = httplib.HTTPSConnection(ip, port=port)
+    conn.putrequest('GET', '/')
+    conn.endheaders( )
+    response = conn.getresponse( )
+    print response.read( )
+tunnel = pytunnel.build(host='login.yahoo.com', proxy_host='h1',
+                        proxy_user='u', proxy_pass='p')
+tunnel.run(tunnel_this)</pre><br>
+
+
+<p class="docText">This example assumes you have a proxy server running on host
+<tt><i>h1</i></tt>, which is ready to accept basic
+authentication for a proxy user named <tt><I>u</i></tt>
+with a proxy password of <tt><i>p</I></tt>. Since
+it's unlikely that this is, in fact, your specific
+setup, you'll have to tweak these parameters if you
+want to see an example of this recipe's code
+running. But you understand the general idea: you instantiate class
+<i>pytunnel.build</I>, with all appropriate parameters
+passed with named-argument syntax, to build a tunnel object; then,
+you call the tunnel object's method
+<i>run</I>, passing as its argument your function that you
+want to be "tunneled" through the
+proxy. That function, in turn, receives as its arguments an IP
+address and a port number, and can connect to that address and port
+via SSL or any protocol implying SSL/TLS (Transport Layer Security),
+such as HTTPS.<a name="pythoncook2-CHP-13-ITERM-2880"></a>
+<a name="pythoncook2-CHP-13-ITERM-2881"></a></P>
+
+<p class="docText">Internally, the tunnel object instantiates two threads that are
+instances of <i>thread_it</i>, one to run the tunnel client
+function, the other to perform the tunneling operation itself. The
+tunneling operation, in turn, is nothing more than an endless loop
+where all data available are received from one party and resent to
+the other, and vice versa; function <i>recv_all</i> deals
+with the task of receiving all available data, while the socket
+method <tt>send_all</tt> does the sending. The
+<i>thread_it</i> instance which runs the tunneling
+operation, therefore, does no more than an endless loop of just such
+calls.</p>
+
+<p class="docText">The code shown in this recipe is still being actively developed at
+the time of writing. For the latest version, see <a class="docLink" target="_blank" href="http://ftp.gnu.org/pub/savannah/files/pytunnel/pytunnel.py">http://ftp.gnu.org/pub/savannah/files/pytunnel/pytunnel.py</a>.
+Another alternative worth considering for tunneling and forwarding is
+Twisted's simple proxy (<a class="docLink" target="_blank" href="http://www.twistedmatrix.com/">http://www.twistedmatrix.com/</a>), but I have
+not personally tried that one yet.</p>
+
+
+<a name="pythoncook2-CHP-13-SECT-14.4"></a>
+<h4 class="docSection2Title">See Also</h4>
+
+<p class="docText">For SSL/TLS standards, <a class="docLink" target="_blank" href="http://www.ietf.org/html.charters/tls-charter.html">http://www.ietf.org/html.charters/tls-charter.html</a>;
+documentation for the standard library modules
+<tt>socket</tt>, <tt>threading</tt> and
+<tt>time</tt> in the <span class="docEmphasis">Library
+Reference</span> and <span class="docEmphasis">Python in a
+Nutshell</span>.<a name="pythoncook2-CHP-13-ITERM-2882"></a> <a name="pythoncook2-CHP-13-ITERM-2883"></a></p>
+
+
+
+<ul></UL></TD></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-13-sect-13.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-13-sect-15.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

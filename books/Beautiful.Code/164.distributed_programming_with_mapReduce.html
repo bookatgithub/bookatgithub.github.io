@@ -1,0 +1,124 @@
+<html><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<link href="styles/globalstyle.css" type="text/css" rel="stylesheet"/>
+<link title="medium" href="styles/two.css" type="text/css" rel="stylesheet"/>
+<script src="scripts/main.js" type="text/javascript" language="javascript"></script>
+<title>Chapter 23. Distributed Programming with MapReduce</title>
+</head><body>
+<DIV class=h3 style="MARGIN-TOP: 0px; PADDING-BOTTOM: 1em; WIDTH: 100%; PADDING-TOP: 0px"><SPAN>Distributed Programming with MapReduce</SPAN><SPAN> &gt; A Motivating Example</SPAN></DIV>
+<DIV></DIV>
+<DIV>
+<DIV><A name=distributed_programming_with_mapReduce></A>
+<H2 class=docChapterTitle id=title-ID0E12DK>23. Distributed Programming with MapReduce</H2>
+<P class=docText><SPAN class=docEmphasis><A name="Jeffrey Dean"></A>Jeffrey Dean and Sanjay Ghemawat</SPAN> <A name=idx-CHP-23-1889></A><A name=idx-CHP-23-1890></A><A name=idx-CHP-23-1891></A></P>
+<P class=docText><SPAN class=docEmphSmaller><A name="the design"></A>This chapter describes the design and implementation of mapreduce</SPAN><A name="for large"></A>, a programming system for large-scale data processing problems. <A name=idx-CHP-23-1892></A><A name="developed as"></A>MapReduce was developed as a way of simplifying the development of large-scale computations at Google. MapReduce programs are automatically parallelized and executed on a large cluster of commodity machines. The runtime system takes care of the details of partitioning the input data, scheduling the program's execution across a set of machines, handling machine failures, and managing the required intermachine communication. This allows programmers without any experience with parallel and distributed systems to easily utilize the resources of a large distributed system.<A name=idx-CHP-23-1893></A></P><A name=a_motivating_example></A>
+<H3 class=docSection1Title id=-100000>23.1. A Motivating Example</H3>
+<P class=docText><A name="have "></A>Suppose that you have 20 billion documents, and you want to generate a count of how often each unique <A name=idx-CHP-23-1894></A><A name="just reading"></A>word occurs in the documents. With an average document size of 20 KB, just reading through the 400 terabytes of data on one machine will take roughly four months. Assuming we were willing to wait that long and that we had a machine with sufficient memory, the code would be relatively simple. <A class=docLink href="javascript:moveTo('naiumlve_nonparallel_word_count_program');">Example 23-1</A><A name="in this"></A> (all the examples in this chapter are pseudocode) shows a possible algorithm.</P><A name=naiumlve_nonparallel_word_count_program></A>
+<H5 class=docExampleTitle id=title-ID0EN5DK>Example 23-1. Naïve, nonparallel word count program</H5>
+<P>
+<TABLE cellSpacing=0 cellPadding=5 width=* border=1>
+<TBODY>
+<TR>
+<TD><PRE>map&lt;string, int&gt; word_count;
+for each document d {
+  for each word w in d {
+    word_count[w]++;
+  }
+ }
+... save word_count to persistent storage ...
+</PRE><BR></TD></TR></TBODY></TABLE></P>
+<P class=docText><A name="up this"></A>One way of speeding up this computation is to perform the same computation in parallel across each individual document, as shown in <A class=docLink href="javascript:moveTo('parallelized_word_count_program');">Example 23-2</A>.<A name=idx-CHP-23-1895></A></P><A name=parallelized_word_count_program></A>
+<H5 class=docExampleTitle id=title-ID0EE6DK>Example 23-2. Parallelized word count program</H5>
+<P>
+<TABLE cellSpacing=0 cellPadding=5 width=* border=1>
+<TBODY>
+<TR>
+<TD><PRE>Mutex lock; // Protects word_count
+map&lt;string, int&gt; word_count;
+for each document d in parallel {
+  for each word w in d {
+    lock.Lock();
+    word_count[w]++;
+    lock.Unlock();
+  }
+}
+... save word_count to persistent storage ...
+</PRE><BR></TD></TR></TBODY></TABLE></P>
+<P class=docText><A name="the input"></A>The preceding code nicely parallelizes the input side of the problem. In reality, the code to start up threads would be a bit more complex, since we've hidden a bunch of details by using pseudocode. One problem <A name=idx-CHP-23-1896></A><A name=with></A>with <A class=docLink href="javascript:moveTo('parallelized_word_count_program');">Example 23-2</A><A name="uses a"></A> is that it uses a single global data structure for keeping track of the generated counts. As a result, there is likely to be significant lock contention with the <TT>word_count</TT><A name="the bottleneck"></A> data structure as the bottleneck. This problem can be fixed by partitioning the <TT>word_count</TT><A name="into a"></A> data structure into a number of buckets with a separate lock per bucket, as shown in <A class=docLink href="javascript:moveTo('parallelized_word_count_program_with_partitioned_storage');">Example 23-3</A>.<A name=idx-CHP-23-1897></A></P><A name=parallelized_word_count_program_with_partitioned_storage></A>
+<H5 class=docExampleTitle id=title-ID0EJAEK>Example 23-3. Parallelized word count program with partitioned storage</H5>
+<P>
+<TABLE cellSpacing=0 cellPadding=5 width=* border=1>
+<TBODY>
+<TR>
+<TD><PRE>struct CountTable {
+  Mutex lock;
+  map&lt;string, int&gt; word_count;
+};
+const int kNumBuckets = 256;
+CountTable tables[kNumBuckets];
+for each document d in parallel {
+  for each word w in d {
+    int bucket = hash(w) % kNumBuckets;
+    tables[bucket].lock.Lock();
+    tables[bucket].word_count[w]++;
+    tables[bucket].lock.Unlock();
+  }
+}
+for (int b = 0; b &lt; kNumBuckets; b++) {
+  ... save tables[b].word_count to persistent storage ...
+}
+</PRE><BR></TD></TR></TBODY></TABLE></P>
+<P class=docText><A name="still quite"></A>The program is still quite simple. However, it cannot scale beyond the number of processors in a single machine. Most affordable machines have eight or fewer processors, so even <A name=idx-CHP-23-1898></A><A name="processing to"></A>with perfect scaling, this approach will still require multiple weeks of processing to complete. Furthermore, we have been glossing over the problem of where the input data is stored and how fast it can be read by one machine.<A name=idx-CHP-23-1899></A></P>
+<P class=docText><A name="requires that"></A>Further scaling requires that we distribute the data and the computation across multiple machines. For the moment, let's assume that the machines do not fail. One way to increase scaling is to start many processes on a cluster of networked machines. We will have many input processes, each one responsible for reading and processing a subset of the documents. We will also have many output processes, each responsible for managing one of the <TT>word_count</TT> buckets. <A class=docLink href="javascript:moveTo('parallelized_word_count_program_with_partitioned_processors');">Example 23-4</A> shows the algorithm.</P><A name=parallelized_word_count_program_with_partitioned_processors></A>
+<H5 class=docExampleTitle id=title-ID0ELBEK>Example 23-4. Parallelized word count program with partitioned processors</H5>
+<P>
+<TABLE cellSpacing=0 cellPadding=5 width=* border=1>
+<TBODY>
+<TR>
+<TD>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedHeight>const int M = 1000;     // Number of input processes
+const int R = 256;     // Number of output processes
+main() {
+  // Compute the number of documents to assign to each process
+  const int D = number of documents / M;
+  for (int i = 0; i &lt; M; i++) {
+    fork InputProcess(i * D, (i + 1) * D);
+  }
+  for (int i = 0; i &lt; R; i++) {
+    fork OutputProcess(i);
+  }
+  ... wait for all processes to finish ...
+}
+
+void InputProcess(int start_doc, int end_doc) {
+  map&lt;string, int&gt; word_count[R];   // Separate table per output process
+  for each doc d in range [start_doc .. end_doc-1] do {
+    for each word w in d {
+      int b = hash(w) % R;
+      word_count[b][w]++;
+    }
+  }
+
+  for (int b = 0; b &lt; R; b++) {
+    string s = EncodeTable(word_count[b]);
+    ... send s to output process b ...
+  }
+}
+
+void OutputProcess(int bucket) {
+  map&lt;string, int&gt; word_count;
+  for each input process p {
+    string s = ... read message from p ...
+    map&lt;string, int&gt; partial = DecodeTable(s);
+    for each &lt;word, count&gt; in partial do {
+      word_count[word] += count;
+    }
+  }
+  ... save word_count to persistent storage ...
+}
+
+
+					    </PRE><BR></TD></TR></TBODY></TABLE></P>
+<P class=docText><A name="on a"></A>This approach scales nicely on a network of workstations, but is significantly more complicated and hard to understand (even though we've hidden the details of marshaling and unmarshaling, as well as starting and synchronizing different processes). It also does not deal gracefully with machine failures. To deal with failures, we would extend <A class=docLink href="javascript:moveTo('parallelized_word_count_program_with_partitioned_processors');">Example 23-4</A><A name="To avoid"></A> to re-execute processes that failed before completion. To avoid double-counting data when we re-execute an input process, we would mark each piece of intermediate data with a generation number of the input process and modify the output processing so that it uses these generation numbers to discard duplicates. As you can imagine, adding this failure-handling support would further complicate things.<A name=idx-CHP-23-1900></A><A name=idx-CHP-23-1901></A></P></DIV></DIV>
+<p>&nbsp;</p><p>&nbsp;</p><!-- 仁·义 -->
+</body></html>

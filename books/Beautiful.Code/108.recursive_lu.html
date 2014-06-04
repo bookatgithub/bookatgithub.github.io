@@ -1,0 +1,122 @@
+<html><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<link href="styles/globalstyle.css" type="text/css" rel="stylesheet"/>
+<link title="medium" href="styles/two.css" type="text/css" rel="stylesheet"/>
+<script src="scripts/main.js" type="text/javascript" language="javascript"></script>
+<title>Section 14.6. Recursive LU</title>
+</head><body>
+<DIV class=h3 style="MARGIN-TOP: 0px; PADDING-BOTTOM: 1em; WIDTH: 100%; PADDING-TOP: 0px"><SPAN>How Elegant Code Evolves with Hardware The Case of Gaussian Elimination</SPAN><SPAN> &gt; Recursive LU</SPAN></DIV>
+<DIV></DIV>
+<DIV>
+<DIV><A name=recursive_lu></A>
+<H3 class=docSection1Title id=-100000>14.6. Recursive LU</H3>
+<P class=docText><A name="Setting the"></A>Setting the block size parameter for the <A name=idx-CHP-14-1193></A><A name="like a"></A>LAPACK's LU might seem like a trivial matter at first. But in practice, it requires a lot of tuning for various precisions and matrix sizes. Many users end up leaving the setting unchanged, even if the tuning has to be done only once at installation. This problem is exacerbated by the fact that not just one but many LAPACK routines use a blocking parameter.<A name=idx-CHP-14-1194></A><A name=idx-CHP-14-1195></A></P>
+<P class=docText><A name="formulation of"></A>Another issue with LAPACK's formulation of LU is the factorization of tall and narrow panels of columns performed by the DGETF2 routine. It uses Level-1 BLAS and was found to become a <A name=idx-CHP-14-1196></A><A name="the processors"></A>bottleneck as the processors became faster throughout the 1990s without corresponding increases in memory bandwidth.</P>
+<P class=docText><A name="from a"></A>A solution came from a rather unlikely direction: divide-and-conquer recursion. In place of LAPACK's looping constructs, the newer <A name=idx-CHP-14-1197></A><A name="part of"></A>recursive LU algorithm splits the work in half, factorizes the left part of the matrix, updates the rest of the matrix, and factorizes the right part. The use of Level-1 BLAS is reduced to an acceptable minimum, and most of the calls to Level-3 BLAS operate on larger portions of the matrix than LAPACK's algorithm. And, of course, the block size does not have to be tuned anymore.</P>
+<P class=docText><A name=idx-CHP-14-1198></A>Recursive LU <A name=idx-CHP-14-1199></A><A name="use of"></A>required the use of Fortran 90, which was the first Fortran standard to allow recursive subroutines. A side effect of using Fortran 90 was the increased importance of the LDA parameter, the leading dimension of A. It allows more flexible use of the subroutine, as well as performance tuning for cases when matrix dimension <TT><I>m</I></TT><A name="conflicts that"></A> would cause memory bank conflicts that could significantly reduce available memory bandwidth.</P>
+<P class=docText><A name="LDA parameter"></A>The Fortran 90 compilers use the LDA parameter to avoid copying the data into a contiguous buffer when calling external routines, such as one of the BLAS. Without LDA, the compiler has to assume the worst-case scenario when input matrix <TT><I>a</I></TT><A name="is not"></A> is not contiguous and needs to be copied to a temporary contiguous buffer so the call to BLAS does not end up with an out-of-bands memory access. With LDA, the compiler passes array pointers to BLAS without any copies.</P>
+<P class=docText><A class=docLink href="javascript:moveTo('recursive_variant_fortran_coding');">Example 14-4</A> shows recursive <A name=idx-CHP-14-1200></A>LU factorization.<A name=I_indexterm14_tt315></A><A name=I_indexterm14_tt316></A></P><A name=recursive_variant_fortran_coding></A>
+<H5 class=docExampleTitle id=title-ID0EDPDK>Example 14-4. Recursive variant (Fortran 90 coding)</H5>
+<P>
+<TABLE cellSpacing=0 cellPadding=5 width=* border=1>
+<TBODY>
+<TR>
+<TD>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedHeight>      recursive subroutine rdgetrf(m, n, a, lda, ipiv, info)
+      implicit none
+
+      integer, intent(in) :: m, n, lda
+      double precision, intent(inout) :: a(lda,*)
+      integer, intent(out) :: ipiv(*)
+      integer, intent(out) :: info
+
+      integer :: mn, nleft, nright, i
+      double precision :: tmp
+
+      double precision :: pone, negone, zero
+      parameter (pone=1.0d0)
+      parameter (negone=-1.0d0)
+      parameter (zero=0.0d0)
+
+      intrinsic min
+
+      integer idamax
+      external dgemm, dtrsm, dlaswp, idamax, dscal
+
+      mn = min(m, n)
+
+      if (mn .gt. 1) then
+         nleft = mn / 2
+         nright = n - nleft
+
+         call rdgetrf(m, nleft, a, lda, ipiv, info)
+
+         if (info .ne. 0) return
+         call dlaswp(nright, a(1, nleft+1), lda, 1, nleft, ipiv, 1)
+
+         call dtrsm('L', 'L', 'N', 'U', nleft, nright, pone, a, lda,
+    $         a(1, nleft+1), lda)
+
+         call dgemm('N', 'N', m-nleft, nright, nleft, negone,
+    $         a(nleft+1,1) , lda, a(1, nleft+1), lda, pone,
+    $         a(nleft+1, nleft+1), lda)
+
+         call rdgetrf(m - nleft, nright, a(nleft+1, nleft+1), lda,
+    $         ipiv(nleft+1), info)
+         if (info .ne. 0) then
+            info = info + nleft
+            return
+         end if
+
+         do i =nleft+1, m
+            ipiv(i) = ipiv(i) + nleft
+         end do
+
+         call dlaswp(nleft, a, lda, nleft+1, mn, ipiv, 1)
+
+      else if (mn .eq. 1) then
+         i  = idamax(m, a, 1)
+         ipiv(1) = i
+         tmp = a(i, 1)
+
+         if (tmp .ne. zero .and. tmp .ne. -zero) then
+            call dscal(m, pone/tmp, a, 1)
+            a(i,1) = a(1,1)
+            a(1,1) = tmp
+         else
+            info = 1
+         end if
+
+      end if
+
+      return
+      end
+
+
+					    </PRE><BR></TD></TR></TBODY></TABLE></P>
+<P class=docText><A name="certain degree"></A>There is a certain degree of elegance in the <A name=idx-CHP-14-1201></A><A name="are exposed"></A>recursive variant. No loops are exposed in the routine. Instead, the algorithm is driven by the recursive nature of the method (see the paper by F. G. Gustavson listed under "Further Reading").</P>
+<P class=docText>The <A name=idx-CHP-14-1202></A><A name="Algorithm consists"></A>Recursive LU Algorithm consists of four basic steps, illustrated in <A class=docLink href="javascript:moveTo('recursive_lu_factorization');">Figure 14-2</A>:</P>
+<DIV style="FONT-WEIGHT: bold">
+<OL class=docList type=1>
+<LI>
+<DIV style="FONT-WEIGHT: normal">
+<P class=docList><A name="into two"></A>Split the matrix into two rectangles (<SPAN class=docEmphasis>m * n/2</SPAN><A name="scale it"></A>); if the left part ends up being only a single column, scale it by the <A name=idx-CHP-14-1203></A><A name="the pivot"></A>reciprocal of the pivot and return.</P></DIV></LI>
+<LI>
+<DIV style="FONT-WEIGHT: normal">
+<P class=docList>Apply the <SPAN class=docEmphasis>LU</SPAN> algorithm to the left part.</P></DIV></LI>
+<LI>
+<DIV style="FONT-WEIGHT: normal">
+<P class=docList><A name="right part"></A>Apply transformations to the right part (perform the triangular solve A<SPAN class=docEmphasis>12</SPAN> =L-<SPAN class=docEmphasis>1</SPAN>A<SPAN class=docEmphasis>12</SPAN> and matrix multiplication A<SUB><SPAN class=docEmphasis>22</SPAN></SUB>=A<SUB><SPAN class=docEmphasis>22</SPAN></SUB>–A<SUB><SPAN class=docEmphasis>21</SPAN></SUB>*A<SUB><SPAN class=docEmphasis>12</SPAN></SUB>).</P></DIV></LI>
+<LI>
+<DIV style="FONT-WEIGHT: normal">
+<P class=docList><A name="the right"></A>Apply the LU algorithm to the right part.</P></DIV></LI></OL></DIV><A name=recursive_lu_factorization></A>
+<P>
+<CENTER>
+<H5 class=docFigureTitle><A name="Figure "></A>Figure 14-2. Recursive LU factorization</H5><IMG id="" height=78 alt="" src="images/recursive_lu.0.png" width=500 border=0> </CENTER>
+<P></P><BR>
+<P class=docText><A name="work is"></A>Most of the work is performed in the matrix multiplications, which operate on successive matrices of size <SPAN class=docEmphasis>n/2, n/4, n/8</SPAN>, etc. The implementation in <A class=docLink href="javascript:moveTo('recursive_variant_fortran_coding');">Example 14-4</A><A name="a "></A> can show about a 10 percent improvement in performance over the LAPACK implementation given in <A class=docLink href="107.lapack_dgetrf.html#lapack_solution_factorization">Example 14-3</A>.<A name=idx-CHP-14-1204></A></P>
+<P class=docText><A name="any of"></A>In a sense, any of the previous renditions of the LU algorithm could be considered a step backward in terms of <A name=idx-CHP-14-1205></A><A name="was a"></A>code elegance. But divide-and-conquer recursion was a tremendous leap forward (even dismissing the modest performance gains). The recursive algorithm for matrix factorization can now be taught to students alongside other recursive algorithms, such as various kinds of sorting methods.</P>
+<P class=docText><A name="to achieve"></A>By changing just the size of matrix parts, it is possible to achieve the same memory access pattern as in LINPACK or LAPACK. Setting <TT>nleft</TT><A name="the code"></A> to 1 makes the code operate on vectors, just as in LINPACK, whereas setting <TT>nleft</TT><A name="like LAPACK"></A> to NB&gt;1 makes it behave like LAPACK's blocked code. In both cases, the original recursion deteriorates from divide-and-conquer to the tail kind. The behavior of such variations of the recursive algorithm can be studied alongside a Quicksort algorithm with various partitioning schemes of the sorted array.</P>
+<P class=docText><A name="to the"></A>Finally, we leave as an exercise to the reader to try to mimic the <A name=idx-CHP-14-1206></A><A name=recursive></A>recursive <A name=idx-CHP-14-1207></A><A name="recursion and"></A>code without using recursion and without explicitly handling the <A name=idx-CHP-14-1208></A><A name="problem to"></A>recursive call stack—an important problem to solve if the Fortran compiler cannot handle recursive functions or subroutines.</P></DIV></DIV>
+<p>&nbsp;</p><p>&nbsp;</p><!-- 仁·义 -->
+</body></html>

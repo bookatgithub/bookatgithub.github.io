@@ -1,0 +1,292 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
+<title>11.5 Flexible memory management</title>
+<link rel="stylesheet" type="text/css" href="./acc.css" />
+</head>
+
+<body>
+<div class="prevnext">
+<a href="69.htm"><img src="images/Prev1.gif" /></a>&nbsp;&nbsp;<a href="71.htm"><img src="images/Next1.gif" /></a>
+</div>
+<h3>11.5 Flexible memory management</h3>
+<p>When we wrote our <code>Vec</code> class, we noted that we did not want to use the built-in <code>new</code> and 
+<code>delete</code> operations to manage our memory. The reason is that if we relied on these operations, 
+our <code>Vec</code> would be more restrictive than the standard <code>vector</code>. The <code>new</code> operator 
+does too much for our purposes: It both allocates and initializes memory. When used to 
+allocate an array of type <code>T</code>, it needs the default constructor for <code>T</code>. This approach prevents 
+us from offering our users as much flexibility as we would like to offer.</p>
+<p>Using <code>new</code> would also be unduly expensive. If we use <code>new</code>, it always initializes every 
+element of a <code>T</code> array by using <code>T::T()</code>. If we wanted to initialize the <code>Vec</code> elements ourselves, 
+we would have to initialize each element twice—once by <code>new</code>, and again to install 
+the value that our user supplied. Even worse, consider the allocation strategy that we 
+propose to use for <code>push_back</code>. This strategy implies that we'll double the size of the <code>Vec</code> 
+each time we need to get more storage. We have no reason to want the extra elements initialized. 
+They'll be used only by <code>push_back</code>, which will use the space only when we 
+have a new element to construct in that space. If we used <code>new</code> to allocate the underlying 
+array, these elements would be initialized regardless of whether we ever use them.</p>
+<p>Instead of using the built-in <code>new</code> and <code>delete</code> operators, we can do better by using 
+standard-library facilities designed to support flexible memory management. The core 
+language itself does not have any notion of memory allocation, because the properties of 
+memory are too variable to wire into the language itself.</p>
+<p>For example, modern computers have many kinds of memory. There may be many 
+different speeds of memory on the machine. There may be memory with special properties, 
+such as graphical buffers or shared memory. There may be memory that is persistent 
+across power failures. Because users might want to allocate any of these (or other) kinds 
+of memory, it is best left to the library to specify how we allocate and manage memory. 
+The standard library isn't required to support all these kinds of memory either. However, 
+by offering a library facility to manage memory, the standard also offers a uniform interface 
+to memory managers, even if those managers themselves are tied to specific implementations. 
+As with the decision to make input-output a library rather than a language 
+facility, the decision to make memory management part of the library gives us greater 
+flexibility in using these different kinds of memory.</p>
+<p>The <code>&lt;memory&gt;</code> header provides a class, called <code><code>allocator</code>&lt;T&gt;</code>, that allocates a block 
+of uninitialized memory that is intended to contain objects of type T, and returns a 
+pointer to the initial element of that memory. Such pointers are dangerous, because their 
+type suggests that they point to objects, but the memory doesn't really contain those 
+objects yet. The library also provides a way to construct objects in that memory, and to 
+destroy the objects again—all without deallocating the memory itself. It is up to the programmer 
+using the <code>allocator</code> class to keep track of which space holds constructed 
+objects and which space is still uninitialized.</p>
+<p>The interesting part of the <code>allocator</code> class, for our purposes, comprises four member 
+functions and two associated nonmember functions:</p>
+<div class="prebox"><pre>
+template&lt;class T&gt; class allocator {
+public:
+    T* allocate(size_t);
+    void deallocate(T*, size_t);
+    void construct(T*, const T&amp;) ;
+    void destroy(T*);
+
+    // ...
+	
+};
+
+template&lt;class Out, class T&gt; void uninitialized_fill(Out, Out, const T&);
+template&lt;class In, class Out&gt; Out uninitialized_copy(In, In, Out);
+</pre></div>
+<p>The <code>allocate</code> member allocates typed but uninitialized storage sufficient to hold the 
+requested number of elements. By typed storage, we mean that it will be used to hold values 
+of type <code>T</code>, and that we will use pointers of type <code>T*</code> to address it. By uninitialized storage, 
+we mean that the memory is raw storage, and no objects have yet been constructed in 
+it. The <code>deallocate</code> member frees this uninitialized storage. It takes a pointer to storage 
+that was allocated by <code>allocate</code>, and a size that indicates how many elements were allocated. 
+The <code>construct</code> and <code>destroy</code> members construct or destroy a single object in this 
+uninitialized space. We call <code>construct</code>, passing it a pointer into space that was allocated 
+by <code>allocate</code>, and a value to copy into that space. The <code>destroy</code> function runs the 
+destructor for <code>T</code> on the element indicated by its argument.</p>
+<p>The two companion functions that we need are named <code>uninitialized_copy</code> and 
+<code>uninitialized_fill</code>. These functions initialize elements in space that is allocated by 
+<code>allocate</code>. The <code>uninitialized_fill</code> function fills this uninitialized space with the 
+specified value. When the function completes, each of the elements in the range specified 
+by the first two arguments will be a newly constructed copy of the value specified in the 
+third argument. The <code>uninitialized_copy</code> function operates like the library <code>copy</code> 
+function, in that it copies values from a sequence specified by its first two arguments into 
+a target sequence denoted by its third argument. Like <code>uninitialized_fill</code>, it 
+assumes that the target range contains raw storage, rather than elements that already hold 
+values, and it constructs new objects in that memory.</p>
+<p>As with any template, the actual type bound to <code>T</code> will be instantiated at compile time. 
+This instantiation will generate an appropriate <code>allocator</code> class for each type that uses 
+the class. In order to obtain an <code>allocator</code> of the right type, we'll add to our <code>Vec&lt;T&gt;</code> 
+class an <code>allocator&lt;T&gt;</code> member that will know how to allocate objects of type <code>T</code>. By 
+adding this member, and using its associated library functions, we can provide the same 
+kind of efficient, flexible memory management as the standard <code>vector</code> class provides.</p>
+<h4>11.5.1 The final Vec class</h4>
+<p>Our complete <code>Vec</code> class, including declarations but not definitions for the memory management 
+functions, now looks like</p>
+<div class="prebox"><pre>
+template &lt;class T&gt; class Vec {
+public:
+    typedef T* iterator;
+    typedef const T* const_iterator;
+    typedef size_t size_type;
+    typedef T value_type;
+
+    Vec() { create(); }
+    explicit Vec(size_type n, const T&amp; t = T()) { create(n, t); }
+
+    Vec(const Vec&amp; v) { create(v.begin(), v.end()); }
+    Vec&amp; operator=(const Vec&amp;);   // <i>as defined in &sect;11.3.2/196</i>
+    ~Vec() { uncreate(); }
+
+    T&amp; operator[](size_type i) { return data[i]; }
+    const T&amp; operator[](size_type i) const { return data[i]; }
+
+    void push_back(const T&amp; t) {
+        if (avail == limit)
+            grow();
+        unchecked_append(t);
+    }
+
+    size_type size() const { return avail - data; }
+
+    iterator begin() { return data; }
+    const_iterator begin() const { return data; }
+
+    iterator end() { return avail; }
+    const_iterator end() const { return avail; }
+private:
+    iterator data;  // <i>first element in the</i> Vec
+    iterator avail; // <i>(one past) the last element in the</i> Vec
+    iterator limit; // <i>(one past) the allocated memory</i>
+
+    // <i>facilities for memory allocation</i>
+    allocator&lt;T&gt; alloc;   // <i>object to handle memory allocation</i>
+
+    // <i>allocate and initialize the underlying array</i>
+    void create() ;
+    void create(size_type, const T&amp;);
+    void create(const_iterator, const_iterator);
+
+    // <i>destroy the elements in the array and free the memory</i>
+    void uncreate();
+
+    // <i>support functions for</i> push_back
+    void grow();
+    void unchecked_append(const T&amp;);
+};
+</pre></div>
+<p>All that remains is to implement the <code>private</code> members that handle memory allocation. 
+As we write these members, our program will be easier to understand if we remember 
+that whenever we have a valid <code>Vec</code> object, four things are always true:</p>
+<ol>
+<li><code>data</code> points at our initial data element, if we have any, and is zero otherwise.</li>
+<li><code>data &lt;= avail &lt;= limit</code>.</li>
+<li>Elements have been constructed in the range [<code>data</code>, <code>avail</code>).</li>
+<li>Elements have not been constructed in the range [<code>avail, limit</code>).</li>
+</ol>
+<p>We shall call these conditions the <i><b>class invariant</b>. </i>Much as we did with loop invariants in 
+&sect;2.3.2/20, we intend to establish the class invariant as soon as we construct an object of 
+that class. If we do so, and we ensure that none of our member functions falsifies the class 
+invariant, we can be assured that the invariant will always be true.</p>
+<p>Note that none of the <code>public</code> members is capable of falsifying the invariant, because 
+the only way to do so would be to change the value of <code>data</code>, <code>avail</code>, or <code>limit</code>, and none 
+of those member functions does so.</p>
+<p>We shall begin by looking at the various <code>create</code> functions, which are responsible for 
+allocating memory, initializing elements in that memory, and setting the pointers appropriately. 
+In each case, we initialize whatever memory is allocated and so, after running 
+<code>create</code>, the pointers <code>limit</code> and <code>avail</code> are always equal: The last constructed element is 
+the same as the last allocated element. You should verify for yourself that the class invariant 
+is true after we have executed any of the following functions:</p>
+<div class="prebox"><pre>
+template &lt;class T&gt; void Vec&lt;T&gt;::create()
+{
+    data = avail = limit = 0;
+}
+
+template &lt;class T&gt; void Vec&lt;T&gt;::create(size_type n, const T&amp; val)
+{
+    data = alloc.allocate(n);
+    limit = avail = data + n;
+    uninitialized_fill(data, limit, val);
+}
+
+template &lt;class T&gt;
+void Vec&lt;T&gt;::create(const_iterator i, const_iterator j)
+{
+    data = alloc.allocate(j - i);
+    limit = avail = uninitialized_copy(i, j, data);
+}
+</pre></div>
+<p>The version of <code>create</code> that takes no arguments creates an empty <code>Vec</code>, so its job is to 
+ensure that the pointers start out with zero values.</p>
+<p>The version that takes a size and a value uses the size to <code>allocate</code> the appropriate 
+amount of memory. The <code>allocate</code> member of class <code>allocator&lt;T&gt;</code> allocates enough 
+memory to hold the specified number of objects of type T. Thus, <code>alloc.allocate(n)</code> 
+allocates enough space to hold n objects. The <code>allocate</code> function returns a pointer to the 
+initial element, which we store in <code>data</code>. The memory returned by <code>allocate</code> is uninitialized, 
+so we arrange to initialize it by calling <code>uninitialized_fill</code>, which copies its 
+third argument into the sequence of uninitialized elements specified by its first two arguments. 
+When the function completes, it will have constructed new elements in the space 
+obtained by <code>allocate</code> and will have initialized each of these elements to <code>val</code>.</p>
+<p>The final version of <code>create</code> operates similarly to the other two, except that it calls 
+<code>uninitialized_copy</code> to initialize the space obtained from <code>allocate</code>. That function 
+copies elements from the sequence denoted by its first two arguments into a target 
+sequence of uninitialized elements denoted by its third argument. It returns a pointer to 
+(one past) the last element that it initialized, which is exactly the value that we need for 
+<code>limit</code> and <code>avail</code>.</p>
+<p>The <code>uncreate</code> member has to undo what the <code>create</code> members did: It must run the 
+destructors on the elements, and return the space that the <code>Vec</code> used:</p>
+<div class="prebox"><pre>
+template &lt;class T&gt; void Vec&lt;T&gt;::uncreate()
+{
+    if (data) {
+        // <i>destroy (in reverse order) the elements that were constructed</i>
+        iterator it = avail;
+        while (it != data)
+            alloc.destroy(--it);
+
+        // <i>return all the space that was allocated</i>
+        alloc.deallocate(data, limit - data);
+    }
+    // <i>reset pointers to indicate that the Vec is empty again</i>
+    data =  limit  =  avail  =  0;
+
+}
+</pre></div>
+<p>If <code>data</code> is zero, there's no work to do. If we were using <code>delete</code>, we might not bother to 
+compare <code>data</code> to zero, knowing that executing <code>delete</code> on a zero pointer is harmless. 
+However, unlike <code>delete</code>, the <code>alloc.deallocate</code> function requires a nonzero pointer, 
+even if no memory is being freed. Therefore, we must check whether <code>data</code> is zero.</p>
+<p>If we have work to do, we march the iterator <code>it</code> through the constructed elements of 
+the <code>Vec</code>, calling <code>destroy</code> to destroy each element. We go backward through the <code>Vec</code> to 
+match the behavior of <code>delete[]</code>, which destroys elements in reverse order. Once we've 
+destroyed the elements, we free all the space in the call to <code>deallocate</code>. This function 
+takes a pointer to the first element of the memory to free, and an integral value that indicates 
+how many elements of type <code>T</code> are to be freed. Because we want to return all the 
+space that was allocated, we <code>deallocate</code> the space between <code>data</code> and <code>limit</code>.</p>
+<p>What's left is to implement the members used by <code>push_back</code>:</p>
+<div class="prebox"><pre>
+template &lt;class T&gt; void Vec&lt;T&gt;::grow()
+{
+    // <i>when growing, allocate twice as much space as currently in use</i>
+    size_type new_size = max(2 * (limit - data), ptrdiff_t(1));
+
+    // <i>allocate new space and copy existing elements to the new space</i>
+    iterator new_data = alloc.allocate(new_size);
+    iterator new_avail = uninitialized_copy(data, avail, new_data);
+
+    // <i>return the old space</i>
+    uncreate();
+
+    // <i>reset pointers to point to the newly allocated space</i>
+    data = new_data;
+    avail = new_avail; 
+    limit = data + new_size;
+}
+
+// <i>assumes avail points at allocated, but uninitialized space</i>
+template &lt;class T&gt; void Vec&lt;T&gt;::unchecked_append(const T&amp; val)
+{
+    alloc.construct(avail++, val);
+}
+</pre></div>
+<p>The job of <code>grow</code> is to <code>allocate</code> enough space to hold at least another element. It allocates 
+more than it needs, so that subsequent calls to <code>push_back</code> can use the excess, avoiding 
+the overhead of frequent memory allocations. In &sect;11.4/202, we said that our strategy 
+would be to double the amount of space for each new allocation. Of course, the <code>Vec</code> 
+might currently be empty, so we cater to this possibility by allocating the <code>max</code> of one element 
+and twice the existing space. Remembering from &sect;8.1.3/142 that the two arguments 
+to <code>max</code> must have exactly the same type, we explicitly construct an object with value 1 of 
+type <code>ptrdiff_t</code>, which we know from &sect;10.1.4/175 is the type of <code>limit - data</code>.</p>
+<p>We start by remembering in <code>new_size</code> how many elements we will allocate. We 
+<code>allocate</code> the appropriate space, and then call <code>uninitialized_copy</code> to copy the elements 
+from the current space into the newly allocated space. We then return the old 
+memory, and destroy the elements there by calling <code>uncreate</code>. Finally, we reset the 
+pointers so that <code>data</code> points to the first element in the newly allocated array, 
+<code>limit</code> points to (one past) the last constructed element in the <code>Vec</code>, and <code>avail</code> points to 
+(one past) the last allocated but as yet uninitialized element.</p>
+<p>Note that it is essential that we save the values returned by <code>allocate</code> and 
+<code>uninitialized_copy</code>. The reason is that if we used those values immediately to reset 
+<code>data</code> and <code>limit</code>, then the subsequent calls to <code>uncreate</code> would destroy and free the 
+memory that we just allocated, rather than getting rid of the old space!</p>
+<p>The <code>unchecked_append</code> function builds an element in the first location after the constructed 
+elements. It assumes that <code>avail</code> points at space that was allocated, but has not 
+yet been used to hold a constructed element. Because we call <code>unchecked_append</code> only 
+immediately after a previous call to <code>grow</code>, we know that this call is safe.</p>
+<div class="prevnext">
+<a href="69.htm"><img src="images/Prev1.gif" /></a>&nbsp;&nbsp;<a href="71.htm"><img src="images/Next1.gif" /></a>
+</div>
+</body>
+</html>

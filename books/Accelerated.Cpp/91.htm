@@ -1,0 +1,104 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
+<title>14.3 Handles that let you decide when to share data</title>
+<link rel="stylesheet" type="text/css" href="./acc.css" />
+</head>
+
+<body>
+<div class="prevnext">
+<a href="90.htm"><img src="images/Prev1.gif" /></a>&nbsp;&nbsp;<a href="92.htm"><img src="images/Next1.gif" /></a>
+</div>
+<h3>14.3 Handles that let you decide when to share data</h3>
+<p>So far, we have seen two possible definitions for our generic handle class. The first version 
+always copies the underlying object; the second never does so. A more useful kind of 
+handle is one that lets the program that uses it decide when it wants to copy the target 
+object and when it doesn't. Such a handle class preserves the performance of 
+<code>Ref_handle</code>, and allows the class author to provide the valuelike behavior of <code>Handle</code>s. 
+Such a handle will preserve the useful properties of built-in pointers, but avoids many of 
+the pitfalls. Thus, we'll call this final handle class <code>Ptr</code>, to capture the notion that it is a 
+useful substitute for built-in pointers. In general, our <code>Ptr</code> class will copy the object if we 
+are about to change its contents, but only if there is another handle attached to the same 
+object. Fortunately, the reference count gives us a way to tell whether our handle is the 
+only one attached to its object.</p>
+<p>The fundamentals of our <code>Ptr</code> class are the same as the <code>Ref_handle</code> class that we 
+developed in &sect;14.2/260. All we need to do is to add one more member function to that 
+class to give control to the user:</p>
+<div class="prebox"><pre>
+template&lt;class T&gt; class Ptr {
+public:
+    // <i>new member to copy the object conditionally when needed </i>
+    void make_unique() {
+        if (*refptr != 1) {
+            --*refptr;
+            refptr = new size_t(1);
+            p = p ? p-&gt;clone() : 0;
+        }
+    }
+    
+    // <i>the rest of the class looks like </i><code>Ref_handle</code> <i>except for its name</i>
+    Ptr(): refptr(new size_t(l)), p(0) { }
+    Ptr(T* t): refptr(new size_t(l)), p(t) { }
+    Ptr(const Ptr&amp; h): refptr(h.refptr), p(h.p) { ++*refptr; }
+
+    Ptr&amp; operator=(const Ptr&amp;) ;   // <i>implemented analogously to &sect;14.2/261</i>
+    ~Ptr();                        // <i>implemented analogously to &sect;14.2/262</i>
+    operator bool() const { return p; }
+    T&amp; operator*() const;,         // <i>implemented analogously to &sect;14.2/261</i>
+    T* operator-&gt;() const;         // <i>implemented analogously to &sect;14.2/261</i>
+
+private:
+    T* p;
+    size_t* refptr;
+};
+</pre></div>
+
+<p>This new <code>make_unique</code> member does just what we want: If the reference count is 1, it 
+does nothing; otherwise, it uses the <code>clone</code> member of the object to which the handle is 
+bound to make a copy of that object, and sets <code>p</code> to point to the copy. If the reference count 
+is not 1, there must be at least one other <code>Ptr</code> that refers to the original object. We therefore 
+decrement the reference count associated with the original (which might reduce it to 
+1 but not to 0). We then create a new reference count for our handle, and for others that 
+might be created in the future as copies of it.  Because so far there is only one <code>Ptr</code> 
+attached to the copy that we're makings we initialize the counter to 1. Before calling 
+<code>clone</code>, we check whether the pointer to the object from which we're copying is bound to 
+an actual object. If so, we call the <code>clone</code> function to copy that object. When we're done, 
+we'll know that this <code>Ptr</code> is the only one that is attached to the object to which <code>p</code> points. 
+That object is either the same one as before (if the original reference count was one) or a 
+copy of it (if the reference count was greater than one).</p>
+<p>We can use this latest revision of <code>Ptr</code> in the handle-based <code>Student_info</code> implementation 
+in &sect;14.1.2/258. When we do, we'll discover that we don't need to change this 
+implementation of <code>Student_info</code> at all, because none of our operations changes the 
+value of the object without also replacing it. The only <code>Student_info</code> operation that 
+changes the value is the read function, but that function always assigns a newly created 
+value to its <code>Ptr</code> member. When it does so, the <code>Ptr</code> assignment operator will either free 
+the old value or keep it around, depending on whether there are other objects that refer to 
+the old value. In either case, the object into which we read will have a new <code>Ptr</code> object and 
+will, therefore, be the only user of that object. If our users write code such as</p>
+<div class="prebox"><pre>
+Student_info s1;
+read(cin, s1);           // <i>give </i>s1 <i>a value</i>
+Student_info s2 = s1;    // <i>copy that value into s2</i>
+read(cin, s2);           // read <i>into </i>s2; <i>changes only </i>s2 <i>and not </i>s1
+</pre></div>
+<p>then the value of <code>s2</code> is reset in the <code>read</code> call, but the value of <code>s1</code> is unchanged.</p>
+<p>On the other hand, had we added the <code>virtual</code> version of the <code>regrade</code> function 
+described in &sect;13.6.2/249 to the <code>Core</code> hierarchy, and given <code>Student_Info</code> a corresponding 
+interface function, then that function would need to change to call <code>make_unique</code>:</p>
+<div class="prebox"><pre>
+void Student_info::regrade(double final, double thesis)
+{
+    // <i>get our own copy before changing the object</i>
+    cp.make_unique();
+
+    if (cp)
+        cp-&gt;regrade(final, thesis);
+    else throw run_time_error(&quot;regrade of unknown student&quot;);
+}
+</pre></div>
+<div class="prevnext">
+<a href="90.htm"><img src="images/Prev1.gif" /></a>&nbsp;&nbsp;<a href="92.htm"><img src="images/Next1.gif" /></a>
+</div>
+</body>
+</html>

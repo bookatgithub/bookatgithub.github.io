@@ -1,0 +1,226 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;14.11.&nbsp;Generating OPML Files</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-14-sect-10.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-14-sect-12.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-14-SECT-11"></a>
+<h3 class="docSection1Title" id="409771-884">Recipe 14.11. Generating OPML Files</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Moshe Zadka, Premshree Pillai, Anna Martelli
+Ravenscroft</span></p>
+
+<a name="pythoncook2-CHP-14-SECT-11.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText">OPML<a name="pythoncook2-CHP-14-ITERM-2936"></a>
+<a name="pythoncook2-CHP-14-ITERM-2937"></a> (Outline Processor Markup
+Language) is a standard file format for sharing subscription lists
+used by RSS (Really Simple Syndication) feed readers and aggregators.
+You want to share your subscription list, but your blogging site
+provides only a FOAF (Friend-Of-A-Friend) page, not one in the
+standard OPML format.<a name="pythoncook2-CHP-14-ITERM-2938"></a> <a name="pythoncook2-CHP-14-ITERM-2939"></a>
+<a name="pythoncook2-CHP-14-ITERM-2940"></a>
+<a name="pythoncook2-CHP-14-ITERM-2941"></a></P>
+
+
+<a name="pythoncook2-CHP-14-SECT-11.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">Use <tt>urllib2</tt> to open and read the FOAF page and
+<tt>xml.dom</tt> to parse the data received; then, output
+the data in the proper OPML format to a file. For example,
+LiveJournal is a popular blogging site that provides FOAF pages;
+here's a module with the functions you need to turn
+those pages into OPML files:</p>
+
+<pre>#!/usr/bin/python
+import sys
+import urllib2
+import HTMLParser
+from xml.dom import minidom, Node
+def getElements(node, uri, name):
+    ''' recursively yield all elements w/given namespace URI and name '''
+    if (node.nodeType==Node.ELEMENT_NODE and
+        node.namespaceURI==uri and
+        node.localName==name):
+        yield node
+    for node in node.childNodes:
+        for node in getElements(node, uri, name):
+            yield node
+class LinkGetter(HTMLParser.HTMLParser):
+    ''' HTML parser subclass which collecs attributes of link tags '''
+    def _ _init_ _(self):
+        HTMLParser.HTMLParser._ _init_ _(self)
+        self.links = [  ]
+    def handle_starttag(self, tag, attrs):
+        if tag == 'link':
+            self.links.append(attrs)
+def getRSS(page):
+    ''' given a `page' URL, returns the HREF to the RSS link '''
+    contents = urllib2.urlopen(page)
+    lg = LinkGetter( )
+    try:
+        lg.feed(contents.read(1000))
+    except HTMLParser.HTMLParserError:
+        pass
+    links = map(dict, lg.links)
+    for link in links:
+        if (link.get('rel')=='alternate' and
+            link.get('type')=='application/rss+xml'):
+             return link.get('href')
+def getNicks(doc):
+    ''' given an XML document's DOM, `doc', yields a triple of info for
+        each contact: nickname, blog URL, RSS URL '''
+    for element in getElements(doc, 'http://xmlns.com/foaf/0.1/', 'knows'):
+        person, = getElements(element, 'http://xmlns.com/foaf/0.1/', 'Person')
+        nick, = getElements(person, 'http://xmlns.com/foaf/0.1/', 'nick')
+        text, =  nick.childNodes
+        nickText = text.toxml( )
+        blog, = getElements(person, 'http://xmlns.com/foaf/0.1/', 'weblog')
+        blogLocation = blog.getAttributeNS(
+             'http://www.w3.org/1999/02/22-rdf-syntax-ns#', 'resource')
+        rss = getRSS(blogLocation)
+        if rss:
+            yield nickText, blogLocation, rss
+def nickToOPMLFragment((nick, blogLocation, rss)):
+    ''' given a triple (nickname, blog URL, RSS URL), returns a string
+        that's the proper OPML outline tag representing that info '''
+    return '''
+    &lt;outline text="%(nick)s"
+             htmlUrl="%(blogLocation)s"
+             type="rss"
+             xmlUrl="%(rss)s"/&gt;
+    ''' % dict(nick=nick, blogLocation=blogLocation, rss=rss)
+def nicksToOPML(fout, nicks):
+    ''' writes to file `fout' the OPML document representing the
+        iterable of contact information `nicks' '''
+    fout.write('''&lt;?xml version="1.0" encoding="utf-8"?&gt;
+    &lt;opml version="1.0"&gt;
+    &lt;head&gt;&lt;title&gt;Subscriptions&lt;/title&gt;&lt;/head&gt;
+    &lt;body&gt;&lt;outline title="Subscriptions"&gt;
+    ''')
+    for nick in nicks:
+        print nick
+        fout.write(nickToOPMLFragment(nick))
+    fout.write("&lt;/outline&gt;&lt;/body&gt;&lt;/opml&gt;\n")
+def docToOPML(fout, doc):
+    ''' writes to file `fout' the OPLM for XML DOM `doc' '''
+    nicksToOPML(fout, getNicks(doc))
+def convertFOAFToOPML(foaf, opml):
+    ''' given URL `foaf' to a FOAF page, writes its OPML equivalent to
+        a file named by string `opml' '''
+    f = urllib2.urlopen(foaf)
+    doc = minidom.parse(f)
+    docToOPML(file(opml, 'w'), doc)
+def getLJUser(user):
+    ''' writes an OPLM file `user'.opml for livejournal's FOAF page '''
+    convertFOAFToOPML('http://www.livejournal.com/users/%s/data/foaf' % user,
+                      user+".opml")
+if _ _name_ _ == '_ _main_ _':
+    # example, when this module is run as a main script
+    getLJUser('moshez')</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-14-SECT-11.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">RSS feeds have become extremely popular for reading news, blogs,
+wikis, and so on. OPML is one of the standard file formats used to
+share subscription lists among RSS fans. This recipe generates an
+OPML file that can be opened with any RSS reader. With an OPML file,
+you can share your favorite subscriptions with anyone you like,
+publish it to the Web, and so on.</P>
+
+<p class="docText"><i>getElements</I> is a convenience function that gets
+written in almost every XML DOM-processing application. It
+recursively scans the document, finding nodes that satisfy certain
+criteria. This version of <I>getElements</i> is somewhat
+quick and dirty, but it is good enough for our purposes.
+<i>getNicks</i> is where the heart of the parsing brains
+lie. It calls <i>getElements</I> to look for
+"foaf:knows" nodes, and inside
+those, it looks for the "foaf:nick"
+element, which contains the LiveJournal nickname of the user, and
+uses a generator to yield the nicknames in this FOAF document.</p>
+
+<p class="docText">Note an important idiom used four times in the body of
+<i>getNicks</I>:</p>
+
+<pre>    name, = <I>some iterable</i></pre><BR>
+
+
+<p class="docText">The key is the comma after <tt><I>name</i></tt>, which
+turns the left-hand side of this assignment into a one-item
+<tt>tuple</tt>, making the assignment into
+what's technically known as an <i>unpacking
+assignment</i>. Unpacking assignments are of course very
+popular in Python (see <a class="docLink" href="pythoncook2-CHP-19-SECT-4.html#pythoncook2-CHP-19-SECT-4">Recipe 19.4</a> for a technique to make them
+even more widely applicable) but normally with at least two names on
+the left of the assignment, such as:</p>
+
+<pre>    aname, another = <i>iterable yielding 2 items</i></pre><br>
+
+
+<p class="docText">The idiom used in <i>getNicks</i> has exactly the same
+function, but it demands that the iterable yield exactly
+<span class="docEmphasis">one</span> item (otherwise, Python raises a
+<tt>ValueError</tt> exception). Therefore, the idiom has
+the same semantics as:</p>
+
+<pre>    _templist = <i>some iterable</i>
+    if len(_templist) != 1:
+        raise ValueError, 'too many values to unpack'
+    name = _templist[0]
+    del _templist</pre><br>
+
+
+<p class="docText">Obviously, the <tt>name, =</tt> ... idiom is much cleaner
+and more compact than this equivalent snippet, which is worth keeping
+in mind for the next time you need to express the same semantics.</P>
+
+<p class="docText"><I>nicksToOPML</i>, together with its helper function
+<i>nickToOPMLFragment</I>, generates the OPML, while
+<i>docToOPML</i> ties together <i>getNicks</i>
+and <i>nicksToOPML</i> into a FOAF-&gt;OPML convertor.
+<I>saveUser</i> is the main function, which actually
+interacts with the operating system (accessing the network to get the
+FOAF, and using a file to save the OPML).</P>
+
+<p class="docText">The recipe has a specific function <i>getLJUser(user</I>)
+to work with the LiveJournal (<a class="docLink" target="_blank" href="http://www.livejournal.com">http://www.livejournal.com</a>) friends lists.
+However, the point is that the main
+<i>convertFOAFToOPML</I> function is general enough to use
+for other sites as well. The various helper functions can also come
+in handy in your own different but related tasks. For example, the
+<I>getRSS</i> function (with some aid from its helper class
+<I>LinkGetter</I>) finds and returns a link to the RSS feed
+(if one exists) for a given web site.</p>
+
+
+<a name="pythoncook2-CHP-14-SECT-11.4"></a>
+<h4 class="docSection2Title">See Also</h4>
+
+<p class="docText">About OPML, <a class="docLink" target="_blank" href="http://feeds.scripting.com/whatIsOpml">http://feeds.scripting.com/whatIsOpml</a>; for
+more on RSS readers, <a class="docLink" target="_blank" href="http://blogspace.com/rss/readers">http://blogspace.com/rss/readers</a>; for FOAF
+Vocabulary Specification, <a class="docLink" target="_blank" href="http://xmlns.com/foaf/0.1/">http://xmlns.com/foaf/0.1/</a>.<a name="pythoncook2-CHP-14-ITERM-2942"></a> <a name="pythoncook2-CHP-14-ITERM-2943"></a></p>
+
+
+
+<UL></ul></td></TR></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-14-sect-10.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-14-sect-12.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

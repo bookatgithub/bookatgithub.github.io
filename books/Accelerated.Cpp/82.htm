@@ -1,0 +1,236 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
+<title>13.2 Polymorphism and virtual functions</title>
+<link rel="stylesheet" type="text/css" href="./acc.css" />
+</head>
+
+<body>
+<div class="prevnext">
+<a href="81.htm"><img src="images/Prev1.gif" /></a>&nbsp;&nbsp;<a href="83.htm"><img src="images/Next1.gif" /></a>
+</div>
+<h3>13.2 Polymorphism and virtual functions</h3>
+<p>We have not yet completely reimplemented the original <code>Student_info</code> abstraction. 
+That abstraction relied on a nonmember function to support part of its interface: It used 
+the <code>compare</code> function to compare two student records. This function is used by <code>sort</code> to arrange records in alphabetical order.</p>
+<p>Our new comparison function is identical to the one we wrote in &sect;9.3.1/162 except for 
+the change in type name:</p>
+<div class="prebox"><pre>
+bool compare(const Core&amp; c1, const Core&amp; c2)
+{
+    return c1.name() &lt; c2.name();
+}
+</pre></div>
+<p>We compare two student records by comparing their names. We delegate the real work 
+to the <code>string</code> library <code>&lt;</code> operator. What is interesting about this code is that we can use 
+it to compare both <code>Core</code> records and <code>Grad</code> records, or even to compare a <code>Core</code> record with 
+a <code>Grad</code> record:</p>
+<div class="prebox"><pre>
+Grad g(cin);         // <i>read a Grad record </i>
+Grad g2(cin);        // <i>read a Grad record</i>
+
+Core c(cin);         // <i>read a Core record</i>
+Core c2(cin);        // <i>read a Core record</i>
+
+compare(g, g2);      // <i>compare two Grad records</i>
+compare(c, c2);      // <i>compare two Core records</i>
+compare(g, c);       // <i>compare Grad record with a Core record</i>
+</pre></div>
+<p>In each of these calls to <code>compare</code>, the <code>name</code> member of class <code>Core</code> will be run to determine 
+the value to return from <code>compare</code>. Obviously, this is the right member to call for 
+class <code>Core</code>, but what about for <code>Grad</code>? When we defined class <code>Grad</code>, we said that it is 
+inherited from <code>Core</code>, and we did not redefine the <code>name</code> function. Thus, when we invoke 
+<code>g.name() </code>for a <code>Grad</code> object <code>g</code>, we are invoking the <code>name</code> member that it inherited from 
+<code>Core</code>. That function operates the same way on a <code>Grad</code> as it does on a <code>Core</code>: It fetches the 
+underlying n field from the <code>Core</code> part of the object.</p>
+<p>The reason that we can pass a <code>Grad</code> object to a function expecting a <code>Core&amp;</code> is that we 
+said that <code>Grad</code> is inherited from <code>Core</code>, so every <code>Grad</code> object has a <code>Core</code> part:</p>
+<center>
+<img src="images/233.jpg" />
+</center>
+<p>Because every <code>Grad</code> object has a <code>Core</code> part, we can bind <code>compare</code>'s reference parameters 
+to the <code>Core</code> portions of <code>Grad</code> objects, exactly as we can bind them to plain <code>Core</code> objects. 
+Similarly, we could have defined <code>compare</code> to operate on pointers to <code>Core</code> or on objects of 
+type <code>Core</code> (as opposed to a reference to <code>Core</code>). In either case, we could still call the function 
+on behalf of a <code>Grad</code> object. If the function took pointers, we could pass a pointer to 
+<code>Grad</code>. The compiler would convert the <code>Grad*</code> to a <code>Core*</code>, and would bind the pointer to 
+the <code>Core</code> part of the <code>Grad</code> object. If the function took a <code>Core</code> object, then what would be 
+passed is just the <code>Core</code> portion of the object. There can be striking differences in behavior, 
+depending on whether we pass an object itself, or a reference or pointer to the object—as 
+we shall now see.</p>
+<h4>13.2.1 Obtaining a value without knowing the object's type</h4>
+<p>Our <code>compare</code> function does the right thing when we call it with a <code>Grad</code> object as an argument 
+because the <code>name</code> function is shared by both <code>Grad</code> and <code>Core</code> objects. What if we 
+wanted to <code>compare</code> students, not on the basis of their names, but on the basis of their final 
+grades? For example, instead of producing a listing of final grades sorted by name, we 
+might need to produce a listing sorted by final grade.</p>
+<p>As a first cut at solving this problem, we'd write a function that is similar to <code>compare</code>:</p>
+<div class="prebox"><pre>
+bool compare_grades(const Core&amp;  c1, const Core&amp; c2)
+{
+    return c1.grade() &lt; c2.grade();
+}
+</pre></div>
+<p>The only difference is that here we're invoking the <code>grade</code> function rather than the <code>name</code> 
+function. This difference turns out to be significant!</p>
+<p>The difference is that <code>Grad</code> redefines the meaning of the <code>grade</code> function, and we have 
+done nothing to distinguish between these two versions of <code>grade</code>. When we execute the 
+<code>compare_grades</code> function, it will execute the <code>Core::grade</code> member, just as <code>compare</code> 
+executes <code>Core::name</code>. In this case, if we are operating on a <code>Grad</code> object, then the version 
+from <code>Core</code> gives the wrong answer, because the <code>grade</code> functions in <code>Core</code> and <code>Grad</code> 
+behave differently from each other. For <code>Grad</code> objects, we must run <code>Grad::grade</code> in 
+order to account for the <code>thesis</code>.</p>
+<p>What we need is a way for <code>compare_grades</code> to invoke the right <code>grade</code> function, 
+depending on the <i>actual </i>type of object that we pass: If <code>c1</code> or <code>c2</code> refers to a <code>Grad</code> object, 
+then we want the <code>Grad</code> version of <code>grade</code>; if the object is of type <code>Core</code>, then we want the 
+one from <code>Core</code>. We want to make that decision at <i>run time. </i>That is, we want the system 
+to run the right function based on the actual type of the objects passed to the function, 
+which is known only at run time.</p>
+<p>To support this kind of run-time selection, C++ provides <b>virtual </b>functions:</p>
+<div class="prebox"><pre>
+class Core {
+public:
+    virtual double grade() const;   // virtual <i>added</i>
+    // ...
+};
+</pre></div>
+<p>We now say that <code>grade</code> is a <code>virtual</code> function. When we call <code>compare_grades</code>, the 
+implementation will determine the version of <code>grade</code> to execute by looking at the actual 
+types of the objects to which the references <code>c1</code> and <code>c2</code> are bound. That is, it will determine 
+which function to run by inspecting each object that we passed as an argument to 
+<code>compare_grades</code>. If the argument is a <code>Grad</code> object, it will run the <code>Grad::grade</code> function; 
+if the argument is a <code>Core</code> object, it will run the <code>Core::grade</code> function.</p>
+<p>The <code>virtual</code> keyword may be used only inside the class definition. If the functions 
+are defined separately from their declarations, we do not repeat <code>virtual</code> in the definitions. 
+Thus, the definition of <code>Core::grade()</code> need not change. Similarly, the fact that a 
+function is <code>virtual</code> is inherited, so we need not repeat the <code>virtual</code> designation on the 
+declaration of <code>grade</code> within the <code>Grad</code> class. We do have to recompile our code with the 
+new <code>Core</code> class definition. Once we have done so, then because the base-class version is 
+<code>virtual</code>, we get the behavior that we need.</p>
+<h4>13.2.2 Dynamic binding</h4>
+<p>This run-time selection of the <code>virtual</code> function to execute is relevant only when the 
+function is called through a reference or a pointer. If we call a <code>virtual</code> function on 
+behalf of an object (as opposed to through a reference or pointer), then we know the exact 
+type of the object at compile time. The type of an object is fixed: It is what it is, and does 
+not vary at run time. In contrast, a reference or pointer to a base-class object may refer or 
+point to a base-class object, or to an object of a type derived from the base class, meaning 
+that the type of the reference or pointer and the type of the object to which a reference or 
+pointer is bound may differ at run time. It is in this case that the <code>virtual</code> mechanism 
+makes a difference.</p>
+<p>For example, assume we rewrote <code>compare_grades</code> as follows:</p>
+<div class="prebox"><pre>
+// <i>incorrect implementation!</i>
+bool compare_grades(Core c1, Core c2)
+{
+    return c1.grade() &lt; c2.grade();
+}
+</pre></div>
+<p>In this version, we say that our parameters are objects, not references to objects. In this 
+case, we always know the type of objects represented by <code>c1</code> and <code>c2</code>: They are <code>Core</code> 
+objects. We can still call this function on behalf of a <code>Grad</code> object, but the fact that the argument 
+had type <code>Grad</code> is immaterial. In this case, what happens is that what we pass is the 
+<i>base </i>part of the object. The <code>Grad</code> object will be <b><i>cut down </i></b>to its <code>Core</code> part, and a copy of 
+that portion of the <code>Grad</code> object will be passed to the <code>compare_grades</code> function. Because 
+we said that the parameters are <code>Core</code> objects, the calls to <code>grade</code> are <b><i>statically bound</i></b>—they 
+are bound at compile time—to <code>Core::grade</code>.</p>
+<p>This distinction between <b><i>dynamic binding </i></b>and static binding is essential to understanding 
+how C++ supports OOP. The phrase <i>dynamic binding </i>captures the notion that functions 
+may be bound at run time, as opposed to static bindings that happen at compile 
+time. If we call a <code>virtual</code> function on behalf of an object, the call is statically bound— 
+that is, it is bound at compile time—because there is no possibility that the object will 
+have a different type during execution than it does during compilation. In contrast, if we call 
+a <code>virtual</code> function through a pointer or a reference, then the function is dynamically 
+bound—that is, bound at run time. At run time, the version of the <code>virtual</code> function to 
+use will depend on the type of the object to which the reference or pointer is bound:</p>
+<div class="prebox"><pre>
+Core c;
+Grad g;
+Core* p;
+Core&amp; r = g;
+
+c.grade();    // <i>statically bound to </i><code>Core</code>::grade()
+g.grade();    // <i>statically bound to </i><code>Grad</code>::grade()
+p-&gt;grade();   // <i>dynamically bound, depending on the type of the object to which </i>p <i>points</i>
+r.grade();    // <i>dynamically bound, depending on the type of the object to which </i>r <i>refers</i>
+</pre></div>
+<p>The first two calls can be statically bound: We know that <code>c</code> is a <code>Core</code> object, and that at 
+run time, <code>c</code> will still be a <code>Core</code> object. Therefore, the compiler can statically resolve this 
+call, even though <code>grade</code> is a <code>virtual</code> function. In the third and fourth calls, however, 
+we can't know the type of the object to which <code>p</code> or <code>r</code> refers until run time: They might be 
+<code>Core</code> or <code>Grad</code> objects. Hence, the decision as to which function to run in these cases must 
+be delayed until run time. The implementation makes that decision based on the type of 
+the object to which <code>p</code> points or to which <code>r</code> refers.</p>
+<p>The fact that we can use a derived type where a pointer or reference to the base is 
+expected is an example of a key concept in OOP called <i><b>polymorphism</b>. </i>This word, from the 
+Greek <i>polymorphos, </i>meaning &quot;of many forms,&quot; was already in use in 
+English in the mid-nineteenth century. In a programming context, it refers to the ability 
+of one type to stand in for many types. C++ supports polymorphism through the 
+dynamic-binding properties of <code>virtual</code> functions. When we call a <code>virtual</code> through a 
+pointer or reference, we make a polymorphic call. The type of the reference (or pointer) is 
+fixed, but the type of the object to which it refers (or points) can be the type of the reference 
+(or pointer) or any type derived from it. Thus, we can potentially call one of many 
+functions through a single type.</p>
+<p>One final note about <code>virtual</code> functions: These functions must be defined, regardless 
+of whether the program calls them. Nonvirtual functions may be declared but not 
+defined, as long as the program does not call them. Many compilers generate mysterious 
+error messages for classes that fail to define one or more <code>virtual</code> functions. If your program 
+evokes a message from the compiler that you do not understand, and that message 
+says that something is undefined, you should verify that you have defined all of your 
+<code>virtual</code> functions. You are likely to find that the error goes away when you do so.</p>
+<h4>13.2.3 Recap</h4>
+<p>Before we continue, it is probably worth summarizing where we are, and making one 
+slight additional change: We'll make the <code>read</code> function <code>virtual</code> as well. We'd like to be 
+able to have the choice of which <code>read</code> function to run depend on the type of the object on 
+which it is invoked. With that final change, let's look at our classes:</p>
+<div class="prebox"><pre>
+class Core {
+public:
+    Core(): midterm(O), final (0) { }
+    Core(std::istream&amp; is) { read(is); }
+    
+    std::string name() const;
+
+    // as defined in &sect;13.1.2/230
+    virtual std::istream&amp; read(std::istream&amp;);
+    virtual double grade() const;
+
+protected:
+    // <i>accessible to derived classes</i>
+    std::istream&amp; read_common(std::istream&amp;);
+    double midterm, final;
+    std::vector&lt;double&gt; homework;
+
+private:
+    // <i>accessible only to </i>Core
+    std::string n;
+};
+
+class Grad: public Core {
+public:
+    Grad(): thesis(0) { }
+    Grad(std::istream&amp; is) { read(is); }
+
+    // <i>as defined in &sect;13.1.2/230; Note: </i>grade <i>and </i>read <i>are </i>virtual <i>by inheritance</i>
+    double grade() const;
+    std::istream&amp; read(std::istream&amp;);
+private:
+    double thesis;
+};
+
+bool compare(const Core&amp;, const Core&amp;);
+</pre></div>
+<p>We have defined two classes to encapsulate our two kinds of students. The first class, 
+<code>Core</code>, represents students meeting the core requirements for the course. Our second class 
+inherits from <code>Core</code>, adding the requirements for completing a thesis. We can create <code>Core</code> 
+or <code>Grad</code> objects in two ways. The default constructor creates a properly initialized, empty 
+object; the other constructor takes an <code>istream&amp;</code> and reads initial values from the specified 
+stream. The operations let us read into an object, resetting its values, and let us fetch 
+the student's name or final grade. Note that in this version, we have made both the 
+<code>grade</code> and <code>read</code> functions <code>virtual</code>. Finally, our interface includes a global, nonmember 
+<code>compare</code> function that compares two objects by comparing students' names.</p>
+<div class="prevnext">
+<a href="81.htm"><img src="images/Prev1.gif" /></a>&nbsp;&nbsp;<a href="83.htm"><img src="images/Next1.gif" /></a>
+</div>
+</body>
+</html>

@@ -1,0 +1,157 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;1.25.&nbsp;Converting HTML Documents to Texton a Unix Terminal</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-1-sect-24.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-2.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-1-SECT-25"></a>
+<h3 class="docSection1Title">Recipe 1.25. Converting HTML Documents to Texton a Unix Terminal</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Brent Burley, Mark Moraes</span></p>
+
+<a name="pythoncook2-CHP-1-SECT-25.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-1-ITERM-1587"></a>
+<a name="pythoncook2-CHP-1-ITERM-1588"></a>
+<a name="pythoncook2-CHP-1-ITERM-1589"></a>You need to visualize
+HTML documents as text, with support for bold and underlined display
+on your Unix terminal.</P>
+
+
+<a name="pythoncook2-CHP-1-SECT-25.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">The simplest approach is to code a <i>filter</I>
+script, taking HTML on standard input and emitting text and terminal
+control sequences on standard output. Since this recipe only targets
+Unix, we can get the needed terminal control sequences from the
+"Unix" command
+<i>tput</I>, via the function <tt>popen</tt> of
+the Python Standard Library module
+<tt>os</tt>:<a name="pythoncook2-CHP-1-ITERM-1590"></a></P>
+
+<pre>#!/usr/bin/env python
+import sys, os, htmllib, formatter
+# use Unix tput to get the escape sequences for bold, underline, reset
+set_bold = os.popen('tput bold').read( )
+set_underline = os.popen('tput smul').read( )
+perform_reset = os.popen('tput sgr0').read( )
+class TtyFormatter(formatter.AbstractFormatter):
+    ''' a formatter that keeps track of bold and italic font states, and
+        emits terminal control sequences accordingly.
+    '''
+    def _ _init_ _(self, writer):
+        # first, as usual, initialize the superclass
+        formatter.AbstractFormatter._ _init_ _(self, writer)
+        # start with neither bold nor italic, and no saved font state
+        self.fontState = False, False
+        self.fontStack = [  ]
+    def push_font(self, font):
+        # the `font' tuple has four items, we only track the two flags
+        # about whether italic and bold are active or not
+        size, is_italic, is_bold, is_tt = font
+        self.fontStack.append((is_italic, is_bold))
+        self._updateFontState( )
+    def pop_font(self, *args):
+        # go back to previous font state
+        try:
+            self.fontStack.pop( )
+        except IndexError:
+            pass
+        self._updateFontState( )
+    def updateFontState(self):
+        # emit appropriate terminal control sequences if the state of
+        # bold and/or italic(==underline) has just changed
+        try:
+            newState = self.fontStack[-1]
+        except IndexError:
+            newState = False, False
+        if self.fontState != newState:
+            # relevant state change: reset terminal
+            print perform_reset,
+            # set underine and/or bold if needed
+            if newState[0]:
+                print set_underline,
+            if newState[1]:
+                print set_bold,
+            # remember the two flags as our current font-state
+            self.fontState = newState
+# make writer, formatter and parser objects, connecting them as needed
+myWriter = formatter.DumbWriter( )
+if sys.stdout.isatty( ):
+    myFormatter = TtyFormatter(myWriter)
+else:
+    myFormatter = formatter.AbstractFormatter(myWriter)
+myParser = htmllib.HTMLParser(myFormatter)
+# feed all of standard input to the parser, then terminate operations
+myParser.feed(sys.stdin.read( ))
+myParser.close( )</pre><br>
+
+
+
+<a name="pythoncook2-CHP-1-SECT-25.3"></a>
+<H4 class="docSection2Title">Discussion</H4>
+
+<p class="docText"><a name="pythoncook2-CHP-1-ITERM-1591"></a> <a name="pythoncook2-CHP-1-ITERM-1592"></a>The basic
+<tt>formatter.AbstractFormatter</tt> class, offered by the
+Python Standard Library, should work just about anywhere. On the
+other hand, the refinements in the <i>TtyFormatter</i>
+subclass that's the focus of this recipe depend on
+using a Unix-like terminal, and more specifically on the availability
+of the <i>tput</i> Unix command to obtain information on
+the escape sequences used to get bold or underlined output and to
+reset the terminal to its base state.</P>
+
+<p class="docText">Many systems that do not have Unix certification, such as Linux and
+Mac OS X, do have a perfectly workable <i>tput</i>
+command and therefore can use this recipe's
+<I>TtyFormatter</i> subclass just fine. In other words, you
+can take the use of the word "Unix"
+in this recipe just as loosely as you can take it in just about every
+normal discussion: take it as meaning
+"*ix," if you will.</P>
+
+<p class="docText">If your "terminal" emulator
+supports other escape sequences for controlling output appearance,
+you should be able to adapt this <i>TtyFormatter</I> class
+accordingly. For example, on Windows, a <I>cmd.exe</i>
+command window should, I'm told, support standard
+ANSI escape sequences, so you could choose to hard-code those
+sequences if Windows is the platform on which you want to run your
+version of this script.</p>
+
+<p class="docText">In many cases, you may prefer to use other existing Unix commands,
+such as <i>lynx -dump -</i>, to get richer formatting
+than this recipe provides. However, this recipe comes in quite handy
+when you find yourself on a system that has a Python installation but
+lacks such other helpful commands as <i>lynx</i>.</p>
+
+
+<a name="pythoncook2-CHP-1-SECT-25.4"></a>
+<h4 class="docSection2Title">See Also</h4>
+
+<p class="docText"><span class="docEmphasis">Library Reference</span> and <span class="docEmphasis">Python in a
+Nutshell</span> docs on the <tt>formatter</tt> and
+<tt>htmllib</tt> modules; <i>man tput</i> on a
+Unix or Unix-like system for more information about the
+<i>tput</i> command.<a name="pythoncook2-CHP-1-ITERM-1593"></a> <a name="pythoncook2-CHP-1-ITERM-1594"></a> <a name="pythoncook2-CHP-1-ITERM-1595"></a> <a name="pythoncook2-CHP-1-ITERM-1596"></a> <a name="pythoncook2-CHP-1-ITERM-1597"></a></P>
+
+
+
+<a href="5991535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><UL></ul></td></TR></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-1-sect-24.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-2.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

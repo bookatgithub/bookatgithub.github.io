@@ -1,0 +1,741 @@
+<html><head>
+<META http-equiv="Content-Type" content="text/html">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="20.3 Basic Embedding Techniques"-->
+<link rel="STYLESHEET" type="text/css" href="FILES/style.css">
+<link rel="STYLESHEET" type="text/css" href="FILES/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+	<a href="0596000855_python2-CHP-20-SECT-2.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+	<a href="0596000855_python2-CHP-20-SECT-4.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr>
+<td valign="top"><A NAME="python2-CHP-20-SECT-3"></A>
+<H3 class="docSection1Title">20.3 Basic Embedding Techniques</H3>
+
+<P class="docText">As you can probably tell from the preceding overview, there is much
+flexibility in the embedding domain. To illustrate common embedding
+techniques in action, this section presents a handful of short C
+programs that run Python code in one form or another. Most of these
+examples make use of the simple Python module file shown in <A class="docLink" HREF="#python2-CHP-20-EX-1">Example 20-1</A>.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-20-EX-1"></A>Example 20-1. PP2E\Integrate\Embed\Basics\usermod.py </H5>
+<PRE>#########################################################
+# C runs Python code in this module in embedded mode.
+# Such a file can be changed without changing the C layer.
+# There is just standard Python code (C does conversions).
+# You can also run code in standard modules like string.
+#########################################################
+
+import string
+
+message = 'The meaning of life...'
+
+def transform(input):
+    input = string.replace(input, 'life', 'Python')
+    return string.upper(input)</PRE>
+
+
+<P class="docText">If you know any Python at all, you know that this file defines a
+string and a function; the function returns whatever it is passed
+with string substitution and upper-case conversions applied.
+It's easy to use from Python:
+</P>
+
+<PRE>[mark@toy ~/.../PP2E/Integrate/Embed/Basics]$ <B>python</B>
+&gt;&gt;&gt; <B>import usermod                                      </B># import a module
+&gt;&gt;&gt; <B>usermod.message                                     </B># fetch a string
+'The meaning of life...'
+&gt;&gt;&gt; <B>usermod.transform(usermod.message)</B>                  # call a function
+'THE MEANING OF PYTHON...'</PRE>
+
+<P class="docText">With proper API use, it's not much more difficult to use this
+module the same way in C.
+</P>
+
+<A NAME="python2-CHP-20-SECT-3.1"></A>
+<H4 class="docSection2Title">20.3.1 Running Simple Code Strings</H4>
+
+<P class="docText"><A NAME="IXT-20-338218"></A> <A NAME="python2-IDXTERM-2317"></A> <A NAME="python2-IDXTERM-2318"></A>Perhaps the simplest way to run Python
+code from C is by calling the <TT>PyRun_</TT>
+<TT>SimpleString</TT> API function. With it, C programs can
+execute Python programs represented as C character string arrays.
+This call is also very limited: all code runs in the same namespace
+(module <TT>__main__</TT> ), the code strings must be
+Python statements (not expressions), and there is no easy way to
+communicate inputs or outputs with the Python code run. Still,
+it's a simple place to start; the C program in <A class="docLink" HREF="#python2-CHP-20-EX-2">Example 20-2</A> runs Python code to accomplish the same
+results as the interactive session listed in the prior
+section.<A NAME="IXT-20-338219"></A>
+<A NAME="IXT-20-338220"></A>
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-20-EX-2"></A>Example 20-2. PP2E\Integrate\Embed\Basics\embed-simple.c </H5>
+<PRE>/******************************************************* 
+ * simple code strings: C acts like the interactive
+ * prompt, code runs in __main__, no output sent to C;
+ *******************************************************/
+
+#include &lt;Python.h&gt;    /* standard API def */
+
+main(  ) {
+    printf("embed-simple\n");
+    Py_Initialize(  );
+    PyRun_SimpleString("import usermod");                /* load .py file */
+    PyRun_SimpleString("print usermod.message");         /* on python path */
+    PyRun_SimpleString("x = usermod.message");           /* compile and run */
+    PyRun_SimpleString("print usermod.transform(x)"); 
+}</PRE>
+
+
+<P class="docText">The first thing you should notice here is that when Python is
+embedded, C programs always call
+<TT>Py_Initialize</TT>to initialize
+linked-in Python libraries before using any other API functions. The
+rest of this code is straightforward -- C submits hardcoded
+strings to Python that are roughly what we typed interactively.
+Internally, <TT>PyRun_SimpleString</TT> invokes the Python
+compiler and interpreter to run the strings sent from C; as usual,
+the Python compiler is always available in systems that contain
+Python.
+</P>
+
+<A NAME="python2-CHP-20-SECT-3.1.1"></A>
+<H5 class="docSection3Title">20.3.1.1 Compiling and running</H5>
+
+<P class="docText"><A NAME="python2-IDXTERM-2321"></A>
+<A NAME="python2-IDXTERM-2322"></A> <A NAME="python2-IDXTERM-2323"></A>To build a
+standalone executable from this C source file, you need to link its
+compiled form with the Python library file. In this chapter,
+"library" usually means the binary library file (e.g., an
+<I>.a</I> file on Unix) that is generated when Python
+is compiled, not the Python source code library.
+</P>
+
+<P class="docText">Today, everything about Python you need in C is compiled into a
+single <I>.a</I> library file when the interpreter is
+built. The program's <TT>main</TT> function comes
+from your C code, and depending on the extensions installed in your
+Python, you may also need to link any external libraries referenced
+by the Python library.
+</P>
+
+<P class="docText">Assuming no extra extension libraries are needed, <A class="docLink" HREF="#python2-CHP-20-EX-3">Example 20-3</A> is a minimal Linux makefile for building the C
+program in <A class="docLink" HREF="#python2-CHP-20-EX-2">Example 20-2</A>. Again, makefile details vary
+per platform, but see Python manuals for hints. This makefile uses
+the Python include-files path to find <span class="docEmphasis">Python.h</span>
+in the compile step, and adds the Python library file to the final
+link step to make API calls available to the C program.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-20-EX-3"></A>Example 20-3. PP2E\Integrate\Embed\Basics\makefile.1 </H5>
+<PRE># a linux makefile that builds a C executable that embeds 
+# Python, assuming no external module libs must be linked in;
+# uses Python header files, links in the Python lib file;
+# both may be in other dirs (e.g., /usr) in your install;
+# set MYPY to your Python install tree, change lib version;
+
+PY    = $(MYPY)
+PYLIB = $(PY)/libpython1.5.a
+PYINC = -I$(PY)/Include -I$(PY)
+
+embed-simple: embed-simple.o
+	gcc embed-simple.o $(PYLIB) -g -export-dynamic -lm -ldl -o embed-simple
+
+embed-simple.o: embed-simple.c
+	gcc embed-simple.c -c -g $(PYINC)</PRE>
+
+
+<P class="docText">Things may not be quite this simple in practice, though, at least not
+without some coaxing. The makefile in <A class="docLink" HREF="#python2-CHP-20-EX-4">Example 20-4</A> is
+the one I actually used to build all of this section's C
+programs on Linux.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-20-EX-4"></A>Example 20-4. PP2E\Integrate\Embed\Basics\makefile.basics </H5>
+<PRE># build all 5 basic embedding examples 
+# with external module libs linked in;
+# source setup-pp-embed.csh if needed
+
+PY    = $(MYPY)
+PYLIB = $(PY)/libpython1.5.a
+PYINC = -I$(PY)/Include -I$(PY)
+
+LIBS = -L/usr/lib \
+       -L/usr/X11R6/lib \
+       -lgdbm -ltk8.0 -ltcl8.0 -lX11 -lm -ldl
+
+BASICS = embed-simple embed-string embed-object embed-dict embed-bytecode
+
+all:	$(BASICS)
+
+embed%: embed%.o
+	gcc embed$*.o $(PYLIB) $(LIBS) -g -export-dynamic -o embed$*
+
+embed%.o: embed%.c
+	gcc embed$*.c -c -g $(PYINC)
+
+clean:
+	rm -f *.o *.pyc $(BASICS) core</PRE>
+
+
+<P class="docText">This version links in Tkinter libraries because the Python library
+file it uses was built with Tkinter enabled. You may have to link in
+arbitrarily many more externals for your Python library, and frankly,
+chasing down all the linker dependencies can be tedious. Required
+libraries may vary per platform and Python install, so there
+isn't a lot of advice I can offer to make this process simple
+(this is C, after all).
+</P>
+
+<P class="docText">But if you're going to do much embedding work, you might want
+to build Python on your machine from its source with all unnecessary
+extensions <span class="docEmphasis">disabled</span> in the
+<TT>Modules/Setup</TT> file. This produces a Python library
+with minimal external dependencies, which links much more easily. For
+example, if your embedded code won't be building GUIs, Tkinter
+can simply be removed from the library; see the
+<TT>Setup</TT> file for details. You can also find a list
+of external libraries referenced from your Python in the generated
+makefiles located in the Python source tree. In any event, the good
+news is that you only need to resolve linker dependencies once.
+</P>
+
+<P class="docText">Once you've gotten the makefile to work, run it to build the C
+program with python libraries linked in. Run the resulting C program
+as usual:<sup class="docFootnote"><A class="docLink" HREF="#">[2]</A></sup>
+</P>
+<blockquote><p class="docFootnote"><sup><A NAME="">[2]</A></sup> My build environment is a little custom
+(really, odd), so I first need to <TT>source
+$PP2E/Config/setup-pp-embed.csh</TT> to set up PYTHONPATH to
+point to the source library directory of a custom Python build on my
+machine. In Python 1.5.2., at least, Python may have trouble locating
+standard library directories when it is embedded, especially if there
+are multiple Python installs on the same machine (e.g., the
+interpreter and library versions may not match). This probably
+won't be an issue in your build environment, but see the
+sourced file's contents for more details if you get startup
+errors when you try to run a C program that embeds Python. You may
+need to customize your login scripts or source such a setup
+configuration file before running the embedding examples, but only if
+your Python lives in dark places.</p></blockquote>
+
+<PRE>[mark@toy ~/.../PP2E/Integrate/Embed/Basics]$ <B>embed-simple</B>
+embed-simple
+The meaning of life...
+THE MEANING OF PYTHON...</PRE>
+
+<P class="docText">Most of this output is produced by Python <TT>print</TT>
+statements sent from C to the linked-in Python library. It's as
+if C has become an interactive Python programmer.
+</P>
+
+<P class="docText">However, strings of Python code run by C probably would not be
+hardcoded in a C program file like this. They might instead be loaded
+from a text file, extracted from HTML or XML files, fetched from a
+persistent database or socket, and so on. With such external sources,
+the Python code strings that are run from C could be changed
+arbitrarily without having to recompile the C program that runs them.
+They may even be changed onsite, and by end users of a system. To
+make the most of code strings, though, we need to move on to more
+flexible API tools.<A NAME="IXTR3-542"></A> <A NAME="IXTR3-543"></A> <A NAME="IXTR3-544"></A><A NAME="IXTR3-545"></A> <A NAME="IXTR3-546"></A>
+</P>
+
+
+
+<A NAME="python2-CHP-20-SECT-3.2"></A>
+<H4 class="docSection2Title">20.3.2 Running Code Strings with Results and Namespaces</H4>
+
+<P class="docText"><A NAME="python2-IDXTERM-2329"></A><A NAME="python2-IDXTERM-2330"></A> <A NAME="python2-IDXTERM-2331"></A><A class="docLink" HREF="#python2-CHP-20-EX-5">Example 20-5</A> uses the following API calls to run code
+strings that return expression results back to C:
+</P>
+
+<UL>
+<LI><P class="docList"><TT>Py_Initialize</TT><A NAME="IXT-20-338221"></A>
+initializes linked-in Python libraries as before
+</P></LI>
+<LI><P class="docList"><TT>PyImport_ImportModule</TT><A NAME="IXT-20-338222"></A>
+imports a Python module, returns pointer to it
+</P></LI>
+<LI><P class="docList"><TT>PyModule_GetDict</TT><A NAME="IXT-20-338223"></A>
+fetches a module's attribute dictionary object
+</P></LI>
+<LI><P class="docList"><TT>PyRun_String</TT><A NAME="IXT-20-338224"></A>
+runs a string of code in explicit namespaces
+</P></LI>
+<LI><P class="docList"><TT>PyObject_SetAttrString</TT><A NAME="IXT-20-338225"></A>
+assigns an object attribute by name string
+</P></LI>
+<LI><P class="docList"><TT>PyArg_Parse</TT><A NAME="IXT-20-338226"></A>
+converts a Python return value object to C form
+</P></LI>
+</UL>
+<P class="docText">The import calls are used to fetch the namespace of the
+<TT>usermod</TT> module listed in <A class="docLink" HREF="#python2-CHP-20-EX-1">Example 20-1</A> earlier, so that code strings can be run there
+directly (and will have access to names defined in that module
+without qualifications). <TT>Py_Import_ImportModule</TT> is
+like a Python <TT>import</TT> statement, but the imported
+module object is returned to C, not assigned to a Python variable
+name. Because of that, it's probably more similar to the Python
+<TT>__import__</TT> built-in function we used in <A class="docLink" HREF="0596000855_python2-CHP-7-SECT-8.html#python2-CHP-7-EX-32">Example 7-32</A>.
+</P>
+
+<P class="docText">The <TT>PyRun_String</TT> call is the one that actually
+runs code here, though. It takes a code string, a parser mode flag,
+and dictionary object pointers to serve as the global and local
+namespaces for running the code string. The mode flag can be
+<TT>Py_eval_input</TT> to run an expression, or
+<TT>Py_file_input</TT> to run a statement; when running an
+expression, the result of evaluating the expression is returned from
+this call (it comes back as a <TT>PyObject*</TT> object
+pointer). The two namespace dictionary pointer arguments allow you to
+distinguish global and local scopes, but they are typically passed
+the same dictionary such that code runs in a single
+namespace.<sup class="docFootnote"><A class="docLink" HREF="#">[3]</A></sup>
+</P>
+<blockquote><p class="docFootnote"><sup><A NAME="">[3]</A></sup> A related function lets you run
+<span class="docEmphasis">files</span> of code but is not demonstrated in this
+chapter: <TT>PyObject* PyRun_File(FILE</TT>
+<TT>*fp,</TT> <TT>char</TT>
+<TT>*filename,</TT> <TT>mode,</TT>
+<TT>globals,</TT> <TT>locals)</TT>. Because you
+can always load a file's text and run it as a single code
+string with <TT>PyRun_String</TT>, the
+<TT>PyRun_File</TT> call is not always necessary. In such
+multiline code strings, the <TT>\n</TT> character
+terminates lines and indentation groups blocks as usual. </p></blockquote>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-20-EX-5"></A>Example 20-5. PP2E\Integrate\Embed\Basics\embed-string.c </H5>
+<PRE>/* code-strings with results and namespaces */
+
+#include &lt;Python.h&gt;
+
+main(  ) {
+    char *cstr;
+    PyObject *pstr, *pmod, *pdict;
+    printf("embed-string\n");
+    Py_Initialize(  );
+
+    /* get usermod.message */
+    pmod  = PyImport_ImportModule("usermod");
+    pdict = PyModule_GetDict(pmod);
+    pstr  = PyRun_String("message", Py_eval_input, pdict, pdict);
+
+    /* convert to C */
+    PyArg_Parse(pstr, "s", &amp;cstr);
+    printf("%s\n", cstr);
+
+    /* assign usermod.X */
+    PyObject_SetAttrString(pmod, "X", pstr);
+
+    /* print usermod.transform(X) */
+    (void) PyRun_String("print transform(X)", Py_file_input, pdict, pdict);
+    Py_DECREF(pmod);
+    Py_DECREF(pstr);
+}</PRE>
+
+
+<P class="docText">When compiled and run, this file produces the same result as its
+predecessor:
+</P>
+
+<PRE>[mark@toy ~/.../PP2E/Integrate/Embed/Basics]$ <B>embed-string</B>
+embed-string
+The meaning of life...
+THE MEANING OF PYTHON...</PRE>
+
+<P class="docText">But very different work goes into producing this output. This time, C
+fetches, converts, and prints the value of the Python module's
+<TT>message</TT> attribute directly by running a string
+expression, and assigns a global variable (<TT>X</TT>)
+within the module's namespace to serve as input for a Python
+<TT>print</TT> statement string.
+</P>
+
+<P class="docText">Because the string execution call in this version lets you specify
+namespaces, you can better partition the embedded code your system
+runs -- each grouping can have a distinct namespace to avoid
+overwriting other groups' variables. And because this call
+returns a result, you can better communicate with the embedded
+code -- expression results are outputs, and assignments to globals
+in the namespace in which code runs can serve as inputs.
+</P>
+
+<P class="docText">Before we move on, I need to explain two coding issues here. First of
+all, this program also decrements the <span class="docEmphasis">reference
+count</span> on objects passed to it from Python, using the
+<TT>Py_DECREF</TT> call introduced in <A class="docLink" HREF="0596000855_python2-CHP-19.html#python2-CHP-19">Chapter 19</A>. These calls are not strictly needed here
+(the objects' space is reclaimed when the programs exits
+anyhow), but demonstrate how embedding interfaces must manage
+reference counts when Python passes their ownership to C. If this was
+a function called from a larger system, for instance, you would
+generally want to decrement the count to allow Python to reclaim the
+objects.
+</P>
+
+<P class="docText">Secondly, in a realistic program, you should generally test the
+return values of <span class="docEmphasis">all</span> the API calls in this
+program immediately to detect errors (e.g., import failure). Error
+tests are omitted in this section's example to keep the code
+simple, but will appear in later code listings and should be included
+in your programs to make them more robust.<A NAME="IXTR3-547"></A> <A NAME="IXTR3-548"></A><A NAME="IXTR3-549"></A>
+</P>
+
+
+<A NAME="python2-CHP-20-SECT-3.3"></A>
+<H4 class="docSection2Title">20.3.3 Calling Python Objects</H4>
+
+<P class="docText"><A NAME="python2-IDXTERM-2341"></A> <A NAME="python2-IDXTERM-2342"></A> <A NAME="python2-IDXTERM-2343"></A>The last two sections dealt with
+running strings of code, but it's easy for C programs to deal
+in terms of Python objects too. <A class="docLink" HREF="#python2-CHP-20-EX-6">Example 20-6</A>
+accomplishes the same task as Examples <A class="docLink" HREF="#python2-CHP-20-EX-2">Example 20-2</A>
+and <A class="docLink" HREF="#python2-CHP-20-EX-5">Example 20-5</A>, but uses other API tools to
+interact with objects in the Python module directly:
+</P>
+
+<UL>
+<LI><P class="docList"><TT>PyImport_ImportModule</TT><A NAME="IXT-20-338227"></A>
+imports the module from C as before
+</P></LI>
+<LI><P class="docList"><TT>PyObject_GetAttrString</TT><A NAME="IXT-20-338228"></A>
+fetches an object's attribute value by name
+</P></LI>
+<LI><P class="docList"><TT>PyEval_CallObject</TT><A NAME="IXT-20-338229"></A>
+calls a Python function (or class, or method)
+</P></LI>
+<LI><P class="docList"><TT>PyArg_Parse</TT><A NAME="IXT-20-338230"></A>
+converts Python objects to C values
+</P></LI>
+<LI><P class="docList"><TT>Py_BuildValue</TT><A NAME="IXT-20-338231"></A>
+converts C values to Python objects
+</P></LI>
+</UL>
+<P class="docText">We met both the data conversion functions in the last chapter. The
+<TT>PyEval_CallObject</TT> call in this version is the key
+call here: it runs the imported function with a tuple of arguments,
+much like the Python <TT>apply</TT> built-in function. The
+Python function's return value comes back to C as a
+<TT>PyObject*</TT>, a generic Python object pointer.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-20-EX-6"></A>Example 20-6. PP2E\Integrate\Embed\Basics\embed-object.c </H5>
+<PRE>/* fetch and call objects in modules */
+
+#include &lt;Python.h&gt;
+
+main(  ) {
+    char *cstr;
+    PyObject *pstr, *pmod, *pfunc, *pargs;
+    printf("embed-object\n");
+    Py_Initialize(  );
+
+    /* get usermod.message */
+    pmod = PyImport_ImportModule("usermod");
+    pstr = PyObject_GetAttrString(pmod, "message");
+
+    /* convert string to C */
+    PyArg_Parse(pstr, "s", &amp;cstr);
+    printf("%s\n", cstr);
+    Py_DECREF(pstr);
+
+    /* call usermod.transform(usermod.message) */
+    pfunc = PyObject_GetAttrString(pmod, "transform");
+    pargs = Py_BuildValue("(s)", cstr);
+    pstr  = PyEval_CallObject(pfunc, pargs);
+    PyArg_Parse(pstr, "s", &amp;cstr);
+    printf("%s\n", cstr);
+
+    /* free owned objects */
+    Py_DECREF(pmod);
+    Py_DECREF(pstr);
+    Py_DECREF(pfunc);        /* not really needed in main(  ) */
+    Py_DECREF(pargs);        /* since all memory goes away  */
+}</PRE>
+
+
+<P class="docText">When compiled and run, the result is the same again:</P>
+
+<PRE>[mark@toy ~/.../PP2E/Integrate/Embed/Basics]$ <B>embed-object</B>
+embed-object
+The meaning of life...
+THE MEANING OF PYTHON...</PRE>
+
+<P class="docText">But this output is all generated by C this time -- first by
+fetching the Python module's <TT>message</TT>
+attribute value, and then by fetching and calling the module's
+<TT>transform</TT> function object directly and printing
+its return value that is sent back to C. Input to the
+<TT>transform</TT> function is a function argument here,
+not a preset global variable. Notice that <TT>message</TT>
+is fetched as a module attribute this time, instead of by running its
+name as a code string; there is often more than one way to accomplish
+the same goals with different API calls.
+</P>
+
+<P class="docText">Running functions in modules like this is a simple way to structure
+embedding; code in the module file can be changed arbitrarily without
+having to recompile the C program that runs it. It also provides a
+direct communication model: inputs and outputs to Python code can
+take the form of function arguments and return values.<A NAME="IXTR3-550"></A> <A NAME="IXTR3-551"></A> <A NAME="IXTR3-552"></A>
+</P>
+
+
+<A NAME="python2-CHP-20-SECT-3.4"></A>
+<H4 class="docSection2Title">20.3.4 Running Strings in Dictionaries</H4>
+
+<P class="docText"><A NAME="python2-IDXTERM-2352"></A> <A NAME="python2-IDXTERM-2353"></A> <A NAME="python2-IDXTERM-2354"></A>When we used
+<TT>PyRun_String</TT> earlier to run expressions with
+results, code was executed in the namespace of an existing Python
+module. However, sometimes it's more convenient to create a
+brand new namespace for running code strings that is independent of
+any existing module files. The C file in <A class="docLink" HREF="#python2-CHP-20-EX-7">Example 20-7</A>
+shows how; the new namespace is created as a new Python dictionary
+object, and a handful of new API calls are employed in the process:
+</P>
+
+<UL>
+<LI><P class="docList"><TT>PyDict_New</TT><A NAME="IXT-20-338232"></A>
+makes a new empty dictionary object
+</P></LI>
+<LI><P class="docList"><TT>PyDict_SetItemString</TT><A NAME="IXT-20-338233"></A>
+assigns to a dictionary's key
+</P></LI>
+<LI><P class="docList"><TT>PyDict_GetItemString</TT><A NAME="IXT-20-338234"></A>
+fetches (indexes) a dictionary value by key
+</P></LI>
+<LI><P class="docList"><TT>PyRun_String</TT><A NAME="IXT-20-338235"></A>
+runs a code string in namespaces, as before
+</P></LI>
+<LI><P class="docList"><TT>PyEval_GetBuiltins</TT><A NAME="IXT-20-338236"></A>
+gets the built-in scope's module
+</P></LI>
+</UL>
+<P class="docText">The main trick here is the new dictionary. Inputs and outputs for the
+embedded code strings are mapped to this dictionary by passing it as
+the code's namespace dictionaries in the
+<TT>PyRun_String</TT> call. The net effect is that the C
+program in <A class="docLink" HREF="#python2-CHP-20-EX-7">Example 20-7</A> works exactly like this
+Python code:
+</P>
+
+<PRE> &gt;&gt;&gt; d = {}
+ &gt;&gt;&gt; d['Y'] = 2
+ &gt;&gt;&gt; exec 'X = 99' in d, d
+ &gt;&gt;&gt; exec 'X = X + Y' in d, d
+ &gt;&gt;&gt; print d['X']
+ 101</PRE>
+
+<P class="docText">But here, each Python operation is replaced by a C API call.</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-20-EX-7"></A>Example 20-7. PP2E\Integrate\Embed\Basics\embed-dict.c </H5>
+<PRE>/***************************************************
+ * make a new dictionary for code string namespace; 
+ ***************************************************/
+
+#include &lt;Python.h&gt;    
+
+main(  ) {
+    int cval;
+    PyObject *pdict, *pval;
+    printf("embed-dict\n");
+    Py_Initialize(  );
+   
+    /* make a new namespace */
+    pdict = PyDict_New(  ); 
+    PyDict_SetItemString(pdict, "__builtins__", PyEval_GetBuiltins(  ));
+
+    PyDict_SetItemString(pdict, "Y", PyInt_FromLong(2));   /* dict['Y'] = 2   */
+    PyRun_String("X = 99",  Py_file_input, pdict, pdict);  /* run statements  */
+    PyRun_String("X = X+Y", Py_file_input, pdict, pdict);  /* same X and Y    */
+    pval = PyDict_GetItemString(pdict, "X");               /* fetch dict['X'] */
+
+    PyArg_Parse(pval, "i", &amp;cval);                         /* convert to C */
+    printf("%d\n", cval);                                  /* result=101 */
+    Py_DECREF(pdict);
+}</PRE>
+
+
+<P class="docText">When compiled and run, this C program creates this sort of output:</P>
+
+<PRE>[mark@toy ~/.../PP2E/Integrate/Embed/Basics]$ <B>embed-dict</B>
+embed-dict
+101</PRE>
+
+<P class="docText">The output is different this time: it reflects the value of Python
+variable <TT>X</TT> assigned by the embedded Python code
+strings and fetched by C. In general, C can fetch module attributes
+either by calling <TT>PyObject_GetAttrString</TT> with the
+module, or by using <TT>PyDict_GetItemString</TT> to index
+the module's attribute dictionary (expression strings work too,
+but are less direct). Here, there is no module at all, so dictionary
+indexing is used to access the code's namespace in C.
+</P>
+
+<P class="docText">Besides allowing you to partition code string namespaces independent
+of any Python module files on the underlying system, this scheme
+provides a natural communication mechanism. Values stored in the new
+dictionary before code is run serve as inputs, and names assigned by
+the embedded code can later be fetched out of the dictionary to serve
+as code outputs. For instance, the variable <TT>Y</TT> in
+the second string run refers to a name set to 2 by C;
+<TT>X</TT> is assigned by the Python code and fetched later
+by C code as the printed result.
+</P>
+
+<P class="docText">There is one trick in this code that I need to explain. Each module
+namespace in Python has a link to the built-in scope's
+namespace, where names like <TT>open</TT> and
+<TT>len</TT> live. In fact, this is the link Python follows
+during the last step of its local/global/built-in three-scope name
+lookup procedure.<sup class="docFootnote"><A class="docLink" HREF="#">[4]</A></sup> Today, embedding code
+is responsible for setting the <TT>__builtins__</TT> scope
+link in dictionaries that serve as namespaces. Python sets this link
+automatically in all other namespaces that host code execution, and
+this embedding requirement may be lifted in the future (it seems a
+bit too magical to be required for long). For now, simply do what
+this example does to initialize the built-ins link, in dictionaries
+you create for running code in C.<A NAME="IXTR3-553"></A> <A NAME="IXTR3-554"></A>
+</P>
+<blockquote><p class="docFootnote"><sup><A NAME="">[4]</A></sup> This link also plays a part in
+Python's restricted-execution mode, described in <A class="docLink" HREF="0596000855_python2-CHP-15.html#python2-CHP-15">Chapter 15</A>. By changing the built-in scope link to a
+module with limited attribute sets and customized versions of
+built-in calls like <TT>open</TT>, the
+<TT>rexec</TT> module can control machine access from code
+run through its interface.</p></blockquote>
+
+
+<A NAME="python2-CHP-20-SECT-3.5"></A>
+<H4 class="docSection2Title">20.3.5 Precompiling Strings to Bytecode</H4>
+
+<P class="docText"><A NAME="IXT-20-338237"></A> <A NAME="IXT-20-338238"></A>
+<A NAME="IXT-20-338239"></A>When you call Python function objects from C,
+you are actually running the already-compiled bytecode associated
+with the object (e.g., a function body). When running strings, Python
+must compile the string before running it. Because compilation is a
+slow process, this can be a substantial overhead if you run a code
+string more than once. Instead, precompile the string to a bytecode
+object to be run later, using the API calls illustrated in <A class="docLink" HREF="#python2-CHP-20-EX-8">Example 20-8</A>:<sup class="docFootnote"><A class="docLink" HREF="#">[5]</A></sup>
+</P>
+<blockquote><p class="docFootnote"><sup><A NAME="">[5]</A></sup> Just in case you flipped
+ahead to this chapter early: <span class="docEmphasis">bytecode</span> is simply
+an intermediate representation for already compiled program code in
+the current standard Python implementation. It's a low-level
+binary format that can be quickly interpreted by the Python runtime
+system. Bytecode is usually generated automatically when you import a
+module, but there may be no notion of an import when running raw
+strings from C.</p></blockquote>
+
+<UL>
+<LI><P class="docList"><TT>Py_CompileString</TT><A NAME="IXT-20-338240"></A>
+compiles a string of code, returns a bytecode object
+</P></LI>
+<LI><P class="docList"><TT>PyEval_EvalCode</TT><A NAME="IXT-20-338241"></A>
+runs a compiled bytecode object
+</P></LI>
+</UL>
+<P class="docText">The first of these takes the mode flag normally passed to
+<TT>PyRun_String</TT>, and a second string argument that is
+only used in error messages. The second takes two namespace
+dictionaries. These two API calls are used in <A class="docLink" HREF="#python2-CHP-20-EX-8">Example 20-8</A> to compile and execute three strings of Python
+code.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-20-EX-8"></A>Example 20-8. PP2E\Integrate\Embed\Basics\embed-bytecode.c </H5>
+<PRE>/* precompile code strings to bytecode objects */
+
+#include &lt;Python.h&gt;    
+#include &lt;compile.h&gt;
+#include &lt;eval.h&gt;
+ 
+main(  ) {
+    int i;
+    char *cval;
+    PyObject *pcode1, *pcode2, *pcode3, *presult, *pdict;
+    char *codestr1, *codestr2, *codestr3;
+    printf("embed-bytecode\n");
+
+    Py_Initialize(  );
+    codestr1 = "import usermod\nprint usermod.message";     /* statements */
+    codestr2 = "usermod.transform(usermod.message)";        /* expression */
+    codestr3 = "print '%d:%d' % (X, X ** 2),";              /* use input X */
+
+    /* make new namespace dictionary */
+    pdict = PyDict_New(  );
+    if (pdict == NULL) return -1;
+    PyDict_SetItemString(pdict, "__builtins__", PyEval_GetBuiltins(  ));
+ 
+    /* precompile strings of code to bytecode objects */
+    pcode1 = Py_CompileString(codestr1, "&lt;embed&gt;", Py_file_input); 
+    pcode2 = Py_CompileString(codestr2, "&lt;embed&gt;", Py_eval_input); 
+    pcode3 = Py_CompileString(codestr3, "&lt;embed&gt;", Py_file_input); 
+
+    /* run compiled bytecode in namespace dict */
+    if (pcode1 &amp;&amp; pcode2 &amp;&amp; pcode3) {
+        (void)    PyEval_EvalCode((PyCodeObject *)pcode1, pdict, pdict);
+        presult = PyEval_EvalCode((PyCodeObject *)pcode2, pdict, pdict);
+        PyArg_Parse(presult, "s", &amp;cval); 
+        printf("%s\n", cval);            
+        Py_DECREF(presult);
+
+        /* rerun code object repeatedly */
+        for (i = 0; i &lt;= 10; i++) {
+            PyDict_SetItemString(pdict, "X", PyInt_FromLong(i)); 
+            (void) PyEval_EvalCode((PyCodeObject *)pcode3, pdict, pdict);
+        }
+        printf("\n");
+    }
+
+    /* free referenced objects */
+    Py_XDECREF(pdict);
+    Py_XDECREF(pcode1);
+    Py_XDECREF(pcode2);
+    Py_XDECREF(pcode3);
+}</PRE>
+
+
+<P class="docText">This program combines a variety of technique we've already
+seen. The namespace in which the compiled code strings run, for
+instance, is a newly created dictionary (not an existing module
+object), and inputs for code strings are passed as preset variables
+in the namespace. When built and executed, the first part of the
+output is similar to previous examples in this section, but the last
+line represents running the same precompiled code string 11 times:
+</P>
+
+<PRE>[mark@toy ~/.../PP2E/Integrate/Embed/Basics]$ <B>embed-bytecode</B>
+embed-bytecode
+The meaning of life...
+THE MEANING OF PYTHON...
+0:0 1:1 2:4 3:9 4:16 5:25 6:36 7:49 8:64 9:81 10:100</PRE>
+
+<P class="docText">If your system executes strings multiple times, it is a major speedup
+to precompile to bytecode in this fashion.
+</P>
+
+
+
+<ul></ul>
+</td>
+</tr>
+</table>
+<td></td>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+          <a href="0596000855_python2-CHP-20-SECT-2.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+          <a href="0596000855_python2-CHP-20-SECT-4.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+</body></html>

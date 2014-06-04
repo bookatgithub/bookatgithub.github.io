@@ -1,0 +1,678 @@
+<html><head>
+<META http-equiv="Content-Type" content="text/html">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="3.8 Launching Programs on Windows"-->
+<link rel="STYLESHEET" type="text/css" href="FILES/style.css">
+<link rel="STYLESHEET" type="text/css" href="FILES/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+	<a href="0596000855_python2-CHP-3-SECT-7.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+	<a href="0596000855_python2-CHP-3-SECT-9.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr>
+<td valign="top"><A NAME="python2-CHP-3-SECT-8"></A>
+<H3 class="docSection1Title">3.8 Launching Programs on Windows</H3>
+
+<P class="docText"><A NAME="IXT-3-336976"></A>Suppose just for a moment, that you've
+been asked to write a big Python book, and want to provide a way for
+readers to easily start the book's examples on just about any
+platform that Python runs on. Books are nice, but it's awfully
+fun to be able to click on demos right away. That is, you want to
+write a general and portable launcher program in Python, for starting
+other Python programs. What to do?
+</P>
+
+<P class="docText">In this chapter, we've seen how to portably spawn threads, but
+these are simply parallel functions, not external programs.
+We've also learned how to go about starting new, independently
+running programs, with both the
+<TT>fork</TT>/<TT>exec</TT> combination, and
+tools for launching shell commands such as
+<TT>os.popen</TT>. Along the way, though, I've also
+been careful to point out numerous times that the
+<TT>os.fork</TT> call doesn't work on Windows today,
+and <TT>os.popen</TT> fails in Python release 1.5.2 and
+earlier when called from a GUI program on Windows; either of these
+constraints may be improved by the time you read this book (e.g., 2.0
+improves <TT>os.popen</TT> on Windows), but they
+weren't quite there yet as I wrote this chapter. Moreover, for
+reasons we'll explore later, the <TT>os.popen</TT>
+call is prone to blocking (pausing) its caller in some scenarios.
+</P>
+
+<P class="docText">Luckily, there are other ways to start programs in the Python
+standard library, albeit in platform-specific fashion:
+</P>
+
+<UL>
+<LI><P class="docList">The <TT>os.spawnv</TT> and <TT>os.spawnve</TT>
+calls launch programs on Windows, much like a
+<TT>fork</TT>/<TT>exec</TT> call combination on
+Unix-like platforms.
+</P></LI>
+<LI><P class="docList">The <TT>os.system</TT> call can be used on Windows to
+launch a DOS <I>start</I> command, which opens (i.e.,
+runs) a file independently based on its Windows filename
+associations, as though it were clicked.
+</P></LI>
+<LI><P class="docList">Tools in the Python <TT>win32all</TT> extensions package
+provide other, less standardized ways to start programs (e.g., the
+<TT>WinExec</TT> call).
+</P></LI>
+</UL>
+<A NAME="python2-CHP-3-SECT-8.1"></A>
+<H4 class="docSection2Title">3.8.1 The os.spawnv Call</H4>
+
+<P class="docText">Of these, the <TT>spawnv</TT> call is the most complex, but
+also the most like forking programs in Unix. It doesn't
+actually copy the calling process (so shared descriptor operations
+won't work), but can be used to start a Windows program running
+completely independent of the calling program. The script in <A class="docLink" HREF="#python2-CHP-3-EX-22">Example 3-22</A> makes the similarity more obvious -- it
+launches a program with a
+<TT>fork</TT>/<TT>exec</TT> combination in Linux,
+or an <TT>os.spawnv</TT> call on Windows.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-3-EX-22"></A>Example 3-22. PP2E\System\Processes\spawnv.py </H5>
+<PRE>############################################################
+# start up 10 copies of child.py running in parallel;
+# use spawnv to launch a program on Windows (like fork+exec)
+# P_OVERLAY replaces, P_DETACH makes child stdout go nowhere
+############################################################
+
+import os, sys
+ 
+for i in range(10):
+    if sys.platform[:3] == 'win':
+        pypath  = r'C:\program files\python\python.exe'
+        os.spawnv(os.P_NOWAIT, pypath, ('python', 'child.py', str(i)))
+    else:
+        pid = os.fork(  )
+        if pid != 0:
+            print 'Process %d spawned' % pid
+        else:
+            os.execlp('python', 'python', 'child.py', str(i))
+print 'Main process exiting.'</PRE>
+
+
+<P class="docText">Call <TT>os.spawnv</TT> with a process mode flag, the full
+directory path to the Python interpreter, and a tuple of strings
+representing the DOS command line with which to start a new program.
+The <span class="docEmphasis">process mode</span> flag is defined by Visual C++
+(whose library provides the underlying spawnv call); commonly used
+values include:
+</P>
+
+<UL>
+<LI><P class="docList"><TT>P_OVERLAY</TT>: spawned program replaces calling
+program, like <TT>os.exec</TT>
+</P></LI>
+<LI><P class="docList"><TT>P_DETACH</TT>: starts a program with full independence,
+without waiting
+</P></LI>
+<LI><P class="docList"><TT>P_NOWAIT</TT>: runs the program without waiting for it
+to exit; returns its handle
+</P></LI>
+<LI><P class="docList"><TT>P_WAIT</TT>: runs the program and pauses until it
+finishes; returns its exit code
+</P></LI>
+</UL>
+<P class="docText">Run a <TT>dir(os)</TT> call to see other process flags
+available, and either run a few tests or see VC++ documentation for
+more details; things like standard stream connection policies vary
+between the <TT>P_DETACH</TT> and
+<TT>P_NOWAIT</TT> modes in subtle ways. Here is this script
+at work on Windows, spawning 10 independent copies of the
+<I>child.py</I> Python program we met earlier in this
+chapter:
+</P>
+
+<PRE>C:\...\PP2E\System\Processes&gt;<B>type child.py</B>
+import os, sys
+print 'Hello from child', os.getpid(  ), sys.argv[1]
+
+C:\...\PP2E\System\Processes&gt;<B>python spawnv.py</B>
+Hello from child -583587 0
+Hello from child -558199 2
+Hello from child -586755 1
+Hello from child -562171 3
+Main process exiting.
+Hello from child -581867 6
+Hello from child -588651 5
+Hello from child -568247 4
+Hello from child -563527 7
+Hello from child -543163 9
+Hello from child -587083 8</PRE>
+
+<P class="docText">Notice that the copies print their output in random order, and the
+parent program exits before all children do; all these programs are
+really running in parallel on Windows. Also observe that the child
+program's output shows up in the console box where
+<I>spawnv.py</I> was run; when using
+<TT>P_NOWAIT</TT> standard output comes to the
+parent's console, but seems to go nowhere when using
+<TT>P_DETACH</TT> instead (most likely a feature, when
+spawning GUI programs).
+</P>
+
+<P class="docText">The <TT>os.spawnve</TT> call works the same as
+<TT>os.spawnv</TT>, but accepts an extra fourth dictionary
+argument to specify a different shell environment for the spawned
+program (which, by default, inherits all the parent's
+settings).
+</P>
+
+
+<A NAME="python2-CHP-3-SECT-8.2"></A>
+<H4 class="docSection2Title">3.8.2 Running DOS Command Lines</H4>
+
+<P class="docText">The <TT>os.system</TT> and <TT>os.popen</TT>
+calls can be used to start command lines on Windows just as on
+Unix-like platforms (but with the portability caveats about
+<TT>popen</TT> mentioned earlier). On Windows, though, the
+DOS <I>start</I> command combined with
+<TT>os.system</TT> provides an easy way for scripts to
+launch any file on the system, using Windows filename associations.
+Starting a program file this way makes it run as independently as its
+starter. <A class="docLink" HREF="#python2-CHP-3-EX-23">Example 3-23</A> demonstrates these launch
+techniques.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-3-EX-23"></A>Example 3-23. PP2E\System\Processes\dosstart.py </H5>
+<PRE>############################################################
+# start up 5 copies of child.py running in parallel;
+# - on Windows, os.system always blocks its caller, 
+#   and os.popen currently fails in a GUI programs
+# - using DOS start command pops up a DOS box (which goes 
+#   away immediately when the child.py program exits)
+# - running child-wait.py with DOS start, 5 independent
+#   DOS console windows popup and stay up (1 per program)
+# DOS start command uses file name associations to know 
+# to run Python on the file, as though double-clicked in 
+# Windows explorer (any filename can be started this way);
+############################################################
+
+import os, sys
+ 
+for i in range(5):
+    #print os.popen('python child.py ' + str(i)).read(  )[:-1]
+    #os.system('python child.py ' + str(i))
+    #os.system('start child.py ' + str(i))
+     os.system('start child-wait.py ' + str(i))
+print 'Main process exiting.'</PRE>
+
+
+<P class="docText">Uncomment one of the lines in this script's
+<TT>for</TT> loop to experiment with these schemes on your
+computer. On mine, when run with either of the first two calls in the
+loop uncommented, I get the following sort of output -- the text
+printed by five spawned Python programs:
+</P>
+
+<PRE>C:\...\PP2E\System\Processes&gt;<B>python dosstart.py</B>
+Hello from child -582331 0
+Hello from child -547703 1
+Hello from child -547703 2
+Hello from child -547651 3
+Hello from child -547651 4
+Main process exiting.</PRE>
+
+<P class="docText">The <TT>os.system</TT> call usually blocks its caller until
+the spawned program exits; reading the output of a
+<TT>os.popen</TT> call has the same blocking effect (the
+reader waits for the spawned program's output to be complete).
+But with either of the last two statements in the loop uncommented, I
+get output that simply looks like this:
+</P>
+
+<PRE>C:\...\PP2E\System\Processes&gt;<B>python dosstart.py</B>
+Main process exiting.</PRE>
+
+<P class="docText">In both cases, I also see five new and completely independent DOS
+console windows appear on my display; when the third line in the loop
+is uncommented, all the DOS boxes go away right after they appear;
+when the last line in the loop is active, they remain on the screen
+after the <TT>dosstart</TT> program exits because the
+<TT>child-wait</TT> script pauses for input before exit.
+</P>
+
+<A NAME="python2-CHP-3-SECT-8.2.1"></A>
+<H5 class="docSection3Title">3.8.2.1 Using the DOS start command</H5>
+
+<P class="docText">To understand why, you first need to know how the DOS
+<I>start</I> command works in general. Roughly, a DOS
+command line of the form <TT>start</TT>
+<TT><I>command</I></TT> works as if
+<TT><I>command</I></TT> were typed in the Windows
+"Run" dialog box available in the Start button menu. If
+<TT><I>command</I></TT> is a filename, it is opened
+exactly as if its name had been double-clicked in the Windows
+Explorer file selector GUI.
+</P>
+
+<P class="docText">For instance, the following three DOS commands automatically start
+Internet Explorer on a file <I>index.html</I>, my
+registered image viewer program on a <I>uk-1.jpg</I>,
+and my sound media player program on file
+<I>sousa.au</I>. Windows simply opens the file with
+whatever program is associated to handle filenames of that form.
+Moreover, all three of these programs run independently of the DOS
+console box where the command is typed:
+</P>
+
+<PRE>C:\temp&gt;<B>start c:\stuff\website\public_html\index.html</B>
+C:\temp&gt;<B>start c:\stuff\website\public_html\uk-1.jpg</B>
+C:\...\PP2E\System\Processes&gt;<B>start ..\..\Internet\Ftp\sousa.au</B></PRE>
+
+<P class="docText">Now, because the <I>start</I> command can run any file
+and command line, there is no reason it cannot also be used to start
+an independently running Python program:
+</P>
+
+<PRE>C:\...\PP2E\System\Processes&gt;<B>start child.py 1</B></PRE>
+
+<P class="docText">Because Python is registered to open names ending in
+<I>.py</I> when it is installed, this really does
+work -- script <I>child.py</I> is launched
+independently of the DOS console window, even though we didn't
+provide the name or path of the Python interpreter program. Because
+<I>child.py</I> simply prints a message and exits,
+though, the result isn't exactly satisfying: a new DOS window
+pops up to serve as the script's standard output, and
+immediately goes away when the child exits (it's that Windows
+"flash feature" described earlier!). To do better, add a
+<TT>raw_input</TT> call at the bottom of the program file
+to wait for a key press before exiting:
+</P>
+
+<PRE>C:\...\PP2E\System\Processes&gt;<B>type child-wait.py</B>
+import os, sys
+print 'Hello from child', os.getpid(  ), sys.argv[1]
+raw_input("Press &lt;Enter&gt;")   # don't flash on Windows
+
+C:\...\PP2E\System\Processes&gt;<B>start child-wait.py 2</B> </PRE>
+
+<P class="docText">Now the child's DOS window pops up and stays up after the
+<I>start</I> command has returned. Pressing the Enter key
+in the pop-up DOS window makes it go away.
+</P>
+
+
+
+<A NAME="python2-CHP-3-SECT-8.2.2"></A>
+<H5 class="docSection3Title">3.8.2.2 Using start in Python scripts</H5>
+
+<P class="docText">Since we know that Python's <TT>os.system</TT> and
+<TT>os.popen</TT> can be called by a script to run
+<span class="docEmphasis">any</span> command line that can be typed at a DOS
+shell prompt, we can also start independently running programs from a
+Python script by simply running a DOS <I>start</I>
+command line. For instance:
+</P>
+
+<PRE>C:\...\PP2E&gt;<B>python</B>
+&gt;&gt;&gt; <B>import os</B>
+&gt;&gt;&gt;
+&gt;&gt;&gt; <B>cmd = r'start c:\stuff\website\public_html\index.html'</B>  # start IE browser
+&gt;&gt;&gt; <B>os.system(cmd)</B>                                          # runs independent
+0 
+&gt;&gt;&gt; <B>file = r'gui\gifs\pythonPowered.gif'</B>                # start image viewer
+&gt;&gt;&gt; <B>os.system('start ' + file)</B>                          # IE opens .gif for me
+0
+&gt;&gt;&gt; <B>os.system('start ' + 'Gui/gifs/PythonPowered.gif')</B>  # fwd slashes work too
+0
+&gt;&gt;&gt; <B>os.system(r'start Internet\Ftp\sousa.au')</B>           # start media bar
+0</PRE>
+
+<P class="docText">The four Python <TT>os.system</TT> calls here start
+whatever web-page browser, image viewer, and sound player are
+registered on your machine to open <I>.html</I>,
+<I>.gif</I>, and <I>.au </I>files (unless
+these programs are already running). The launched programs run
+completely independent of the Python session -- when running a DOS
+start command, <TT>os.system</TT> does not wait for the
+spawned program to exit. For instance, <A class="docLink" HREF="#python2-CHP-3-FIG-1">Figure 3-1</A>
+shows the <I>.gif</I> file handler in action on my
+machine, generated by both the second and third
+<TT>os.system</TT> calls in the preceding code.
+</P>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="python2-CHP-3-FIG-1"></A>Figure 3-1. Started image viewer (Internet Explorer)</H5>
+<IMG BORDER="0" WIDTH="310" HEIGHT="138" src="FILES/ppy2_0301.gif" ALT="figs/ppy2_0301.gif"></CENTER>
+
+<P class="docText">Now, since we also know that a Python program be can started from a
+command line, this yields two ways to launch Python programs:
+</P>
+
+<PRE>C:\...\PP2E&gt;<B>python</B>
+&gt;&gt;&gt; <B>os.system(r'python Gui\TextEditor\textEditor.pyw')   </B># start and wait
+0
+&gt;&gt;&gt; <B>os.system(r'start  Gui\TextEditor\textEditor.pyw')</B>   # start, go on
+0</PRE>
+
+<P class="docText">When running a <TT>python</TT> command, the
+<TT>os.system</TT> call waits (blocks) for the command to
+finish. When running a <I>start</I> command it does
+not -- the launched Python program (here, PyEdit, a text editor
+GUI we'll meet in <A class="docLink" HREF="0596000855_python2-CHP-9.html#python2-CHP-9">Chapter 9</A>) runs
+independent of the <TT>os.system</TT> caller. And finally,
+that's why the following call in
+<I>dosstart.py</I> generates a new, independent
+instance of <I>child-wait.py </I>:
+</P>
+
+<PRE>C:\...\PP2E\System\Processes&gt;<B>python</B>
+&gt;&gt;&gt; <B>os.system('start child-wait.py 1')</B>
+0</PRE>
+
+<P class="docText">When run, this call pops up a new, independent DOS console window to
+serve as the standard input and output streams of the child-wait
+program. It truly is independent -- in fact, it keeps running if
+we exit both this Python interpreter session and the DOS console box
+where the command was typed.<sup class="docFootnote"><A class="docLink" HREF="#">[9]</A></sup> An <TT>os.popen</TT> call can
+launch a <I>start</I> command too; but since it normally
+starts commands independently anyhow, the only obvious advantages of
+<I>start</I> here are the pop-up DOS box, and the fact
+that Python need not be in the system search path setting:
+</P>
+<blockquote><p class="docFootnote"><sup><A NAME="">[9]</A></sup> And remember, if you
+want to start a Python GUI program this way and not see the new DOS
+standard stream console box at all, simply name the script
+<I>child-wait.pyw </I>; the "w" on the end
+tells the Windows Python port to avoid the DOS box. For DOS jockeys:
+the <I>start</I> command also allows a few interesting
+options: <TT>/m</TT> (run minimized),
+<TT>/max</TT> (run maximized), <TT>/r</TT> (run
+restored -- the default), and <TT>/w</TT> (don't
+return until the other program exits -- this adds caller blocking
+if you need it). Type <TT>start</TT> <TT>/?</TT>
+for help. And for any Unix developers peeking over the fence: you can
+also launch independent programs with
+<TT>os.system</TT> -- append the
+<TT>&amp;</TT> background operator to the command
+line.</p></blockquote>
+
+<PRE>&gt;&gt;&gt; <B>file = os.popen('start child-wait.py 1')    </B># versus: python child-wait...
+&gt;&gt;&gt; <B>file.read(  )</B>
+'Hello from child -413849 1\012Press &lt;Enter&gt;'</PRE>
+
+<P class="docText">Which scheme to use, then? Using <TT>os.system</TT> or
+<TT>os.popen</TT> to run a <TT>python</TT>
+command works fine, but only if your users have added the
+<I>python.exe</I> directory to their system search path
+setting. Running a DOS <I>start</I> command is often a
+simpler alternative to both running <TT>python</TT>
+commands and calling the <TT>os.spawnv</TT> function, since
+filename associations are automatically installed along with Python,
+and <TT>os.spawnv</TT> requires a full directory path to
+the Python interpreter program (<I>python.exe</I>). On
+the other hand, running <I>start</I> commands with
+<TT>os.system</TT> calls can fail on Windows for very long
+command-line strings:
+</P>
+
+<PRE>&gt;&gt;&gt; <B>os.system('start child-wait.py ' + 'Z'*425)   </B># okay- 425 Zs in dos popup
+0
+&gt;&gt;&gt; <B>os.system('start child-wait.py ' + 'Z'*450)</B>   # fails- msg, not exception
+Access is denied.
+0
+&gt;&gt;&gt; <B>os.popen('python child-wait.py ' + 'Z'*500).read(  )    </B># works if PATH set
+&gt;&gt;&gt; <B>os.system('python child-wait.py ' + 'Z'*500)</B>          # works if PATH set
+
+&gt;&gt;&gt; <B>pypath = r'C:\program files\python\python.exe'</B>        # this works too
+&gt;&gt;&gt; <B>os.spawnv(os.P_NOWAIT, pypath, ('python', 'child-wait.py', 'Z'*500))</B></PRE>
+
+<P class="docText">As a rule of thumb, use <TT>os.spawnv</TT> if your commands
+are (or may be) long. For instance, we'll meet a script in
+<A class="docLink" HREF="0596000855_python2-CHP-4.html#python2-CHP-4">Chapter 4</A>, that launches web browsers to view HTML
+files; even though a <I>start</I> command applied to an
+HTML file will automatically start a browser program, this script
+instead must use <TT>os.spawnv</TT> to accommodate
+potentially long directory paths in HTML filenames.
+</P>
+
+<P class="docText">For more information on other Windows-specific program launcher
+tools, see O'Reilly's <span class="docEmphasis">Python Programming on
+Win32</span>. Other schemes are even less standard than those
+shown here, but are given excellent coverage in that text.
+</P>
+
+
+
+<A NAME="python2-CHP-3-SECT-8.3"></A>
+<H4 class="docSection2Title">3.8.3 A Portable Program-Launch Framework</H4>
+
+<P class="docText">With all these different ways to start programs on different
+platforms, it can be difficult to remember what tools to use in a
+given situation. Moreover, some of these tools are called in ways
+that are complicated enough to easily forget (for me, at least). I
+write scripts that need to launch Python programs often enough that I
+eventually wrote a module to try and hide most of the underlying
+details. While I was at it, I made this module smart enough to
+automatically pick a launch scheme based on the underlying platform.
+Laziness is the mother of many a useful module.
+</P>
+
+<P class="docText"><A class="docLink" HREF="#python2-CHP-3-EX-24">Example 3-24</A> collects many of the techniques
+we've met in this chapter in a single module. It implements an
+abstract superclass, <TT>LaunchMode</TT>, which defines
+what it means to start a Python program, but doesn't define
+how. Instead, its subclasses provide a <TT>run</TT> method
+that actually starts a Python program according to a given scheme,
+and (optionally) define an <TT>announce</TT> method to
+display a program's name at startup time.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-3-EX-24"></A>Example 3-24. PP2E\launchmodes.py </H5>
+<PRE>###############################################################
+# launch Python programs with reusable launcher scheme classes;
+# assumes 'python' is on your system path (but see Launcher.py)
+###############################################################
+
+import sys, os, string
+pycmd = 'python'   # assume it is on your system path
+
+class LaunchMode:
+    def __init__(self, label, command):
+        self.what  = label
+        self.where = command
+    def __call__(self):               # on call, ex: button press callback
+        self.announce(self.what)
+        self.run(self.where)              # subclasses must define run(  )
+    def announce(self, text):             # subclasses may redefine announce(  )
+        print text                        # methods instead of if/elif logic
+    def run(self, cmdline):
+        assert 0, 'run must be defined'
+
+class System(LaunchMode):                          # run shell commands
+    def run(self, cmdline):                        # caveat: blocks caller
+        os.system('%s %s' % (pycmd, cmdline))      # unless '&amp;' added on Linux
+
+class Popen(LaunchMode):                           # caveat: blocks caller 
+    def run(self, cmdline):                        # since pipe closed too soon
+        os.popen(pycmd + ' ' + cmdline)            # 1.5.2 fails in Windows GUI
+
+class Fork(LaunchMode):
+    def run(self, cmdline):
+        assert hasattr(os, 'fork')                 # for linux/unix today
+        cmdline = string.split(cmdline)            # convert string to list
+        if os.fork(  ) == 0:                         # start new child process
+            os.execvp(pycmd, [pycmd] + cmdline)    # run new program in child
+
+class Start(LaunchMode):
+    def run(self, cmdline):                        # for windows only
+        assert sys.platform[:3] == 'win'           # runs independent of caller
+        os.system('start ' + cmdline)              # uses Windows associations
+
+class Spawn(LaunchMode):                           # for windows only
+    def run(self, cmdline):                        # run python in new process
+        assert sys.platform[:3] == 'win'           # runs independent of caller
+       #pypath = r'C:\program files\python\python.exe'
+        try:                                                # get path to python
+            pypath = os.environ['PP2E_PYTHON_FILE']         # run by launcher?
+        except KeyError:                                    # if so configs env
+            from Launcher import which, guessLocation
+            pypath = which('python.exe', 0) or guessLocation('python.exe', 1,0) 
+        os.spawnv(os.P_DETACH, pypath, ('python', cmdline)) # P_NOWAIT: dos box 
+
+class Top_level(LaunchMode):
+    def run(self, cmdline):                           # new window, same process
+        assert 0, 'Sorry - mode not yet implemented'  # tbd: need GUI class info
+
+if sys.platform[:3] == 'win':
+    PortableLauncher = Spawn            # pick best launcher for platform
+else:                                   # need to tweak this code elsewhere
+    PortableLauncher = Fork
+
+class QuietPortableLauncher(PortableLauncher):
+    def announce(self, text):
+        pass
+
+def selftest(  ):
+    myfile  = 'launchmodes.py'
+    program = 'Gui/TextEditor/textEditor.pyw ' + myfile       # assume in cwd
+    raw_input('default mode...')
+    launcher = PortableLauncher('PyEdit', program)
+    launcher(  )                                              # no block
+
+    raw_input('system mode...')
+    System('PyEdit', program)(  )                             # blocks
+
+    raw_input('popen mode...')
+    Popen('PyEdit', program)(  )                              # blocks
+
+    if sys.platform[:3] == 'win':
+        raw_input('DOS start mode...')                        # no block
+        Start('PyEdit', program)(  )
+
+if __name__ == '__main__': selftest(  )</PRE>
+
+
+<P class="docText">Near the end of the file, the module picks a default class based on
+the <TT>sys.platform</TT> attribute:
+<TT>PortableLauncher</TT> is set to a class that uses
+<TT>spawnv</TT> on Windows and one that uses the
+<TT>fork</TT>/<TT>exec</TT> combination
+elsewhere. If you import this module and always use its
+<TT>PortableLauncher</TT> attribute, you can forget many of
+the platform-specific details enumerated in this chapter.
+</P>
+
+<P class="docText">To run a Python program, simply import the
+<TT>PortableLauncher</TT> class, make an instance by
+passing a label and command line (without a leading
+"python" word), and then call the instance object as
+though it were a function. The program is started by a
+<span class="docEmphasis">call</span> operation instead of a method, so that the
+classes in this module can be used to generate <span class="docEmphasis">callback
+handlers</span> in Tkinter-based GUIs. As we'll see in the
+upcoming chapters, button-presses in Tkinter invoke a callable-object
+with no arguments; by registering a
+<TT>PortableLauncher</TT> instance to handle the press
+event, we can automatically start a new program from another
+program's GUI.
+</P>
+
+<P class="docText">When run standalone, this module's <TT>selftest</TT>
+function is invoked as usual. On both Windows and Linux, all classes
+tested start a new Python text editor program (the upcoming PyEdit
+GUI program again) running independently with its own window. <A class="docLink" HREF="#python2-CHP-3-FIG-2">Figure 3-2</A> shows one in action on Windows; all spawned
+editors open the <I>launchmodes.py</I> source file
+automatically, because its name is passed to PyEdit as a command-line
+argument. As coded, both <TT>System</TT> and
+<TT>Popen</TT> block the caller until the editor exits, but
+<TT>PortableLauncher</TT> (really, <TT>Spawn</TT>
+or <TT>Fork</TT>) and <TT>Start</TT> do
+not:<sup class="docFootnote"><A class="docLink" HREF="#">[10]</A></sup>
+</P>
+<blockquote><p class="docFootnote"><sup><A NAME="">[10]</A></sup> This is fairly subtle. Technically,
+<TT>Popen</TT> only blocks its caller because the input
+pipe to the spawned program is closed too early, when the
+<TT>os.popen</TT> call's result is garbage-collected
+in <TT>Popen.run</TT>; <TT>os.popen</TT> normally
+does not block (in fact, assigning its result here to a global
+variable postpones blocking, but only until the next
+<TT>Popen</TT> object run frees the prior result). On
+Linux, adding a <TT>&amp;</TT> to the end of the
+constructed command line in the <TT>System</TT> and
+<TT>Popen.run</TT> methods makes these objects no longer
+block their callers when run. Since the
+<TT>fork</TT>/<TT>exec</TT>,
+<TT>spawnv</TT>, and
+<TT>system</TT>/<TT>start</TT> schemes seem at
+least as good in practice, these <TT>Popen</TT> block
+states have not been addressed. Note too that the
+<TT>Start</TT> scheme does not generate a DOS console
+pop-up window in the self-test, only because the text editor program
+file's name ends in a <I>.pyw</I> extension;
+starting <I>.py</I> program files with
+<TT>os.system</TT> normally creates the console pop-up
+box.</p></blockquote>
+
+<PRE>C:\...\PP2E&gt;<B>python launchmodes.py</B>
+default mode...
+PyEdit
+system mode...
+PyEdit
+popen mode...
+PyEdit
+DOS start mode...
+PyEdit</PRE>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="python2-CHP-3-FIG-2"></A>Figure 3-2. PyEdit program spawned from launchmodes</H5>
+<IMG BORDER="0" WIDTH="481" HEIGHT="385" src="FILES/ppy2_0302.gif" ALT="figs/ppy2_0302.gif"></CENTER>
+
+<P class="docText">As a more practical application, this file is also used by launcher
+scripts designed to run examples in this book in a portable fashion.
+The PyDemos and PyGadgets scripts at the top of this book's
+examples directory tree (view CD-ROM content online at <A class="docLink" target="_blank" HREF="http://examples.oreilly.com/python2">http://examples.oreilly.com/python2</A>) simply import
+<TT>PortableLauncher</TT>, and register instances to
+respond to GUI events. Because of that, these two launcher GUIs run
+on both Windows and Linux unchanged (Tkinter's portability
+helps too, of course). The PyGadgets script even customizes
+<TT>PortableLauncher</TT> to update a label in a GUI at
+start time:
+</P>
+
+<PRE>class Launcher(launchmodes.PortableLauncher):    # use wrapped launcher class
+    def announce(self, text):                    # customize to set GUI label
+        Info.config(text=text)</PRE>
+
+<P class="docText">We'll explore these scripts in <A class="docLink" HREF="0596000855_python2-PART-II.html#python2-PART-II">Part II</A>
+(but feel free to peek at the end of <A class="docLink" HREF="0596000855_python2-CHP-8.html#python2-CHP-8">Chapter 8</A>,
+now). Because of this role, the <TT>Spawn</TT> class in
+this file uses additional tools to search for the Python
+executable's path -- required by
+<TT>os.spawnv</TT>. It calls two functions exported by a
+file <I>Launcher.py</I> to find a suitable
+<I>python.exe</I>, whether or not the user has added
+its directory to their system PATH variable's setting. The idea
+is to start Python programs, even if Python hasn't been
+installed in the shell variables on the local machine. Because
+we're going to meet <I>Launcher.py</I> in <A class="docLink" HREF="0596000855_python2-CHP-4.html#python2-CHP-4">Chapter 4</A>, though, I'm going to postpone further
+details for now.
+</P>
+
+
+
+<a href="0596000855_"><img src="FILES/pixel.gif" width="1" height="1" border="0"></a><ul></ul>
+</td>
+</tr>
+</table>
+<td></td>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+          <a href="0596000855_python2-CHP-3-SECT-7.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+          <a href="0596000855_python2-CHP-3-SECT-9.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+</body></html>

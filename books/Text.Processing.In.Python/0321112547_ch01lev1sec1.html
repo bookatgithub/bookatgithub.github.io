@@ -1,0 +1,1018 @@
+<html><head>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="1.1 Techniques and Patterns"-->
+<link rel="STYLESHEET" type="text/css" href="FILES/style.css">
+<link rel="STYLESHEET" type="text/css" href="FILES/docsafari.css">
+<style type="text/css">	.tt1    {font-size: 10pt;}</style>
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<td class="tt1"><a href="NFO/lib.html">[ Team LiB ]</a></td><td valign="top" class="tt1" align="right">
+	<a href="0321112547_ch01.html"><img src="FILES/btn_prev.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+	<a href="0321112547_ch01lev1sec2.html"><img src="FILES/btn_next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><A NAME="ch01lev1sec1"></A><H3 class="docSection1Title">1.1 Techniques and Patterns</H3>
+<A NAME="ch01lev2sec1"></A><H4 class="docSection2Title">1.1.1 Utilizing Higher-Order Functions in Text Processing</H4>
+<P class="docText">This first topic merits a warning. It jumps feet-first into higher-order functions (HOFs) at a fairly sophisticated level and may be unfamiliar even to experienced Python programmers. Do not be too frightened by this first topic—you can understand the rest of the book without it. If the functional programming (FP) concepts in this topic seem unfamiliar to you, I recommend you jump ahead to <A class="docLink" HREF="0321112547_app01.html#app01">Appendix A</A>, especially its final section on FP concepts.</P>
+<P class="docText">In text processing, one frequently acts upon a series of chunks of text that are, in a sense, homogeneous. Most often, these chunks are lines, delimited by newline characters—but sometimes other sorts of fields and blocks are relevant. Moreover, Python has standard functions and syntax for reading in lines from a file (sensitive to platform differences). Obviously, these chunks are not entirely homogeneous—they can contain varying data. But at the level we worry about during processing, each chunk contains a natural parcel of instruction or information.</P>
+<P class="docText">As an example, consider an imperative style code fragment that selects only those lines of text that match a criterion <TT>isCond():</TT></P>
+<pre>
+selected = []                 # temp list to hold matches
+fp = open(filename):
+for line in fp.readlines():   # Py2.2 -&gt; "for line in fp:"
+    if isCond(line):          # (2.2 version reads lazily)
+        selected.append(line)
+del line                      # Cleanup transient variable
+</pre>
+<P class="docText">There is nothing <span class="docEmphasis">wrong</span> with these few lines (see <span class="docEmphasis"><TT>xreadlines</TT></span> on efficiency issues). But it does take a few seconds to read through them. In my opinion, even this small block of lines does not parse as a <span class="docEmphasis">single thought</span>, even though its operation really is such. Also the variable <TT>line</TT> is slightly superfluous (and it retains a value as a side effect after the loop and also could conceivably step on a previously defined value). In FP style, we could write the simpler:</P>
+<pre>
+selected = filter(isCond, open(filename).readlines())
+# Py2.2 -&gt; filter(isCond, open(filename))
+</pre>
+<P class="docText">In the concrete, a textual source that one frequently wants to process as a list of lines is a log file. All sorts of applications produce log files, most typically either ones that cause system changes that might need to be examined or long-running applications that perform actions intermittently. For example, the PythonLabs Windows installer for Python 2.2 produces a file called <TT>INSTALL.LOG</TT> that contains a list of actions taken during the install. Below is a highly abridged copy of this file from one of my computers:</P>
+<H5 class="docExampleTitle"><A NAME="ch01list01"></A> INSTALL.LOG sample data file</H5>
+
+<PRE>
+Title: Python 2.2
+Source: C:\DOWNLOAD\PYTHON-2.2.EXE | 02-23-2002 | 01:40:54 | 7074248
+Made Dir: D:\Python22
+File Copy: D:\Python22\UNWISE.EXE | 05-24-2001 | 12:59:30 | | ...
+RegDB Key: Software\Microsoft\Windows\CurrentVersion\Uninstall\Py...
+RegDB Val: Python 2.2
+File Copy: D:\Python22\w9xpopen.exe | 12-21-2001 | 12:22:34 | | ...
+Made Dir: D:\PYTHON22\DLLs
+File Overwrite: C:\WINDOWS\SYSTEM\MSVCRT.DLL | | | | 295000 | 770c8856
+RegDB Root: 2
+RegDB Key: Software\Microsoft\Windows\CurrentVersion\App Paths\Py...
+RegDB Val: D:\PYTHON22\Python.exe
+Shell Link: C:\WINDOWS\Start Menu\Programs\Python 2.2\Uninstall Py...
+Link Info: D:\Python22\UNWISE.EXE | D:\PYTHON22 |  | 0 | 1 | 0 |
+Shell Link: C:\WINDOWS\Start Menu\Programs\Python 2.2\Python ...
+Link Info: D:\Python22\python.exe | D:\PYTHON22 | D:\PYTHON22\...
+</PRE>
+<P class="docText">You can see that each action recorded belongs to one of several types. A processing application would presumably handle each type of action differently (especially since each action has different data fields associated with it). It is easy enough to write Boolean functions that identify line types, for example:</P>
+<pre>
+def isFileCopy(line):
+    return line[:10]=='File Copy:' # or line.startswith(...)
+def isFileOverwrite(line):
+    return line[:15]=='File Overwrite:'
+</pre>
+<P class="docText">The string method <span class="docEmphasis"><TT>"".startswith()</TT></span> is less error prone than an initial slice for recent Python versions, but these examples are compatible with Python 1.5. In a slightly more compact functional programming style, you can also write these like:</P>
+<pre>
+isRegDBRoot = lambda line: line[:11]=='RegDB Root:'
+isRegDBKey = lambda line: line[:10]=='RegDB Key:'
+isRegDBVal = lambda line: line[:10]=='RegDB Val:'
+</pre>
+<P class="docText">Selecting lines of a certain type is done exactly as above:</P>
+<pre>
+lines = open(r'd:\python22\install.log').readlines()
+regroot_lines = filter(isRegDBRoot, lines)
+</pre>
+<P class="docText">But if you want to select upon multiple criteria, an FP style can initially become cumbersome. For example, suppose you are interested in all the "RegDB" lines; you could write a new custom function for this filter:</P>
+<pre>
+def isAnyRegDB(line):
+    if   line[:11]=='RegDB Root:': return 1
+    elif line[:10]=='RegDB Key:':  return 1
+    elif line[:10]=='RegDB Val:':  return 1
+    else:                          return 0
+# For recent Pythons, line.startswith(...) is better
+</pre>
+<P class="docText">Programming a custom function for each combined condition can produce a glut of named functions. More importantly, each such custom function requires a modicum of work to write and has a nonzero chance of introducing a bug. For conditions that should be jointly satisfied, you can either write custom functions or nest several filters within each other. For example:</P>
+<pre>
+shortline = lambda line: len(line) &lt; 25
+short_regvals = filter(shortline, filter(isRegDBVal, lines))
+</pre>
+<P class="docText">In this example, we rely on previously defined functions for the filter. Any error in the filters will be in either <TT>shortline()</TT> or <TT>isRegDBVal()</TT>, but not independently in some third function <TT>isShortRegVal()</TT>. Such nested filters, however, are difficult to read—especially if more than two are involved.</P>
+<P class="docText">Calls to <span class="docEmphasis"><TT>map()</TT></span> are sometimes similarly nested if several operations are to be performed on the same string. For a fairly trivial example, suppose you wished to reverse, capitalize, and normalize whitespace in lines of text. Creating the support functions is straightforward, and they could be nested in <span class="docEmphasis"><TT>map()</TT></span> calls:</P>
+<pre>
+from string import upper, join, split
+def flip(s):
+    a = list(s)
+    a.reverse()
+    return join(a,'')
+normalize = lambda s: join(split(s),' ')
+cap_flip_norms = map(upper, map(flip, map(normalize, lines)))
+</pre>
+<P class="docText">This type of <span class="docEmphasis"><TT>map()</TT></span> or <span class="docEmphasis"><TT>filter()</TT></span> nest is difficult to read, and should be avoided. Moreover, one can sometimes be drawn into nesting alternating <span class="docEmphasis"><TT>map()</TT></span> and <span class="docEmphasis"><TT>filter()</TT></span> calls, making matters still worse. For example, suppose you want to perform several operations on each of the lines that meet several criteria. To avoid this trap, many programmers fall back to a more verbose imperative coding style that simply wraps the lists in a few loops and creates some temporary variables for intermediate results.</P>
+<P class="docText">Within a functional programming style, it is nonetheless possible to avoid the pitfall of excessive call nesting. The key to doing this is an intelligent selection of a few combinatorial <span class="docEmphasis">higher-order functions.</span> In general, a higher-order function is one that takes as argument or returns as result a function object. First-order functions just take some data as arguments and produce a datum as an answer (perhaps a data-structure like a list or dictionary). In contrast, the "inputs" and "outputs" of a HOF are more function objects—ones generally intended to be eventually called somewhere later in the program flow.</P>
+<P class="docText">One example of a higher-order function is a <span class="docEmphasis">function factory:</span> a function (or class) that returns a function, or collection of functions, that are somehow "configured" at the time of their creation. The "Hello World" of function factories is an "adder" factory. Like "Hello World," an adder factory exists just to show what can be done; it doesn't really <span class="docEmphasis">do</span> anything useful by itself. Pretty much every explanation of function factories uses an example such as:</P>
+<pre>
+&gt;&gt;&gt; def adder_factory(n):
+...    return lambda m, n=n: m+n
+...
+&gt;&gt;&gt; add10 = adder_factory(10)
+&gt;&gt;&gt; add10
+&lt;function &lt;lambda&gt; at 0x00FB0020&gt;
+&gt;&gt;&gt; add10(4)
+14
+&gt;&gt;&gt; add10(20)
+30
+&gt;&gt;&gt; add5 = adder_factory(5)
+&gt;&gt;&gt; add5(4)
+9
+</pre>
+<P class="docText">For text processing tasks, simple function factories are of less interest than are <span class="docEmphasis">combinatorial</span> HOFs. The idea of a combinatorial higher-order function is to take several (usually first-order) functions as arguments and return a new function that somehow synthesizes the operations of the argument functions. Below is a simple library of combinatorial higher-order functions that achieve surprisingly much in a small number of lines:</P>
+<H5 class="docExampleTitle"><A NAME="ch01list02"></A> combinatorial.py</H5>
+
+<PRE>
+from operator import mul, add, truth
+apply_each = lambda fns, args=[]: map(apply, fns, [args]*len(fns))
+bools = lambda 1st: map(truth, 1st)
+bool_each = lambda fns, args=[]: bools(apply_each(fns, args))
+conjoin = lambda fns, args=[]: reduce(mul, bool_each(fns, args))
+all = lambda fns: lambda arg, fns=fns: conjoin(fns, (arg,))
+both = lambda f,g: all((f,g))
+all3 = lambda f,g,h: all((f,g,h))
+and_ = lambda f,g: lambda x, f=f, g=g: f(x) and g(x)
+disjoin = lambda fns, args=[]: reduce(add, bool_each(fns, args))
+some = lambda fns: lambda arg, fns=fns: disjoin(fns, (arg,))
+either = lambda f,g: some((f,g))
+anyof3 = lambda f,g,h: some((f,g,h))
+compose = lambda f,g: lambda x, f=f, g=g: f(g(x))
+compose3 = lambda f,g,h: lambda x, f=f, g=g, h=h: f(g(h(x)))
+ident = lambda x: x
+</PRE>
+<P class="docText">Even with just over a dozen lines, many of these combinatorial functions are merely convenience functions that wrap other more general ones. Let us take a look at how we can use these HOFs to simplify some of the earlier examples. The same names are used for results, so look above for comparisons:</P>
+<H5 class="docExampleTitle"><A NAME="ch01list03"></A> Some examples using higher-order functions</H5>
+
+<PRE>
+# Don't nest filters, just produce func that does both
+short_regvals = filter(both(shortline, isRegVal), lines)
+
+# Don't multiply ad hoc functions, just describe need
+regroot_lines = \
+    filter(some([isRegDBRoot, isRegDBKey, isRegDBVal]), lines)
+
+# Don't nest transformations, make one combined transform
+capFlipNorm = compose3(upper, flip, normalize)
+cap_flip_norms = map(capFlipNorm, lines)
+</PRE>
+<P class="docText">In the example, we bind the composed function <TT>capFlipNorm</TT> for readability. The corresponding <span class="docEmphasis"><TT>map()</TT></span> line expresses just the <span class="docEmphasis">single thought</span> of applying a common operation to all the lines. But the binding also illustrates some of the flexibility of combinatorial functions. By condensing the several operations previously nested in several <span class="docEmphasis"><TT>map()</TT></span> calls, we can save the combined operation for reuse elsewhere in the program.</P>
+<P class="docText">As a rule of thumb, I recommend not using more than one <span class="docEmphasis"><TT>filter()</TT></span> and one <span class="docEmphasis"><TT>map()</TT></span> in any given line of code. If these "list application" functions need to nest more deeply than this, readability is preserved by saving results to intermediate names. Successive lines of such functional programming style calls themselves revert to a more imperative style—but a wonderful thing about Python is the degree to which it allows seamless combinations of different programming styles. For example:</P>
+<pre>
+intermed = filter(niceProperty, map(someTransform, lines))
+final = map(otherTransform, intermed)
+</pre>
+<P class="docText">Any nesting of successive <span class="docEmphasis"><TT>filter ()</TT></span> or <span class="docEmphasis"><TT>map()</TT></span> calls, however, can be reduced to single functions using the proper combinatorial HOFs. Therefore, the number of procedural steps needed is pretty much always quite small. However, the reduction in total lines-of-code is offset by the lines used for giving names to combinatorial functions. Overall, FP style code is usually about one-half the length of imperative style equivalents (fewer lines generally mean correspondingly fewer bugs).</P>
+<P class="docText">A nice feature of combinatorial functions is that they can provide a complete Boolean algebra for functions that have not been called yet (the use of <span class="docEmphasis"><TT>operator.add</TT></span> and <span class="docEmphasis"><TT>operator.mul</TT></span> in <TT>combinatorial.py</TT> is more than accidental, in that sense). For example, with a collection of simple values, you might express a (complex) relation of multiple truth values as:</P>
+<pre>
+satisfied = (this or that) and (foo or bar)
+</pre>
+<P class="docText">In the case of text processing on chunks of text, these truth values are often the results of predicative functions applied to a chunk:</P>
+<pre>
+satisfied = (thisP(s) or thatP(s)) and (fooP(s) or barP(s))
+</pre>
+<P class="docText">In an expression like the above one, several predicative functions are applied to the same string (or other object), and a set of logical relations on the results are evaluated. But this expression is itself a logical predicate of the string. For naming clarity—and especially if you wish to evaluate the same predicate more than once—it is convenient to create an actual function expressing the predicate:</P>
+<pre>
+satisfiedP = both(either(thisP,thatP), either(fooP,barP))
+</pre>
+<P class="docText">Using a predicative function created with combinatorial techniques is the same as using any other function:</P>
+<pre>
+selected = filter(satisfiedP, lines)
+</pre>
+<A NAME="ch01lev2sec2"></A><H4 class="docSection2Title">1.1.2 Exercise: More on combinatorial functions</H4>
+<P class="docText">The module <TT>combinatorial.py</TT> presented above provides some of the most commonly useful combinatorial higher-order functions. But there is room for enhancement in the brief example. Creating a personal or organization library of useful HOFs is a way to improve the reusability of your current text processing libraries.</P>
+<A NAME="ch01lev3sec1"></A><H5 class="docSection3Title"> QUESTIONS</H5>
+<P><TABLE BORDER="0" cellspacing="16" cellpadding="0"><TR valign="top"><TD align="right" class="docText"><A NAME="ch01qa1q1"></A><B>1:</B></TD><TD><P class="docText">Some of the functions defined in <TT>combinatorial.py</TT> are not, strictly speaking, combinatorial. In a precise sense, a combinatorial function should take one or several functions as arguments and return one or more function objects that "combine" the input arguments. Identify which functions are not "strictly" combinatorial, and determine exactly what type of thing each one <span class="docEmphasis">does</span> return.</P></TD></TR><TR valign="top"><TD align="right" class="docText"><A NAME="ch01qa1q2"></A><B>2:</B></TD><TD><P class="docText">The functions <TT>both()</TT> and <TT>and_()</TT> do almost the same thing. But they differ in an important, albeit subtle, way. <TT>and_()</TT>, like the Python operator <span class="docEmphasis"><TT>and</TT></span>, uses <span class="docEmphasis">shortcutting</span> in its evaluation. Consider these lines:</P>
+<pre>
+&gt;&gt;&gt; f = lambda n: n**2 &gt; 10
+&gt;&gt;&gt; g = lambda n: 100/n &gt; 10
+&gt;&gt;&gt; and_(f,g)(5)
+1
+&gt;&gt;&gt; both(f,g)(5)
+1
+&gt;&gt;&gt; and_(f,g)(0)
+0
+&gt;&gt;&gt; both(f,g)(0)
+Traceback (most recent call last):
+...
+</pre>
+<P class="docText">The shortcutting <TT>and_()</TT> can potentially allow the first function to act as a "guard" for the second one. The second function never gets called if the first function returns a false value on a given argument.</P>
+<span style="font-weight:bold"><OL class="docList" TYPE="a"><LI><span style="font-weight:normal"><P class="docList">Create a similarly shortcutting combinatorial <TT>or_()</TT> function for your library.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">Create general shortcutting functions <TT>shortcut_all()</TT> and <TT>shortcut_some()</TT> that behave similarly to the functions <TT>all()</TT> and <TT>some()</TT>, respectively.</P></span></LI><LI><span style="font-weight:normal"><P class="docList">Describe some situations where nonshortcutting combinatorial functions like <TT>both()</TT>, <TT>all()</TT>, or <TT>anyof3()</TT> are more desirable than similar shortcutting functions.</P></span></LI></OL></span></TD></TR><TR valign="top"><TD align="right" class="docText"><A NAME="ch01qa1q3"></A><B>3:</B></TD><TD><P class="docText">The function <TT>ident()</TT> would appear to be pointless, since it simply returns whatever value is passed to it. In truth, <TT>ident()</TT> is an almost indispensable function for a combinatorial collection. Explain the significance of <TT>ident()</TT>.</P>
+<P class="docText">Hint: Suppose you have a list of lines of text, where some of the lines may be empty strings. What filter can you apply to find all the lines that start with a <TT>#</TT>?</P></TD></TR><TR valign="top"><TD align="right" class="docText"><A NAME="ch01qa1q4"></A><B>4:</B></TD><TD><P class="docText">The function <TT>not_()</TT> might make a nice addition to a combinatorial library. We could define this function as:</P>
+<pre>
+&gt;&gt;&gt; not_ = lambda f: lambda x, f=f: not f(x)
+</pre>
+<P class="docText">Explore some situations where a <TT>not_()</TT> function would aid combinatoric programming.</P></TD></TR><TR valign="top"><TD align="right" class="docText"><A NAME="ch01qa1q5"></A><B>5:</B></TD><TD><P class="docText">The function <TT>apply_each()</TT> is used in <TT>combinatorial.py</TT> to build some other functions. But the utility of <TT>apply_each()</TT> is more general than its supporting role might suggest. A trivial usage of <TT>apply_each()</TT> might look something like:</P>
+<pre>
+&gt;&gt;&gt; apply_each(map(adder_factory, range(5)),(10,))
+[10, 11, 12, 13, 14]
+</pre>
+<P class="docText">Explore some situations where <TT>apply_each()</TT> simplifies applying multiple operations to a chunk of text.</P></TD></TR><TR valign="top"><TD align="right" class="docText"><A NAME="ch01qa1q6"></A><B>6:</B></TD><TD><P class="docText">Unlike the functions <TT>all()</TT> and <TT>some()</TT>, the functions <TT>compose()</TT> and <TT>compose3()</TT> take a fixed number of input functions as arguments. Create a generalized composition function that takes a list of input functions, of any length, as an argument.</P></TD></TR><TR valign="top"><TD align="right" class="docText"><A NAME="ch01qa1q7"></A><B>7:</B></TD><TD><P class="docText">What other combinatorial higher-order functions that have not been discussed here are likely to prove useful in text processing? Consider other ways of combining first-order functions into useful operations, and add these to your library. What are good names for these enhanced HOFs?</P></TD></TR></TABLE></P>
+<A NAME="ch01lev2sec3"></A><H4 class="docSection2Title">1.1.3 Specializing Python Datatypes</H4>
+<P class="docText">Python comes with an excellent collection of standard datatypes—<A class="docLink" HREF="0321112547_app01.html#app01">Appendix A</A> discusses each built-in type. At the same time, an important principle of Python programming makes types less important than programmers coming from other languages tend to expect. According to Python's "principle of pervasive polymorphism" (my own coinage), it is more important what an object <span class="docEmphasis">does</span> than what it <span class="docEmphasis">is.</span> Another common way of putting the principle is: if it walks like a duck and quacks like a duck, treat it like a duck.</P>
+<P class="docText">Broadly, the idea behind polymorphism is letting the same function or operator work on things of different types. In C++ or Java, for example, you might use signature-based method overloading to let an operation apply to several types of things (acting differently as needed). For example:</P>
+<H5 class="docExampleTitle"><A NAME="ch01list04"></A> C++ signature-based polymorphism</H5>
+
+<PRE>
+#include &lt;stdio.h&gt;
+class Print {
+public:
+  void print(int i)    { printf("int %d\n", i); } 
+  void print(double d) { printf("double %f\n", d); }
+  void print(float f)  { printf("float %f\n", f); }
+};
+main() {
+  Print *p = new Print();
+  p-&gt;print(37);      /* --&gt; "int 37" */
+  p-&gt;print(37.0);    /* --&gt; "double 37.000000" */
+}
+</PRE>
+<P class="docText">The most direct Python translation of signature-based overloading is a function that performs type checks on its argument(s). It is simple to write such functions:</P>
+<H5 class="docExampleTitle"><A NAME="ch01list05"></A> Python "signature-based" polymorphism</H5>
+
+<PRE>
+def Print(x):
+    from types import *
+    if type(x) is FloatType:  print "float", x
+    elif type(x) is IntType:  print "int", x
+    elif type(x) is LongType: print "long", x
+</PRE>
+<P class="docText">Writing signature-based functions, however, is extremely un-Pythonic. If you find yourself performing these sorts of explicit type checks, you have probably not understood the problem you want to solve correctly! What you <span class="docEmphasis">should</span> (usually) be interested in is not what type <TT>x</TT> is, but rather whether <TT>x</TT> can perform the action you need it to perform (regardless of what type of thing it is strictly).</P>
+<A NAME="ch01lev3sec2"></A><H5 class="docSection3Title"> PYTHONIC POLYMORPHISM</H5>
+<P class="docText">Probably the single most common case where pervasive polymorphism is useful is in identifying "file-like" objects. There are many objects that can do things that files can do, such as those created with <span class="docEmphasis"><TT>urllib</TT>, <TT>cStringIO</TT>, <TT>zipfile</TT></span>, and by other means. Various objects can perform only subsets of what actual files can: some can read, others can write, still others can seek, and so on. But for many purposes, you have no need to exercise every "file-like" capability—it is good enough to make sure that a specified object has those capabilities you actually need.</P>
+<P class="docText">Here is a typical example. I have a module that uses DOM to work with XML documents; I would like users to be able to specify an XML source in any of several ways: using the name of an XML file, passing a file-like object that contains XML, or indicating an already-built DOM object to work with (built with any of several XML libraries). Moreover, future users of my module may get their XML from novel places I have not even thought of (an RDBMS, over sockets, etc.). By looking at what a candidate object can <span class="docEmphasis">do,</span> I can just utilize whichever capabilities that object <span class="docEmphasis">has:</span></P>
+<H5 class="docExampleTitle"><A NAME="ch01list06"></A> Python capability-based polymorphism</H5>
+
+<PRE>
+def toDOM(xml_src=None):
+    from xml.dom import minidom
+    if hasattr(xml_src, 'documentElement'):
+        return xml_src    # it is already a DOM object
+    elif hasattr(xml_src,'read'):
+        # it is something that knows how to read data
+        return minidom.parseString(xml_src.read())
+    elif type(xml_src) in (StringType, UnicodeType):
+        # it is a filename of an XML document
+        xml = open(xml_src).read()
+        return minidom.parseString(xml)
+    else:
+        raise ValueError, "Must be initialized with " +\
+              "filename, file-like object, or DOM object"
+</PRE>
+<P class="docText">Even simple-seeming numeric types have varying capabilities. As with other objects, you should not usually care about the internal representation of an object, but rather about what it can do. Of course, as one way to assure that an object has a capability, it is often appropriate to coerce it to a type using the built-in functions <span class="docEmphasis"><TT>complex()</TT>, <TT>dict()</TT>, <TT>float()</TT>, <TT>int()</TT>, <TT>list()</TT>, <TT>long()</TT>, <TT>str()</TT>, <TT>tuple()</TT>, </span>and <span class="docEmphasis"><TT>unicode()</TT></span>. All of these functions make a good effort to transform anything that looks a little bit like the type of thing they name into a true instance of it. It is usually not necessary, however, actually to transform values to prescribed types; again we can just check capabilities.</P>
+<P class="docText">For example, suppose that you want to remove the "least significant" portion of any number—perhaps because they represent measurements of limited accuracy. For whole numbers—ints or longs—you might mask out some low-order bits; for fractional values you might round to a given precision. Rather than testing value types explicitly, you can look for numeric capabilities. One common way to test a capability in Python is to <span class="docEmphasis">try</span> to do something, and catch any exceptions that occur (then try something else). Below is a simple example:</P>
+<H5 class="docExampleTitle"><A NAME="ch01list07"></A> Checking what numbers can do</H5>
+
+<PRE>
+def approx(x):                # int attributes require 2.2+
+    if hasattr(x,'__and__'):  # supports bitwise-and
+        return x &amp; <SUP>~</SUP>OxOFL
+    try:                      # supports real/imag
+        return (round(x.real,2)+round(x.imag,2)*1j)
+    except AttributeError:
+        return round(x,2)
+</PRE>
+<A NAME="ch01lev3sec3"></A><H5 class="docSection3Title"> ENHANCED OBJECTS</H5>
+<P class="docText">The reason that the principle of pervasive polymorphism matters is because Python makes it easy to create new objects that behave mostly—but not exactly—like basic datatypes. File-like objects were already mentioned as examples; you may or may not think of a file object as a datatype precisely. But even basic datatypes like numbers, strings, lists, and dictionaries can be easily specialized and/or emulated.</P>
+<P class="docText">There are two details to pay attention to when emulating basic datatypes. The most important matter to understand is that the capabilities of an object—even those utilized with syntactic constructs—are generally implemented by its "magic" methods, each named with leading and trailing double underscores. Any object that has the right magic methods can act like a basic datatype in those contexts that use the supplied methods. At heart, a basic datatype is just an object with some well-optimized versions of the right collection of magic methods.</P>
+<P class="docText">The second detail concerns exactly how you get at the magic methods—or rather, how best to make use of existing implementations. There is nothing stopping you from writing your own version of any basic datatype, except for the piddling details of doing so. However, there are quite a few such details, and the easiest way to get the functionality you want is to specialize an existing class. Under all non-ancient versions of Python, the standard library provides the pure-Python modules <span class="docEmphasis"><TT>UserDict</TT>, <TT>UserList</TT></span>, and <span class="docEmphasis"><TT>UserString</TT></span> as starting points for custom datatypes. You can inherit from an appropriate parent class and specialize (magic) methods as needed. No sample parents are provided for tuples, ints, floats, and the rest, however.</P>
+<P class="docText">Under Python 2.2 and above, a better option is available. "New-style" Python classes let you inherit from the underlying C implementations of all the Python basic datatypes. Moreover, these parent classes have become the self-same callable objects that are used to coerce types and construct objects: <span class="docEmphasis"><TT>int(), list()</TT>, <TT>unicode()</TT></span>, and so on. There is a lot of arcana and subtle profundities that accompany new-style classes, but you generally do not need to worry about these. All you need to know is that a class that inherits from <span class="docEmphasis">string</span> is faster than one that inherits from <span class="docEmphasis">UserString;</span> likewise for <span class="docEmphasis">list</span> versus <span class="docEmphasis">UserList</span> and <span class="docEmphasis">dict</span> versus <span class="docEmphasis">UserDict</span> (assuming your scripts all run on a recent enough version of Python).</P>
+<P class="docText">Custom datatypes, however, need not specialize full-fledged implementations. You are free to create classes that implement "just enough" of the interface of a basic datatype to be used for a given purpose. Of course, in practice, the reason you would create such custom datatypes is either because you want them to contain non-magic methods of their own or because you want them to implement the magic methods associated with multiple basic datatypes. For example, below is a custom datatype that can be passed to the prior <TT>approx()</TT> function, and that also provides a (slightly) useful custom method:</P>
+<pre>
+&gt;&gt;&gt; class I:  # "Fuzzy" integer datatype
+...     def __init__(self, i):  self.i = i
+...     def __and__(self, i):   return self.i &amp; i
+...     def err_range(self):
+...         lbound = approx(self.i)
+...         return "Value: [%d, %d)" % (lbound, lbound+0x0F)
+...
+&gt;&gt;&gt; i1, i2 = I(29), I(20)
+&gt;&gt;&gt; approx(i1), approx(i2)
+(16L, 16L)
+&gt;&gt;&gt; i2.err_range()
+'Value: [16, 31)'
+</pre>
+<P class="docText">Despite supporting an extra method and being able to get passed into the <TT>approx()</TT> function, I is not a very versatile datatype. If you try to add, or divide, or multiply using "fuzzy integers," you will raise a <TT>TypeError</TT>. Since there is no module called <span class="docEmphasis"><TT>Userlnt</TT></span>, under an older Python version you would need to implement every needed magic method yourself.</P>
+<P class="docText">Using new-style classes in Python 2.2+, you could derive a "fuzzy integer" from the underlying <TT>int</TT> datatype. A partial implementation could look like:</P>
+<pre>
+&gt;&gt;&gt; class I2(int):    # New-style fuzzy integer
+...     def __add__(self, j):
+...         vals = map(int, [approx(self), approx(j)])
+...         k = int.__add__(*vals)
+...         return I2(int.__add__(k, 0x0F))
+...     def err_range(self):
+...         lbound = approx(self)
+...         return "Value: [%d, %d)" %(lbound,lbound+0x0F)
+...
+&gt;&gt;&gt; i1, i2 = I2(29), I2(20)
+&gt;&gt;&gt; print "i1 =", i1.err_range(),": i2 =", i2.err_range()
+i1 = Value: [16, 31) : i2 = Value: [16, 31)
+&gt;&gt;&gt; i3 = i1 + i2
+&gt;&gt;&gt; print i3, type(i3)
+47 &lt;class '__main__.I2'&gt;
+</pre>
+<P class="docText">Since the new-style class <TT>int</TT> already supports bitwise-and, there is no need to implement it again. With new-style classes, you refer to data values directly with <TT>self</TT>, rather than as an attribute that holds the data (e.g., <TT>self.i</TT> in class I). As well, it is generally unsafe to use syntactic operators within magic methods that define their operation; for example, I utilize the <TT>.__add__()</TT> method of the parent <TT>int</TT> rather than the <TT>+</TT> operator in the <TT>I2.__add__()</TT> method.</P>
+<P class="docText">In practice, you are less likely to want to create number-like datatypes than you are to emulate container types. But it is worth understanding just how and why even plain integers are a fuzzy concept in Python (the fuzziness of the concepts is of a different sort than the fuzziness of <TT>I2</TT> integers, though). Even a function that operates on whole numbers need not operate on objects of <TT>IntType</TT> or <TT>LongType</TT>—just on an object that satisfies the desired protocols.</P>
+<A NAME="ch01lev2sec4"></A><H4 class="docSection2Title">1.1.4 Base Classes for Datatypes</H4>
+<P class="docText">There are several magic methods that are often useful to define for <span class="docEmphasis">any</span> custom datatype. In fact, these methods are useful even for classes that do not really define datatypes (in some sense, every object is a datatype since it can contain attribute values, but not every object supports special syntax such as arithmetic operators and indexing). Not quite every magic method that you can define is documented in this book, but most are under the parent datatype each is most relevant to. Moreover, each new version of Python has introduced a few additional magic methods; those covered either have been around for a few versions or are particularly important.</P>
+<P class="docText">In documenting class methods of base classes, the same general conventions are used as for documenting module functions. The one special convention for these base class methods is the use of <TT>self</TT> as the first argument to all methods. Since the name <TT>self</TT> is purely arbitrary, this convention is less special than it might appear. For example, both of the following uses of <TT>self</TT> are equally legal:</P>
+<pre>
+&gt;&gt;&gt; import string
+&gt;&gt;&gt; self = 'spam'
+&gt;&gt;&gt; object.__repr__(self)
+'&lt;str object at 0x12c0a0&gt;'
+&gt;&gt;&gt; string.upper(self)
+'SPAM'
+</pre>
+<P class="docText">However, there is usually little reason to use class methods in place of perfectly good built-in and module functions with the same purpose. Normally, these methods of datatype classes are used only in child classes that override the base classes, as in:</P>
+<pre>
+&gt;&gt;&gt; class UpperObject(object):
+...       def __repr__(self):
+...           return object.__repr__(self).upper()
+...
+&gt;&gt;&gt; uo = UpperObject()
+&gt;&gt;&gt; print uo
+&lt;__MAIN__.UPPEROBJECT OBJECT AT 0X1C2C6C&gt;
+</pre>
+<P><A NAME="ch01sb01"></A><TABLE CELLSPACING="0" WIDTH="90%" BORDER="1"><TR><TD>
+<P class="docText"><span class="docEmphStrong">object </span>&#8226; <span class="docEmphStrong">Ancestor class for new-style datatypes</span></P></TD></TR></TABLE></P>
+<P class="docText">Under Python 2.2+, <TT>object</TT> has become a base for new-style classes. Inheriting from <TT>object</TT> enables a custom class to use a few new capabilities, such as slots and properties. But usually if you are interested in creating a custom datatype, it is better to inherit from a child of <TT>object</TT>, such as <TT>list</TT>, <TT>float</TT>, or <TT>dict</TT>.</P>
+<A NAME="ch01lev3sec4"></A><H5 class="docSection3Title"> METHODS</H5>
+<A NAME="ch01lev4sec1"></A><H5 class="docSection4Title"> object.__eq__(self, other)</H5>
+<P class="docText">Return a Boolean comparison between <TT>self</TT> and <TT>other</TT>. Determines how a datatype responds to the <TT>==</TT> operator. The parent class <TT>object</TT> does not implement . <TT>__eq__()</TT> since by default object equality means the same thing as identity (the <TT>is</TT> operator). A child is free to implement this in order to affect comparisons.</P>
+<A NAME="ch01lev4sec2"></A><H5 class="docSection4Title"> object.__ne__(self, other)</H5>
+<P class="docText">Return a Boolean comparison between <TT>self</TT> and <TT>other</TT>. Determines how a datatype responds to the <TT>!=</TT> and <TT>&lt;&gt;</TT> operators. The parent class <TT>object</TT> does not implement .<TT>__ne__()</TT> since by default object inequality means the same thing as nonidentity (the <TT>is not</TT> operator). Although it might seem that equality and inequality always return opposite values, the methods are not explicitly defined in terms of each other. You could force the relationship with:</P>
+<pre>
+&gt;&gt;&gt; class EQ(object):
+...     # Abstract parent class for equality classes
+...     def __eq__(self, o): return not self &lt;&gt; o
+...     def __ne__(self, o): return not self == o
+...
+&gt;&gt;&gt; class Comparable(EQ):
+...     # By def'ing inequlty, get equlty (or vice versa)
+...     def __ne__(self, other):
+...         return someComplexComparison(self, other)
+</pre>
+<A NAME="ch01lev4sec3"></A><H5 class="docSection4Title"> object.__nonzero__(self)</H5>
+<P class="docText">Return a Boolean value for an object. Determines how a datatype responds to the Boolean comparisons <TT>or</TT>, <TT>and</TT>, and <TT>not</TT>, and to <TT>if</TT> and <TT>filter(None,...)</TT> tests. An object whose .<TT>__nonzero__()</TT> method returns a true value is itself treated as a true value.</P>
+<A NAME="ch01lev4sec4"></A><H5 class="docSection4Title"> object.__len__(self)<br>len(object)</H5>
+<P class="docText">Return an integer representing the "length" of the object. For collection types, this is fairly straightforward—how many objects are in the collection? Custom types may change the behavior to some other meaningful value.</P>
+<A NAME="ch01lev4sec5"></A><H5 class="docSection4Title"> object.__repr__(self)<br>repr(object)<br>object.__str__(self)<br>str(object)</H5>
+<P class="docText">Return a string representation of the object <TT>self</TT>. Determines how a datatype responds to the <span class="docEmphasis"><TT>repr()</TT></span> and <span class="docEmphasis"><TT>str()</TT></span> built-in functions, to the <TT>print</TT> keyword, and to the back-tick operator.</P>
+<P class="docText">Where feasible, it is desirable to have the <TT>.__repr__()</TT> method return a representation with sufficient information in it to reconstruct an identical object. The goal here is to fulfill the equality <TT>obj==eval(repr(obj))</TT>. In many cases, however, you cannot encode sufficient information in a string, and the <TT>repr()</TT> of an object is either identical to, or slightly more detailed than, the <TT>str()</TT> representation of the same object.</P>
+<p class="docText"><span class="docEmphRoman">S<span class="docEmphSmaller">EE</span> A<span class="docEmphSmaller">LSO</span></span>: 
+repr <span class="docEmphasis">96;</span> operator <span class="docEmphasis">47</span>;</p>
+<P><A NAME="ch01sb02"></A><TABLE CELLSPACING="0" WIDTH="90%" BORDER="1"><TR><TD>
+<P class="docText"><span class="docEmphStrong">file</span> &#8226; <span class="docEmphStrong">New-style base class for file objects</span></P></TD></TR></TABLE></P>
+<P class="docText">Under Python 2.2+, it is possible to create a custom file-like object by inheriting from the built-in class <TT>file</TT>. In older Python versions you may only create file-like objects by defining the methods that define an object as "file-like." However, even in recent versions of Python, inheritance from <TT>file</TT> buys you little—if the data contents come from somewhere other than a native filesystem, you will have to reimplement every method you wish to support.</P>
+<P class="docText">Even more than for other object types, what makes an object file-like is a fuzzy concept. Depending on your purpose you may be happy with an object that can only read, or one that can only write. You may need to seek within the object, or you may be happy with a linear stream. In general, however, file-like objects are expected to read and write strings. Custom classes only need implement those methods that are meaningful to them and should only be used in contexts where their capabilities are sufficient.</P>
+<P class="docText">In documenting the methods of file-like objects, I adopt a slightly different convention than for other built-in types. Since actually inheriting from <TT>file</TT> is unusual, I use the capitalized name <TT>FILE</TT> to indicate a general file-like object. Instances of the actual <TT>file</TT> class are examples (and implement all the methods named), but other types of objects can be equally good <TT>FILE</TT> instances.</P>
+<A NAME="ch01lev3sec5"></A><H5 class="docSection3Title"> BUILT-IN FUNCTIONS</H5>
+<A NAME="ch01lev4sec6"></A><H5 class="docSection4Title"> open(fname [,mode [,buffering]])<br>file(fname [,mode [,buffering]])</H5>
+<P class="docText">Return a file object that attaches to the filename <TT>fname</TT>. The optional argument <TT>mode</TT> describes the capabilities and access style of the object. An <TT>r</TT> mode is for reading; <TT>w</TT> for writing (truncating any existing content); <TT>a</TT> for appending (writing to the end). Each of these modes may also have the binary flag <TT>b</TT> for platforms like Windows that distinguish text and binary files. The flag <TT>+</TT> may be used to allow both reading and writing. The argument <TT>buffering</TT> may be 0 for none, 1 for line-oriented, a larger integer for number of bytes.</P>
+<pre>
+&gt;&gt;&gt; open('tmp','w').write('spam and eggs\n')
+&gt;&gt;&gt; print open('tmp','r').read(),
+spam and eggs
+&gt;&gt;&gt; open('tmp','w').write('this and that\n')
+&gt;&gt;&gt; print open('tmp','r').read(),
+this and that
+&gt;&gt;&gt; open('tmp','a').write('something else\n')
+&gt;&gt;&gt; print open('tmp','r').read(),
+this and that
+something else
+</pre>
+<A NAME="ch01lev3sec6"></A><H5 class="docSection3Title"> METHODS AND ATTRIBUTES</H5>
+<A NAME="ch01lev4sec7"></A><H5 class="docSection4Title"> FILE.close()</H5>
+<P class="docText">Close a file object. Reading and writing are disallowed after a file is closed.</P>
+<A NAME="ch01lev4sec8"></A><H5 class="docSection4Title"> FILE.closed</H5>
+<P class="docText">Return a Boolean value indicating whether the file has been closed.</P>
+<A NAME="ch01lev4sec9"></A><H5 class="docSection4Title"> FILE.fileno()</H5>
+<P class="docText">Return a file descriptor number for the file. File-like objects that do not attach to actual files should not implement this method.</P>
+<A NAME="ch01lev4sec10"></A><H5 class="docSection4Title"> FILE.flush()</H5>
+<P class="docText">Write any pending data to the underlying file. File-like objects that do not cache data can still implement this method as <TT>pass</TT>.</P>
+<A NAME="ch01lev4sec11"></A><H5 class="docSection4Title"> FILE.isatty()</H5>
+<P class="docText">Return a Boolean value indicating whether the file is a TTY-like device. The standard documentation says that file-like objects that do not attach to actual files should not implement this method, but implementing it to always return 0 is probably a better approach.</P>
+<A NAME="ch01lev4sec12"></A><H5 class="docSection4Title"> FILE.mode</H5>
+<P class="docText">Attribute containing the mode of the file, normally identical to the <TT>mode</TT> argument passed to the object's initializer.</P>
+<A NAME="ch01lev4sec13"></A><H5 class="docSection4Title"> FILE.name</H5>
+<P class="docText">The name of the file. For file-like objects without a filesystem name, some string identifying the object should be put into this attribute.</P>
+<A NAME="ch01lev4sec14"></A><H5 class="docSection4Title"> FILE.read ([size=sys.maxint])</H5>
+<P class="docText">Return a string containing up to <TT>size</TT> bytes of content from the file. Stop the read if an EOF is encountered or upon another condition that makes sense for the object type. Move the file position forward immediately past the read in bytes. A negative <TT>size</TT> argument is treated as the default value.</P>
+<A NAME="ch01lev4sec15"></A><H5 class="docSection4Title"> FILE.readline([size=sys.maxint])</H5>
+<P class="docText">Return a string containing one line from the file, including the trailing newline, if any. A maximum of <TT>size</TT> bytes are read. The file position is moved forward past the read. A negative <TT>size</TT> argument is treated as the default value.</P>
+<A NAME="ch01lev4sec16"></A><H5 class="docSection4Title"> FILE.readlines([size=sys.maxint])</H5>
+<P class="docText">Return a list of lines from the file, each line including its trailing newline. If the argument <TT>size</TT> is given, limit the read to <span class="docEmphasis">approximately</span> <TT>size</TT> bytes worth of lines. The file position is moved forward past the read in bytes. A negative <TT>size</TT> argument is treated as the default value.</P>
+<A NAME="ch01lev4sec17"></A><H5 class="docSection4Title"> FILE.seek(offset [,whence=0])</H5>
+<P class="docText">Move the file position by <TT>offset</TT> bytes (positive or negative). The argument <TT>whence</TT> specifies where the initial file position is prior to the move: 0 for BOF; 1 for current position; 2 for EOF.</P>
+<A NAME="ch01lev4sec18"></A><H5 class="docSection4Title"> FILE.tell()</H5>
+<P class="docText">Return the current file position.</P>
+<A NAME="ch01lev4sec19"></A><H5 class="docSection4Title"> FILE.truncate([size=0])</H5>
+<P class="docText">Truncate the file contents (it becomes <TT>size</TT> length).</P>
+<A NAME="ch01lev4sec20"></A><H5 class="docSection4Title"> FILE.write(s)</H5>
+<P class="docText">Write the string <TT>s</TT> to the file, starting at the current file position. The file position is moved forward past the written bytes.</P>
+<A NAME="ch01lev4sec21"></A><H5 class="docSection4Title"> FILE.writelines(lines)</H5>
+<P class="docText">Write the lines in the sequence <TT>lines</TT> to the file. No newlines are added during the write. The file position is moved forward past the written bytes.</P>
+<A NAME="ch01lev4sec22"></A><H5 class="docSection4Title"> FILE.xreadlines()</H5>
+<P class="docText">Memory-efficient iterator over lines in a file. In Python 2.2+, you might implement this as a generator that returns one line per each <TT>yield</TT>.</P>
+<p class="docText"><span class="docEmphRoman">S<span class="docEmphSmaller">EE</span> A<span class="docEmphSmaller">LSO</span></span>: 
+xreadlines <span class="docEmphasis">72;</span></p>
+<P><A NAME="ch01sb03"></A><TABLE CELLSPACING="0" WIDTH="90%" BORDER="1"><TR><TD>
+<P class="docText"><span class="docEmphStrong">int </span>&#8226; <span class="docEmphStrong">New-style base class for integer objects</span></P></TD></TR></TABLE></P>
+<P><A NAME="ch01sb04"></A><TABLE CELLSPACING="0" WIDTH="90%" BORDER="1"><TR><TD>
+<P class="docText"><span class="docEmphStrong">long </span>&#8226; <span class="docEmphStrong">New-style base class for long integers</span></P></TD></TR></TABLE></P>
+<P class="docText">In Python, there are two standard datatypes for representing integers. Objects of type <TT>IntType</TT> have a fixed range that depends on the underlying platform—usually between plus and minus 2**31. Objects of type <TT>LongType</TT> are unbounded in size. In Python 2.2+, operations on integers that exceed the range of an <TT>int</TT> object results in automatic promotion to <TT>long</TT> objects. However, no operation on a <TT>long</TT> will demote the result back to an <TT>int</TT> object (even if the result is of small magnitude)—with the exception of the <span class="docEmphasis"><TT>int()</TT></span> function, of course.</P>
+<P class="docText">From a user point of view ints and longs provide exactly the same interface. The difference between them is only in underlying implementation, with ints typically being significantly faster to operate on (since they use raw CPU instructions fairly directly). Most of the magic methods integers have are shared by floating point numbers as well and are discussed below. For example, consult the discussion of <span class="docEmphasis"><TT>float.__mul__()</TT></span> for information on the corresponding <span class="docEmphasis"><TT>int.__mul__()</TT></span> method. The special capability that integers have over floating point numbers is their ability to perform bitwise operations.</P>
+<P class="docText">Under Python 2.2+, you may create a custom datatype that inherits from <TT>int</TT> or <TT>long</TT>; under earlier versions, you would need to manually define all the magic methods you wished to utilize (generally a lot of work, and probably not worth it).</P>
+<P class="docText">Each binary bit operation has a left-associative and a right-associative version. If you define both versions and perform an operation on two custom objects, the left-associative version is chosen. However, if you perform an operation with a basic <TT>int</TT> and a custom object, the custom right-associative method will be chosen over the basic operation. For example:</P>
+<pre>
+&gt;&gt;&gt; class I(int):
+...     def __xor__(self, other):
+...         return "X0R"
+...     def __rxor__(self, other):
+...         return "RX0R"
+...
+&gt;&gt;&gt; 0xFF ^ 0xFF
+0
+&gt;&gt;&gt; 0xFF ^ I(0xFF)
+'RXOR'
+&gt;&gt;&gt; I(0xFF) ^ 0xFF
+'XOR'
+&gt;&gt;&gt; I(0xFF) ^ I(0xFF)
+'X0R'
+</pre>
+<A NAME="ch01lev3sec7"></A><H5 class="docSection3Title"> METHODS</H5>
+<A NAME="ch01lev4sec23"></A><H5 class="docSection4Title"> int.__and__(self, other)<br>int.__rand__(self, other)</H5>
+<P class="docText">Return a bitwise-and between <TT>self</TT> and <TT>other</TT>. Determines how a datatype responds to the <TT>&amp;</TT> operator.</P>
+<A NAME="ch01lev4sec24"></A><H5 class="docSection4Title"> int.__hex__(self)</H5>
+<P class="docText">Return a hex string representing <TT>self</TT>. Determines how a datatype responds to the built-in <span class="docEmphasis"><TT>hex()</TT></span> function.</P>
+<A NAME="ch01lev4sec25"></A><H5 class="docSection4Title"> int.__invert__(self)</H5>
+<P class="docText">Return a bitwise inversion of <TT>self</TT>. Determines how a datatype responds to the <TT>~</TT> operator.</P>
+<A NAME="ch01lev4sec26"></A><H5 class="docSection4Title"> int.__lshift__(self, other)<br>int.__rlshift__(self, other)</H5>
+<P class="docText">Return the result of bit-shifting <TT>self</TT> to the left by <TT>other</TT> bits. The right-associative version shifts <TT>other</TT> by <TT>self</TT> bits. Determines how a datatype responds to the <TT>&lt;&lt;</TT> operator.</P>
+<A NAME="ch01lev4sec27"></A><H5 class="docSection4Title"> int.__oct__(self)</H5>
+<P class="docText">Return an octal string representing <TT>self</TT>. Determines how a datatype responds to the built-in <span class="docEmphasis"><TT>oct()</TT></span> function.</P>
+<A NAME="ch01lev4sec28"></A><H5 class="docSection4Title"> int.__or__(self, other)<br>int.__ror__(self, other)</H5>
+<P class="docText">Return a bitwise-or between <TT>self</TT> and <TT>other</TT>. Determines how a datatype responds to the <TT>|</TT> operator.</P>
+<A NAME="ch01lev4sec29"></A><H5 class="docSection4Title"> int.__rshift__(self, other)<br>int.__rrshift__(self, other)</H5>
+<P class="docText">Return the result of bit-shifting <TT>self</TT> to the right by <TT>other</TT> bits. The right-associative version shifts <TT>other</TT> by <TT>self</TT> bits. Determines how a datatype responds to the <TT>&gt;&gt;</TT> operator.</P>
+<A NAME="ch01lev4sec30"></A><H5 class="docSection4Title"> int.__xor__(self, other)<br>int.__rxor__(self, other)</H5>
+<P class="docText">Return a bitwise-xor between <TT>self</TT> and <TT>other</TT>. Determines how a datatype responds to the <TT>^</TT> operator.</P>
+<p class="docText"><span class="docEmphRoman">S<span class="docEmphSmaller">EE</span> A<span class="docEmphSmaller">LSO</span></span>: 
+float <span class="docEmphasis">19;</span> int <span class="docEmphasis">421;</span> long <span class="docEmphasis">422;</span> sys.maxint <span class="docEmphasis">50;</span> operator <span class="docEmphasis">47;</span></p>
+<P><A NAME="ch01sb05"></A><TABLE CELLSPACING="0" WIDTH="90%" BORDER="1"><TR><TD>
+<P class="docText"><span class="docEmphStrong">float</span> &#8226; <span class="docEmphStrong">New-style base class for floating point numbers</span></P></TD></TR></TABLE></P>
+<P class="docText">Python floating point numbers are mostly implemented using the underlying C floating point library of your platform; that is, to a greater or lesser degree based on the IEEE 754 standard. A complex number is just a Python object that wraps a pair of floats with a few extra operations on these pairs.</P>
+<A NAME="ch01lev3sec8"></A><H5 class="docSection3Title"> DIGRESSION</H5>
+<P class="docText">Although the details are far outside the scope of this book, a general warning is in order. Floating point math is harder than you think! If you think you <span class="docEmphasis">understand</span> just how complex IEEE 754 math is, you are not yet aware of all of the subtleties. By way of indication, Python luminary and erstwhile professor of numeric computing Alex Martelli commented in 2001 (on <TT>&lt;comp.lang.python&gt;</TT>):</P>
+<blockquote>
+<p class="docText">Anybody who thinks he knows what he's doing when floating point is involved IS either naive, or Tim Peters (well, it COULD be W. Kahan I guess, but I don't think he writes here).</p></blockquote>
+<P class="docText">Fellow Python guru Tim Peters observed:</P>
+<blockquote>
+<p class="docText">I find it's possible to be both (wink). But <span class="docEmphStrong">nothing</span> about fp comes easily to anyone, and even Kahan works his butt off to come up with the amazing things that he does.</p></blockquote>
+<P class="docText">Peters illustrated further by way of Donald Knuth (<span class="docEmphasis">The Art of Computer Programming, Third Edition</span>, Addison-Wesley, 1997; ISBN: 0201896842, vol. 2, p. 229):</P>
+<blockquote>
+<p class="docText">Many serious mathematicians have attempted to analyze a sequence of floating point operations rigorously, but found the task so formidable that they have tried to be content with plausibility arguments instead.</p></blockquote>
+<P class="docText">The trick about floating point numbers is that although they are extremely useful for representing real-life (fractional) quantities, operations on them do not obey the arithmetic rules we learned in middle school: associativity, transitivity, commutativity; moreover, many very ordinary-seeming numbers can be represented only approximately with floating point numbers. For example:</P>
+<pre>
+&gt;&gt;&gt; 1./3
+0.33333333333333331
+&gt;&gt;&gt; .3
+0.29999999999999999
+&gt;&gt;&gt; 7 == 7./25 * 25
+0
+&gt;&gt;&gt; 7 == 7./24 * 24
+1
+</pre>
+<A NAME="ch01lev3sec9"></A><H5 class="docSection3Title"> CAPABILITIES</H5>
+<P class="docText">In the hierarchy of Python numeric types, floating point numbers are higher up the scale than integers, and complex numbers higher than floats. That is, operations on mixed types get promoted upwards. However, the magic methods that make a datatype "float-like" are strictly a subset of those associated with integers. All of the magic methods listed below for floats apply equally to ints and longs (or integer-like custom datatypes). Complex numbers support a few addition methods.</P>
+<P class="docText">Under Python 2.2+, you may create a custom datatype that inherits from <TT>float</TT> or <TT>complex</TT>; under earlier versions, you would need to manually define all the magic methods you wished to utilize (generally a lot of work, and probably not worth it).</P>
+<P class="docText">Each binary operation has a left-associative and a right-associative version. If you define both versions and perform an operation on two custom objects, the left-associative version is chosen. However, if you perform an operation with a basic datatype and a custom object, the custom right-associative method will be chosen over the basic operation. See the example under <span class="docEmphasis"><TT>int</TT></span>.</P>
+<A NAME="ch01lev3sec10"></A><H5 class="docSection3Title"> METHODS</H5>
+<A NAME="ch01lev4sec31"></A><H5 class="docSection4Title"> float.__abs__(self)</H5>
+<P class="docText">Return the absolute value of <TT>self</TT>. Determines how a datatype responds to the built-in function <span class="docEmphasis"><TT>abs()</TT></span>.</P>
+<A NAME="ch01lev4sec32"></A><H5 class="docSection4Title"> float.__add__(self, other)<br>float.__radd__(self, other)</H5>
+<P class="docText">Return the sum of <TT>self</TT> and <TT>other</TT>. Determines how a datatype responds to the <TT>+</TT> operator.</P>
+<A NAME="ch01lev4sec33"></A><H5 class="docSection4Title"> float.__cmp__(self, other)</H5>
+<P class="docText">Return a value indicating the order of <TT>self</TT> and <TT>other</TT>. Determines how a datatype responds to the numeric comparison operators <TT>&lt;</TT>, <TT>&gt;</TT>, <TT>&lt;=</TT>, <TT>&gt;=</TT>, <TT>==</TT>, <TT>&lt;&gt;</TT>, and <TT>!=</TT>. Also determines the behavior of the built-in <span class="docEmphasis"><TT>cmp()</TT></span> function. Should return -1 for <TT>self&lt;other</TT>, 0 for <TT>self==other</TT>, and 1 for <TT>self&gt;other</TT>. If other comparison methods are defined, they take precedence over <TT>.__cmp__()</TT>: <TT>.__ge__()</TT>, <TT>.__gt__()</TT>, <TT>.__le__()</TT>, and <TT>.__lt__()</TT>.</P>
+<A NAME="ch01lev4sec34"></A><H5 class="docSection4Title"> float.__div__(self, other)<br>float.__rdiv__(self, other)</H5>
+<P class="docText">Return the ratio of <TT>self</TT> and <TT>other</TT>. Determines how a datatype responds to the <TT>/</TT> operator. In Python 2.3+, this method will instead determine how a datatype responds to the floor division operator <TT>//</TT>.</P>
+<A NAME="ch01lev4sec35"></A><H5 class="docSection4Title"> float.__divmod__(self, other)<br>float.__rdivmod__(self, other)</H5>
+<P class="docText">Return the pair <TT>(div, remainder)</TT>. Determines how a datatype responds to the built-in <span class="docEmphasis"><TT>divmod()</TT></span> function.</P>
+<A NAME="ch01lev4sec36"></A><H5 class="docSection4Title"> float.__floordiv__(self, other)<br>float.__rfloordiv__(self, other)</H5>
+<P class="docText">Return the number of whole times <TT>self</TT> goes into <TT>other</TT>. Determines how a datatype responds to the Python 2.2+ floor division operator <TT>//</TT>.</P>
+<A NAME="ch01lev4sec37"></A><H5 class="docSection4Title"> float.__mod__(self, other)<br>float.__rmod__(self, other)</H5>
+<P class="docText">Return the modulo division of <TT>self</TT> into <TT>other</TT>. Determines how a datatype responds to the <TT>%</TT> operator.</P>
+<A NAME="ch01lev4sec38"></A><H5 class="docSection4Title"> float.__mul__(self, other)<br>float.__rmul__(self, other)</H5>
+<P class="docText">Return the product of <TT>self</TT> and <TT>other</TT>. Determines how a datatype responds to the <TT>*</TT> operator.</P>
+<A NAME="ch01lev4sec39"></A><H5 class="docSection4Title"> float.__neg__(self)</H5>
+<P class="docText">Return the negative of <TT>self</TT>. Determines how a datatype responds to the unary <TT>-</TT> operator.</P>
+<A NAME="ch01lev4sec40"></A><H5 class="docSection4Title"> float.__pow__(self, other)<br>float.__rpow__(self, other)</H5>
+<P class="docText">Return <TT>self</TT> raised to the <TT>other</TT> power. Determines how a datatype responds to the <TT>^</TT> operator.</P>
+<A NAME="ch01lev4sec41"></A><H5 class="docSection4Title"> float.__sub__(self, other)<br>float.__rsub__(self, other)</H5>
+<P class="docText">Return the difference between <TT>self</TT> and <TT>other</TT>. Determines how a datatype responds to the binary <TT>-</TT> operator.</P>
+<A NAME="ch01lev4sec42"></A><H5 class="docSection4Title"> float.__truediv__(self, other)<br>float.__rtruediv__(self, other)</H5>
+<P class="docText">Return the ratio of <TT>self</TT> and <TT>other</TT>. Determines how a datatype responds to the Python 2.3+ true division operator <TT>/</TT>.</P>
+<p class="docText"><span class="docEmphRoman">S<span class="docEmphSmaller">EE</span> A<span class="docEmphSmaller">LSO</span></span>: 
+complex <span class="docEmphasis">22;</span> int <span class="docEmphasis">18;</span> float <span class="docEmphasis">422;</span> operator <span class="docEmphasis">47;</span></p>
+<P><A NAME="ch01sb06"></A><TABLE CELLSPACING="0" WIDTH="90%" BORDER="1"><TR><TD>
+<P class="docText"><span class="docEmphStrong">complex </span>&#8226; <span class="docEmphStrong">New-style base class for complex numbers</span></P></TD></TR></TABLE></P>
+<P class="docText">Complex numbers implement all the above documented methods of floating point numbers, and a few additional ones.</P>
+<P class="docText">Inequality operations on complex numbers are not supported in recent versions of Python, even though they were previously. In Python 2.1+, the methods <span class="docEmphasis"><TT>complex.__ge__()</TT>, <TT>complex.__gt__()</TT>, <TT>complex.__le__()</TT></span>, and <span class="docEmphasis"><TT>complex.__lt__()</TT></span> all raise <TT>TypeError</TT> rather than return Boolean values indicating the order. There is a certain logic to this change inasmuch as complex numbers do not have a "natural" ordering. But there is also significant breakage with this change—this is one of the few changes in Python, since version 1.4 when I started using it, that I feel was a real mistake. The important breakage comes when you want to sort a list of various things, some of which might be complex numbers:</P>
+<pre>
+&gt;&gt;&gt; lst = ["string", 1.0, 1, 1L, ('t','u' , 'p')]
+&gt;&gt;&gt; lst.sort()
+&gt;&gt;&gt; 1st
+[1.0, 1, 1L, 'string', ('t', 'u', 'p')]
+&gt;&gt;&gt; lst.append(1j)
+&gt;&gt;&gt; lst.sort()
+Traceback (most recent call last):
+  File "&lt;stdin&gt;", line 1, in ?
+TypeError: cannot compare complex numbers using &lt;, &lt;=, &gt;, &gt;=
+</pre>
+<P class="docText">It is true that there is no obvious correct ordering between a complex number and another number (complex or otherwise), but there is also no natural ordering between a string, a tuple, and a number. Nonetheless, it is frequently useful to sort a heterogeneous list in order to create a canonical (even if meaningless) order. In Python 2.2+, you can remedy this shortcoming of recent Python versions in the style below (under 2.1 you are largely out of luck):</P>
+<pre>
+&gt;&gt;&gt; class C(complex):
+...   def __lt__(self, o):
+...     if hasattr(o, 'imag'):
+...       return (self.real,self.imag) &lt; (o.real,o.imag)
+...     else:
+...       return self.real &lt; o
+...   def __le__(self, o): return self &lt; o or self==o
+...   def __gt__(self, o): return not (self==o or self &lt; o)
+...   def __ge__(self, o): return self &gt; o or self==o
+...
+&gt;&gt;&gt; 1st = ["str", 1.0, 1, 1L, (1,2,3), C(1+1j), C(2-2j)]
+&gt;&gt;&gt; lst.sort()
+&gt;&gt;&gt; 1st
+[1.0, 1, 1L, (1+1j), (2-2j), 'str', (1, 2, 3)]
+</pre>
+<P class="docText">Of course, if you adopt this strategy, you have to create all of your complex values using the custom datatype <TT>C</TT>. And unfortunately, unless you override arithmetic operations also, a binary operation between a <TT>C</TT> object and another number reverts to a basic complex datatype. The reader can work out the details of this solution if she needs it.</P>
+<A NAME="ch01lev3sec11"></A><H5 class="docSection3Title"> METHODS</H5>
+<A NAME="ch01lev4sec43"></A><H5 class="docSection4Title"> complex.conjugate(self)</H5>
+<P class="docText">Return the complex conjugate of <TT>self</TT>. A quick refresher here: If <TT>self</TT> is <TT>n+mj</TT> its conjugate is <TT>n-mj</TT>.</P>
+<A NAME="ch01lev4sec44"></A><H5 class="docSection4Title"> complex.imag</H5>
+<P class="docText">Imaginary component of a complex number.</P>
+<A NAME="ch01lev4sec45"></A><H5 class="docSection4Title"> complex.real</H5>
+<P class="docText">Real component of a complex number.</P>
+<p class="docText"><span class="docEmphRoman">S<span class="docEmphSmaller">EE</span> A<span class="docEmphSmaller">LSO</span></span>: 
+float <span class="docEmphasis">19;</span> complex <span class="docEmphasis">422;</span></p>
+<P><A NAME="ch01sb07"></A><TABLE CELLSPACING="0" WIDTH="90%" BORDER="1"><TR><TD>
+<P class="docText"><span class="docEmphStrong">UserDict</span> &#8226; <span class="docEmphStrong">Custom wrapper around dictionary objects</span></P></TD></TR></TABLE></P>
+<P><A NAME="ch01sb08"></A><TABLE CELLSPACING="0" WIDTH="90%" BORDER="1"><TR><TD>
+<P class="docText"><span class="docEmphStrong">dict</span> &#8226; <span class="docEmphStrong">New-style base class for dictionary objects</span></P></TD></TR></TABLE></P>
+<P class="docText">Dictionaries in Python provide a well-optimized mapping between immutable objects and other Python objects (see Glossary entry on "immutable"). You may create custom datatypes that respond to various dictionary operations. There are a few syntactic operations associated with dictionaries, all involving indexing with square braces. But unlike with numeric datatypes, there are several regular methods that are reasonable to consider as part of the general interface for dictionary-like objects.</P>
+<P class="docText">If you create a dictionary-like datatype by subclassing from <span class="docEmphasis"><TT>UserDict.UserDict</TT></span>, all the special methods defined by the parent are proxies to the true dictionary stored in the object's .<TT>data</TT> member. If, under Python 2.2+, you subclass from <TT>dict</TT> itself, the object itself inherits dictionary behaviors. In either case, you may customize whichever methods you wish. Below is an example of the two styles for subclassing a dictionary-like datatype:</P>
+<pre>
+&gt;&gt;&gt; from sys import stderr
+&gt;&gt;&gt; from UserDict import UserDict
+&gt;&gt;&gt; class LogDictOld(UserDict):
+...    def __setitem__(self, key, val):
+...       stderr.write("Set: "+str(key)+"-&gt;"+str(val)+"\n")
+...       self.data[key] = val
+...
+&gt;&gt;&gt; ldo = LogDict0ld()
+&gt;&gt;&gt; ldo['this'] = 'that'
+Set: this-&gt;that
+&gt;&gt;&gt; class LogDictNew(dict):
+...    def __setitem__(self, key, val):
+...       stderr.write("Set: "+str(key)+"-&gt;"+str(val)+"\n")
+...       dict.__setitem__(self, key, val)
+...
+&gt;&gt;&gt; ldn = LogDict0ld()
+&gt;&gt;&gt; ldn['this'] = 'that'
+Set: this-&gt;that
+</pre>
+<A NAME="ch01lev3sec12"></A><H5 class="docSection3Title"> METHODS</H5>
+<A NAME="ch01lev4sec46"></A><H5 class="docSection4Title"> dict.__cmp__(self, other)<br>UserDict.UserDict.__cmp__(self, other)</H5>
+<P class="docText">Return a value indicating the order of <TT>self</TT> and <TT>other</TT>. Determines how a datatype responds to the numeric comparison operators <TT>&lt;</TT>, <TT>&gt;</TT>, <TT>&lt;=</TT>, <TT>&gt;=</TT>, <TT>==</TT>, <TT>&lt;&gt;</TT>, and <TT>!=</TT>. Also determines the behavior of the built-in <span class="docEmphasis"><TT>cmp()</TT></span> function. Should return -1 for <TT>self&lt;other</TT>, 0 for <TT>self==other</TT>, and 1 for <TT>self&gt;other</TT>. If other comparison methods are defined, they take precedence over <TT>.__cmp__()</TT>: <TT>.__ge__()</TT>, <TT>.__gt__()</TT>, <TT>.__le__()</TT>, and <TT>.__lt__()</TT>.</P>
+<A NAME="ch01lev4sec47"></A><H5 class="docSection4Title"> dict.__contains__(self, x)<br>UserDict.UserDict.__contains__(self, x)</H5>
+<P class="docText">Return a Boolean value indicating whether <TT>self</TT> "contains" the value <TT>x</TT>. By default, being contained in a dictionary means matching one of its keys, but you can change this behavior by overriding it (e.g., check whether <TT>x</TT> is in a value rather than a key). Determines how a datatype responds to the <TT>in</TT> operator.</P>
+<A NAME="ch01lev4sec48"></A><H5 class="docSection4Title"> dict.__delitem__(self, x)<br>UserDict.UserDict.__delitem__(self, x)</H5>
+<P class="docText">Remove an item from a dictionary-like datatype. By default, removing an item means removing the pair whose key equals <TT>x</TT>. Determines how a datatype responds to the <TT>del</TT> statement, as in: <TT>del self [x]</TT>.</P>
+<A NAME="ch01lev4sec49"></A><H5 class="docSection4Title"> dict.__getitem__(self, x)<br>UserDict.UserDict.__getitem__(self, x)</H5>
+<P class="docText">By default, return the value associated with the key <TT>x</TT>. Determines how a datatype responds to indexing with square braces. You may override this method to either search differently or return special values. For example:</P>
+<pre>
+&gt;&gt;&gt; class Bag0fPairs(dict):
+...     def __getitem__(self, x):
+...         if self.has_key(x):
+...             return (x, dict.__getitem__(self,x)) 
+...         else:
+...             tmp = dict([(v,k) for k,v in self.items()])
+...             return (dict.__getitem__(tmp,x), x)
+...
+&gt;&gt;&gt; bop = BagOfPairs({'this':'that', 'spam':'eggs'})
+&gt;&gt;&gt; bop['this']
+('this', 'that')
+&gt;&gt;&gt; bop['eggs']
+('spam', 'eggs')
+&gt;&gt;&gt; bop['bacon'] = 'sausage'
+&gt;&gt;&gt; bop
+{'this': 'that', 'bacon': 'sausage', 'spam': 'eggs'}
+&gt;&gt;&gt; bop ['nowhere']
+Traceback (most recent call last):
+  File "&lt;stdin&gt;", line 1, in ?
+  File "&lt;stdin&gt;", line 7, in __getitem__
+KeyError: nowhere
+</pre>
+<A NAME="ch01lev4sec50"></A><H5 class="docSection4Title"> dict.__len__(self)<br>UserDict.UserDict.__len__(self)</H5>
+<P class="docText">Return the length of the dictionary. By default this is simply a count of the key/val pairs, but you could perform a different calculation if you wished (e.g, perhaps you would cache the size of a record set returned from a database query that emulated a dictionary). Determines how a datatype responds to the built-in <span class="docEmphasis"><TT>len()</TT></span> function.</P>
+<A NAME="ch01lev4sec51"></A><H5 class="docSection4Title"> dict.__setitem__(self, key, val)<br>UserDict.UserDict.__setitem__(self, key, val)</H5>
+<P class="docText">Set the dictionary key <TT>key</TT> to value <TT>val</TT>. Determines how a datatype responds to indexed assignment; that is, <TT>self[key]=val</TT>. A custom version might actually perform some calculation based on <TT>val</TT> and/or <TT>key</TT> before adding an item.</P>
+<A NAME="ch01lev4sec52"></A><H5 class="docSection4Title"> dict.clear(self)<br>UserDict.UserDict.clear(self)</H5>
+<P class="docText">Remove all items from <TT>self</TT>.</P>
+<A NAME="ch01lev4sec53"></A><H5 class="docSection4Title"> dict.copy(self)<br>UserDict.UserDict.copy(self)</H5>
+<P class="docText">Return a copy of the dictionary <TT>self</TT> (i.e., a distinct object with the same items).</P>
+<A NAME="ch01lev4sec54"></A><H5 class="docSection4Title"> dict.get(self, key [,default=None])<br>UserDict.UserDict.get(self, key [,default=None])</H5>
+<P class="docText">Return the value associated with the key <TT>key</TT>. If no item with the key exists, return <TT>default</TT> instead of raising a <TT>KeyError</TT>.</P>
+<A NAME="ch01lev4sec55"></A><H5 class="docSection4Title"> dict.has_key(self, key)<br>UserDict.UserDict.has_key(self, key)</H5>
+<P class="docText">Return a Boolean value indicating whether <TT>self</TT> has the key <TT>key</TT>.</P>
+<A NAME="ch01lev4sec56"></A><H5 class="docSection4Title"> dict.items(self)<br>UserDict.UserDict.items(self)<br>dict.iteritems(self)<br>UserDict.UserDict.iteritems(self)</H5>
+<P class="docText">Return the items in a dictionary, in an unspecified order. The <TT>.items()</TT> method returns a true list of <TT>(key,val)</TT> pairs, while the <TT>.iteritems()</TT> method (in Python 2.2+) returns a generator object that successively yields items. The latter method is useful if your dictionary is not a true in-memory structure, but rather some sort of incremental query or calculation. Either method responds externally similarly to a <TT>for</TT> loop:</P>
+<pre>
+&gt;&gt;&gt; d = {1:2, 3:4}
+&gt;&gt;&gt; for k,v in d.iteritems(): print k,v,':',
+...
+1 2 : 3 4 :
+&gt;&gt;&gt; for k,v in d.items(): print k,v,':',
+...
+1 2 : 3 4 :
+</pre>
+<A NAME="ch01lev4sec57"></A><H5 class="docSection4Title"> dict.keys(self)<br>UserDict.UserDict.keys(self)<br>dict.iterkeys(self)<br>UserDict.UserDict.iterkeys(self)</H5>
+<P class="docText">Return the keys in a dictionary, in an unspecified order. The <TT>.keys()</TT> method returns a true list of keys, while the <TT>.iterkeys()</TT> method (in Python 2.2+) returns a generator object.</P>
+<p class="docText"><span class="docEmphRoman">S<span class="docEmphSmaller">EE</span> A<span class="docEmphSmaller">LSO</span></span>: 
+dict.items() <span class="docEmphasis">26;</span></p>
+<A NAME="ch01lev4sec58"></A><H5 class="docSection4Title"> dict.popitem(self)<br>UserDict.UserDict.popitem(self)</H5>
+<P class="docText">Return a <TT>(key,val)</TT> pair for the dictionary, or raise as <TT>KeyError</TT> if the dictionary is empty. Removes the returned item from the dictionary. As with other dictionary methods, the order in which items are popped is unspecified (and can vary between versions and platforms).</P>
+<A NAME="ch01lev4sec59"></A><H5 class="docSection4Title"> dict.setdefault(self, key [,default=None])<br>UserDict.UserDict.setdefault(self, key [,default=None])</H5>
+<P class="docText">If <TT>key</TT> is currently in the dictionary, return the corresponding value. If <TT>key</TT> is not currently in the dictionary, set <TT>self[key]=default</TT>, then return <TT>default</TT>.</P>
+<p class="docText"><span class="docEmphRoman">S<span class="docEmphSmaller">EE</span> A<span class="docEmphSmaller">LSO</span></span>: 
+dict.get() <span class="docEmphasis">26;</span></p>
+<A NAME="ch01lev4sec60"></A><H5 class="docSection4Title"> dict.update(self, other)<br>UserDict.UserDict.update(self, other)</H5>
+<P class="docText">Update the dictionary <TT>self</TT> using the dictionary <TT>other</TT>. If a key in <TT>other</TT> already exists in <TT>self</TT>, the corresponding value from <TT>other</TT> is used in <TT>self</TT>. If a <TT>(key,val)</TT> pair in <TT>other</TT> is not in <TT>self</TT>, it is added.</P>
+<A NAME="ch01lev4sec61"></A><H5 class="docSection4Title"> dict.values(self)<br>UserDict.UserDict.values(self)<br>dict.itervalues(self)<br>UserDict.UserDict.itervalues(self)</H5>
+<P class="docText">Return the values in a dictionary, in an unspecified order. The <TT>.values()</TT> method returns a true list of keys, while the <TT>.itervalues()</TT> method (in Python 2.2+) returns a generator object.</P>
+<p class="docText"><span class="docEmphRoman">S<span class="docEmphSmaller">EE</span> A<span class="docEmphSmaller">LSO</span></span>: 
+dict.items() <span class="docEmphasis">26;</span></p>
+<p class="docText"><span class="docEmphRoman">S<span class="docEmphSmaller">EE</span> A<span class="docEmphSmaller">LSO</span></span>: 
+dict <span class="docEmphasis">428;</span> list <span class="docEmphasis">28;</span> operator <span class="docEmphasis">47;</span></p>
+<P><A NAME="ch01sb09"></A><TABLE CELLSPACING="0" WIDTH="90%" BORDER="1"><TR><TD>
+<P class="docText"><span class="docEmphStrong">UserList </span>&#8226; <span class="docEmphStrong">Custom wrapper around list objects</span></P></TD></TR></TABLE></P>
+<P><A NAME="ch01sb10"></A><TABLE CELLSPACING="0" WIDTH="90%" BORDER="1"><TR><TD>
+<P class="docText"><span class="docEmphStrong">list </span>&#8226; <span class="docEmphStrong">New-style base class for list objects</span></P></TD></TR></TABLE></P>
+<P><A NAME="ch01sb11"></A><TABLE CELLSPACING="0" WIDTH="90%" BORDER="1"><TR><TD>
+<P class="docText"><span class="docEmphStrong">tuple </span>&#8226; <span class="docEmphStrong">New-style base class for tuple objects</span></P></TD></TR></TABLE></P>
+<P class="docText">A Python list is a (possibly) heterogeneous mutable sequence of Python objects. A tuple is a similar immutable sequence (see Glossary entry on "immutable"). Most of the magic methods of lists and tuples are the same, but a tuple does not have those methods associated with internal transformation.</P>
+<P class="docText">If you create a list-like datatype by subclassing from <span class="docEmphasis"><TT>UserList.UserList</TT></span>, all the special methods defined by the parent are proxies to the true list stored in the object's <TT>.data</TT> member. If, under Python 2.2+, you subclass from <TT>list</TT> (or <TT>tuple)</TT> itself, the object itself inherits list (tuple) behaviors. In either case, you may customize whichever methods you wish. The discussion of <span class="docEmphasis"><TT>dict</TT></span> and <span class="docEmphasis"><TT>UserDict</TT></span> shows an example of the different styles of specialization.</P>
+<P class="docText">The difference between a list-like object and a tuple-like object runs less deep than you might think. Mutability is only really important for using objects as dictionary keys, but dictionaries only check the mutability of an object by examining the return value of an object's <TT>.__hash__()</TT> method. If this method fails to return an integer, an object is considered mutable (and ineligible to serve as a dictionary key). The reason that tuples are useful as keys is because every tuple composed of the same items has the same hash; two lists (or dictionaries), by contrast, may also have the same items, but only as a passing matter (since either can be changed).</P>
+<P class="docText">You can easily give a hash value to a list-like datatype. However, there is an obvious and wrong way to do so:</P>
+<pre>
+&gt;&gt;&gt; class L(list):
+...     __hash__ = lambda self: hash(tuple(self))
+...
+&gt;&gt;&gt; 1st = L([1,2,3])
+&gt;&gt;&gt; dct = {lst:33, 7:8}
+&gt;&gt;&gt; print dct
+{[1, 2, 3]: 33, 7: 8}
+&gt;&gt;&gt; dct[1st]
+33
+&gt;&gt;&gt; lst.append(4)
+&gt;&gt;&gt; print dct
+{[1, 2, 3, 4]: 33, 7: 8}
+&gt;&gt;&gt; dct[1st]
+Traceback (most recent call last):
+  File "&lt;stdin&gt;", line 1, in ?
+KeyError: [1, 2, 3, 4]
+</pre>
+<P class="docText">As soon as <TT>1st</TT> changes, its hash changes, and you cannot reach the dictionary item keyed to it. What you need is something that does not change as the object changes:</P>
+<pre>
+&gt;&gt;&gt; class L(list):
+...     __hash__ = lambda self: id(self)
+...
+&gt;&gt;&gt; 1st = L([1,2,3])
+&gt;&gt;&gt; dct = {lst:33, 7:8}
+&gt;&gt;&gt; dct[1st]
+33
+&gt;&gt;&gt; 1st.append(4)
+&gt;&gt;&gt; dct
+{[1, 2, 3, 4]: 33, 7: 8}
+&gt;&gt;&gt; dct[1st]
+33
+</pre>
+<P class="docText">As with most everything about Python datatypes and operations, mutability is merely a protocol that you can choose to support or not support in your custom datatypes.</P>
+<P class="docText">Sequence datatypes may choose to support order comparisons—in fact they probably should. The methods <TT>.__cmp__()</TT>, <TT>.__ge__()</TT>, <TT>.__gt__()</TT>, <TT>.__le__()</TT>, and <TT>.__lt__()</TT> have the same meanings for sequences that they do for other datatypes; see <span class="docEmphasis"><TT>operator</TT>, <TT>float</TT></span>, and <span class="docEmphasis"><TT>dict</TT></span> for details.</P>
+<A NAME="ch01lev3sec13"></A><H5 class="docSection3Title"> METHODS</H5>
+<A NAME="ch01lev4sec62"></A><H5 class="docSection4Title"> list.__add__(self, other)<br>UserList.UserList.__add__(self, other)<br>tuple.__add__(self, other)<br>list.__iadd__(self, other)<br>UserList.UserList.__iadd__(self, other)</H5>
+<P class="docText">Determine how a datatype responds to the <TT>+</TT> and <TT>+=</TT> operators. Augmented assignments ("in-place add") are supported in Python 2.0+. For list-like datatypes, normally the statements <TT>1st+=other</TT> and <TT>1st=1st+other</TT> have the same effect, but the augmented version might be more efficient.</P>
+<P class="docText">Under standard meaning, addition of the two sequence objects produces a new (distinct) sequence object with all the items in both <TT>self</TT> and <TT>other</TT>. An in-place add <TT>(.__iadd__)</TT> mutates the left-hand object without creating a new object. A custom datatype might choose to give a special meaning to addition, perhaps depending on the datatype of the object added in. For example:</P>
+<pre>
+&gt;&gt;&gt; class XList(list):
+...     def __iadd__(self, other):
+...         if issubclass(other.__class__, list):
+...             return list.__iadd__(self, other)
+...         else:
+...             from operator import add
+...             return map(add, self, [other]*len(self))
+...
+&gt;&gt;&gt; xl = XList([1,2,3])
+&gt;&gt;&gt; xl += [4,5,6]
+&gt;&gt;&gt; xl
+[1, 2, 3, 4, 5, 6]
+&gt;&gt;&gt; xl += 10
+&gt;&gt;&gt; xl
+[11, 12, 13, 14, 15, 16]
+</pre>
+<A NAME="ch01lev4sec63"></A><H5 class="docSection4Title"> list.__contains__(self, x)<br>UserList.UserList.__contains__(self, x)<br>tuple.__contains__(self, x)</H5>
+<P class="docText">Return a Boolean value indicating whether <TT>self</TT> contains the value <TT>x</TT>. Determines how a datatype responds to the <TT>in</TT> operator.</P>
+<A NAME="ch01lev4sec64"></A><H5 class="docSection4Title"> list.__delitem__(self, x)<br>UserList.UserList.__delitem__(self, x)</H5>
+<P class="docText">Remove an item from a list-like datatype. Determines how a datatype responds to the <TT>del</TT> statement, as in <TT>del self[x]</TT>.</P>
+<A NAME="ch01lev4sec65"></A><H5 class="docSection4Title"> list.__delslice__(self, start, end)<br>UserList.UserList.__delslice__(self, start, end)</H5>
+<P class="docText">Remove a range of items from a list-like datatype. Determines how a datatype responds to the <TT>del</TT> statement applied to a slice, as in <TT>del self[start:end]</TT>.</P>
+<A NAME="ch01lev4sec66"></A><H5 class="docSection4Title"> list.__getitem__(self, pos)<br>UserList.UserList.__getitem__(self, pos)<br>tuple.__getitem__(self, pos)</H5>
+<P class="docText">Return the value at offset <TT>pos</TT> in the list. Determines how a datatype responds to indexing with square braces. The default behavior on list indices is to raise an <TT>IndexError</TT> for nonexistent offsets.</P>
+<A NAME="ch01lev4sec67"></A><H5 class="docSection4Title"> list.__getslice__(self, start, end)<br>UserList.UserList.__getslice__(self, start, end)<br>tuple.__getslice__(self, start, end)</H5>
+<P class="docText">Return a subsequence of the sequence <TT>self</TT>. Determines how a datatype responds to indexing with a slice parameter, as in <TT>self[start:end]</TT>.</P>
+<A NAME="ch01lev4sec68"></A><H5 class="docSection4Title"> list.__hash__(self)<br>UserList.UserList.__hash__(self)<br>tuple.__hash__(self)</H5>
+<P class="docText">Return an integer that distinctly identifies an object. Determines how a datatype responds to the built-in <span class="docEmphasis"><TT>hash()</TT></span> function—and probably more importantly the hash is used internally in dictionaries. By default, tuples (and other immutable types) will return hash values but lists will raise a <TT>TypeError</TT>. Dictionaries will handle hash collisions gracefully, but it is best to try to make hashes unique per object.</P>
+<pre>
+&gt;&gt;&gt; hash(219750523), hash((1,2))
+(219750523, 219750523)
+&gt;&gt;&gt; dct = {219750523:1, (1,2):2}
+&gt;&gt;&gt; dct[219750523]
+1
+</pre>
+<A NAME="ch01lev4sec69"></A><H5 class="docSection4Title"> list.__len__(self<br>UserList.UserList.__len__(self<br>tuple.__len__(self</H5>
+<P class="docText">Return the length of a sequence. Determines how a datatype responds to the built-in <span class="docEmphasis"><TT>len()</TT></span> function.</P>
+<A NAME="ch01lev4sec70"></A><H5 class="docSection4Title"> list.__mul__(self, num)<br>UserList.UserList.__mul__(self, num)<br>tuple.__mul__(self, num)<br>list.__rmul__(self, num)<br>UserList.UserList.__rmul__(self, num)<br>tuple.__rmul__(self, num)<br>list.__imul__(self, num)<br>UserList.UserList.__imul__(self, num)</H5>
+<P class="docText">Determine how a datatype responds to the <TT>*</TT> and <TT>*=</TT> operators. Augmented assignments ("in-place add") are supported in Python 2.0+. For list-like datatypes, normally the statements <TT>lst*=other</TT> and <TT>lst=lst*other</TT> have the same effect, but the augmented version might be more efficient.</P>
+<P class="docText">The right-associative version <TT>.__rmul__()</TT> determines the value of <TT>num*self</TT>, the left-associative <TT>.__mul__()</TT> determines the value of <TT>self*num</TT>. Under standard meaning, the product of a sequence and a number produces a new (distinct) sequence object with the items in <TT>self</TT> duplicated <TT>num</TT> times:</P>
+<pre>
+&gt;&gt;&gt; [1,2,3] * 3
+[1, 2, 3, 1, 2, 3, 1, 2, 3]
+</pre>
+<A NAME="ch01lev4sec71"></A><H5 class="docSection4Title"> list.__setitem__(self, pos, val)<br>UserList.UserList.__setitem__(self, pos, val)</H5>
+<P class="docText">Set the value at offset <TT>pos</TT> to value <TT>value</TT>. Determines how a datatype responds to indexed assignment; that is, <TT>self[pos]=val</TT>. A custom version might actually perform some calculation based on <TT>val</TT> and/or <TT>key</TT> before adding an item.</P>
+<A NAME="ch01lev4sec72"></A><H5 class="docSection4Title"> list.__setslice__(self, start, end, other)<br>UserList.UserList.__setslice__(self, start, end, other)</H5>
+<P class="docText">Replace the subsequence <TT>self[start:end]</TT> with the sequence <TT>other</TT>. The replaced and new sequences are not necessarily the same length, and the resulting sequence might be longer or shorter than <TT>self</TT>. Determines how a datatype responds to assignment to a slice, as in <TT>self[start:end]=other</TT>.</P>
+<A NAME="ch01lev4sec73"></A><H5 class="docSection4Title"> list.append(self, item)<br>UserList.UserList.append(self, item)</H5>
+<P class="docText">Add the object <TT>item</TT> to the end of the sequence <TT>self</TT>. Increases the length of <TT>self</TT> by one.</P>
+<A NAME="ch01lev4sec74"></A><H5 class="docSection4Title"> list.count(self, item)<br>UserList.UserList.count(self, item)</H5>
+<P class="docText">Return the integer number of occurrences of <TT>item</TT> in <TT>self</TT>.</P>
+<A NAME="ch01lev4sec75"></A><H5 class="docSection4Title"> list.extend(self, seq)<br>UserList.UserList.extend (self, seq)</H5>
+<P class="docText">Add each item in <TT>seq</TT> to the end of the sequence <TT>self</TT>. Increases the length of <TT>self</TT> by <TT>len(seq)</TT>.</P>
+<A NAME="ch01lev4sec76"></A><H5 class="docSection4Title"> list.index(self, item)<br>UserList.UserList.index(self, item)</H5>
+<P class="docText">Return the offset index of the first occurrence of <TT>item</TT> in <TT>self</TT>.</P>
+<A NAME="ch01lev4sec77"></A><H5 class="docSection4Title"> list.insert(self, pos, item)<br>UserList.UserList.insert(self, pos, item)</H5>
+<P class="docText">Add the object <TT>item</TT> to the sequence <TT>self</TT> before the offset <TT>pos</TT>. Increases the length of <TT>self</TT> by one.</P>
+<A NAME="ch01lev4sec78"></A><H5 class="docSection4Title"> list.pop(self [,pos=-1])<br>UserList.UserList.pop(self [,pos=-1])</H5>
+<P class="docText">Return the item at offset <TT>pos</TT> of the sequence <TT>self</TT>, and remove the returned item from the sequence. By default, remove the last item, which lets a list act like a stack using the <TT>.pop()</TT> and <TT>.append()</TT> operations.</P>
+<A NAME="ch01lev4sec79"></A><H5 class="docSection4Title"> list.remove(self, item)<br>UserList.UserList.remove(self, item)</H5>
+<P class="docText">Remove the first occurrence of <TT>item</TT> in <TT>self</TT>. Decreases the length of <TT>self</TT> by one.</P>
+<A NAME="ch01lev4sec80"></A><H5 class="docSection4Title"> list.reverse(self)<br>UserList.UserList.reverse(self)</H5>
+<P class="docText">Reverse the list <TT>self</TT> in place.</P>
+<A NAME="ch01lev4sec81"></A><H5 class="docSection4Title"> list.sort(self [cmpfunc])<br>UserList.UserList.sort(self [,cmpfunc])</H5>
+<P class="docText">Sort the list <TT>self</TT> in place. If a comparison function <TT>cmpfunc</TT> is given, perform comparisons using that function.</P>
+<p class="docText"><span class="docEmphRoman">S<span class="docEmphSmaller">EE</span> A<span class="docEmphSmaller">LSO</span></span>: 
+list <span class="docEmphasis">427;</span> tuple <span class="docEmphasis">427;</span> dict <span class="docEmphasis">24;</span> operator <span class="docEmphasis">47;</span></p>
+<P><A NAME="ch01sb12"></A><TABLE CELLSPACING="0" WIDTH="90%" BORDER="1"><TR><TD>
+<P class="docText"><span class="docEmphStrong">UserString </span>&#8226; <span class="docEmphStrong">Custom wrapper around string objects</span></P></TD></TR></TABLE></P>
+<P><A NAME="ch01sb13"></A><TABLE CELLSPACING="0" WIDTH="90%" BORDER="1"><TR><TD>
+<P class="docText"><span class="docEmphStrong">str </span>&#8226; <span class="docEmphStrong">New-style base class for string objects</span></P></TD></TR></TABLE></P>
+<P class="docText">A string in Python is an immutable sequence of characters (see Glossary entry on "immutable"). There is special syntax for creating strings—single and triple quoting, character escaping, and so on—but in terms of object behaviors and magic methods, most of what a string does a tuple does, too. Both may be sliced and indexed, and both respond to pseudo-arithmetic operators <TT>+</TT> and <TT>*</TT>.</P>
+<P class="docText">For the <span class="docEmphasis"><TT>str</TT></span> and <span class="docEmphasis"><TT>UserString</TT></span> magic methods that are strictly a matter of the sequence quality of strings, see the corresponding <span class="docEmphasis"><TT>tuple</TT></span> documentation. These include <span class="docEmphasis"><TT>str.__add__()</TT>, <TT>str.__getitem__()</TT>, <TT>str.__getslice__()</TT>, <TT>str.__hash__()</TT>, <TT>str.__len__()</TT>, <TT>str.__mul__()</TT></span>, and <span class="docEmphasis"><TT>str.__rmul__().</TT></span> Each of these methods is also defined in <span class="docEmphasis"><TT>UserString</TT></span>. The <span class="docEmphasis"><TT>UserString</TT></span> module also includes a few explicit definitions of magic methods that are not in the new-style <span class="docEmphasis"><TT>str</TT></span> class: <span class="docEmphasis"><TT>UserString.__iadd__()</TT>, <TT>UserString.__imul__()</TT></span>, and <span class="docEmphasis"><TT>UserString.__radd__()</TT></span>. However, you may define your own implementations of these methods, even if you inherit from <span class="docEmphasis"><TT>str</TT></span> (in Python 2.2+). In any case, internally, in-place operations are still performed on all strings.</P>
+<P class="docText">Strings have quite a number of nonmagic methods as well. If you wish to create a custom datatype that can be utilized in the same functions that expect strings, you may want to specialize some of these common string methods. The behavior of string methods is documented in the discussion of the <span class="docEmphasis"><TT>string</TT></span> module, even for the few string methods that are not also defined in the <span class="docEmphasis"><TT>string</TT></span> module. However, inheriting from either <span class="docEmphasis"><TT>str</TT></span> or <span class="docEmphasis"><TT>UserString</TT></span> provides very reasonable default behaviors for all these methods.</P>
+<p class="docText"><span class="docEmphRoman">S<span class="docEmphSmaller">EE</span> A<span class="docEmphSmaller">LSO</span></span>: 
+"".capitalize() <span class="docEmphasis">132;</span> "".title() <span class="docEmphasis">133;</span> "".center() <span class="docEmphasis">133;</span> "".count() <span class="docEmphasis">134</span>; "".endswith() <span class="docEmphasis">134;</span> "".expandtabs() <span class="docEmphasis">134;</span> "".find() <span class="docEmphasis">135;</span> "".index() <span class="docEmphasis">135;</span> "".isalpha() <span class="docEmphasis">136;</span> "".isalnum() <span class="docEmphasis">136;</span> "".isdigit() <span class="docEmphasis">136;</span> "".islower() <span class="docEmphasis">136;</span> "".isspace() <span class="docEmphasis">136;</span> "".istitle() <span class="docEmphasis">136;</span> "".isupper() <span class="docEmphasis">136;</span> "".join() <span class="docEmphasis">137;</span> ""ljust() <span class="docEmphasis">138;</span> "".lower() <span class="docEmphasis">138;</span> "".lstrip() <span class="docEmphasis">139;</span> "".replace() <span class="docEmphasis">139;</span> "".rfind() <span class="docEmphasis">140;</span> "".rindex() <span class="docEmphasis">141;</span> "".rjust() <span class="docEmphasis">141;</span> "".rstrip() <span class="docEmphasis">142;</span> "".split() <span class="docEmphasis">142;</span> "".splitlines() <span class="docEmphasis">144;</span> "".startswith() <span class="docEmphasis">144;</span> "".strip() <span class="docEmphasis">144;</span> "".swapcase() <span class="docEmphasis">145;</span> "".translate() <span class="docEmphasis">145;</span> "".upper() <span class="docEmphasis">146;</span> "".encode() <span class="docEmphasis">188;</span></p>
+<A NAME="ch01lev3sec14"></A><H5 class="docSection3Title"> METHODS</H5>
+<A NAME="ch01lev4sec82"></A><H5 class="docSection4Title"> str.__contains__(self, x)<br>UserString.UserString.__contains__(self, x)</H5>
+<P class="docText">Return a Boolean value indicating whether <TT>self</TT> contains the character <TT>x</TT>. Determines how a datatype responds to the <TT>in</TT> operator.</P>
+<P class="docText">In Python versions through 2.2, the <TT>in</TT> operator applied to strings has a semantics that tends to trip me up. Fortunately, Python 2.3+ has the behavior that I expect. In older Python versions, <TT>in</TT> can only be used to determine the presence of a single character in a string—this makes sense if you think of a string as a sequence of characters, but I nonetheless intuitively want something like the code below to work:</P>
+<pre>
+&gt;&gt;&gt; s = "The cat in the hat"
+&gt;&gt;&gt; if "the" in s: print "Has definite article"
+...
+Traceback (most recent call last):
+  File "&lt;stdin&gt;", line 1, in ?
+TypeError: 'in &lt;string&gt;' requires character as left operand
+</pre>
+<P class="docText">It is easy to get the "expected" behavior in a custom string-like datatype (while still always producing the same result whenever <TT>x</TT> is indeed a character):</P>
+<pre>
+&gt;&gt;&gt; class S(str):
+...     def __contains__(self, x):
+...         for i in range(len(self)):
+...             if self.startswith(x,i): return 1
+...
+&gt;&gt;&gt; s = S("The cat in the hat")
+&gt;&gt;&gt; "the" in s
+1
+&gt;&gt;&gt; "an" in s
+0
+</pre>
+<P class="docText">Python 2.3 strings behave the same way as my datatype <TT>S</TT>.</P>
+<p class="docText"><span class="docEmphRoman">S<span class="docEmphSmaller">EE</span> A<span class="docEmphSmaller">LSO</span></span>: 
+string <span class="docEmphasis">422;</span> string <span class="docEmphasis">129;</span> operator <span class="docEmphasis">47;</span> tuple <span class="docEmphasis">28;</span></p>
+<A NAME="ch01lev2sec5"></A><H4 class="docSection2Title">1.1.5 Exercise: Filling out the forms (or deciding not to)</H4>
+<A NAME="ch01lev3sec15"></A><H5 class="docSection3Title"> DISCUSSION</H5>
+<P class="docText">A particular little task that was quite frequent and general before the advent of Web servers has become absolutely ubiquitous for slightly dynamic Web pages. The pattern one encounters is that one has a certain general format that is desired for a document or file, but miscellaneous little details differ from instance to instance. Form letters are another common case where one comes across this pattern, but thematically related collections of Web pages rule the roost of templating techniques.</P>
+<P class="docText">It turns out that everyone and her sister has developed her own little templating system. Creating a templating system is a very appealing task for users of most scripting languages, just a little while after they have gotten a firm grasp of "Hello World!" Some of these are discussed in <A class="docLink" HREF="0321112547_ch05.html#ch05">Chapter 5</A>, but many others are not addressed. Often, these templating systems will be HTML/CGI oriented and will often include some degree of dynamic calculation of fill-in values—the inspiration in these cases comes from systems like Allaire's ColdFusion, Java Server Pages, Active Server Pages, and PHP, in which some program code gets sprinkled around in documents that are primarily made of HTML.</P>
+<P class="docText">At the very simplest, Python provides interpolation of special characters in strings, in a style similar to the C <TT>sprintf()</TT> function. So a simple example might appear like:</P>
+<pre>
+&gt;&gt;&gt; form_letter="""Dear %s %s,
+...
+... You owe us $%s for account (#%s). Please Pay.
+...
+... The Company"""
+&gt;&gt;&gt; fname = 'David'
+&gt;&gt;&gt; lname = 'Mertz'
+&gt;&gt;&gt; due = 500
+&gt;&gt;&gt; acct = '123-T745'
+&gt;&gt;&gt; print form_letter % (fname,lname,due,acct)
+Dear David Mertz,
+
+You owe us $500 for account (#123-T745). Please Pay.
+
+The Company
+</pre>
+<P class="docText">This approach does the basic templating, but it would be easy to make an error in composing the tuple of insertion values. And moreover, a slight change to the <TT>form_letter</TT> template—such as the addition or subtraction of a field—would produce wrong results.</P>
+<P class="docText">A bit more robust approach is to use Python's dictionary-based string interpolation. For example:</P>
+<pre>
+&gt;&gt;&gt; form_letter="""Dear %(fname)s %(lname)s,
+...
+... You owe us $%(due)s for account (#%(acct)s). Please Pay.
+...
+... The Company"""
+&gt;&gt;&gt; fields = {'lname':'Mertz', 'fname':'David'}
+&gt;&gt;&gt; fields['acct'] = '123-T745'
+&gt;&gt;&gt; fields['due'] = 500
+&gt;&gt;&gt; fields['last_letter'] = '01/02/2001'
+&gt;&gt;&gt; print form_letter % fields
+Dear David Mertz,
+
+You owe us $500 for account (#123-T745). Please Pay.
+
+The Company
+</pre>
+<P class="docText">With this approach, the fields need not be listed in a particular order for the insertion. Furthermore, if the order of fields is rearranged in the template, or if the same fields are used for a different template, the <TT>fields</TT> dictionary may still be used for insertion values. If <TT>fields</TT> has unused dictionary keys, it doesn't hurt the interpolation, either.</P>
+<P class="docText">The dictionary interpolation approach is still subject to failure if dictionary keys are missing. Two improvements using the <span class="docEmphasis"><TT>UserDict</TT></span> module can improve matters, in two different (and incompatible) ways. In Python 2.2+ the built-in <TT>dict</TT> type can be a parent for a "new-style class"; if available everywhere you need it to run, <TT>dict</TT> is a better parent than is <span class="docEmphasis"><TT>UserDict.UserDict</TT></span>. One approach is to avoid all key misses during dictionary interpolation:</P>
+<pre>
+&gt;&gt;&gt; form_letter="""%(salutation)s %(fname)s %(lname)s,
+...
+... You owe us $%(due)s for account (#%(acct)s). Please Pay.
+...
+... %(closing)s The Company"""
+&gt;&gt;&gt; from UserDict import UserDict
+&gt;&gt;&gt; class AutoFillingDict(UserDict):
+...     def __init__(self,dict={}): UserDict.__init__(self,dict)
+...     def __getitem__(self,key):
+...         return UserDict.get(self, key, '')
+&gt;&gt;&gt; fields = AutoFillingDict()
+&gt;&gt;&gt; fields['salutation'] = 'Dear'
+&gt;&gt;&gt; fields
+{'salutation': 'Dear'}
+&gt;&gt;&gt; fields['fname'] = 'David'
+&gt;&gt;&gt; fields['due'] = 500
+&gt;&gt;&gt; fields ['closing'] = 'Sincerely,'
+&gt;&gt;&gt; print form_letter % fields
+Dear David ,
+
+You owe us $500 for account (#). Please Pay.
+
+Sincerely, The Company
+</pre>
+<P class="docText">Even though the fields <TT>lname</TT> and <TT>acct</TT> are not specified, the interpolation has managed to produce a basically sensible letter (instead of crashing with a KeyError).</P>
+<P class="docText">Another approach is to create a custom dictionary-like object that will allow for "partial interpolation." This approach is particularly useful to gather bits of the information needed for the final string over the course of the program run (rather than all at once):</P>
+<pre>
+&gt;&gt;&gt; form_letter="""%(salutation)s %(fname)s %(lname)s,
+...
+... You owe us $%(due)s for account (#%(acct)s). Please Pay.
+...
+... %(closing)s The Company"""
+&gt;&gt;&gt; from UserDict import UserDict
+&gt;&gt;&gt; class ClosureDict(UserDict):
+...     def __init__(self,dict={}): UserDict.__init__(self,dict)
+...     def __getitem__(self,key):
+...         return UserDict.get(self, key, '%('+key+')s')
+&gt;&gt;&gt; name_dict = ClosureDict({'fname':'David','lname':'Mertz'})
+&gt;&gt;&gt; print form_letter % name_dict
+%(salutation)s David Mertz,
+
+You owe us $%(due)s for account (#%(acct)s). Please Pay.
+
+%(closing)s The Company
+</pre>
+<P class="docText">Interpolating using a <TT>ClosureDict</TT> simply fills in whatever portion of the information it knows, then returns a new string that is closer to being filled in.</P>
+<p class="docText"><span class="docEmphRoman">S<span class="docEmphSmaller">EE</span> A<span class="docEmphSmaller">LSO</span></span>: 
+dict <span class="docEmphasis">24;</span> UserDict <span class="docEmphasis">24;</span> UserList <span class="docEmphasis">28;</span> UserString <span class="docEmphasis">33;</span></p>
+<A NAME="ch01lev3sec16"></A><H5 class="docSection3Title"> QUESTIONS</H5>
+<P><TABLE BORDER="0" cellspacing="16" cellpadding="0"><TR valign="top"><TD align="right" class="docText"><A NAME="ch01qa2q1"></A><B>1:</B></TD><TD><P class="docText">What are some other ways to provide "smart" string interpolation? Can you think of ways that the <span class="docEmphasis"><TT>UserList</TT></span> or <span class="docEmphasis"><TT>UserString</TT></span> modules might be used to implement a similar enhanced interpolation?</P></TD></TR><TR valign="top"><TD align="right" class="docText"><A NAME="ch01qa2q2"></A><B>2:</B></TD><TD><P class="docText">Consider other "magic" methods that you might add to classes inheriting from <span class="docEmphasis"><TT>UserDict.UserDict</TT></span>. How might these additional behaviors make templating techniques more powerful?</P></TD></TR><TR valign="top"><TD align="right" class="docText"><A NAME="ch01qa2q3"></A><B>3:</B></TD><TD><P class="docText">How far do you think you can go in using Python's string interpolation as a templating technique? At what point would you decide you had to apply other techniques, such as regular expression substitutions or a parser? Why?</P></TD></TR><TR valign="top"><TD align="right" class="docText"><A NAME="ch01qa2q4"></A><B>4:</B></TD><TD><P class="docText">What sorts of error checking might you implement for customized interpolation? The simple list or dictionary interpolation could fail fairly easily, but at least those were trappable errors (they let the application know something is amiss). How would you create a system with both flexible interpolation and good guards on the quality and completeness of the final result?</P></TD></TR></TABLE></P>
+<A NAME="ch01lev2sec6"></A><H4 class="docSection2Title">1.1.6 Problem: Working with lines from a large file</H4>
+<P class="docText">At its simplest, reading a file in a line-oriented style is just a matter of using the <TT>.readline()</TT>, <TT>.readlines()</TT>, and .<TT>xreadlines()</TT> methods of a file object. Python 2.2+ provides a simplified syntax for this frequent operation by letting the file object itself efficiently iterate over lines (strictly in forward sequence). To read in an entire file, you may use the <TT>.read()</TT> method and possibly split it into lines or other chunks using the <span class="docEmphasis"><TT>string.split()</TT></span> function. Some examples:</P>
+<pre>
+&gt;&gt;&gt; for line in open('chapl.txt'): # Python 2.2+
+...     # process each line in some manner
+...     pass
+...
+&gt;&gt;&gt; linelist = open('chap1.txt').readlines()
+&gt;&gt;&gt; print linelist[1849],
+  EXERCISE: Working with lines from a large file
+&gt;&gt;&gt; txt = open('chap1.txt').read()
+&gt;&gt;&gt; from os import linesep
+&gt;&gt;&gt; linelist2 = txt.split(linesep)
+</pre>
+<P class="docText">For moderately sized files, reading the entire contents is not a big issue. But large files make time and memory issues more important. Complex documents or active log files, for example, might be multiple megabytes, or even gigabytes, in size—even if the contents of such files do not strictly exceed the size of available memory, reading them can still be time consuming. A related technique to those discussed here is discussed in the "<A class="docLink" HREF="0321112547_ch02lev1sec1.html#ch02lev2sec7">Problem: Reading a file backwards by record, line, or paragraph</A>" section of <A class="docLink" HREF="0321112547_ch02.html#ch02">Chapter 2</A>.</P>
+<P class="docText">Obviously, if you <span class="docEmphasis"><TT>need</TT></span> to process every line in a file, you have to read the whole file; <span class="docEmphasis"><TT>xreadlines</TT></span> does so in a memory-friendly way, assuming you are able to process them sequentially. But for applications that only need a subset of lines in a large file, it is not hard to make improvements. The most important module to look to for support here is <span class="docEmphasis"><TT>linecache</TT></span>.</P>
+<A NAME="ch01lev3sec17"></A><H5 class="docSection3Title"> A CACHED LINE LIST</H5>
+<P class="docText">It is straightforward to read a particular line from a file using <span class="docEmphasis"><TT>linecache:</TT></span></P>
+<pre>
+&gt;&gt;&gt; import linecache
+&gt;&gt;&gt; print linecache.getline('chap1.txt',1850),
+  PROBLEM: Working with lines from a large file
+</pre>
+<P class="docText">Notice that <span class="docEmphasis"><TT>linecache.getline()</TT></span> uses one-based counting, in contrast to the zero-based list indexing in the prior example. While there is not much to this, it would be even nicer to have an object that combined the efficiency of <span class="docEmphasis"><TT>linecache</TT></span> with the interfaces we expect in lists. Existing code might exist to process lists of lines, or you might want to write a function that is agnostic about the source of a list of lines. In addition to being able to enumerate and index, it would be useful to be able to slice <span class="docEmphasis"><TT>linecache</TT></span>-based objects, just as we might do to real lists (including with extended slices, which were added to lists in Python 2.3).</P>
+<H5 class="docExampleTitle"><A NAME="ch01list08"></A> cachedlinelist.py</H5>
+
+<PRE>
+import linecache, types
+class CachedLineList:
+    # Note: in Python 2.2+, it is probably worth including:
+    # __slots__ = ('_fname')
+    # ...and inheriting from 'object'
+    def __init__(self, fname):
+        self._fname = fname
+    def __getitem__(self, x):
+        if type(x) is types.SliceType:
+            return [linecache.getline(self._fname, n+1)
+                    for n in range(x.start, x.stop, x.step)]
+        else:
+            return linecache.getline(self._fname, x+1)
+    def __getslice__(self, beg, end):
+        # pass to __getitem__ which does extended slices also
+        return self[beg:end:1]
+</PRE>
+<P class="docText">Using these new objects is almost identical to using a list created by <TT>open(fname).readlines()</TT>, but more efficient (especially in memory usage):</P>
+<pre>
+&gt;&gt;&gt; from cachedlinelist import CachedLineList
+&gt;&gt;&gt; cll = CachedLineList('../chap1.txt')
+&gt;&gt;&gt; cll [1849]
+'  PROBLEM: Working with lines from a large file\r\n'
+&gt;&gt;&gt; for line in cll[1849:1851]: print line,
+...
+  PROBLEM: Working with lines from a large file
+  ---------------------------------------------------------
+&gt;&gt;&gt; for line in cll[1853:1857:2]: print line,
+...
+  a matter of using the '.readline()', '.readlines()' and
+  simplified syntax for this frequent operation by letting the
+</pre>
+<A NAME="ch01lev3sec18"></A><H5 class="docSection3Title"> A RANDOM LINE</H5>
+<P class="docText">Occasionally—especially for testing purposes—you might want to check "typical" lines in a line-oriented file. It is easy to fall into the trap of making sure that a process works for the first few lines of a file, and maybe for the last few, then assuming it works everywhere. Unfortunately, the first and last few lines of many files tend to be atypical: sometimes headers or footers are used; sometimes a log file's first lines were logged during development rather than usage; and so on. Then again, exhaustive testing of entire files might provide more data than you want to worry about. Depending on the nature of the processing, complete testing could be time consuming as well.</P>
+<P class="docText">On most systems, seeking to a particular position in a file is far quicker than reading all the bytes up to that position. Even using <span class="docEmphasis"><TT>linecache</TT></span>, you need to read a file byte-by-byte up to the point of a cached line. A fast approach to finding random lines from a large file is to seek to a random position within a file, then read comparatively few bytes before and after that position, identifying a line within that chunk.</P>
+<H5 class="docExampleTitle"><A NAME="ch01list09"></A> randline.py</H5>
+
+<PRE>
+#!/usr/bin/python
+"""Iterate over random lines in a file (req Python 2.2+)
+From command-line use: % randline.py &lt;fname&gt; &lt;numlines&gt;
+"""
+import sys
+from os import stat, linesep
+from stat import ST_SIZE
+from random import randrange
+MAX_LINE_LEN = 4096
+
+#__ Iterable class
+class randline(object):
+    __slots__ = ('_fp','_size','_limit')
+    def __init__(self, fname, limit=sys.maxint):
+        self._size = stat(fname)[ST_SIZE]
+        self._fp = open(fname,'rb')
+        self._limit = limit
+    def __iter__(self):
+        return self
+    def next(self):
+        if self._limit &lt;= 0:
+            raise StopIteration
+        self._limit -= 1
+        pos = randrange(self._size)
+        priorlen = min(pos, MAX_LINE_LEN)   # maybe near start
+        self._fp.seek(pos-priorlen)
+        # Add extra linesep at beg/end in case pos at beg/end
+        prior = linesep + self._fp.read(priorlen)
+        post = self._fp.read(MAX_LINE_LEN) + linesep
+        begln = prior.rfind(linesep) + len(linesep)
+        endln = post.find(linesep)
+        return prior[begln:]+post[:endln]
+
+#-- Use as command-line tool
+if __name__=='__main__':
+    fname, numlines = sys.argv[1], int(sys.argv[2])
+    for line in randline(fname, numlines):
+        print line
+</PRE>
+<P class="docText">The presented <span class="docEmphasis"><TT>randline</TT></span> module may be used either imported into another application or as a command-line tool. In the latter case, you could pipe a collection of random lines to another application, as in:</P>
+<pre>
+% randline.py reallybig.log 1000 | testapp
+</pre>
+<P class="docText">A couple details should be noted in my implementation. (1) The same line can be chosen more than once in a line iteration. If you choose a small number of lines from a large file, this probably will not happen (but the so-called "birthday paradox" makes an occasional collision more likely than you might expect; see the Glossary). (2) What is selected is "the line that contains a random position in the file," which means that short lines are less likely to be chosen than long lines. That distribution could be a bug or feature, depending on your needs. In practical terms, for testing "enough" typical cases, the precise distribution is not all that important.</P>
+<p class="docText"><span class="docEmphRoman">S<span class="docEmphSmaller">EE</span> A<span class="docEmphSmaller">LSO</span></span>: 
+xreadlines <span class="docEmphasis">72;</span> linecache <span class="docEmphasis">64;</span> random <span class="docEmphasis">82;</span></p>
+<a href="0321112547_10061533.html"><img src="FILES/pixel.gif" width="1" height="1" border="0"></a><ul></ul></td></tr></table>
+<td></td>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<td class="tt1"><a href="NFO/lib.html">[ Team LiB ]</a></td><td valign="top" class="tt1" align="right">
+          <a href="0321112547_ch01.html"><img src="FILES/btn_prev.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+          <a href="0321112547_ch01lev1sec2.html"><img src="FILES/btn_next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+</body></html>

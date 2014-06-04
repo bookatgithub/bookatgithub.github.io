@@ -1,0 +1,161 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;6.4.&nbsp;Chaining Dictionary Lookups</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-6-sect-3.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-6-sect-5.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-6-SECT-4"></a>
+<h3 class="docSection1Title">Recipe 6.4. Chaining Dictionary Lookups</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Raymond Hettinger</span></p>
+
+<a name="pythoncook2-CHP-6-SECT-4.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-6-ITERM-2082"></a>
+<a name="pythoncook2-CHP-6-ITERM-2083"></a>
+<a name="pythoncook2-CHP-6-ITERM-2084"></a>You have several mappings (usually
+<tt>dict</tt>s) and want to look things up in them in a
+chained way (try the first one; if the key is not there, then try the
+second one; and so on). Specifically, you want to make a single
+mapping object that "virtually
+merges" several others, by looking things up in them
+in a specified priority order, so that you can conveniently pass that
+one object around.</P>
+
+
+<a name="pythoncook2-CHP-6-SECT-4.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">A <i>mapping</I> is a generalized, abstract version
+of a dictionary: a mapping provides an interface
+that's similar to a dictionary's,
+but it may use very different implementations. All dictionaries are
+mappings, but not vice versa. Here, you need to implement a mapping
+which sequentially tries delegating lookups to other mappings. A
+class is the right way to encapsulate this
+functionality:<a name="pythoncook2-CHP-6-ITERM-2085"></a></p>
+
+<pre>class Chainmap(object):
+    def _ _init_ _(self, *mappings):
+        # record the sequence of mappings into which we must look
+        self._mappings = mappings
+    def _ _getitem_ _(self, key):
+        # try looking up into each mapping in sequence
+        for mapping in self._mappings:
+            try:
+                return mapping[key]
+            except KeyError:
+                pass
+        # `key' not found in any mapping, so raise KeyError exception
+        raise KeyError, key
+    def get(self, key, default=None):
+        # return self[key] if present, otherwise `default'
+        try:
+            return self[key]
+        except KeyError:
+            return default
+    def _ _contains_ _(self, key):
+        # return True if `key' is present in self, otherwise False
+        try:
+            self[key]
+            return True
+        except KeyError:
+            return False</pre><BR>
+
+
+<p class="docText">For example, you can now implement the same sequence of lookups that
+Python normally uses for any name: look among locals, then (if not
+found there) among globals, lastly (if not found yet) among
+built-ins:</P>
+
+<pre>import _ _builtin_ _
+pylookup = Chainmap(locals( ), globals( ), vars(_ _builtin_ _))</pre><br>
+
+
+
+<a name="pythoncook2-CHP-6-SECT-4.3"></a>
+<H4 class="docSection2Title">Discussion</H4>
+
+<p class="docText"><i>Chainmap</i><a name="pythoncook2-CHP-6-ITERM-2086"></a> <a name="pythoncook2-CHP-6-ITERM-2087"></a> relies on minimal functionality from
+the mappings it wraps: each of those underlying mappings must allow
+indexing (i.e., supply a special method <tt>_ _getitem_
+_</tt>), and it must raise the standard exception
+<tt>KeyError</tt> when indexed with a key that the mapping
+does not know about. A <i>Chainmap</i> instance provides
+the same behavior, plus the handy <tt>get</tt> method
+covered in <a class="docLink" href="pythoncook2-CHP-4-SECT-9.html#pythoncook2-CHP-4-SECT-9">Recipe 4.9</a> and
+special method <tt>_ _contains_ _</tt> (which conveniently
+lets you check whether some key <tt><I>k</i></tt> is
+present in a <i>Chainmap</I> instance
+<tt><i>c</I></tt> by just coding <tt>if k in
+c</tt>).</p>
+
+<p class="docText">Besides the obvious and sensible limitation of being
+"read-only", this
+<I>Chainmap</I> class has othersessentially, it is
+not a "full mapping" even within
+the read-only design choice. You can make any partial mapping into a
+"full mapping" by inheriting from
+class <tt>DictMixin</tt> (in standard library module
+<tt>UserDict</tt>) and supplying a few key methods
+(<tt>DictMixin</tt> implements the others). Here is how you
+could make a full (read-only) mapping from <i>ChainMap</i>
+and
+<tt>UserDict.DictMixin</tt>:<a name="pythoncook2-CHP-6-ITERM-2088"></a></p>
+
+<pre>import UserDict
+from sets import Set
+class FullChainmap(Chainmap, UserDict.DictMixin):
+    def copy(self):
+        return self._ _class_ _(self._mappings)
+    def _ _iter_ _(self):
+        seen = Set( )
+        for mapping in self._mappings:
+            for key in mapping:
+                if key not in seen:
+                    yield key
+                    seen.add(key)
+    iterkeys = _ _iter_ _
+    def keys(self):
+        return list(self)</pre><br>
+
+
+<p class="docText"><a name="pythoncook2-CHP-6-ITERM-2089"></a>This class
+<i>FullChainmap</i> adds one requirement to the mappings it
+holds, besides the requirements posed by <i>Chainmap</i>:
+the mappings must be iterable. Also note that the implementation in
+<i>Chainmap </i>of methods <tt>get</tt> and
+<tt>_ _contains_ _</tt> is redundant (although innocuous)
+once we subclass <tt>DictMixin</tt>, since
+<tt>DictMixin</tt> also implements those two methods (as
+well as many others) in terms of lower-level methods, just like
+<i>Chainmap</i> does. See <a class="docLink" href="pythoncook2-CHP-5-SECT-14.html#pythoncook2-CHP-5-SECT-14">Recipe 5.14</a> for more details about
+<tt>DictMixin</tt>.</p>
+
+
+<a name="pythoncook2-CHP-6-SECT-4.4"></a>
+<H4 class="docSection2Title">See Also</H4>
+
+<p class="docText"><a class="docLink" href="pythoncook2-CHP-4-SECT-9.html#pythoncook2-CHP-4-SECT-9">Recipe 4.9</a>; <a class="docLink" href="pythoncook2-CHP-5-SECT-14.html#pythoncook2-CHP-5-SECT-14">Recipe 5.14</a>; the <span class="docEmphasis">Library
+Reference</span> and <span class="docEmphasis">Python in a Nutshell</span>
+sections on mapping types.</p>
+
+
+
+<a href="5991535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><ul></UL></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-6-sect-3.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-6-sect-5.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

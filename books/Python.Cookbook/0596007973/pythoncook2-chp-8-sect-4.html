@@ -1,0 +1,165 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;8.4.&nbsp;Trapping and Recording Exceptions</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-8-sect-3.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-8-sect-5.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-8-SECT-4"></a>
+<h3 class="docSection1Title">Recipe 8.4. Trapping and Recording Exceptions</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Mike Foord</span></p>
+
+<a name="pythoncook2-CHP-8-SECT-4.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-8-ITERM-2423"></a> <a name="pythoncook2-CHP-8-ITERM-2424"></a> <a name="pythoncook2-CHP-8-ITERM-2425"></a> <a name="pythoncook2-CHP-8-ITERM-2426"></a>You need to trap exceptions, record
+their tracebacks and error messages, and then proceed with the
+execution of your program.</P>
+
+
+<a name="pythoncook2-CHP-8-SECT-4.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">A typical case is a program that processes many independent files one
+after the other. Some files may be malformed and cause exceptions.
+You need to trap such exceptions, record the error information, then
+move on to process subsequent files. For example:</p>
+
+<pre>import cStringIO, traceback
+def process_all_files(all_filenames,
+                      fatal_exceptions=(KeyboardInterrupt, MemoryError)
+                     ):
+    bad_filenames = {  }
+    for one_filename in all_filenames:
+        try:
+            process_one_file(one_filename):
+        <span class="docEmphBold">except fatal_exceptions</span>:
+            <span class="docEmphBold">raise</span>
+        except Exception:
+            f = cStringIO.StringIO( )
+            traceback.print_exc(file=f)
+            bad_filenames[one_filename] = f.getvalue( )
+    return bad_filenames</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-8-SECT-4.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">Because Python exceptions are very powerful tools, you need a clear
+and simple strategy to deal with them. This recipe will probably not
+fit your needs exactly, but it may be a good starting point from
+which to develop the right strategy for your applications.</P>
+
+<p class="docText">This recipe's approach comes from an application I
+was writing to parse text files that were supposed to be in certain
+formats. Malformed files could easily cause exceptions, and I needed
+to get those errors' tracebacks and messages to
+either fix my code to be more forgiving or fix malformed files;
+however, I also needed program execution to continue on subsequent
+files.</p>
+
+<p class="docText">One important issue is that not all exceptions should be caught,
+logged, and still allow program continuation. A
+<tt>KeyboardInterrupt</tt> exception means the user is
+banging on Ctrl-C (or Ctrl-Break, or some other key combination),
+specifically asking for your application to stop; we should, of
+course, honor such requests, not ignore them. A
+<tt>MemoryError</tt> means you have run out of
+memoryunless you've got huge caches of
+previous results that you can immediately delete to make more memory
+available, generally you can't do much about such a
+situation. Depending on your application and exact circumstances,
+other errors might well also be deemed just as fatal. So,
+<I>process_all_files</I> accepts a
+<i>fatal_exceptions</i> argument, a tuple of exception
+classes it should <span class="docEmphasis">not</span> catch (but which it should
+rather propagate), defaulting to the pair of exception classes we
+just mentioned. The <tt>try/except</tt> statement is
+carefully structured to catch, and re-<tt>raise</tt>, any
+exception in those classes, with precedence over the general
+<tt>except Exception</tt> handler clause, which catches
+everything else.</p>
+
+<p class="docText"><a name="pythoncook2-CHP-8-ITERM-2427"></a> <a name="pythoncook2-CHP-8-ITERM-2428"></a>If we do get to the general handler
+clause, we obtain the full error message and traceback in the
+simplest way: by requesting function
+<tt>TRaceback.print_exc</tt> to emit that message and
+traceback to a "file", which is
+actually an instance of <tt>cStringIO.StringIO</tt>, a
+"file"-like object specifically
+designed to ease in-memory capture of information from functions that
+normally write to files. The <tt>getvalue</tt> method of
+the <tt>StringIO</tt> instance provides the message and
+traceback as a string, and we store the string in dictionary
+<i>bad_filenames</i>, using, as the corresponding key, the
+filename that appears to have caused the probl7em.
+<I>process_all_files</i>'
+<tt>for</tt> loop then moves on to the next file it must
+process.</P>
+
+<p class="docText">Once <i>process_all_files</I> is done, it returns the
+dictionary <I>bad_filenames</i>, which is empty when no
+problems have been encountered. Some top-level application code that
+had originally called <i>process_all_files</i> is
+presumably responsible for using that dictionary in whatever way is
+most appropriate for this application, displaying and/or storing the
+error-related information it holds.</p>
+
+<p class="docText">It <span class="docEmphasis">is</span> still technically possible (although
+deprecated) to raise exceptions that do not subclass built-in
+<tt>Exception</tt>, and even to raise
+<span class="docEmphasis">strings</span>. If you need to catch such totally
+anomalous cases (whose possibility will no doubt stay around for
+years for backwards compatibility), you need to add one last
+unconditional <tt>except</tt> clause to your
+<tt>try</tt>/<tt>except</tt> statement:</p>
+
+<pre>        except fatal_exceptions:
+            raise
+        except Exception:
+            <i>...</i>
+        except:
+            <i>...</i></pre><br>
+
+
+<p class="docText">Of course, if what you want to do for all normal (nonfatal)
+exceptions, and for the weird anomalous cases, is exactly the same,
+you don't need a separate <tt>except</tt>
+<tt>Exception</tt> clausejust the unconditional
+<tt>except</tt> clause will do. However, you may normally
+want to log the occurrence of the weird anomalous cases in some
+different and more prominent way, because, these days (well into the
+twenty-first century), they're definitely not
+<span class="docEmphasis">expected</span> under any circumstance whatsoever.</p>
+
+
+<a name="pythoncook2-CHP-8-SECT-4.4"></a>
+<h4 class="docSection2Title">See Also</H4>
+
+<p class="docText">Documentation for the standard modules <tt>TRaceback</tt>
+and <tt>cStringIO</tt> in the <span class="docEmphasis">Library
+Reference</span> and <span class="docEmphasis">Python in a
+Nutshell</span>; documentation for <tt>try/except</tt>
+and exception classes in the <span class="docEmphasis">Language
+Reference</span> and <span class="docEmphasis">Python in a
+Nutshell</span>.<a name="pythoncook2-CHP-8-ITERM-2429"></a> <a name="pythoncook2-CHP-8-ITERM-2430"></a> <a name="pythoncook2-CHP-8-ITERM-2431"></a> <a name="pythoncook2-CHP-8-ITERM-2432"></a></p>
+
+
+
+<UL></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-8-sect-3.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-8-sect-5.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

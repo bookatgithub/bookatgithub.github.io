@@ -1,0 +1,103 @@
+<html><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<link href="styles/globalstyle.css" type="text/css" rel="stylesheet"/>
+<link title="medium" href="styles/two.css" type="text/css" rel="stylesheet"/>
+<script src="scripts/main.js" type="text/javascript" language="javascript"></script>
+<title>Section 14.5. LAPACK DGETRF</title>
+</head><body>
+<DIV class=h3 style="MARGIN-TOP: 0px; PADDING-BOTTOM: 1em; WIDTH: 100%; PADDING-TOP: 0px"><SPAN>How Elegant Code Evolves with Hardware The Case of Gaussian Elimination</SPAN><SPAN> &gt; LAPACK DGETRF</SPAN></DIV>
+<DIV></DIV>
+<DIV>
+<DIV><A name=lapack_dgetrf></A>
+<H3 class=docSection1Title id=-100000>14.5. LAPACK DGETRF</H3>
+<P class=docText><A name="As mentioned"></A>As mentioned before, the introduction in the late 1970s and early 1980s of vector machines brought about the development of another variant of algorithms for dense linear algebra. This variant was centered on the multiplication of a matrix by a vector. These subroutines were meant to give improved performance over the dense linear algebra sub-routines in <A name=idx-CHP-14-1167></A><A name="on Level"></A>LINPACK, which were based on Level-1 BLAS. Later on, in the late 1980s and early 1990s, with the introduction of RISC-type microprocessors (the "killer micros") and other machines with cache-type memories, we saw the development of <A name=idx-CHP-14-1168></A><A name="dense linear"></A>LAPACK Level-3 algorithms for dense linear algebra. A Level-3 code is typified by the main Level-3 BLAS, which, in this case, is matrix multiplication.<A name=idx-CHP-14-1169></A><A name=idx-CHP-14-1170></A><A name=I_indexterm14_tt313></A><A name=I_indexterm14_tt314></A></P>
+<P class=docText><A name="goal of"></A>The original goal of the LAPACK project was to make the widely used <A name=idx-CHP-14-1171></A><A name="efficiently on"></A>LINPACK library run efficiently on vector and shared-memory parallel processors. On these machines, LIN-PACK is inefficient because its memory access patterns disregard the multilayered memory hierarchies of the machines, thereby spending too much time moving data instead of doing useful floating-point operations. LAPACK addresses this problem by reorganizing the algorithms to use block matrix operations, such as matrix multiplication, in the innermost loops (see the paper by E. Anderson and J. <A name=idx-CHP-14-1172></A><A name="each architecture"></A>Dongarra listed under "Further Reading"). These block operations can be optimized for each architecture to account for its memory hierarchy, and so provide a transportable way to achieve high efficiency on diverse modern machines.</P>
+<P class=docText><A name="the term"></A>Here, we use the term "transportable" instead of "portable" because, for fastest possible performance, <A name=idx-CHP-14-1173></A><A name="optimized block"></A>LAPACK requires that highly optimized block matrix operations be implemented already on each machine. In other words, the correctness of the <A name=idx-CHP-14-1174></A><A name="is not"></A>code is portable, but high performance is not—if we limit ourselves to a single Fortran source code.</P>
+<P class=docText><A name=idx-CHP-14-1175></A><A name="LAPACK can"></A>LAPACK can be regarded as a successor to LINPACK in terms of functionality, although it doesn't always use the same function-calling sequences. As such a successor, <A name=idx-CHP-14-1176></A><A name="win for"></A>LAPACK was a win for the scientific community because it could keep LINPACK's functionality while getting improved use out of new <A name=idx-CHP-14-1177></A>hardware.</P>
+<P class=docText><A class=docLink href="javascript:moveTo('lapack_solution_factorization');">Example 14-3</A> shows the <A name=idx-CHP-14-1178></A>LAPACK solution to <A name=idx-CHP-14-1179></A>LU factorization.</P><A name=lapack_solution_factorization></A>
+<H5 class=docExampleTitle id=title-ID0ERPDK>Example 14-3. LAPACK solution factorization</H5>
+<P>
+<TABLE cellSpacing=0 cellPadding=5 width=* border=1>
+<TBODY>
+<TR>
+<TD>
+<DIV class=codeSegmentsExpansionLinks>Code View: <SPAN>Scroll</SPAN> / <A href="javascript:expandCodeSegments()">Show All</A></DIV><PRE class=preFixedHeight>SUBROUTINE DGETRF( M, N, A, LDA, IPIV, INFO )
+      INTEGER            INFO, LDA, M, N
+      INTEGER            IPIV( * )
+      DOUBLE PRECISION   A( LDA, * )
+      DOUBLE PRECISION   ONE
+      PARAMETER          ( ONE = 1.0D+0 )
+      INTEGER            I, IINFO, J, JB, NB
+      EXTERNAL           DGEMM, DGETF2, DLASWP, DTRSM, XERBLA
+      INTEGER            ILAENV
+      EXTERNAL           ILAENV
+      INTRINSIC          MAX, MIN
+      INFO = 0
+      IF( M.LT.0 ) THEN
+         INFO = -1
+      ELSE IF( N.LT.0 ) THEN
+         INFO = -2
+      ELSE IF( LDA.LT.MAX( 1, M ) ) THEN
+         INFO = -4
+      END IF
+      IF( INFO.NE.0 ) THEN
+         CALL XERBLA( 'DGETRF', -INFO )
+         RETURN
+      END IF
+      IF( M.EQ.0 .OR. N.EQ.0 ) RETURN
+      NB = ILAENV( 1, 'DGETRF', ' ', M, N, -1, -1 )
+      IF( NB.LE.1 .OR. NB.GE.MIN( M, N ) ) THEN
+         CALL DGETF2( M, N, A, LDA, IPIV, INFO )
+      ELSE
+         DO 20 J = 1, MIN( M, N ), NB
+            JB = MIN( MIN( M, N )-J+1, NB )
+*           Factor diagonal and subdiagonal blocks and test for exact
+*           singularity.
+            CALL DGETF2( M-J+1, JB, A( J, J ), LDA, IPIV( J ), IINFO )
+*           Adjust INFO and the pivot indices.
+            IF( INFO.EQ.0 .AND. IINFO.GT.0 ) INFO = IINFO + J - 1
+            DO 10 I = J, MIN( M, J+JB-1 )
+               IPIV( I ) = J - 1 + IPIV( I )
+  10        CONTINUE
+*           Apply interchanges to columns 1:J-1.
+            CALL DLASWP( J-1, A, LDA, J, J+JB-1, IPIV, 1 )
+*
+            IF( J+JB.LE.N ) THEN
+*              Apply interchanges to columns J+JB:N.
+               CALL DLASWP( N-J-JB+1, A( 1, J+JB ), LDA, J, J+JB-1, IPIV, 1 )
+*              Compute block row of U. 
+               CALL <A name=idx-CHP-14-1180></A>DTRSM( 'Left', 'Lower', 'No transpose', 'Unit', JB,
+   $                       N-J-JB+1, ONE, A( J, J ), LDA, A( J, J+JB ), LDA )
+               IF( J+JB.LE.M ) THEN
+*                 Update trailing submatrix.
+                  CALL <A name=idx-CHP-14-1181></A>DGEMM( 'No transpose', 'No transpose', M-J-JB+1,
+   $                         N-J-JB+1, JB, -ONE, A( J+JB, J ), LDA,
+   $                         A( J, J+JB ), LDA, ONE, A( J+JB, J+JB ), LDA )
+               END IF
+            END IF
+  20    CONTINUE
+      END IF
+      RETURN
+      end
+
+
+					    </PRE><BR></TD></TR></TBODY></TABLE></P>
+<P class=docText><A name="computational work"></A>Most of the computational work in the algorithm from <A class=docLink href="javascript:moveTo('lapack_solution_factorization');">Example 14-3</A><A name="in three"></A> is contained in three routines:<A name=idx-CHP-14-1182></A></P><A name=idx-CHP-14-1183></A><A name=idx-CHP-14-1184></A>
+<DL class=docList>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docEmphasis>DGEMM</SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList>Matrix-matrix multiplication</P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docEmphasis>DTRSM</SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList><A name="multiple righthand"></A>Triangular solve with multiple righthand sides</P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docEmphasis>DGETF2</SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList><A name=idx-CHP-14-1183></A>Unblocked LU factorization for operations within a block column<A name=idx-CHP-14-1184></A></P></DD></DL>
+<P class=docText>One of the key parameters in the algorithm is the <A name=idx-CHP-14-1185></A><A name="poor performance"></A>block size, called NB here. If NB is too small or too large, poor performance can result—hence the importance of the ILAENV function, whose standard implementation was meant to be replaced by a vendor implementation encapsulating machine-specific parameters upon installation of the <A name=idx-CHP-14-1186></A><A name="any given"></A>LAPACK library. At any given point of the algorithm, NB columns or rows are exposed to a well-optimized Level-3 BLAS. If NB is 1, the algorithm is equivalent in performance and memory access patterns to the LINPACK's version.</P>
+<P class=docText><A name="level of"></A>Matrix-matrix operations offer the proper level of <A name=idx-CHP-14-1187></A><A name="across a"></A>modularity for performance and transportability across a wide range of computer architectures, including parallel systems with memory hierarchy. This enhanced performance is primarily due to a greater opportunity for <A name=idx-CHP-14-1188></A><A name="reusing data"></A>reusing data. There are numerous ways to accomplish this reuse of data to reduce memory traffic and to increase the ratio of floating-point operations to <A name=idx-CHP-14-1189></A><A name="the memory"></A>data movement through the memory hierarchy. This improvement can bring a three-to ten-fold improvement in performance on modern computer architectures.</P>
+<P class=docText><A name="still out"></A>The jury is still out concerning the productivity of writing and reading the <A name=idx-CHP-14-1190></A>LAPACK <A name=idx-CHP-14-1191></A><A name="is it"></A>code: how hard is it to generate the code from its mathematical description? The use of vector notation in LINPACK is arguably more natural than <A name=idx-CHP-14-1192></A><A name="formulas that"></A>LAPACK's matrix formulation. The mathematical formulas that describe algorithms are usually more complex if only matrices are used, as opposed to mixed vector-matrix notation.</P></DIV></DIV>
+<p>&nbsp;</p><p>&nbsp;</p><!-- 仁·义 -->
+</body></html>

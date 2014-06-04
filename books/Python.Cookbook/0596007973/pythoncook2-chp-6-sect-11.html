@@ -1,0 +1,216 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;6.11.&nbsp;Implementing a Ring Buffer</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-6-sect-10.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-6-sect-12.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-6-SECT-11"></a>
+<h3 class="docSection1Title">Recipe 6.11. Implementing a Ring Buffer</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: S&eacute;bastien Keim, Paul Moore, Steve
+Alexander, Raymond Hettinger</span><a name="pythoncook2-CHP-6-ITERM-2158"></a> <a name="pythoncook2-CHP-6-ITERM-2159"></a></p>
+
+<a name="pythoncook2-CHP-6-SECT-11.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText">You want to define a buffer with a fixed size, so that, when it fills
+up, adding another element overwrites the first (oldest) one. This
+kind of data structure is particularly useful for storing log and
+history information.</P>
+
+
+<a name="pythoncook2-CHP-6-SECT-11.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">This recipe changes the buffer object's class on the
+fly, from a nonfull buffer class to a full buffer class, when the
+buffer fills up:</p>
+
+<pre>class RingBuffer(object):
+    """ class that implements a not-yet-full buffer """
+    def _ _init_ _(self, size_max):
+        self.max = size_max
+        self.data = [  ]
+    class _ _Full(object):
+        """ class that implements a full buffer """
+        def append(self, x):
+            """ Append an element overwriting the oldest one. """
+            self.data[self.cur] = x
+            self.cur = (self.cur+1) % self.max
+        def tolist(self):
+            """ return list of elements in correct order. """
+            return self.data[self.cur:] + self.data[:self.cur]
+    def append(self, x):
+        """ append an element at the end of the buffer. """
+        self.data.append(x)
+        if len(self.data) == self.max:
+            self.cur = 0
+            # Permanently change self's class from non-full to full
+            <span class="docEmphBold">self._ _class_ _ = _ _Full</span>
+    def tolist(self):
+        """ Return a list of elements from the oldest to the newest. """
+        return self.data
+# sample usage
+if _ _name_ _ == '_ _main_ _':
+    x = RingBuffer(5)
+    x.append(1); x.append(2); x.append(3); x.append(4)
+    print x._ _class_ _, x.tolist( )
+    x.append(5)
+    print x._ _class_ _, x.tolist( )
+    x.append(6)
+    print x.data, x.tolist( )
+    x.append(7); x.append(8); x.append(9); x.append(10)
+    print x.data, x.tolist( )</pre><BR>
+
+
+
+<a name="pythoncook2-CHP-6-SECT-11.3"></a>
+<h4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">A ring buffer is a buffer with a fixed size. When it fills up, adding
+another element overwrites the oldest one that was still being kept.
+It's particularly useful for the storage of log and
+history information. Python has no direct support for this kind of
+structure, but it's easy to construct one. The
+implementation in this recipe is optimized for element insertion.</P>
+
+<p class="docText">The notable design choice in the implementation is that, since these
+objects undergo a nonreversible state transition at some point in
+their lifetimesfrom nonfull buffer to full buffer (and
+behavior changes at that point)I modeled that by changing
+<tt>self._ _class_ _</tt>. This works just as well for
+classic classes as for new-style ones, as long as the old and new
+classes of the object have the same slots (e.g., it works fine for
+two new-style classes that have no slots at all, such as
+<i>RingBuffer</I> and <I>_ _Full</i> in this
+recipe). Note that, differently from other languages, the fact that
+class <i>_ _Full</i> is implemented inside class
+<i>RingBuffer</I> does not imply any special relationship
+between these classes; that's a good thing, too,
+because no such relationship is necessary.</p>
+
+<p class="docText">Changing the class of an instance may be strange in many languages,
+but it is an excellent Pythonic alternative to other ways of
+representing occasional, massive, irreversible, and discrete changes
+of state that vastly affect behavior, as in this recipe. Fortunately,
+Python supports it for all kinds of classes.</p>
+
+<p class="docText"><a name="pythoncook2-CHP-6-ITERM-2160"></a>Ring buffers (i.e., bounded queues, and
+other names) are quite a useful idea, but the inefficiency of testing
+whether the ring is full, and if so, doing something different, is a
+nuisance. The nuisance is particularly undesirable in a language like
+Python, where there's no difficultyother than
+the massive memory cost involvedin allowing the list to grow
+without bounds. So, ring buffers end up being underused in spite of
+their potential. The idea of assigning to <tt>_ _class_
+_</tt> to switch behaviors when the ring gets full is the key to
+this recipe's efficiency: such class switching is a
+one-off operation, so it doesn't make the
+steady-state cases any less efficient.</P>
+
+<p class="docText">Alternatively, we might switch just two methods, rather than the
+whole class, of a ring buffer instance that becomes full:</p>
+
+<pre>class RingBuffer(object):
+    def _ _init_ _(self,size_max):
+        self.max = size_max
+        self.data = [  ]
+    def _full_append(self, x):
+        self.data[self.cur] = x
+        self.cur = (self.cur+1) % self.max
+    def _full_get(self):
+        return self.data[self.cur:]+self.data[:self.cur]
+    def append(self, x):
+        self.data.append(x)
+        if len(self.data) == self.max:
+            self.cur = 0
+            # Permanently change self's methods from non-full to full
+            <span class="docEmphBold">self.append = self._full_append</span>
+            <span class="docEmphBold">self.tolist = self._full_get</span>
+    def tolist(self):
+        return self.data</pre><BR>
+
+
+<p class="docText">This method-switching approach is essentially equivalent to the
+class-switching one in the recipe's solution, albeit
+through rather different mechanisms. The best approach is probably to
+use class switching when <span class="docEmphasis">all</span> methods must be
+switched in bulk and method switching only when you need finer
+granularity of behavior change. Class switching is the only approach
+that works if you need to switch any <span class="docEmphasis">special</span>
+methods in a new-style class, since intrinsic lookup of special
+methods during various operations happens on the class, not on the
+instance (classic classes differ from new-style ones in this aspect).</p>
+
+<p class="docText">You can use many other ways to implement a ring buffer. In Python
+2.4, in particular, you should consider subclassing the new type
+<tt>collections.deque</tt>, which supplies a
+"double-ended queue", allowing
+equally effective additions and deletions from either
+end:<a name="pythoncook2-CHP-6-ITERM-2161"></a></P>
+
+<pre>from collections import deque
+class RingBuffer(deque):
+    def _ _init_ _(self, size_max):
+        deque._ _init_ _(self)
+        self.size_max = size_max
+    def append(self, datum):
+        deque.append(self, datum)
+        if len(self) &gt; self.size_max:
+            self.popleft( )
+    def tolist(self):
+        return list(self)</pre><BR>
+
+
+<p class="docText">or, to avoid the <tt>if</tt> statement when at steady
+state, you can mix this idea with the idea of switching a method:</p>
+
+<pre>from collections import deque
+class RingBuffer(deque):
+    def _ _init_ _(self, size_max):
+        deque._ _init_ _(self)
+        self.size_max = size_max
+    def _full_append(self, datum):
+        deque.append(self, datum)
+        self.popleft( )
+    def append(self, datum):
+        deque.append(self, datum)
+        if len(self) == self.size_max:
+            self.append = self._full_append
+    def tolist(self):
+        return list(self)</pre><br>
+
+
+<p class="docText">With this latest implementation, we need to switch only the
+<tt>append</tt> method (the <i>tolist</i> method
+remains the same), so method switching appears to be more appropriate
+than class switching.</p>
+
+
+<a name="pythoncook2-CHP-6-SECT-11.4"></a>
+<h4 class="docSection2Title">See Also</h4>
+
+<p class="docText">The <span class="docEmphasis">Reference Manual</span> and <span class="docEmphasis">Python in
+a Nutshell</span> sections on the standard type hierarchy and
+classic and new-style object models; Python 2.4 <span class="docEmphasis">Library
+Reference</span> on module
+<tt>collections</tt>.<a name="pythoncook2-CHP-6-ITERM-2162"></a> <a name="pythoncook2-CHP-6-ITERM-2163"></a></p>
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-6-sect-10.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-6-sect-12.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

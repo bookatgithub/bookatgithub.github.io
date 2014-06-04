@@ -1,0 +1,87 @@
+<html><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<link href="styles/globalstyle.css" type="text/css" rel="stylesheet"/>
+<link title="medium" href="styles/two.css" type="text/css" rel="stylesheet"/>
+<script src="scripts/main.js" type="text/javascript" language="javascript"></script>
+<title>Section 24.1. A Simple Example: Bank Accounts</title>
+</head><body>
+<DIV class=h3 style="MARGIN-TOP: 0px; PADDING-BOTTOM: 1em; WIDTH: 100%; PADDING-TOP: 0px"><SPAN>Beautiful Concurrency</SPAN><SPAN> &gt; A Simple Example: Bank Accounts</SPAN></DIV>
+<DIV></DIV>
+<DIV>
+<DIV><A name=beautiful_concurrency></A>
+<H2 class=docChapterTitle id=title-ID0ET5DK>24. Beautiful Concurrency</H2>
+<P class=docText><SPAN class=docEmphasis><A name="Simon Peyton"></A>Simon Peyton Jones</SPAN> <A name=idx-CHP-24-1955></A><A name=idx-CHP-24-1956></A></P>
+<P class=docText><SPAN class=docEmphSmaller><A name="is over"></A>The free lunch is over.<SUP class=docFootnote><A class=docLink href="javascript:moveTo('CHP-24-FNOTE-1');">[*]</A></SUP><A name="used to"></A> We have grown used to the idea</SPAN><A name="programs will"></A> that our programs will go faster when we buy a next-generation processor, but that time has passed. While that next-generation chip will have more CPUs, each individual CPU will be no faster than the previous year's model. If we want our programs to run faster, we must learn to write <A name=idx-CHP-24-1957></A>parallel programs.<SUP class=docFootnote><A class=docLink href="javascript:moveTo('CHP-24-FNOTE-2');">[<IMG alt=dagger src="images/U2020.GIF">]</A></SUP></P>
+<BLOCKQUOTE>
+<P class=docFootnote><SUP><A name=CHP-24-FNOTE-1>[*]</A></SUP><A name="is over"></A> Herb Sutter, "The free lunch is over: a fundamental turn toward concurrency in software," <SPAN class=docEmphasis>Dr. Dobb's Journal</SPAN>, March 2005.</P></BLOCKQUOTE>
+<BLOCKQUOTE>
+<P class=docFootnote><SUP><A name=CHP-24-FNOTE-2>[<IMG alt=dagger src="images/U2020.GIF">]</A></SUP> Herb Sutter and James Larus, "Software and the concurrency revolution," <SPAN class=docEmphasis>ACM Queue</SPAN>, Vol. 3, No. 7, September 2005.</P></BLOCKQUOTE>
+<P class=docText><A name=idx-CHP-24-1958></A><A name="to test"></A>Parallel programs execute in a nondeterministic way, so they are hard to test, and bugs can be almost impossible to reproduce. For me, a beautiful program is one that is so simple and elegant that it obviously has no mistakes, rather than merely having no obvious mistakes.<SUP class=docFootnote><A class=docLink href="javascript:moveTo('CHP-24-FNOTE-3');">[<IMG alt="double dagger" src="images/U2021.GIF">]</A></SUP><A name="want to"></A> If we want to write <A name=idx-CHP-24-1959></A><A name="we must"></A>parallel programs that work reliably, we must pay particular attention to beauty. Sadly, parallel programs are often <SPAN class=docEmphasis>less</SPAN><A name="particular they"></A> beautiful than their sequential cousins; in particular they are, as we shall see, less <SPAN class=docEmphasis>modular</SPAN>.</P>
+<BLOCKQUOTE>
+<P class=docFootnote><SUP><A name=CHP-24-FNOTE-3>[<IMG alt="double dagger" src="images/U2021.GIF">]</A></SUP><A name="This turn"></A> This turn of phrase is due to Tony Hoare.</P></BLOCKQUOTE>
+<P class=docText>In this chapter, I'll describe <SPAN class=docEmphasis>Software Transactional Memory</SPAN> (<A name=idx-CHP-24-1960></A><A name="approach to"></A>STM), a promising new approach to programming shared-memory parallel processors that seems to support modular programs in a way that current technology does not. By the time we are done, I hope you will be as enthusiastic as I am about STM. It is not a solution to every problem, but it is a beautiful and inspiring attack on the daunting ramparts of <A name=idx-CHP-24-1961></A>concurrency.<A name=idx-CHP-24-1962></A></P><A name=a_simple_example_bank_accounts></A>
+<H3 class=docSection1Title id=-100000>24.1. A Simple Example: Bank Accounts</H3>
+<P class=docText><A name="simple programming"></A>Here is a simple programming task.<A name=idx-CHP-24-1963></A></P>
+<BLOCKQUOTE>
+<P class=docText><A name="procedure to"></A>Write a procedure to transfer money from one bank account to another. To keep things simple, both accounts are held in memory: no interaction with databases is required. The procedure must operate correctly in a concurrent program, in which many threads may call <TT>transfer</TT><A name="be able"></A> simultaneously. No thread should be able to observe a state in which the money has left one account, but not arrived in the other (or vice versa).</P></BLOCKQUOTE>
+<P class=docText><A name="focus in"></A>This example is somewhat unrealistic, but its simplicity allows us to focus in this chapter on what is new about the solution: the language <A name=idx-CHP-24-1964></A><A name="transactional memory"></A>Haskell and transactional memory. But first let us briefly look at the conventional approach.</P><A name=bank_accounts_using_locks></A>
+<H4 class=docSection2Title id=title-ID0EJDEK>24.1.1. Bank Accounts Using Locks</H4>
+<P class=docText><A name=for></A>The dominant technologies used for <A name=idx-CHP-24-1965></A>coordinating concurrent programs today are <SPAN class=docEmphasis>locks</SPAN> and <SPAN class=docEmphasis>condition variables</SPAN><A name="an implicit"></A>. In an object-oriented language, every object has an implicit lock, and the locking is done by <SPAN class=docEmphasis><A name="synchronized methods"></A>synchronized methods</SPAN><A name="is the"></A>, but the idea is the same. So, one might define a class for <A name=idx-CHP-24-1966></A><A name="like this"></A>bank accounts something like this:<A name=idx-CHP-24-1967></A><A name=idx-CHP-24-1968></A><A name=idx-CHP-24-1969></A></P><PRE>	class Account {
+	  Int balance;
+	  synchronized void withdraw( Int n ) {
+	    balance = balance - n; }
+	  void deposit( Int n ) {
+	    withdraw( -n ); }
+	}
+</PRE><BR>
+<P class=docText><A name="be careful"></A>We must be careful to use a <TT>synchronized</TT> method for <TT>withdraw</TT><A name="do not"></A>, so that we do not get any missed decrements if two threads call <TT>withdraw</TT> at the same time. The effect of <TT>synchronized</TT> is to take a lock on the account, run <TT>withdraw</TT>, and then release the lock.</P>
+<P class=docText>Now, here is how we might write the code for <TT>transfer</TT>:</P><PRE>	void transfer( Account from, Account to, Int amount ) {
+	  from.withdraw( amount );
+	  to.deposit( amount ); }
+</PRE><BR>
+<P class=docText><A name="concurrent program"></A>This code is fine for a sequential program, but in a concurrent program, another thread could observe an intermediate state in which the money has left account <TT>from</TT><A name="not arrived"></A> but has not arrived in <TT>to</TT><A name="methods are"></A>. The fact that both methods are <TT>synchronized</TT><A name=Account></A> does not help us at all. Account <TT>from</TT><A name="is first"></A> is first locked and then unlocked by the call to method <TT>withdraw</TT>, and then <TT>to</TT><A name="unlocked by"></A> is locked and unlocked by <TT>deposit</TT><A name="two calls"></A>. In between the two calls, the money is (visibly) absent from both accounts.</P>
+<P class=docText><A name=idx-CHP-24-1970></A><A name="finance program"></A>In a finance program, that might be unacceptable. How do we fix it? The usual solution would be to add <A name=idx-CHP-24-1971></A><A name="like so"></A>explicit locking code like so:</P><PRE>	void transfer( Account from, Account to, Int amount ) {
+	  from.lock(); to.lock();
+	    from.<A name=idx-CHP-24-1972></A>withdraw( amount );
+	    to.deposit( amount );
+	  from.unlock(); to.unlock() }
+</PRE><BR>
+<P class=docText><A name="situation in"></A>But this program is fatally prone to deadlock. In particular, consider the (unlikely) situation in which another thread is transferring money in the opposite direction between the same two <A name=idx-CHP-24-1973></A><A name="thread might"></A>accounts. Then each thread might get one lock and then block indefinitely waiting for the other.</P>
+<P class=docText><A name="not always"></A>Once recognized—and the problem is not always so obvious—the standard fix is to put an arbitrary global order on the <A name=idx-CHP-24-1974></A><A name="increasing order"></A>locks, and to acquire them in increasing order. The locking code would then become:</P><PRE>	if from &lt; to
+	  then { from.lock(); to.lock(); }
+	  else { to.lock(); from.lock(); }
+</PRE><BR>
+<P class=docText><A name="That works"></A>That works fine when the full set of required locks can be predicted in advance, but that is not always the case. For example, suppose <TT>from.withdraw</TT><A name="transferring money"></A> is implemented by transferring money out of the <TT>from2</TT> account if <TT>from</TT><A name="enough funds"></A> does not have enough funds. We don't know whether to acquire <TT>from2's</TT><A name="we have"></A> lock until we have read <TT>from</TT><A name="it is"></A>, and by then it is too late to acquire the locks in the "right" order. Furthermore, the very existence of <TT>from2</TT> may be a private matter that should be known by <TT>from</TT>, but not by <TT>transfer</TT>. And even if <TT>transfer</TT> did know about <TT>from2</TT><A name="them into"></A>, the locking code must now take three locks, presumably by sorting them into the right order.</P>
+<P class=docText><A name="even more"></A>Matters become even more complicated when we want to <SPAN class=docEmphasis>block</SPAN>. For example, suppose that <TT>transfer</TT> should block if <TT>from</TT><A name="usually done"></A> has insufficient funds. This is usually done by waiting on a <SPAN class=docEmphasis>condition variable</SPAN>, while simultaneously releasing <TT>from</TT><A name="we want"></A>'s lock. It gets much trickier if we want to block until there are sufficient funds in <TT>from</TT><A name=and></A> and <TT>from2</TT> considered together.</P><A name=locks_are_bad></A>
+<H4 class=docSection2Title id=title-ID0E5IEK>24.1.2. Locks Are Bad</H4>
+<P class=docText><A name="long story"></A>To make a long story short, today's dominant technology for concurrent programming—locks and condition variables—is fundamentally flawed. Here are some standard difficulties, some of which we have just seen:</P><A name=idx-CHP-24-1975></A><A name=idx-CHP-24-1976></A><A name=idx-CHP-24-1977></A><A name=idx-CHP-24-1978></A><A name=idx-CHP-24-1979></A><A name=idx-CHP-24-1980></A><A name=idx-CHP-24-1981></A><A name=idx-CHP-24-1982></A><A name=idx-CHP-24-1983></A><A name=idx-CHP-24-1984></A>
+<DL class=docList>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docEmphasis>Taking too few locks</SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList><A name="to forget"></A>It is easy to forget to take a lock and thereby end up with two threads that modify the same variable simultaneously.<A name=idx-CHP-24-1975></A></P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docEmphasis><A name="many locks"></A>Taking too many locks</SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList><A name="to take"></A>It is easy to take too many locks and thereby inhibit <A name=idx-CHP-24-1976></A>concurrency (at best) or cause deadlock (at worst).<A name=idx-CHP-24-1977></A></P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docEmphasis>Taking the wrong locks</SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList><A name=protects></A>In lock-based programming, the connection between a lock and the data it protects <A name=idx-CHP-24-1978></A><A name="only in"></A>often exists only in the mind of the programmer and is <A name=idx-CHP-24-1979></A><A name="As a"></A>not explicit in the program. As a result, it is all too easy to take or hold the wrong locks.<A name=idx-CHP-24-1980></A></P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docEmphasis>Taking locks in the wrong order</SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList><A name="to take"></A>In lock-based programming, one must be careful to take locks in the "right" order. Avoiding the deadlock that can otherwise occur is always tiresome and error-prone, and sometimes extremely difficult.<A name=idx-CHP-24-1981></A></P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docEmphasis><A name="Error recovery"></A>Error recovery</SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList><A name=idx-CHP-24-1982></A><A name="be very"></A>Error recovery can be very hard because the programmer must guarantee that no error can leave the system in a state that is inconsistent, or in which locks are held indefinitely.<A name=idx-CHP-24-1983></A></P></DD>
+<DT><BR>
+<P><SPAN class=docPubcolor><SPAN class=docEmphasis><A name="erroneous retries"></A>Lost wakeups and erroneous retries</SPAN> </SPAN></P></DT>
+<DD>
+<P class=docList><A name="easy to"></A>It is easy to forget to signal a condition variable on which a thread is waiting, or to retest a condition after a wakeup.<A name=idx-CHP-24-1984></A></P></DD></DL>
+<P class=docText><A name="shortcoming of"></A>But the fundamental shortcoming of lock-based programming is that <SPAN class=docEmphasis>locks and condition variables do not support modular programming</SPAN><A name="gluing together"></A>. By "modular programming," I mean the process of building large programs by gluing together smaller programs. Locks make this impossible. For example, we could not use our (correct) implementations of <TT>withdraw</TT> and <TT>deposit</TT><A name=implement></A> unchanged to implement <TT>transfer</TT><A name="the locking"></A>; instead, we had to expose the locking protocol. Blocking and choice are even less modular. For example, suppose we had a version of <TT>withdraw</TT><A name="account had"></A> that blocked if the source account had insufficient funds. Then we would not be able to use <TT>withdraw</TT><A name="directly to"></A> directly to withdraw money from A or B (depending on which had sufficient funds), without exposing the blocking condition—and even then it wouldn't be easy. This critique is elaborated elsewhere.<SUP class=docFootnote><A class=docLink href="javascript:moveTo('CHP-24-FNOTE-4');">[§]</A></SUP><A name=idx-CHP-24-1986></A></P>
+<BLOCKQUOTE>
+<P class=docFootnote><SUP><A name=CHP-24-FNOTE-4>[§]</A></SUP> Edward A. Lee, "The problem with threads,"<SPAN class=docEmphasis>IEEE Computer</SPAN><A name="a bad"></A>, Vol. 39, No. 5, pp. 33–42, May 2006; J. K. Ousterhout, "Why threads are a bad idea (for most purposes)," Invited Talk, <SPAN class=docEmphasis>USENIX Technical Conference</SPAN><A name="Simon Peyton"></A>, January 1996; Tim Harris, Simon Marlow, Simon Peyton <A name=idx-CHP-24-1985></A><A name="memory transactions"></A>Jones, and Maurice Herlihy, "Composable memory transactions," <SPAN class=docEmphasis><A name="Principles and"></A>ACM Symposium on Principles and Practice of Parallel Programming (PPoPP '05)</SPAN>, June 2005.</P></BLOCKQUOTE></DIV></DIV>
+<p>&nbsp;</p><p>&nbsp;</p><!-- 仁·义 -->
+</body></html>

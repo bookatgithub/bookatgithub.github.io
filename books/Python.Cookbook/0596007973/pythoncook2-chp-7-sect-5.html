@@ -1,0 +1,151 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;7.5.&nbsp;Holding Bound Methods in a Picklable Way</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-7-sect-4.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-7-sect-6.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-7-SECT-5"></a>
+<h3 class="docSection1Title" id="409771-853">Recipe 7.5. Holding Bound Methods in a Picklable Way</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Peter Cogolo</span></p>
+
+<a name="pythoncook2-CHP-7-SECT-5.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-7-ITERM-2319"></a>
+<a name="pythoncook2-CHP-7-ITERM-2320"></a> <a name="pythoncook2-CHP-7-ITERM-2321"></a>You need to pickle an
+object, but that object holds (as an attribute or item) a bound
+method of another object, and bound methods are not
+picklable.<a name="pythoncook2-CHP-7-ITERM-2322"></a> <a name="pythoncook2-CHP-7-ITERM-2323"></a></P>
+
+
+<a name="pythoncook2-CHP-7-SECT-5.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">Say you have the following objects:</p>
+
+<pre>import cPickle
+class Greeter(object):
+    def _ _init_ _(self, name):
+        self.name = name
+    def greet(self):
+        print 'hello', self.name
+class Repeater(object):
+    def _ _init_ _(self, greeter):
+        self.greeter = greeter
+    def greet(self):
+        self.greeter( )
+        self.greeter( )
+r = Repeater(Greeter('world').greet)</pre><BR>
+
+
+<p class="docText">Were it not for the fact that <i>r</I> holds a bound method
+as its <I>greeter</i> attribute, you could pickle
+<I>r</I> very simply:</p>
+
+<pre>s = cPickle.dumps(r)</pre><br>
+
+
+<p class="docText">However, upon encountering the bound method, this call to
+<tt>cPickle.dumps</tt> raises a
+<tt>TypeError</tt>. One simple solution is to have each
+instance of class <i>Repeater</i> hold, not a bound method
+directly, but rather a picklable wrapper to it. For example:</P>
+
+<pre>class picklable_boundmethod(object):
+    def _ _init_ _(self, mt):
+        self.mt = mt
+    def _ _getstate_ _(self):
+        return self.mt.im_self, self.mt.im_func._ _name_ _
+    def _ _setstate_ _(self, (s,fn)):
+        self.mt = getattr(s, fn)
+    def _ _call_ _(self, *a, **kw):
+        return self.mt(*a, **kw)</pre><br>
+
+
+<p class="docText">Now, changing <i>Repeater._ _init_ _</I>'s
+body to <tt>self.greeter =
+picklable_boundmethod(greeter)</tt> makes the previous snippet
+work.</p>
+
+
+<a name="pythoncook2-CHP-7-SECT-5.3"></a>
+<H4 class="docSection2Title">Discussion</h4>
+
+<p class="docText">The Python Standard Library <tt>pickle</tt> module (just
+like its faster equivalent cousin <tt>cPickle</tt>) pickles
+functions and classes by namethis implies, in particular, that
+only functions defined at the top level of a module can be pickled
+(the pickling of such a function, in practice, contains just the
+names of the module and function).</P>
+
+<p class="docText">If you have a graph of objects that hold each other, not directly,
+but via one another's bound methods (which is often
+a good idea in Python), this limitation can make the whole graph
+unpicklable. One solution might be to teach <tt>pickle</tt>
+how to serialize bound methods, along the same lines as described in
+<a class="docLink" href="pythoncook2-CHP-7-SECT-6.html#pythoncook2-CHP-7-SECT-6">Recipe 7.6</a>. Another
+possible solution is to define appropriate <tt>_ _getstate_
+_</tt> and <tt>_ _setstate_ _</tt> methods to turn
+bound methods into something picklable at <tt>dump</tt>
+time and rebuild them at <tt>load</tt> time, along the
+lines described in <a class="docLink" href="pythoncook2-CHP-7-SECT-4.html#pythoncook2-CHP-7-SECT-4">Recipe 7.4</a>. However, this latter
+possibility is not a good factorization when you have several classes
+whose instances hold bound methods.</P>
+
+<p class="docText">This recipe pursues a simpler idea, based on holding bound methods,
+not directly, but via the <i>picklable_boundmethod</i>
+wrapper class. <i>picklable_boundmethod</i> is written
+under the assumption that the only thing you usually do with a bound
+method is to call it, so it only delegates <tt>_ _call_
+_</tt> functionality specifically. (You could, in addition, also
+use <tt>_ _getattr_ _</tt>, in order to delegate other
+attribute accesses.)</p>
+
+<p class="docText">In normal operation, the fact that you're holding an
+instance of <tt>picklable_boundmethod</tt> rather than
+holding the bound method object directly is essentially transparent.
+When pickling time comes, special method <tt>_ _getstate_
+_</tt> of <i>picklable_boundmethod</i> comes into
+play, as previously covered in <a class="docLink" href="pythoncook2-CHP-7-SECT-4.html#pythoncook2-CHP-7-SECT-4">Recipe 7.4</a>. In the case of
+<i>picklable_boundmethod</i>, <tt>_ _getstate_
+_</tt> returns the object to which the bound method belongs and
+the function name of the bound method. Later, at unpickling time,
+<tt>_ _setstate_ _</tt> recovers an equivalent bound method
+from the reconstructed object by using the <tt>getattr</tt>
+built-in for that name. This approach isn't
+infallible because an object might hold its methods under assumed
+names (different from the real function names of the methods).
+However, assuming you're not specifically doing
+something weird for the specific purpose of breaking
+<i>picklable_boundmethod</i>'s
+functionality, you shouldn't ever run into this kind
+of obscure problem!</p>
+
+
+<a name="pythoncook2-CHP-7-SECT-5.4"></a>
+<h4 class="docSection2Title">See Also</H4>
+
+<p class="docText"><span class="docEmphasis">Library Reference</span> and <span class="docEmphasis">Python in a
+Nutshell</span> docs for modules <tt>pickle</tt> and
+<tt>cPickle</tt>, bound-method objects, and the
+<tt>getattr</tt> built-in.<a name="pythoncook2-CHP-7-ITERM-2324"></a> <a name="pythoncook2-CHP-7-ITERM-2325"></a> <a name="pythoncook2-CHP-7-ITERM-2326"></a></P>
+
+
+
+<ul></ul></TD></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-7-sect-4.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-7-sect-6.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

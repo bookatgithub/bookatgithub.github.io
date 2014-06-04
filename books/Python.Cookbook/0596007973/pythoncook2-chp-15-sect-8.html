@@ -1,0 +1,173 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;15.8.&nbsp;Implementing a CORBA Server and Client</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-15-sect-7.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-15-sect-9.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-15-SECT-8"></a>
+<h3 class="docSection1Title">Recipe 15.8. Implementing a CORBA Server and Client</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Duncan Grisby</span></p>
+
+<a name="pythoncook2-CHP-15-SECT-8.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText"><a name="pythoncook2-CHP-15-ITERM-2989"></a>You need to implement a CORBA server
+and client to distribute a processing task, such as the all-important
+network-centralized fortune-cookie distribution.</P>
+
+
+<a name="pythoncook2-CHP-15-SECT-8.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">CORBA is a solid, rich, mature object-oriented RPC protocol, and
+several CORBA ORBs offer excellent Python support. This recipe
+requires multiple files. Here is the interface definition file,
+<i>fortune.idl</I>, coded in CORBA's
+own IDL (Interface Definition Language):</p>
+
+<pre>module Fortune {
+    interface CookieServer {
+        string get_cookie( );
+    };
+};</pre><BR>
+
+
+<p class="docText">This code is quite readable even if you've never
+seen CORBA's IDL before: it defines a module named
+<I>Fortune</i>, whose only contents is an interface named
+<I>CookieServer</I>, whose only contents is a function
+(method) named <i>get_cookie</i>, which takes no arguments
+and returns a string. This code says nothing at all about the
+<span class="docEmphasis">implementation</span>: IDL is a language for defining
+<span class="docEmphasis">interfaces</span>.</p>
+
+<p class="docText">The server script is a simple Python program:</p>
+
+<pre>import sys, os
+import CORBA, Fortune, Fortune_ _POA
+FORTUNE_PATH = "/usr/games/fortune"
+class CookieServer_i(Fortune_ _POA.CookieServer):
+    def get_cookie(self):
+        pipe   = os.popen(FORTUNE_PATH)
+        cookie = pipe.read( )
+        if pipe.close( ):
+            # An error occurred with the pipe
+            cookie = "Oh dear, couldn't get a fortune\n"
+        return cookie
+orb = CORBA.ORB_init(sys.argv)
+poa = orb.resolve_initial_references("RootPOA")
+servant = CookieServer_i( )
+poa.activate_object(servant)
+print orb.object_to_string(servant._this( ))
+# see the Discussion session about what this print statement emits
+poa._get_the_POAManager( ).activate( )
+orb.run( )</pre><BR>
+
+
+<p class="docText">And here's a demonstration of client code for this
+server, using a Python interactive command shell:</p>
+
+<pre>&gt;&gt;&gt; import CORBA, Fortune
+&gt;&gt;&gt; orb = CORBA.ORB_init( )
+&gt;&gt;&gt; o = orb.string_to_object(
+...   "corbaloc::host.example.com/fortune")
+&gt;&gt;&gt; o = o._narrow(Fortune.CookieServer)
+&gt;&gt;&gt; print o.get_cookie( )</pre><br>
+
+
+
+<a name="pythoncook2-CHP-15-SECT-8.3"></a>
+<H4 class="docSection2Title">Discussion</h4>
+
+<p class="docText">CORBA has a reputation for being hard to use, but it is really very
+easy, especially with Python. This example shows the complete CORBA
+implementation of a fortune-cookie server and its client. To run this
+example, you need a Python-compatible CORBA implementation (i.e., an
+ORB)or, if you wish, two such ORBs, since you can use two
+different CORBA implementations, one for the client and one for the
+server, and let them interoperate with the CORBA IIOP inter-ORB
+protocol. Several free CORBA implementations, which fully support
+Python, are available for you to download and install. The Python
+language support is part of the CORBA standards, so, if a certain ORB
+supports Python at all, you can code your Python source for it in
+just the same way as you can code it for any other compliant ORB, be
+it free or commercial. In this recipe, we use the free ORB known as
+omniORB. With omniORB, you can use omniORBpy, which lets you develop
+CORBA applications from Python.</P>
+
+<p class="docText">With most ORBs, you must convert the interface definition coded in
+IDL into Python declarations with an IDL compiler. For example, with
+omniORBpy:</p>
+
+<pre>omniidl -bpython fortune.idl</pre><BR>
+
+
+<p class="docText">This creates Python modules named <tt>Fortune</tt> and
+<tt>Fortune_ _POA</tt>, in files <I>Fortune.py
+</i>and <i>Fortune_POA.py</i>, to be used by
+clients and servers, respectively.</p>
+
+<p class="docText">In the server, we implement the <i>CookieServer</i> CORBA
+interface by importing <i>Fortune_ _POA</i> and subclassing
+the <i>CookieServer</i> class that the module exposes.
+Specifically, in our own subclass, we need to override the
+<i>get_cookie</i> method (i.e., implement the methods that
+the interface asserts we're implementing). Then, we
+start CORBA to get an <tt>orb</tt> instance, ask the ORB
+for a POA (Portable Object Adaptor), instantiate our own
+interface-implementing object, and pass it to the POA
+instance's <tt>activate_object</tt>
+method. Finally, we call the <tt>activate</tt> method on
+the POA manager and the <tt>run</tt> method on the ORB to
+start our service.</p>
+
+<p class="docText">When you run the server, it prints out a long hex string, such as:</P>
+
+<pre>IOR:010000001d00000049444c3a466f7274756e652f436f6f6b69655365727665723
+a312e300000000001000000000000005c000000010102000d0000003135382e313234
+2e36342e330000f90a07000000666f7274756e6500020000000000000008000000010
+0000000545441010000001c0000000100000001000100010000000100010509010100
+0100000009010100</pre><BR>
+
+
+<p class="docText">Printing this string is the purpose of the
+<tt>object_to_string</tt> call that our
+recipe's server performs just before it activates
+and runs.</p>
+
+<p class="docText">You have to pass this string value as the argument of the
+client's <tt>orb.string_to_object( )</tt>
+call to contact your server. Such long hex strings may not be
+convenient to communicate to clients. To remedy this,
+it's easy to make your server support a simple
+<tt>corbaloc</tt> URL string, like the one used in the
+client example, but doing so involves omniORB-specific code that is
+not necessarily portable to other ORBs. (See the omniORBpy manual for
+details of <tt>corbaloc</tt> URL support.)</p>
+
+
+<a name="pythoncook2-CHP-15-SECT-8.4"></a>
+<H4 class="docSection2Title">See Also</h4>
+
+<p class="docText">You can download omniORBpy, including its documentation, from
+<a class="docLink" target="_blank" href="http://www.omniorb.org/omniORBpy/">http://www.omniorb.org/omniORBpy/</a>.<a name="pythoncook2-CHP-15-ITERM-2990"></a></p>
+
+
+
+<ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-15-sect-7.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-15-sect-9.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

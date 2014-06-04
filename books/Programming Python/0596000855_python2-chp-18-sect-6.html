@@ -1,0 +1,999 @@
+<html><head>
+<META http-equiv="Content-Type" content="text/html">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="18.6 Hand-Coded Parsers"-->
+<link rel="STYLESHEET" type="text/css" href="FILES/style.css">
+<link rel="STYLESHEET" type="text/css" href="FILES/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+	<a href="0596000855_python2-CHP-18-SECT-5.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+	<a href="0596000855_python2-CHP-18-SECT-7.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr>
+<td valign="top"><A NAME="python2-CHP-18-SECT-6"></A>
+<H3 class="docSection1Title">18.6 Hand-Coded Parsers</H3>
+
+<P class="docText"><A NAME="python2-IDXTERM-2161"></A>Since Python is a general purpose
+programming language, it's also reasonable to consider writing
+a hand-coded parser. For instance, <span class="docEmphasis">recursive descent
+parsing</span> is a fairly well-known technique for analyzing
+language-based information. Since Python is a very high-level
+language, writing the parser itself is usually easier than it would
+be in a traditional language like C or C++.
+</P>
+
+<P class="docText">To illustrate, this section develops a custom parser for a simple
+grammar: it parses and evaluates arithmetic expression strings. This
+example also demonstrates the utility of Python as a general-purpose
+programming language. Although Python is often used as a frontend or
+rapid development language, it's also useful for the kinds of
+things we'd normally write in a systems development language
+like C or C++.
+</P>
+
+<A NAME="python2-CHP-18-SECT-6.1"></A>
+<H4 class="docSection2Title">18.6.1 The Expression Grammar</H4>
+
+<P class="docText"><A NAME="IXT-18-338133"></A>The grammar our parser will recognize
+can be described as follows:
+</P>
+
+<PRE>goal -&gt; &lt;expr&gt; END                       [number, variable, ( ]
+goal -&gt; &lt;assign&gt; END                     [set]
+ 
+assign -&gt; 'set' &lt;variable&gt; &lt;expr&gt;        [set]
+
+expr -&gt; &lt;factor&gt; &lt;expr-tail&gt;             [number, variable, ( ]
+ 
+expr-tail -&gt; ^                           [END, ) ]
+expr-tail -&gt; '+' &lt;factor&gt; &lt;expr-tail&gt;    [+]
+expr-tail -&gt; '-' &lt;factor&gt; &lt;expr-tail&gt;    [-]
+
+factor -&gt; &lt;term&gt; &lt;factor-tail&gt;           [number, variable, ( ]
+
+factor-tail -&gt; ^                         [+, -, END, ) ]
+factor-tail -&gt; '*' &lt;term&gt; &lt;factor-tail&gt;  [*]
+factor-tail -&gt; '/' &lt;term&gt; &lt;factor-tail&gt;  [/]
+ 
+term -&gt; &lt;number&gt;                         [number]
+term -&gt; &lt;variable&gt;                       [variable]
+term -&gt; '(' &lt;expr&gt; ')'                   [(]
+
+tokens: (, ), num, var, -, +, /, *, set, end</PRE>
+
+<P class="docText">This is a fairly typical grammar for a simple expression language,
+and it allows for arbitrary expression nesting (some example
+expressions appear at the end of the <TT>testparser</TT>
+module listing in <A class="docLink" HREF="#python2-CHP-18-EX-11">Example 18-11</A>). Strings to be parsed
+are either an expression or an assignment to a variable name
+(<TT>set</TT>). Expressions involve
+numbers, variables, and the operators <TT>+</TT>,
+<TT>-</TT>, <TT>*</TT>, and <TT>/</TT>.
+Because <TT>factor</TT> is nested in
+<TT>expr</TT> in the grammar, <TT>*</TT> and
+<TT>/</TT> have higher precedence (i.e., bind tighter) than
+<TT>+</TT> and <TT>-</TT>. Expressions can be
+enclosed in parentheses to override precedence, and all operators are
+left associative -- that is, group on the left (e.g.,
+<TT>1-2-3</TT> is treated the same as
+<TT>(1-2)-3</TT>).
+</P>
+
+<P class="docText"><span class="docEmphasis">Tokens</span> are just the most primitive components of
+the expression language. Each grammar rule earlier is followed in
+square brackets by a list of tokens used to select it. In recursive
+descent parsing, we determine the set of tokens that can possibly
+start a rule's substring, and use that information to predict
+which rule will work ahead of time. For rules that iterate (the
+<TT>-tail</TT> rules), we use the set of possibly following
+tokens to know when to stop. Typically, tokens are recognized by a
+string processor (a "scanner"), and a higher-level
+processor (a "parser") uses the token stream to predict
+and step through grammar rules and substrings.
+</P>
+
+
+<A NAME="python2-CHP-18-SECT-6.2"></A>
+<H4 class="docSection2Title">18.6.2 The Parser's Code</H4>
+
+<P class="docText">The system is structured as two modules, holding two classes:</P>
+
+<UL>
+<LI><P class="docList">The <span class="docEmphasis">scanner</span> handles
+low-level character-by-character analysis.
+</P></LI>
+<LI><P class="docList">The <span class="docEmphasis">parser</span> embeds a
+scanner and handles higher-level grammar analysis.
+</P></LI>
+</UL>
+<P class="docText">The parser is also responsible for computing the expression's
+value and testing the system. In this version, the parser evaluates
+the expression while it is being parsed. To use the system, we create
+a parser with an input string and call its <TT>parse</TT>
+method. We can also call <TT>parse</TT> again later with a
+new expression string.
+</P>
+
+<P class="docText">There's a deliberate division of labor here. The scanner
+extracts tokens from the string, but knows nothing about the grammar.
+The parser handles the grammar, but is naive about the string itself.
+This modular structure keeps the code relatively simple. And
+it's another example of the OOP composition relationship at
+work: parsers embed and delegate to scanners.
+</P>
+
+<P class="docText">The module in <A class="docLink" HREF="#python2-CHP-18-EX-9">Example 18-9</A> implements the lexical
+analysis task -- detecting the expression's basic tokens by
+scanning the text string left to right on demand. Notice that this is
+all straightforward logic here; such analysis can sometimes be
+performed with regular expressions instead (described earlier), but
+the pattern needed to detect and extract tokens in this example would
+be too complex and fragile for my tastes. If your tastes vary, try
+recoding this module with <TT>re</TT>.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-18-EX-9"></A>Example 18-9. PP2E\Lang\Parser\scanner.py </H5>
+<PRE>####################################################
+# the scanner (lexical analyser)
+####################################################
+
+import string 
+SyntaxError    = 'SyntaxError'         # local errors
+LexicalError   = 'LexicalError'
+
+class Scanner:
+    def __init__(self, text):
+        self.next = 0
+        self.text = text + '\0'         
+
+    def newtext(self, text):
+        Scanner.__init__(self, text)
+
+    def showerror(self):
+        print '=&gt; ', self.text
+        print '=&gt; ', (' ' * self.start) + '^'
+        
+    def match(self, token):
+        if self.token != token:
+            raise SyntaxError, [token]
+        else:
+            value = self.value
+            if self.token != '\0':
+                self.scan(  )                  # next token/value
+            return value                     # return prior value
+
+    def scan(self):
+        self.value = None
+        ix = self.next
+        while self.text[ix] in string.whitespace:
+            ix = ix+1
+        self.start = ix
+
+        if self.text[ix] in ['(', ')', '-', '+', '/', '*', '\0']:
+            self.token = self.text[ix] 
+            ix = ix+1
+
+        elif self.text[ix] in string.digits:
+            str = ''
+            while self.text[ix] in string.digits:
+               str = str + self.text[ix] 
+               ix = ix+1
+            if self.text[ix] == '.':
+                str = str + '.'
+                ix = ix+1
+                while self.text[ix] in string.digits:
+                   str = str + self.text[ix] 
+                   ix = ix+1
+                self.token = 'num'
+                self.value = string.atof(str)
+            else:
+                self.token = 'num'
+                self.value = string.atol(str)
+
+        elif self.text[ix] in string.letters:
+            str = ''
+            while self.text[ix] in (string.digits + string.letters): 
+                str = str + self.text[ix]
+                ix = ix+1
+            if string.lower(str) == 'set':
+                self.token = 'set'
+            else:
+                self.token = 'var'
+                self.value = str  
+
+        else:
+            raise LexicalError
+        self.next = ix</PRE>
+
+
+<P class="docText">The parser module's class creates and embeds a scanner for its
+lexical chores, and handles interpretation of the expression
+grammar's rules and evaluation of the expression's
+result, as shown in <A class="docLink" HREF="#python2-CHP-18-EX-10">Example 18-10</A>.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-18-EX-10"></A>Example 18-10. PP2E\Lang\Parser\parser1.py </H5>
+<PRE>########################################################
+# the parser (syntax analyser, evaluates during parse)
+########################################################
+
+UndefinedError = 'UndefinedError'
+from scanner import Scanner, LexicalError, SyntaxError 
+
+class Parser:
+    def __init__(self, text=''):
+        self.lex  = Scanner(text)              # embed a scanner
+        self.vars = {'pi':3.14159}             # add a variable
+
+    def parse(self, *text):
+        if text:                               # main entry-point
+            self.lex.newtext(text[0])          # reuse this parser?
+        try:
+            self.lex.scan(  )                    # get first token
+            self.Goal(  )                        # parse a sentence
+        except SyntaxError:
+            print 'Syntax Error at column:', self.lex.start
+            self.lex.showerror(  )
+        except LexicalError:
+            print 'Lexical Error at column:', self.lex.start
+            self.lex.showerror(  )
+        except UndefinedError, name:
+            print "'%s' is undefined at column:" % name, self.lex.start
+            self.lex.showerror(  )
+
+    def Goal(self):
+        if self.lex.token in ['num', 'var', '(']:
+            val = self.Expr(  )
+            self.lex.match('\0')                    # expression?
+            print val
+        elif self.lex.token == 'set':               # set command?
+            self.Assign(  )           
+            self.lex.match('\0')
+        else:
+            raise SyntaxError
+
+    def Assign(self):
+        self.lex.match('set')
+        var = self.lex.match('var')
+        val = self.Expr(  )
+        self.vars[var] = val           # assign name in dict
+
+    def Expr(self):
+        left = self.Factor(  )
+        while 1:
+            if self.lex.token in ['\0', ')']:
+                return left
+            elif self.lex.token == '+':
+                self.lex.scan(  )
+                left = left + self.Factor(  )
+            elif self.lex.token == '-':
+                self.lex.scan(  )
+                left = left - self.Factor(  )
+            else:
+                raise SyntaxError
+
+    def Factor(self):
+        left = self.Term(  )
+        while 1:
+            if self.lex.token in ['+', '-', '\0', ')']:
+                return left
+            elif self.lex.token == '*':
+                self.lex.scan(  )
+                left = left * self.Term(  )
+            elif self.lex.token == '/':
+                self.lex.scan(  )
+                left = left / self.Term(  )
+            else:
+                raise SyntaxError
+
+    def Term(self):
+        if self.lex.token == 'num':
+            val = self.lex.match('num')               # numbers
+            return val
+        elif self.lex.token == 'var':
+            if self.vars.has_key(self.lex.value):
+                val = self.vars[self.lex.value]       # lookup name's value
+                self.lex.scan(  )
+                return val
+            else:
+                raise UndefinedError, self.lex.value
+        elif self.lex.token == '(':
+            self.lex.scan(  )
+            val = self.Expr(  )                         # sub-expression
+            self.lex.match(')')
+            return val
+        else:
+            raise SyntaxError
+                
+if __name__ == '__main__':
+    import testparser                       # self-test code
+    testparser.test(Parser, 'parser1')      # test local Parser</PRE>
+
+
+<P class="docText">If you study this code closely, you'll notice that the parser
+keeps a dictionary (<TT>self.vars</TT>) to manage variable
+names: they're stored in the dictionary on a
+<span class="docEmphasis">set</span> command and fetched from it when they appear
+in an expression. Tokens are represented as strings, with an optional
+associated value (a numeric value for numbers and a string for
+variable names).
+</P>
+
+<P class="docText">The parser uses iteration (<TT>while</TT> loops) instead of
+recursion, for the <TT>expr-tail</TT> and
+<TT>factor-tail</TT> rules. Other than this optimization,
+the rules of the grammar map directly onto parser methods: tokens
+become calls to the scanner, and nested rule references become calls
+to other methods.
+</P>
+
+<P class="docText">When file <I>parser1.py</I> is run as a top-level
+program, its self-test code is executed, which in turn simply runs a
+canned test in the module shown in <A class="docLink" HREF="#python2-CHP-18-EX-11">Example 18-11</A>. Note
+that all integer math uses Python long integers (unlimited precision
+integers), because the scanner converts numbers to strings with
+<TT>string.atol</TT>. Also notice that mixed
+integer/floating-point operations cast up to floating point since
+Python operators are used to do the actual calculations.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-18-EX-11"></A>Example 18-11. PP2E\Lang\Parser\testparser.py </H5>
+<PRE>####################################################
+# parser test code
+####################################################
+
+def test(ParserClass, msg):
+    print msg, ParserClass
+    x = ParserClass('4 / 2 + 3')            # allow different Parser's
+    x.parse(  )
+
+    x.parse('3 + 4 / 2')                    # like eval('3 + 4 / 2')...
+    x.parse('(3 + 4) / 2')
+    x.parse('4 / (2 + 3)')
+    x.parse('4.0 / (2 + 3)')
+    x.parse('4 / (2.0 + 3)')
+    x.parse('4.0 / 2 * 3')
+    x.parse('(4.0 / 2) * 3')
+    x.parse('4.0 / (2 * 3)')
+    x.parse('(((3))) + 1')
+
+    y = ParserClass(  )
+    y.parse('set a 4 / 2 + 1')
+    y.parse('a * 3')
+    y.parse('set b 12 / a')
+    y.parse('b') 
+
+    z = ParserClass(  )
+    z.parse('set a 99')
+    z.parse('set a a + 1')
+    z.parse('a')
+
+    z = ParserClass(  )
+    z.parse('pi')
+    z.parse('2 * pi')
+    z.parse('1.234 + 2.1')
+
+def interact(ParserClass):                     # command-line entry
+    print ParserClass
+    x = ParserClass(  )
+    while 1:
+        cmd = raw_input('Enter=&gt; ')
+        if cmd == 'stop':
+            break
+        x.parse(cmd)</PRE>
+
+
+<P class="docText">Correlate the following results to print statements in the self-test
+module:
+</P>
+
+<PRE>C:\...\PP2E\Lang\Parser&gt;<B>python parser1.py</B>
+parser1 __main__.Parser
+5L
+5L
+3L
+0L
+0.8
+0.8
+6.0
+6.0
+0.666666666667
+4L
+9L
+4L
+100L
+3.14159
+6.28318
+3.334</PRE>
+
+<P class="docText">As usual, we can also test and use the system interactively:</P>
+
+<PRE>% <B>python</B>
+&gt;&gt;&gt; <B>import parser1</B>
+&gt;&gt;&gt; <B>x = parser1.Parser(  )</B>
+&gt;&gt;&gt; <B>x.parse('1 + 2')</B>
+3L</PRE>
+
+<P class="docText">Error cases are trapped and reported:</P>
+
+<PRE>&gt;&gt;&gt; <B>x.parse('1 + a')</B>
+'a' is undefined at column: 4
+=&gt;  1 + a
+=&gt;      ^
+&gt;&gt;&gt; <B>x.parse('1+a+2')</B>
+'a' is undefined at column: 2
+=&gt;  1+a+2
+=&gt;    ^
+&gt;&gt;&gt; <B>x.parse('1 * 2 $')</B>
+Lexical Error at column: 6
+=&gt;  1 * 2 $
+=&gt;        ^
+&gt;&gt;&gt; <B>x.parse('1 * - 1')</B>
+Syntax Error at column: 4
+=&gt;  1 * - 1
+=&gt;      ^
+&gt;&gt;&gt; <B>x.parse('1 * (9')</B>
+Syntax Error at column: 6
+=&gt;  1 * (9
+=&gt;        ^</PRE>
+
+<P class="docText">Pathologically big numbers are handled well, because Python's
+built-in objects and operators are used along the way:
+</P>
+
+<PRE>&gt;&gt;&gt; <B>x.parse('888888888888888888888888888888888888888888888.9999999')</B>
+8.88888888889e+44
+&gt;&gt;&gt; <B>x.parse('99999999999999999999999999999999999999999 + 2')</B>
+100000000000000000000000000000000000000001L
+&gt;&gt;&gt; <B>x.parse('999999999999999999999999999999.88888888888 + 1.1')</B>
+1e+30</PRE>
+
+<P class="docText">In addition, there is an interactive loop interface in the
+<TT>testparser</TT> module, if you want to use the parser
+as a simple command-line calculator (or if you get tired of typing
+parser method calls). Pass the <TT>Parser</TT> class, so
+<TT>testparser</TT> can make one of its own:
+</P>
+
+<A NAME="IXTR3-502"></A><PRE>&gt;&gt;&gt; <B>import testparser</B>
+&gt;&gt;&gt; <B>testparser.interact(parser1.Parser)</B>
+Enter=&gt; <B>4 * 3 + 5</B>
+17L
+Enter=&gt; <B>5 + 4 * 3</B>
+17L
+Enter=&gt; <B>(5 + 4) * 3</B>
+27L
+Enter=&gt; <B>set a 99</B>
+Enter=&gt; <B>set b 66</B>
+Enter=&gt; <B>a + b</B>
+165L
+Enter=&gt; <B># + 1</B>
+Lexical Error at column: 0
+=&gt;  # + 1
+=&gt;  ^
+Enter=&gt; <B>a * b + c</B>
+'c' is undefined at column: 8
+=&gt;  a * b + c
+=&gt;          ^
+Enter=&gt; <B>a * b * + c</B>
+Syntax Error at column: 8
+=&gt;  a * b * + c
+=&gt;          ^
+Enter=&gt; <B>a</B>
+99L
+Enter=&gt; <B>a * a * a</B>
+970299L
+Enter=&gt; stop
+&gt;&gt;&gt;</PRE>
+
+<P><A NAME="python2-CHP-18-SIDEBAR-3"></A><TABLE CELLSPACING="0" WIDTH="90%" BORDER="1"><TR><TD>
+<H2 class="docSidebarTitle">Lesson 3: Divide and Conquer</H2>
+
+<P class="docText">As the parser system demonstrates, modular program design is almost
+always a major win. By using Python's program structuring tools
+(functions, modules, classes, etc.), big tasks can be broken down
+into small, manageable parts that can be coded and tested
+independently.
+</P>
+
+<P class="docText">For instance, the scanner can be tested without the parser by making
+an instance with an input string and calling its
+<TT>scan</TT> or <TT>match</TT> methods
+repeatedly. We can even test it like this interactively, from
+Python's command line. By separating programs into logical
+components, they become easier to understand and modify. Imagine what
+the parser would look like if the scanner's logic was embedded
+rather than called.
+</P>
+</TD></TR></TABLE></P>
+
+
+<A NAME="python2-CHP-18-SECT-6.3"></A>
+<H4 class="docSection2Title">18.6.3 Adding a Parse Tree Interpreter</H4>
+
+<P class="docText"><A NAME="python2-IDXTERM-2163"></A> <A NAME="python2-IDXTERM-2164"></A> <A NAME="python2-IDXTERM-2165"></A>One weakness in the
+<TT>parser1</TT> program is that it embeds expression
+evaluation logic in the parsing logic: the result is computed while
+the string is being parsed. This makes evaluation quick, but it can
+also make it difficult to modify the code, especially in larger
+systems. To simplify, we could restructure the program to keep
+expression parsing and evaluation separate. Instead of evaluating the
+string, the parser can build up an intermediate representation of it
+that can be evaluated later. As an added incentive, building the
+representation separately makes it available to other analysis tools
+(e.g., optimizers, viewers, and so on).
+</P>
+
+<P class="docText"><A class="docLink" HREF="#python2-CHP-18-EX-12">Example 18-12</A> shows a variant of
+<TT>parser1</TT> that implements this idea. The parser
+analyzes the string and builds up a <span class="docEmphasis">parse tree
+ --</span> that is, a tree of class instances that represents
+the expression and that may be evaluated in a separate step. The
+parse tree is built from classes that "know" how to
+evaluate themselves: to compute the expression, we just ask the tree
+to evaluate itself. Root nodes in the tree ask their children to
+evaluate themselves and then combine the results by applying a single
+operator. In effect, evaluation in this version is simply a recursive
+traversal of a tree of embedded class instances constructed by the
+parser.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-18-EX-12"></A>Example 18-12. PP2E\Lang\Parser\parser2.py </H5>
+<PRE>TraceDefault   = 0
+UndefinedError = "UndefinedError"
+from scanner import Scanner, SyntaxError, LexicalError
+
+
+####################################################
+# the interpreter (a smart objects tree)
+####################################################
+
+class TreeNode:
+    def validate(self, dict):           # default error check
+        pass
+    def apply(self, dict):              # default evaluator
+        pass            
+    def trace(self, level):             # default unparser
+        print '.'*level + '&lt;empty&gt;'
+ 
+# ROOTS
+
+class BinaryNode(TreeNode):
+    def __init__(self, left, right):            # inherited methods
+        self.left, self.right = left, right     # left/right branches
+    def validate(self, dict):                 
+        self.left.validate(dict)                # recurse down branches
+        self.right.validate(dict) 
+    def trace(self, level):
+        print '.'*level + '[' + self.label + ']'
+        self.left.trace(level+3)
+        self.right.trace(level+3)
+
+class TimesNode(BinaryNode):
+    label = '*'
+    def apply(self, dict):
+        return self.left.apply(dict) * self.right.apply(dict)
+
+class DivideNode(BinaryNode):
+    label = '/'
+    def apply(self, dict):
+        return self.left.apply(dict) / self.right.apply(dict)
+
+class PlusNode(BinaryNode):
+    label = '+'
+    def apply(self, dict):
+        return self.left.apply(dict) + self.right.apply(dict)
+
+class MinusNode(BinaryNode):
+    label = '-'
+    def apply(self, dict):
+        return self.left.apply(dict) - self.right.apply(dict)
+
+# LEAVES
+
+class NumNode(TreeNode):
+    def __init__(self, num):
+        self.num = num                 # already numeric
+    def apply(self, dict):             # use default validate
+        return self.num
+    def trace(self, level):
+        print '.'*level + `self.num`
+
+class VarNode(TreeNode):
+    def __init__(self, text, start):
+        self.name   = text                    # variable name
+        self.column = start                   # column for errors
+    def validate(self, dict):
+        if not dict.has_key(self.name):
+            raise UndefinedError, (self.name, self.column)
+    def apply(self, dict):
+        return dict[self.name]                # validate before apply
+    def assign(self, value, dict):
+        dict[self.name] = value               # local extension
+    def trace(self, level):
+        print '.'*level + self.name
+
+# COMPOSITES
+
+class AssignNode(TreeNode):
+    def __init__(self, var, val):
+        self.var, self.val = var, val
+    def validate(self, dict):
+        self.val.validate(dict)               # don't validate var
+    def apply(self, dict):
+        self.var.assign( self.val.apply(dict), dict )
+    def trace(self, level):
+        print '.'*level + 'set '
+        self.var.trace(level + 3)
+        self.val.trace(level + 3)
+ 
+
+####################################################
+# the parser (syntax analyser, tree builder)
+####################################################
+
+class Parser:
+    def __init__(self, text=''):
+        self.lex     = Scanner(text)           # make a scanner
+        self.vars    = {'pi':3.14159}          # add constants
+        self.traceme = TraceDefault
+ 
+    def parse(self, *text):                    # external interface
+        if text: 
+            self.lex.newtext(text[0])          # reuse with new text
+        tree = self.analyse(  )                  # parse string
+        if tree:
+            if self.traceme:                   # dump parse-tree?
+                print; tree.trace(0)
+            if self.errorCheck(tree):          # check names
+                self.interpret(tree)           # evaluate tree
+
+    def analyse(self):
+        try:
+            self.lex.scan(  )                    # get first token
+            return self.Goal(  )                 # build a parse-tree
+        except SyntaxError:
+            print 'Syntax Error at column:', self.lex.start
+            self.lex.showerror(  )
+        except LexicalError:
+            print 'Lexical Error at column:', self.lex.start
+            self.lex.showerror(  )
+
+    def errorCheck(self, tree):
+        try:
+            tree.validate(self.vars)           # error checker
+            return 'ok'
+        except UndefinedError, varinfo:
+            print "'%s' is undefined at column: %d" % varinfo
+            self.lex.start = varinfo[1]
+            self.lex.showerror(  )               # returns None 
+
+    def interpret(self, tree):
+        result = tree.apply(self.vars)         # tree evals itself
+        if result != None:                     # ignore 'set' result
+            print result 
+
+    def Goal(self):
+        if self.lex.token in ['num', 'var', '(']:
+            tree = self.Expr(  )
+            self.lex.match('\0')
+            return tree
+        elif self.lex.token == 'set':
+            tree = self.Assign(  )           
+            self.lex.match('\0')
+            return tree
+        else:
+            raise SyntaxError
+
+    def Assign(self):
+        self.lex.match('set')
+        vartree = VarNode(self.lex.value, self.lex.start)
+        self.lex.match('var')
+        valtree = self.Expr(  )
+        return AssignNode(vartree, valtree)               # two subtrees
+
+    def Expr(self):
+        left = self.Factor(  )                              # left subtree
+        while 1:
+            if self.lex.token in ['\0', ')']:
+                return left
+            elif self.lex.token == '+':
+                self.lex.scan(  )
+                left = PlusNode(left, self.Factor(  ))      # add root-node
+            elif self.lex.token == '-':
+                self.lex.scan(  )
+                left = MinusNode(left, self.Factor(  ))     # grows up/right
+            else:
+                raise SyntaxError
+
+    def Factor(self):
+        left = self.Term(  )
+        while 1:
+            if self.lex.token in ['+', '-', '\0', ')']:
+                return left
+            elif self.lex.token == '*':
+                self.lex.scan(  )
+                left = TimesNode(left, self.Term(  ))
+            elif self.lex.token == '/':
+                self.lex.scan(  )
+                left = DivideNode(left, self.Term(  ))
+            else:
+                raise SyntaxError
+
+    def Term(self):
+        if self.lex.token == 'num':
+            leaf = NumNode(self.lex.match('num'))
+            return leaf
+        elif self.lex.token == 'var':
+            leaf = VarNode(self.lex.value, self.lex.start)
+            self.lex.scan(  )
+            return leaf
+        elif self.lex.token == '(':
+            self.lex.scan(  )
+            tree = self.Expr(  )
+            self.lex.match(')')
+            return tree
+        else:
+            raise SyntaxError
+                
+
+####################################################
+# self-test code: use my parser, parser1's tester
+####################################################
+
+if __name__ == '__main__':
+    import testparser
+    testparser.test(Parser, 'parser2')    #  run with Parser class here</PRE>
+
+
+<P class="docText">When <TT>parser2</TT> is run as a top-level program, we get
+the same test code output as for <TT>parser1</TT>. In fact,
+it reuses the same test code: both parsers pass in their parser class
+object to <TT>testparser.test</TT>. And since classes are
+objects, we can also pass this version of the parser to
+<TT>testparser</TT>'s interactive loop:
+<TT>testparser.interact(parser2.Parser)</TT>. The new
+parser's external behavior is identical to that of the
+original.
+</P>
+
+<P class="docText">Notice that the new parser reuses the same scanner module, too. To
+catch errors raised by scanner, it also imports the specific strings
+that identify the scanner's exceptions. The scanner and parser
+can both raise exceptions on errors (lexical errors, syntax errors,
+and undefined name errors). They're caught at the top level of
+the parser, and end the current parse. There's no need to set
+and check status flags to terminate the recursion. Since math is done
+using long integers, floating-point numbers, and Python's
+operators, there's usually no need to trap numeric overflow or
+underflow errors. But as is, the parser doesn't handle errors
+like division by zero: they make the parser system exit with a Python
+stack dump. Uncovering the cause and fix for this is left as an
+exercise.<A NAME="IXTR3-503"></A> <A NAME="IXTR3-504"></A> <A NAME="IXTR3-505"></A>
+</P>
+
+
+<A NAME="python2-CHP-18-SECT-6.4"></A>
+<H4 class="docSection2Title">18.6.4 Parse Tree Structure</H4>
+
+<P class="docText"><A NAME="IXT-18-338134"></A>The
+intermediate representation of an expression is a tree of class
+instances, whose shape reflects the order of operator evaluation.
+This parser also has logic to print an indented listing of the
+constructed parse tree if the <TT>traceme</TT> attribute is
+set. Indentation gives the nesting of subtrees, and binary operators
+list left subtrees first. For example:
+</P>
+
+<PRE>% <B>python</B>
+&gt;&gt;&gt; <B>import parser2</B>
+&gt;&gt;&gt; <B>p = parser2.Parser(  )</B>
+&gt;&gt;&gt; <B>p.traceme = 1</B>
+&gt;&gt;&gt; <B>p.parse('5 + 4 * 2')</B>
+
+[+]
+...5L
+...[*]
+......4L
+......2L
+13L</PRE>
+
+<P class="docText">When this tree is evaluated, the <TT>apply</TT> method
+recursively evaluates subtrees and applies root operators to their
+results. Here, <TT>*</TT> is evaluated before
+<TT>+</TT>, since it's lower in the tree. The
+<TT>Factor</TT> method consumes the <TT>*</TT>
+substring before returning a right subtree to
+<TT>Expr</TT>:
+</P>
+
+<PRE>&gt;&gt;&gt; <B>p.parse('5 * 4 - 2')</B>
+
+[-]
+...[*]
+......5L
+......4L
+...2L
+18L</PRE>
+
+<P class="docText">In this example, <TT>*</TT> is evaluated before -. The
+<TT>Factor</TT> method loops though a substring of
+<TT>*</TT> and <TT>/</TT> expressions before
+returning the resulting left subtree to <TT>Expr</TT>:
+</P>
+
+<PRE>&gt;&gt;&gt; <B>p.parse('1 + 3 * (2 * 3 + 4)')</B>
+
+[+]
+...1L
+...[*]
+......3L
+......[+]
+.........[*]
+............2L
+............3L
+.........4L
+31L</PRE>
+
+<P class="docText">Trees are made of nested class instances. From an OOP perspective,
+it's another way to use composition. Since tree nodes are just
+class instances, this tree could be created and evaluated manually,
+too:
+</P>
+
+<PRE>PlusNode( NumNode(1), 
+          TimesNode( NumNode(3), 
+                     PlusNode( TimesNode(NumNode(2), NumNode(3)), 
+                               NumNode(4) ))).apply({})</PRE>
+
+<P class="docText">But we might as well let the parser build it for us (Python is not
+that much like Lisp, despite what you may have heard).
+</P>
+
+
+<A NAME="python2-CHP-18-SECT-6.5"></A>
+<H4 class="docSection2Title">18.6.5 Exploring Parse Trees with Pytree</H4>
+
+<P class="docText"><A NAME="python2-IDXTERM-2170"></A>But
+wait -- there is a better way to explore parse tree structures.
+<A class="docLink" HREF="#python2-CHP-18-FIG-1">Figure 18-1</A> shows the parse tree generated for
+string "1 + 3 <TT>*</TT> (2 <TT>*</TT> 3 +
+4)", displayed in PyTree, the tree visualization GUI presented
+at the end of the previous chapter. This only works because the
+<TT>parser2</TT> module builds the parse tree explicitly
+(<TT>parser1</TT> evaluates during a parse instead), and
+because PyTree's code is generic and reusable.
+</P>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="python2-CHP-18-FIG-1"></A>Figure 18-1. Parse tree built for 1 + 3 <TT>*</TT> (2 <TT>*</TT> 3 + 4)</H5>
+<IMG BORDER="0" WIDTH="334" HEIGHT="455" src="FILES/ppy2_1801.gif" ALT="figs/ppy2_1801.gif"></CENTER>
+
+<P class="docText">If you read the last chapter, you'll recall that PyTree can
+draw most any tree data structure, but it is preconfigured to handle
+binary search trees and the parse trees we're studying in this
+chapter. You might also remember that clicking on nodes in a
+displayed parse tree evaluates the subtree rooted there. <A class="docLink" HREF="#python2-CHP-18-FIG-2">Figure 18-2</A> shows the pop-up generated after clicking the
+tree's root node (you get different results if you click other
+parts of tree, because smaller subtrees are evaluated).
+</P>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="python2-CHP-18-FIG-2"></A>Figure 18-2. Clicking the root node to evaluate a tree</H5>
+<IMG BORDER="0" WIDTH="107" HEIGHT="96" src="FILES/ppy2_1802.gif" ALT="figs/ppy2_1802.gif"></CENTER>
+
+<P class="docText">PyTree makes it easy to learn about and experiment with the parser.
+To determine the tree shape produced for a given expression, start
+PyTree, click on its Parser radiobutton, type the expression in the
+input field at the bottom, and press "input" (or your
+Enter key). The parser class is run to generate a tree from your
+input, and the GUI displays the result. For instance, <A class="docLink" HREF="#python2-CHP-18-FIG-3">Figure 18-3</A> sketches the parse tree generated if we remove
+the parentheses from the first expression in the input field. The
+root node evaluates to 23 this time, due to the different
+shape's evaluation order.
+</P>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="python2-CHP-18-FIG-3"></A>Figure 18-3. Parse tree for 1 + 3 <TT>*</TT> 2 <TT>*</TT> 3 + 4, result=23</H5>
+<IMG BORDER="0" WIDTH="332" HEIGHT="455" src="FILES/ppy2_1803.gif" ALT="figs/ppy2_1803.gif"></CENTER>
+
+<P class="docText">To generate an even more different shape, try introducing more
+parentheses to the expression and hitting the Enter key again. <A class="docLink" HREF="#python2-CHP-18-FIG-4">Figure 18-4</A> shows a much flatter tree structure produced
+by adding a few parentheses to override operator precedence. Because
+these parentheses change the tree shape, they also change the
+expression's overall result again. <A class="docLink" HREF="#python2-CHP-18-FIG-5">Figure 18-5</A>
+shows the result pop-up after clicking the root node in this display.
+</P>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="python2-CHP-18-FIG-4"></A>Figure 18-4. Parse tree built for "(1 + 3) <TT>*</TT> (2 <TT>*</TT> ( 3 + 4))"</H5>
+<IMG BORDER="0" WIDTH="368" HEIGHT="398" src="FILES/ppy2_1804.gif" ALT="figs/ppy2_1804.gif"></CENTER>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="python2-CHP-18-FIG-5"></A>Figure 18-5. Clicking and evaluating the root node</H5>
+<IMG BORDER="0" WIDTH="107" HEIGHT="96" src="FILES/ppy2_1805.gif" ALT="figs/ppy2_1805.gif"></CENTER>
+
+<P class="docText">Depending upon the operators used within an expression, some very
+differently shaped trees yield the same result when evaluated. For
+instance, <A class="docLink" HREF="#python2-CHP-18-FIG-6">Figure 18-6</A> shows a more left-heavy tree
+generated from a different expression string that evaluates to 56
+nevertheless.
+</P>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="python2-CHP-18-FIG-6"></A>Figure 18-6. Parse tree for "(1 + 3) <TT>*</TT> 2 <TT>*</TT> ( 3 + 4)", result=56</H5>
+<IMG BORDER="0" WIDTH="346" HEIGHT="371" src="FILES/ppy2_1806.gif" ALT="figs/ppy2_1806.gif"></CENTER>
+
+<P class="docText">Finally, <A class="docLink" HREF="#python2-CHP-18-FIG-7">Figure 18-7</A> shows a parsed assignment
+statement; clicking the "set" root assigns variable
+<TT>spam</TT>, and clicking node <TT>spam</TT>
+then evaluates to -4. If you find the parser puzzling, try running
+PyTree like this on your computer to get a better feel for the
+parsing process. (I'd like to show more example trees, but I
+ran out of page real estate at this point in the book.)<A NAME="IXTR3-506"></A>
+</P>
+
+<CENTER>
+<H5 class="docFigureTitle"><A NAME="python2-CHP-18-FIG-7"></A>Figure 18-7. Assignment, left-grouping: "set spam 1 - 2 - 3"</H5>
+<IMG BORDER="0" WIDTH="336" HEIGHT="359" src="FILES/ppy2_1807.gif" ALT="figs/ppy2_1807.gif"></CENTER>
+
+
+<A NAME="python2-CHP-18-SECT-6.6"></A>
+<H4 class="docSection2Title">18.6.6 Parsers Versus Python</H4>
+
+<P class="docText">The hand-coded parser programs shown earlier illustrate some
+interesting concepts and underscore the power of Python for
+general-purpose programming. Depending on your job description, they
+may also be typical of the sort of thing you'd write regularly
+in a traditional language like C. Parsers are an important component
+in a wide variety of applications, but in some cases, they're
+not as necessary as you might think. Let me explain why.
+</P>
+
+<P class="docText">So far, we started with an expression parser and added a parse tree
+interpreter to make the code easier to modify. As is, the parser
+works, but it may be slow compared to a C implementation. If the
+parser is used frequently, we could speed it up by moving parts to C
+extension modules. For instance, the scanner might be moved to C
+initially, since it's often called from the parser. Ultimately,
+we might add components to the grammar that allow expressions to
+access application-specific variables and functions.
+</P>
+
+<P class="docText"><A NAME="IXT-18-338135"></A><A NAME="IXT-18-338136"></A>All of the these steps constitute
+good engineering. But depending on your application, this approach
+may not be the best one in Python. The easiest way to evaluate input
+expressions in Python is often to let Python do it, by calling the
+<TT>eval</TT> built-in function. In fact, we can usually
+replace the entire expression evaluation program with one function
+call. The next example will demonstrate how this is done.
+</P>
+
+<P class="docText">More importantly, the next section underscores a core idea behind the
+language: if you already have an extensible, embeddable, high-level
+language system, why invent another? Python itself can often satisfy
+language-based component needs.<A NAME="IXTR3-507"></A> <A NAME="IXTR3-508"></A>
+</P>
+
+
+
+<a href="0596000855_"><img src="FILES/pixel.gif" width="1" height="1" border="0"></a><ul></ul>
+</td>
+</tr>
+</table>
+<td></td>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+          <a href="0596000855_python2-CHP-18-SECT-5.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+          <a href="0596000855_python2-CHP-18-SECT-7.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+</body></html>

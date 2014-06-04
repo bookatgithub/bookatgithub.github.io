@@ -1,0 +1,147 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Recipe&nbsp;19.20.&nbsp;Running an Iterator in Another Thread</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-19-sect-19.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-19-sect-21.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><TR><td valign="top"><a name="pythoncook2-CHP-19-SECT-20"></a>
+<h3 class="docSection1Title">Recipe 19.20. Running an Iterator in Another Thread</h3>
+
+<p class="docText"><span class="docEmphasis">Credit: Garth Kidd</span></p>
+
+<a name="pythoncook2-CHP-19-SECT-20.1"></a>
+<h4 class="docSection2Title">Problem</h4>
+
+<p class="docText">You want to run the code of a generator (or any other iterator) in
+its own separate thread, so that the iterator's code
+won't block your main thread even if it contains
+time-consuming operations, such as blocking calls to the operating
+system.</P>
+
+
+<a name="pythoncook2-CHP-19-SECT-20.2"></a>
+<h4 class="docSection2Title">Solution</H4>
+
+<p class="docText">This task is best tackled by wrapping a subclass of
+<tt>threading.Thread</tt> around the iterator:</P>
+
+<pre>import sys, threading
+class SpawnedGenerator(threading.Thread):
+    def _ _init_ _(self, iterable, queueSize=0):
+        threading.Thread._ _init_ _(self)
+        self.iterable = iterable
+        self.queueSize = queueSize
+    def stop(self):
+        "Ask iteration to stop as soon as feasible"
+        self.stopRequested = True
+    def run(self):
+        "Thread.start runs this code in another, new thread"
+        put = self.queue.put
+        try:
+            next = iter(self.iterable).next
+            while True:
+                # report each result, propagate StopIteration
+                put((False, next( ))
+                if self.stopRequested:
+                    raise StopIteration
+        except:
+            # report any exception back to main thread and finish
+            put((True, sys.exc_info( )))
+    def execute(self):
+        "Yield the results that the "other", new thread is obtaining"
+        self.queue = Queue.Queue(self.queueSize)
+        get = self.queue.get
+        self.stopRequested = False
+        self.start( )              # executes self.run( ) in other thread
+        while True:
+            iterationDone, item = get( )
+            if iterationDone: break
+            yield item
+        # propagate any exception (unless it's just a StopIteration)
+        exc_type, exc_value, traceback = item
+        if not isinstance(exc_type, StopIteration):
+            raise exc_type, exc_value, traceback
+    def _ _iter_ _(self):
+        "Return an iterator for our executed self"
+        return iter(self.execute( ))</pre><br>
+
+
+
+<a name="pythoncook2-CHP-19-SECT-20.3"></a>
+<H4 class="docSection2Title">Discussion</H4>
+
+<p class="docText">Generators (and other iterators) are a great way to package the logic
+that controls an iteration and obtains the next value to feed into a
+loop's body. The code of a generator (and,
+equivalently, the code of the <tt>next</tt> method of
+another kind of iterator) usually runs in the same thread as the code
+that's iterating on it. The
+"calling" code can therefore
+<span class="docEmphasis">block</span>, each time around the loop, while waiting
+for the generator's code to do its job.</p>
+
+<p class="docText">Sometimes, you want to use a generator (or other kind of iterator) in
+a "non-blocking" way, which means
+you need to arrange things so that the generator's
+body runs in a new, separate thread. This recipe shows a class which
+supplies exactly this kind of functionality: this
+recipe's <I>SpawnedGenerator</I> class
+subclasses <tt>threading.Thread</tt> and uses
+<tt>Thread</tt>'s
+<tt>start</tt>/<tt>run</tt> mechanism to ensure
+the generator's body always executes in a separate
+thread from that of the calling code.</p>
+
+<p class="docText">All communication between the two threads occurs through a single
+instance of the <i>Queue.Queue</I> class (held through a
+local-variable bound method in each of the communicating methods: the
+generator named <i>execute</i> that runs in the calling
+thread and the method named <I>run</i> that runs in a
+separate thread). The "calling"
+code may also call method <I>stop</i> on the
+<I>SpawnedGenerator</I> instance to ask for the iteration
+to stop as soon as feasible. Optionally, you may also specify a queue
+size when you instantiate <i>SpawnedGenerator</i>, if you
+want to limit how far ahead of the calling thread the spawned thread
+can get.</p>
+
+<p class="docText">The main use case for this recipe is for wrapping iterators that make
+blocking calls to the operating system (e.g., walking a directory
+tree), when you need to use such iterators in an application where
+the "main" thread cannot be allowed
+to block for a long time. The typical examples of applications whose
+main thread must not block are event-driven applications, a
+description that applies to applications with a GUI, as well as to
+networking applications built on asynchronous frameworks, such as
+Twisted or the <tt>asyncore</tt> module of the Python
+Standard Library.</p>
+
+
+<a name="pythoncook2-CHP-19-SECT-20.4"></a>
+<h4 class="docSection2Title">See Also</h4>
+
+<p class="docText"><span class="docEmphasis">Library Reference</span> and <span class="docEmphasis">Python in a
+Nutshell</span> docs about modules <tt>threading</tt>
+and <tt>asyncore</tt>; Twisted is at <a class="docLink" target="_blank" href="http://www.twistedmatrix.com/">http://www.twistedmatrix.com/</a>; <a class="docLink" href="pythoncook2-CHP-9.html#pythoncook2-CHP-9">Chapter 9</a> for general issues about threading; <a class="docLink" href="pythoncook2-CHP-11.html#pythoncook2-CHP-11">Chapter 11</a> for general issues about user interfaces;
+<a class="docLink" href="pythoncook2-CHP-13.html#pythoncook2-CHP-13">Chapter 13</a> and <a class="docLink" href="pythoncook2-CHP-14.html#pythoncook2-CHP-14">Chapter 14</a>
+for general issues about network and web programming, including
+asynchronous approaches to such programs.</p>
+
+
+
+<a href="5991535.html"><img src="images/pixel.gif" alt="" width="1" height="1" border="0"></a><ul></ul></td></tr></table>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;"><a href="toc.html"><img src="images/teamlib.gif" width="62" height="15" border="0" align="absmiddle"  alt="Team LiB"></a></div></td>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=pythoncook2-chp-19-sect-19.html><img src="images/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+<a href=pythoncook2-chp-19-sect-21.html><img src="images/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</div></td></tr></table>
+</body></html>

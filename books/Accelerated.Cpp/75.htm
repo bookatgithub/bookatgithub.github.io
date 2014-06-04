@@ -1,0 +1,357 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
+<title>12.3 Str operations</title>
+<link rel="stylesheet" type="text/css" href="./acc.css" />
+</head>
+
+<body>
+<div class="prevnext">
+<a href="74.htm"><img src="images/Prev1.gif" /></a>&nbsp;&nbsp;<a href="76.htm"><img src="images/Next1.gif" /></a>
+</div>
+<h3>12.3 Str operations</h3>
+<p>If we think about the kind of code we've written that used <code>string</code>s, we can see that we 
+used several operators:</p>
+<div class="prebox"><pre>
+cin &gt;&gt; s    // <i>use the input operator to read a</i> string
+cout &lt;&lt; s   // <i>use the output operator to write a</i> string
+s[i]        // <i>use the index operator to access a character</i>
+s1 + s2     // <i>use the addition operator to concatenate two </i>strings
+</pre></div>
+<p>All these are binary operators, so that if we define them as functions, each function will 
+have two parameters, one of which may be implicit if the function is a member. As we 
+saw in &sect;11.2.4/192, names for overloaded operators are formed by appending the operator 
+symbol to the word <code>operator</code>. Hence, <code>operator&gt;&gt;</code> is the name of the function that 
+overloads the input operator, <code>operator[]</code> names the index operation, and so on.</p>
+<p>We may as well start with the index operator, because in &sect;11.2.4/192, we've already 
+seen how to implement this operation, and we know that it must be a member of the class:</p>
+<div class="prebox"><pre>
+class Str {
+public:
+    // <i>constructors as before</i>
+    char&amp; operator[](size_type i) { return data[i]; }
+    const char&amp; operator[](size_type i) const { return data[i]; }
+
+private:
+    Vec&lt;char&gt; data;
+};
+</pre></div>
+<p>The index operators just forward their work to the corresponding <code>Vec</code> operations. It is 
+worth noting that, as we did for class <code>Vec</code>, we define two versions of the index 
+operator—one that can operate on <code>const</code> objects and the other that cannot. By returning 
+a reference to the character, the non<code>const</code> version gives write access to the character that 
+it returns. The <code>const</code> version returns a reference to a <code>const char</code>, thereby preventing 
+the user from writing to the underlying character. We return <code>const char&amp;</code> instead of a 
+plain char for consistency with the standard <code>string</code> class.</p>
+<p>What about the other operators? The most interesting problem in defining these functions 
+is deciding whether these operations should be members of the <code>Str</code> class. It turns 
+out that answering this question involves different issues for each of these kinds of operators. 
+We will address input-output operators first; then, in &sect;12.3.3/218, we'll look at the 
+concatenation operator.</p>
+<h4>12.3.1  Input-output operators</h4>
+<p>In &sect;9.2.2/159, we had to decide whether compare should be a member of 
+<code>Student_info</code>. We suggested that one way to decide was to ask whether the operation 
+affects the state of the object. The input operator certainly changes its object's state. After 
+all, we use the input operator to read a new value into a preexisting object. Accordingly, 
+we might think that we should make the input operator a member of the <code>Str</code> class. However, 
+doing so won't work as we might expect.</p>
+<p>To see why, we have to remember (&sect;11.2.4/192) how the operands of an expression are 
+bound to the parameters of the overloaded operator function. For a binary operation, the 
+left operand is always bound to the first parameter, and the right operand is bound to the 
+second. In the case of member operator functions, the first parameter (the left operand) is 
+always the one that is passed implicitly to the member function. Thus,</p>
+<div class="prebox"><pre>
+cin &gt;&gt; s;
+</pre></div>
+<p>is equivalent to</p>
+<div class="prebox"><pre>
+cin.operator&gt;&gt;(s);
+</pre></div>
+<p>which calls the overloaded <code>&gt;&gt;</code> operator defined for the object <code>cin</code>. This behavior implies 
+that the <code>&gt;&gt;</code> operator must be a member of class <code>istream</code>.</p>
+<p>Of course, we do not own the definition of <code>istream</code>, so we cannot add this operation 
+to it. If instead we make <code>operator&gt;&gt;</code> a member of <code>Str</code>, then our users would have to 
+invoke the operation on behalf of a <code>Str</code>:</p>
+<div class="prebox"><pre>
+s.operator&gt;&gt;(cin);
+</pre></div>
+<p>or, equivalently,</p>
+<div class="prebox"><pre>
+s  &gt;&gt; cin;
+</pre></div>
+<p>which would flout the conventions used throughout the library. Therefore, we can conclude 
+that the input—and, by analogy, the output—operator must be a nonmember.</p>
+<p>We can now update our <code>Str</code> class appropriately, by adding declarations for the input 
+and output operators to <code>Str.h</code>:</p>
+<div class="prebox"><pre>
+std::istream&amp; operator&gt;&gt;(std::istream&amp;, Str&amp;);            // <i>added</i>
+std::ostream&amp; operator&lt;&lt;(std::ostream&amp;, const Str&amp;) ;     // <i>added</i>
+</pre></div>
+<p>The output operator is easy to write: It will iterate through the <code>Str</code>, writing a single character at a time:</p>
+<div class="prebox"><pre>
+ostream&amp; operator&lt;&lt;(ostream&amp; os, const Str&amp; s)
+{
+    for (Str::size_type i = 0; i != s.size(); ++i)
+         os &lt;&lt; s[i];
+    return os;
+}
+</pre></div>
+<p>The only catch is that this usage forces us to give <code>Str</code> a size function:</p>
+<div class="prebox"><pre>
+class Str {
+public:
+    size_type size() const { return data.size(); }
+    <i>// as before </i>
+};
+</pre></div>
+<p>Despite the simple form of the output operator, we should understand it thoroughly. 
+Each time through the loop, we invoke the <code>Str::operator[]</code> to fetch a character to 
+write. That operator, in turn, calls <code>Vec::operator[]</code> to obtain the actual value from the 
+underlying <code>vector</code>. Similarly, each time through the loop, we determine the size of our 
+<code>Str</code> object by calling <code>s.size()</code>, which calls the size member of the underlying <code>Vec</code> 
+object to determine that object's size.</p>
+<h4>12.3.2 Friends</h4>
+<p>The input operator isn't much harder to write than the output operator. It needs to read 
+and remember characters from the input stream. Each time we call the input operator, it 
+should read and discard any leading whitespace, and then read and remember characters 
+until it hits whitespace or end-of-file. Our input operator is a bit simplified—it ignores 
+some subtleties of the input-output library that are beyond the scope of this book—but 
+it does what we need done:</p>
+<div class="prebox"><pre>
+// this code won't compile quite yet
+istream&amp; operator&gt;&gt;(istream&amp; is, Str&amp; s)
+{ 
+    // <i>obliterate existing</i> value(s)
+    s.data.clear();
+
+    // <i>read and discard leading whitespace</i>
+    char c;
+    while (is.get(c) &amp;&amp; isspace(c))
+        ;    // <i>nothing to do, except testing the condition</i>
+
+    // <i>if still something to read, do so until next whitespace character</i>
+    if(is) {
+        do s.data.push_back(c);      // <b>compile error!</b>, data is private
+        while (is.get(c) &amp;&amp; !isspace(c));
+
+        // <i>if we read whitespace, then put it back on the stream</i>
+        if (is)
+            is.unget();
+    }
+
+    return is;
+}
+</pre></div>
+<p>First we'll explain this function; then we'll explain why it doesn't compile.</p>
+<p>We start by discarding any previous value that <code>data</code> might have, because reading into 
+a <code>Str</code> should obliterate whatever data were present. Next we need to read characters, 
+one at a time, from the given stream, until we encounter a character that is not white-
+space. Because we need to be able to detect whether we just read a whitespace character, 
+we use the get function on the input stream. Unlike the overloaded <code>&gt;&gt;</code> operators, which 
+ignore whitespace, the get function reads and returns whatever character is next in the 
+stream, including whitespace. Therefore, the <code>while</code> loop reads characters until it finds 
+one that is not whitespace, or it runs out of input. If the character we read was white-
+space, then there is nothing to do but read again, so the body of the <code>while</code> is empty.</p>
+<p>The if test checks whether we exited the <code>while</code> because we read a nonwhitespace 
+character or because we ran out of input. If the former, we want to read characters until 
+we hit whitespace again, appending each character that we read to <code>data</code>. We do so in the 
+next statement, which is a <code>do while</code> loop (&sect;7.4.4/136) that arranges to append to <code>data</code> 
+the character that we had already read in the previous <code>while</code> loop, and then continues 
+reading until we run out of input or hit a whitespace character. Each time it reads a nonwhitespace 
+character, it uses <code>push_back</code> to append that character to <code>data</code>.</p>
+<p>We could fall out of the <code>do while</code> either because we can no longer read from <code>is</code>, or 
+because we encountered a whitespace character. If the latter, we have read one character 
+too many, which we put back onto the input stream by calling <code>is.unget()</code>. The <code>unget</code> 
+function undoes the most recent get by backspacing the input stream by one character. 
+After the call to <code>unget</code>, the stream behaves as if the previous get had never been done.</p>
+<p>As the comments indicate, this code fails to compile. The problem is that <code>operator&gt;&gt;</code> 
+is not a member of class <code>Str</code>, so it cannot access the <code>data</code> member of <code>s</code>. We faced a similar 
+problem in &sect;9.3.1/161, when the <code>compare</code> function needed access to the <code>name</code> member 
+from <code>Student_info</code> objects. We solved that problem by adding an accessor function. In 
+this case, giving read access to <code>data</code> isn't enough: The input operator needs to be able to 
+write <code>data</code>, not just read it. The input operator is a part of our general <code>Str</code> abstraction, 
+so giving it write access to <code>data</code> is fine. On the other hand, we do not want all users to 
+have write access to <code>data</code>, so we cannot solve our problem by adding a <code>public</code> member 
+that would let <code>operator&gt;&gt;</code> (and therefore any user) write to <code>data</code>.</p>
+<p>Rather than adding a (<code>public</code>) access function, we can say that the input operator is a 
+<b>friend </b>of class <code>Str</code>. A <code>friend</code> has the same access rights as a member. By making the 
+input operator a friend, we can allow it, along with our member functions, to access the 
+<code>private</code> members of class <code>Str</code>:</p>
+<div class="prebox"><pre>
+class Str {
+    friend std::istream&amp; operator&gt;&gt;(std::istream&amp;, Str&amp;);
+    // <i>as before</i>
+};
+</pre></div>
+<p>We've added a <code>friend</code> declaration to class <code>Str</code>. This declaration says that the version of 
+<code>operator&gt;&gt;</code> that takes an <code>istream&amp;</code> and a <code>Str&amp;</code> may access the <code>private</code> members of 
+<code>Str</code>. Once we have added this declaration to <code>Str</code>, our input operator will compile.</p>
+<p>A <code>friend</code> declaration may appear at any point in the class definition: It makes no difference 
+whether it follows a <code>private</code> or <code>public</code> label. Because a friend function has 
+special access privileges, it is part of the interface to the class. Therefore, it makes sense to 
+group <code>friend</code> declarations at the beginning of the class definition, near the <code>public</code> interface 
+for the class.</p>
+<h4>12.3.3 Other binary operators</h4>
+<p>What remains of our work on the <code>Str</code> class is to implement the <code>+</code> operator. Before we can 
+do so, we must make several decisions: Should the operator be a member? What are its 
+operands' types? What type should it return? As we shall see, these questions turn out to 
+have subtle implications.</p>
+<p>For now, let's make some initial guesses about the answers. First, we know that we 
+want to be able to concatenate values that are of type <code>Str</code>. Second, we can observe that 
+concatenation does not change the value of either operand. These facts suggest that there 
+is no particular reason to decide to make the operator a member function. Finally, we 
+know that we want to be able to chain several concatenations into a single expression in 
+order to allow expressions such as</p>
+<div class="prebox"><pre>
+s1 + s2 + s3
+</pre></div>
+<p>where <code>s1, s2</code>, and <code>s3</code> all have type <code>Str</code>. This usage suggests that the operator should 
+return a <code>Str</code>.</p>
+<p>These decisions imply that we should implement concatenation as a nonmember:</p>
+<div class="prebox"><pre>
+Str operator+(const Str&amp;, const Str&amp;);
+</pre></div>
+<p>Before we launch into implementation, a bit of thought might suggest that if we offer 
+<code>operator+</code>, we might want to provide our users with <code>operator+=</code> as well. That is, 
+we'd like to let our users assign to <code>s</code> the value obtained by concatenating s and <code>s1</code> in 
+either of these forms:</p>
+<div class="prebox"><pre>
+s = s + s1;
+s += s1;
+</pre></div>
+<p>It turns out that the most convenient way to implement <code>operator+</code> is to implement 
+<code>operator+=</code> first. Unlike the simple concatenation operator, the compound version 
+changes its left operand, so we make it a member of the <code>Str</code> class. After adding definitions 
+for the new concatenation operations, our final <code>Str</code> class looks like this:</p>
+<div class="prebox"><pre>
+class Str {
+    // <i>input operator implemented in &sect;12.3.2/216</i>
+    friend std::istream&amp; operator&gt;&gt;(std::istream&amp;, Str&amp;);
+public:
+    Str&amp; operator+=(const Str&amp; s) {
+        std::copy(s.data.begin(), s.data.end(),
+                std::back_inserter(data));
+        return *this;
+    }
+
+    // <i>as before</i>
+    typedef Vec&lt;char&gt;::size_type size_type;
+    Str() { }
+    Str(size_type n, char c): data(n, c) { }
+    Str(const char* cp) {
+        std::copy(cp, cp + std::strlen(cp), std::back_inserter(data));
+    }
+    template&lt;class In&gt; Str(In i, In j) {
+        std::copy(i, j, std::back_inserter(data));
+    }
+
+    char&amp; operator[](size_type i) { return data[i]; }
+    const char&amp; operator[](size_type i) const { return data[i]; }
+    size_type size() const { return data.size(); }
+
+private:
+    Vec&lt;char&gt; data;
+};
+
+// <i>output operator implemented in &sect;12.3:2/216</i>
+std::ostream&amp; operator&lt;&lt;(std::ostream&amp;, const Str&amp;);
+
+Str operator+(const Str&amp;, const Str&amp;);
+</pre></div>
+<p>Because we use a <code>Vec</code> for our underlying storage, implementing <code>operator+=</code> is trivial: 
+We call copy to append a copy of the right operand to the <code>Vec</code> that is the left operand. As 
+usual for assignment, we return a reference to the left object as our result. 
+Now we can implement <code>operator+</code> in terms of <code>operator+=</code>:</p>
+<div class="prebox"><pre>
+Str operator+(const Str&amp; s, const Str&amp; t) {
+    Str r = s;
+    r += t;
+    return r;
+}
+</pre></div>
+<p>Recall that concatenation is a nonmember function that will create a new <code>Str</code>. We create 
+this new <code>Str</code> by initializing a local variable named <code>r</code> to be a copy of <code>s</code>. That initialization 
+uses the <code>Str</code> copy constructor. Next, we invoke the <code>+=</code> operator on <code>r</code> to concatenate <code>t</code>, 
+and then we return <code>r</code> (again through an implicit call to the copy constructor) as the result.</p>
+<h4>12.3.4 Mixed-type expressions</h4>
+<p>We have defined the concatenation <code>operator</code> to take operands of type <code>const Str&amp;</code>. What 
+about expressions that involve character pointers? For example, what if we wanted to use 
+our <code>Str</code> class to implement the program from &sect;1.2/12? That 
+program contained code that looked like</p>
+<div class="prebox"><pre>
+const std::string greeting = &quot;Hello, &quot; + name + &quot;!&quot;;
+</pre></div>
+<p>where <code>name</code> is a <code>string</code>. Analogously, we'd like to be able to write</p>
+<div class="prebox"><pre>
+const Str greeting = &quot;Hello, &quot; + name + &quot;!&quot;;
+</pre></div>
+<p> where <code>name</code> is now a <code>Str</code>.</p>
+<p>We know that the <code>+</code> operator is left-associative, which means that evaluating this 
+expression is equivalent to evaluating</p>
+<div class="prebox"><pre>
+&quot;Hello, &quot; + name
+</pre></div>
+<p>and applying the <code>+</code> operator to the result and <code>&quot;!&quot;</code>. In other words, the expression is 
+equivalent to</p>
+<div class="prebox"><pre>
+(&quot;Hello, &quot; + name) + &quot;!&quot;
+</pre></div>
+<p>By breaking down the expression into its components, we can see that we have two different 
+forms of <code>+</code>. In one case, we pass a string literal as the first operand and a <code>Str</code> as the 
+second. In the other, the left operand is a <code>Str</code> obtained as the result of a concatenation, 
+and the right operand is a string literal. Thus, in each case we are calling <code>+</code> on a <code>const char*</code>  
+and a <code>Str</code> in some order.</p>
+<p>In &sect;12.3.3/218, we defined <code>+</code> with arguments of type <code>Str</code>, not <code>const char*</code>. However, 
+we know from &sect;12.2/213 that by defining a constructor that takes a <code>const char*</code>, 
+we also defined a conversion operator from <code>const char*</code> to <code>Str</code>. Evidently, our <code>Str</code> 
+class handles these expressions already. In each case, the compiler will convert the <code>const char*</code> 
+argument to type <code>Str</code>, and then it will invoke <code>operator+</code>.</p>
+<p>It is important to understand the implications of conversion operations. For example,</p>
+<div class="prebox"><pre>
+Str greeting = &quot;Hello, &quot; + name + &quot;!&quot;; 
+</pre></div>
+<p>gives <code>greeting</code> the same value as if we had written</p>
+<div class="prebox"><pre>
+Str temp1('Hello, &quot;);            // Str::Str(const char*)
+Str temp2 = temp1 + name;        // operator*(const Str&amp;, const Str&amp;)
+Str temp3(&quot;!&quot;)                   // Str::Str(const char*)
+Str greeting = temp2 +  temp3;   // operator*(const Str&amp;, const Str&amp;)
+</pre></div>
+<p>Seeing all these temporaries, we can imagine that this approach might be expensive. In 
+practice, because of the perceived cost of generating temporaries, commercial <code>string</code> 
+library implementations often take the more tedious route of defining specific versions of 
+the concatenation operator for every combination of operands, rather than relying on 
+automatic conversions.</p>
+<h4>12.3.5 Designing binary operators</h4>
+<p>It is important to appreciate the role of conversions in the design of binary operators. If a 
+class supports conversions, then it is usually good practice to define binary operators as 
+nonmember functions. By doing so, we preserve symmetry between the operands.</p>
+<p>If an operator is a member of a class, then that operator's left operand cannot be 
+the result of an automatic conversion. The reason for this restriction is so that when a programmer 
+writes an expression such as <code>x + y</code>, the compiler does not have to examine every 
+type in the entire program to discover whether it is possible to convert <code>x</code> to a type that has 
+a member named <code>operator+</code>. Because of the restriction, the compiler (and the programmer) 
+has to look only at nonmember <code>operator+</code> functions and at <code>operator+</code> functions 
+that are members of the class of <code>x</code>.</p>
+<p>The left operand of a nonmember operator, and the right operand of any operator, follow 
+the same rules as any ordinary function argument: The operand can be of any type 
+that can be converted to the parameter type. If we make the binary operator a member 
+function, we have introduced an asymmetry with respect to its operands: The right 
+operand can be the result of an automatic conversion, but the left operand cannot. Such 
+asymmetries are fine for intrinsically asymmetric operators such as <code>+=</code>, but in the context 
+of symmetric operands, they are confusing and error prone. It is almost always desirable 
+to treat both operands of such operators equivalently, which we can arrange only by making 
+the operator a nonmember function.</p>
+<p>In the case of the assignment versions of binary operators, we want to constrain the left 
+operand to be of the class type. Otherwise, what would happen? If we allowed conversions 
+for the left operand, then we might convert that operand to the class type and assign 
+a new value to the resulting temporary. Because that value would be a temporary object, 
+once we completed the assignment we would have no way to access the object to which 
+we had just assigned! Therefore, like the assignment operator itself, all of the compound-
+assignment operators should be members of the class.</p>
+<div class="prevnext">
+<a href="74.htm"><img src="images/Prev1.gif" /></a>&nbsp;&nbsp;<a href="76.htm"><img src="images/Next1.gif" /></a>
+</div>
+</body>
+</html>

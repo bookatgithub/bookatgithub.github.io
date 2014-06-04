@@ -1,0 +1,50 @@
+<html>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<head>
+<title>Section 7.7.&nbsp; Perl Efficiency Issues</title>
+<link rel="STYLESHEET" type="text/css" href="images/style.css">
+<link rel="STYLESHEET" type="text/css" href="images/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=regex3-CHP-7-SECT-6.html><img src="images/prev.gif" width="60" height="17" border="0" align="absmiddle" alt="Previous Page"></a>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=regex3-CHP-7-SECT-8.html><img src="images/next.gif" width="60" height="17" border="0" align="absmiddle" alt="Next Page"></a>
+</div></td></tr></table>
+<br><table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td valign="top"><a name="regex3-CHP-7-SECT-7"></a>
+<H3 id="title-IDAOYMNF" class="docSection1Title">7.7. Perl Efficiency Issues</H3>
+<a name="IDX-CHP-7-2536"></a> 
+
+<p class="docText">For the most part, efficiency<a name="IDX-CHP-7-2537"></a> 
+ with Perl regular expressions is achieved in the same way as with any tool that uses a Traditional NFA. Use the techniques discussed in <a class="docLink" href="regex3-CHP-6.html#regex3-CHP-6">Chapter 6</a>the internal optimizations, the unrolling methods, the "Think" section all apply to Perl.</P>
+<p class="docText">There are, of course, Perl-specific issues<a name="IDX-CHP-7-2538"></a> 
+ as well, and in this section, we'll look at the following topics:</P>
+<ul><LI><p class="docList"><span class="docEmphStrong">There's More Than One Way To Do It</span> Perl is a toolbox offering many approaches to a solution. Knowing which problems are nails comes with understanding <span class="docEmphasis">The Perl Way</span>, and knowing which hammer to use for any particular nail goes a long way toward making more efficient and more understandable programs. Sometimes efficiency and understandability seem to be mutually exclusive, but a better understanding allows you to make better choices.</p></li><LI><p class="docList"><span class="docEmphStrong">Regex Compilation, <tt>qr/&#8943;/</tt>, the <tt>/o</tt> Modifier, and Efficiency</span> The interpolation and compilation of regex operands are fertile ground for saving time. The <tt>/o</tt> modifier, which I haven't discussed much yet, along with regex objects (<tt>qr/</tt>&#8943;/), gives you some control over when the costly re-compilation takes place.</P></li><LI><p class="docList">The <span class="docEmphStrong">$&amp; Penalty</span> The three match side effect variables, <tt>$', $&amp;</tt>, and <tt>$</tt>', can be convenient, but there's a hidden efficiency <span class="docEmphasis">gotcha</span> waiting in store for any script that uses them, even once, anywhere. Heck, you don't even have to <span class="docEmphasis">use</span> themthe entire script is penalized if one of these variables even <span class="docEmphasis">appears</span> in the script.</P></li><li><p class="docList"><span class="docEmphStrong">The Study Function</span> Since ages past, Perl has provided the <tt>study</tt>(&#8943;) function. Using it supposedly makes regexes faster, but it seems that no one really understands if it does, or why. We'll see whether we can figure it out.</p></LI><LI><p class="docList"><span class="docEmphStrong">Benchmarking</span> When it comes down to it, the fastest program is the one that finishes first. (You can quote me on that.) Whether a small routine, a major function, or a whole program working with live data, benchmarking is the final word on speed. Benchmarking is easy and painless with Perl, although there are various ways to go about it. I'll show you the way I do it, a simple method that has served me well for the hundreds of benchmarks I've done while preparing this book.</p></li><li><p class="docList"><span class="docEmphStrong">Perl's Regex Debugging</span> Perl's regex-debug flag can tell you about some of the optimizations the regex engine and transmission do, or don't do, with your regexes. We'll look at how to do this and see what secrets Perl gives up.</p></LI></ul>
+<a name="regex3-CHP-7-SECT-7.1"></a>
+<h4 id="title-IDAU1MNF" class="docSection2Title">7.7.1. "There's More Than One Way to Do It"</H4>
+<a name="IDX-CHP-7-2539"></a> 
+<a name="IDX-CHP-7-2540"></a> 
+<a name="IDX-CHP-7-2541"></a> 
+
+<p class="docText">There are often many ways to go about solving any particular problem, so there's no substitute for really knowing all that Perl has to offer when balancing efficiency and readability. Let's look at the simple problem of padding an IP<a name="IDX-CHP-7-2542"></a> 
+ address like '<tt>18.181.0.24</tt>' such that each of the four parts becomes exactly three digits: '<tt>018.181.000.024</tt>'. One simple and readable solution is:</p>
+<pre>
+    $ip = sprintf("%03d.%03d.%03d.%03d", split(/\./, $ip));
+</pre><br>
+
+<p class="docText">This is a fine solution, but there are certainly other ways to do the job. In the interest of comparison, <a class="docLink" href="regex3-CHP-7-SECT-8.html#regex3-CHP-7-TABLE-6">Table 7-6</a> examines various ways to achieve the same goal, and their relative efficiency (they're listed from the most efficient to the least). This example's goal is simple and not very interesting in and of itself, yet it represents a common text-handling task, so <span class="docEmphStrong">I</span> encourage you to spend some time understanding the various approaches. You may even see some Perl techniques that are new to you.</P>
+<p class="docText">Each approach produces the same result when given a correct IP address, but fails in different ways if given something else. If there is any chance that the data will be malformed, you'll need more care than any of these solutions provide. That aside, the practical differences lie in efficiency and readability. As for readability, #1 and #13 seem the most straightforward (although it's interesting to see the wide gap in efficiency). Also straightforward are #3 and #4 (similar to #1) and #8 (similar to #13). The rest all suffer from varying degrees of crypticness.</p>
+<p class="docText">So, what about efficiency? Why are some less efficient than others? It's the interactions among how an NFA works (<a class="docLink" href="regex3-CHP-4.html#regex3-CHP-4">Chapter 4</a>), Perl's many regex optimizations (<a class="docLink" href="regex3-CHP-6.html#regex3-CHP-6">Chapter 6</a>), and the speed of other Perl constructs (such as <tt>sprintf</tt>, and the mechanics of the substitution operator). The substitution operator's <tt>/e</tt> modifier, while indispensable at times, does seem to be mostly at the bottom of the list.</P>
+<p class="docText">It's interesting to compare two pairs, <tt>#3/#4</tt> and <tt>#8/#14</tt>. The two regexes of each pair differ only in their use of parentheses  the one without the parentheses is just a bit faster than the one with. But <tt>#8's</tt> use of <tt>$&amp;</tt> as a way to avoid parentheses comes at a high cost not shown by these benchmarks (&#9758; 355).</p>
+
+
+<a href="7041536.html"><img src="images/pixel.jpg" alt="" width="1" height="1" border="0"></a></TD></TR></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=regex3-CHP-7-SECT-6.html><img src="images/prev.gif" width="60" height="17" border="0" align="absmiddle" alt="Previous Page"></a>
+<td align="right"><div STYLE="MARGIN-LEFT: 0.15in;">
+<a href=regex3-CHP-7-SECT-8.html><img src="images/next.gif" width="60" height="17" border="0" align="absmiddle" alt="Next Page"></a>
+</div></td></tr></table>
+</body></html>

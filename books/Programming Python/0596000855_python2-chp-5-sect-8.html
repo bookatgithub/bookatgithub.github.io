@@ -1,0 +1,561 @@
+<html><head>
+<META http-equiv="Content-Type" content="text/html">
+<!--SafClassName="docSection1Title"--><!--SafTocEntry="5.8 Comparing Directory Trees"-->
+<link rel="STYLESHEET" type="text/css" href="FILES/style.css">
+<link rel="STYLESHEET" type="text/css" href="FILES/docsafari.css">
+</head>
+<body>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+	<a href="0596000855_python2-CHP-5-SECT-7.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+	<a href="0596000855_python2-PART-II.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+<br>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr>
+<td valign="top"><A NAME="python2-CHP-5-SECT-8"></A>
+<H3 class="docSection1Title">5.8 Comparing Directory Trees</H3>
+
+<P class="docText">Engineers can be a paranoid sort (but you didn't hear that from
+me). At least I am. It comes from decades of seeing things go
+terribly wrong, I suppose. When I create a CD backup of my hard
+drive, for instance, there's still something a bit too magical
+about the process to trust the CD writer program to do the right
+thing. Maybe I should, but it's tough to have a lot of faith in
+tools that occasionally trash files, and seem to crash my Windows 98
+machine every third Tuesday of the month. When push comes to shove,
+it's nice to be able to verify that data copied to a backup CD
+is the same as the original -- or at least spot deviations from
+the original -- as soon as possible. If a backup is ever needed,
+it will be <span class="docEmphasis">really</span> needed.
+</P>
+
+<P class="docText">Because data CDs are accessible as simple directory trees, we are
+once again in the realm of tree walkers -- to verify a backup CD,
+we simply need to walk its top-level directory. We've already
+written a generic walker class (the <TT>visitor</TT>
+module), but it won't help us here directly: we need to walk
+<span class="docEmphasis">two</span> directories in parallel and inspect common
+files along the way. Moreover, walking either one of the two
+directories won't allow us to spot files and directories that
+only exist in the other. Something more custom seems in order here.
+</P>
+
+<A NAME="python2-CHP-5-SECT-8.1"></A>
+<H4 class="docSection2Title">5.8.1 Finding Directory Differences</H4>
+
+<P class="docText">Before we start coding, the first thing we need to clarify is what it
+means to compare two directory trees. If both trees have exactly the
+same branch structure and depth, this problem reduces to comparing
+corresponding files in each tree. In general, though, the trees can
+have arbitrarily different shapes, depth, and so on.
+</P>
+
+<P class="docText">More generally, the contents of a directory in one tree may have more
+or fewer entries than the corresponding directory in the other tree.
+If those differing contents are filenames, there is no corresponding
+file to compare; if they are directory names, there is no
+corresponding branch to descend through. In fact, the only way to
+detect files and directories that appear in one tree but not the
+other is to detect differences in each level's directory.
+</P>
+
+<P class="docText">In other words, a tree comparison algorithm will also have to perform
+<span class="docEmphasis">directory</span> comparisons along the way. Because
+this is a nested, and simpler operation, let's start by coding
+a single-directory comparison of filenames in <A class="docLink" HREF="#python2-CHP-5-EX-24">Example 5-24</A>.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-5-EX-24"></A>Example 5-24. PP2E\System\Filetools\dirdiff.py </H5>
+<PRE>#!/bin/env python
+########################################################
+# use: python dirdiff.py dir1-path dir2-path
+# compare two directories to find files that exist 
+# in one but not the other;  this version uses the
+# os.listdir function and list difference;  note 
+# that this script only checks filename, not file
+# contents--see diffall.py for an extension that
+# does the latter by comparing .read(  ) results;
+########################################################
+
+import os, sys
+
+def reportdiffs(unique1, unique2, dir1, dir2):
+    if not (unique1 or unique2):
+        print 'Directory lists are identical'
+    else:
+        if unique1:
+            print 'Files unique to', dir1 
+            for file in unique1: 
+                print '...', file        
+        if unique2:
+            print 'Files unique to', dir2 
+            for file in unique2: 
+                print '...', file        
+
+def unique(seq1, seq2):
+    uniques = []                      # return items in seq1 only
+    for item in seq1:
+        if item not in seq2:
+            uniques.append(item)
+    return uniques
+
+def comparedirs(dir1, dir2):
+    print 'Comparing', dir1, 'to', dir2
+    files1  = os.listdir(dir1)
+    files2  = os.listdir(dir2)
+    unique1 = unique(files1, files2)
+    unique2 = unique(files2, files1)
+    reportdiffs(unique1, unique2, dir1, dir2)
+    return not (unique1 or unique2)               # true if no diffs
+
+def getargs(  ):
+    try:
+        dir1, dir2 = sys.argv[1:]                 # 2 command-line args
+    except:
+        print 'Usage: dirdiff.py dir1 dir2'
+        sys.exit(1)
+    else:
+        return (dir1, dir2)
+
+if __name__ == '__main__':
+    dir1, dir2 = getargs(  )
+    comparedirs(dir1, dir2)</PRE>
+
+
+<P class="docText">Given listings of names in two directories, this script simply picks
+out unique names in the first, unique names in the second, and
+reports any unique names found as differences (that is, files in one
+directory but not the other). Its <TT>comparedirs</TT>
+function returns a true result if no differences were
+found -- useful for detecting differences in callers.
+</P>
+
+<P class="docText">Let's run this script on a few directories; differences are
+detected and reported as names unique in either passed-in directory
+pathname. Notice that this is only a <span class="docEmphasis">structural</span>
+comparison that just checks names in listings, not file contents
+(we'll add the latter in a moment):
+</P>
+
+<PRE>C:\temp&gt;<B>python %X%\system\filetools\dirdiff.py examples cpexamples</B>
+Comparing examples to cpexamples
+Directory lists are identical
+
+C:\temp&gt;<B>python %X%\system\filetools\dirdiff.py </B>
+                                  <B>examples\PyTools cpexamples\PyTools</B>
+Comparing examples\PyTools to cpexamples\PyTools
+Files unique to examples\PyTools
+... visitor.py
+
+C:\temp&gt;<B>python %X%\system\filetools\dirdiff.py </B>
+                                  <B>examples\System\Filetools</B>
+<B>                                  cpexamples\System\Filetools</B>
+Comparing examples\System\Filetools to cpexamples\System\Filetools
+Files unique to examples\System\Filetools
+... dirdiff2.py
+Files unique to cpexamples\System\Filetools
+... cpall.py</PRE>
+
+<P class="docText">The <TT>unique</TT> function is the heart of this script:
+it performs a simple list difference operation. Here's how it
+works apart from the rest of this script's code:
+</P>
+
+<PRE>&gt;&gt;&gt; <B>L1 = [1, 3, 5, 7, 9]</B>
+&gt;&gt;&gt; <B>L2 = [2, 3, 6, 8, 9]</B>
+&gt;&gt;&gt; <B>from dirdiff import unique</B>
+&gt;&gt;&gt; <B>unique(L1, L2)                  </B># items in L1 but not in L2
+[1, 5, 7]
+&gt;&gt;&gt; <B>unique(L2, L1)                  </B># items in L2 but not in L1
+[2, 6, 8]</PRE>
+
+<P class="docText">These two lists have objects 3 and 9 in common; the rest appear only
+in one of the two. When applied to directories,
+<span class="docEmphasis">unique</span> items represent tree differences, and
+<span class="docEmphasis">common</span> items are names of files or
+subdirectories that merit further comparisons or traversal. There are
+other ways to check this code; see the <TT>dirdiff</TT>
+variants in the book's CD for a few.
+</P>
+
+
+<A NAME="python2-CHP-5-SECT-8.2"></A>
+<H4 class="docSection2Title">5.8.2 Finding Tree Differences</H4>
+
+<P class="docText">Now all we need is a tree walker that applies
+<TT>dirdiff</TT> at each level to pick out unique files and
+directories, explicitly compares the contents of files in common, and
+descends through directories in common. <A class="docLink" HREF="#python2-CHP-5-EX-25">Example 5-25</A>
+fits the bill.
+</P>
+
+
+<H5 class="docExampleTitle"><A NAME="python2-CHP-5-EX-25"></A>Example 5-25. PP2E\System\Filetools\diffall.py </H5>
+<PRE>#########################################################
+# Usage: "python diffall.py dir1 dir2".
+# recursive tree comparison--report files that exist 
+# in only dir1 or dir2, report files of same name in 
+# dir1 and dir2 with differing contents, and do the 
+# same for all subdirectories of the same names in 
+# and below dir1 and dir2; summary of diffs appears 
+# at end of output (but search redirected output for 
+# "DIFF" and "unique" strings for further details);
+#########################################################
+
+import os, dirdiff
+
+def intersect(seq1, seq2):
+    commons = []               # items in seq1 and seq2
+    for item in seq1:
+        if item in seq2:
+            commons.append(item)
+    return commons
+
+def comparedirs(dir1, dir2, diffs, verbose=0):
+    # compare filename lists
+    print '-'*20
+    if not dirdiff.comparedirs(dir1, dir2):
+        diffs.append('unique files at %s - %s' % (dir1, dir2))
+
+    print 'Comparing contents'
+    files1 = os.listdir(dir1)
+    files2 = os.listdir(dir2)
+    common = intersect(files1, files2)
+
+    # compare contents of files in common
+    for file in common:
+        path1 = os.path.join(dir1, file)
+        path2 = os.path.join(dir2, file)
+        if os.path.isfile(path1) and os.path.isfile(path2):
+            bytes1 = open(path1, 'rb').read(  )
+            bytes2 = open(path2, 'rb').read(  )
+            if bytes1 == bytes2:
+                if verbose: print file, 'matches'
+            else:
+                diffs.append('files differ at %s - %s' % (path1, path2))
+                print file, 'DIFFERS'
+
+    # recur to compare directories in common
+    for file in common:
+        path1 = os.path.join(dir1, file)
+        path2 = os.path.join(dir2, file)
+        if os.path.isdir(path1) and os.path.isdir(path2):
+            comparedirs(path1, path2, diffs, verbose)
+
+if __name__ == '__main__':
+    dir1, dir2 = dirdiff.getargs(  )
+    mydiffs = []
+    comparedirs(dir1, dir2, mydiffs)        # changes mydiffs in-place
+    print '='*40                            # walk, report diffs list
+    if not mydiffs:
+        print 'No diffs found.'
+    else:
+        print 'Diffs found:', len(mydiffs)
+        for diff in mydiffs: print '-', diff</PRE>
+
+
+<P class="docText">At each directory in the tree, this script simply runs the
+<TT>dirdiff</TT> tool to detect unique names, and then
+compares names in common by intersecting directory lists. Since
+we've already studied the tree-walking tools this script
+employs, let's jump right into a few example runs. When run on
+identical trees, status messages scroll during the traversal, and a
+"No diffs found" message appears at the end:
+</P>
+
+<PRE>C:\temp&gt;<B>python %X%\system\filetools\diffall.py examples cpexamples </B>
+--------------------
+Comparing examples to cpexamples
+Directory lists are identical
+Comparing contents
+--------------------
+Comparing examples\old_Part2 to cpexamples\old_Part2
+Directory lists are identical
+Comparing contents
+--------------------
+<I> ...more lines deleted...</I>
+--------------------
+Comparing examples\EmbExt\Regist to cpexamples\EmbExt\Regist
+Directory lists are identical
+Comparing contents
+--------------------
+Comparing examples\PyTools to cpexamples\PyTools
+Directory lists are identical
+Comparing contents
+========================================
+No diffs found.</PRE>
+
+<P class="docText">To show how differences are reported, we need to generate a few.
+Let's run the global search-and-replace script we met earlier,
+to change a few files scattered about one of the trees (see -- I
+told you global replacement could trash your files!):
+</P>
+
+<PRE>C:\temp\examples&gt;<B>python %X%\PyTools\visitor_replace.py -exec SPAM</B>
+Are you sure?<B>y</B>
+...
+1355 =&gt; .\PyTools\visitor_find_quiet1.py
+1356 =&gt; .\PyTools\fixeoln_one.doc.txt
+Visited 1356 files
+Changed 8 files:
+.\package.csh
+.\README-PP2E.txt
+.\readme-old-pp1E.txt
+.\temp
+.\remp
+.\Internet\Cgi-Web\fixcgi.py
+.\System\Processes\output.txt
+.\PyTools\cleanpyc.py</PRE>
+
+<P class="docText">While we're at it, let's remove a few common files so
+directory uniqueness differences show up on the scope too; the
+following three removal commands will make two directories differ
+(the last two commands impact the same directory in different trees):
+</P>
+
+<PRE>C:\temp&gt;<B>rm cpexamples\PyTools\visitor.py</B>
+C:\temp&gt;<B>rm cpexamples\System\Filetools\dirdiff2.py</B>
+C:\temp&gt;<B>rm examples\System\Filetools\cpall.py</B></PRE>
+
+<P class="docText">Now, rerun the comparison walker to pick out differences, and pipe
+its output report to a file for easy inspection. The following lists
+just the parts of the output report that identify differences. In
+typical use, I inspect the summary at the bottom of the report first,
+and then search for strings "DIFF" and
+"unique" in the report's text if I need more
+information about the differences summarized:
+</P>
+
+<PRE>C:\temp&gt;<B>python %X%\system\filetools\diffall.py examples cpexamples &gt; diffs</B>
+C:\temp&gt;<B>type diffs</B>
+--------------------
+Comparing examples to cpexamples
+Directory lists are identical
+Comparing contents
+package.csh DIFFERS
+README-PP2E.txt DIFFERS
+readme-old-pp1E.txt DIFFERS
+temp DIFFERS
+remp DIFFERS
+--------------------
+Comparing examples\old_Part2 to cpexamples\old_Part2
+Directory lists are identical
+Comparing contents
+--------------------
+...
+--------------------
+Comparing examples\Internet\Cgi-Web to cpexamples\Internet\Cgi-Web
+Directory lists are identical
+Comparing contents
+fixcgi.py DIFFERS
+--------------------
+...
+--------------------
+Comparing examples\System\Filetools to cpexamples\System\Filetools
+Files unique to examples\System\Filetools
+... dirdiff2.py
+Files unique to cpexamples\System\Filetools
+... cpall.py
+Comparing contents
+--------------------
+...
+--------------------
+Comparing examples\System\Processes to cpexamples\System\Processes
+Directory lists are identical
+Comparing contents
+output.txt DIFFERS
+--------------------
+...
+--------------------
+Comparing examples\PyTools to cpexamples\PyTools
+Files unique to examples\PyTools
+... visitor.py
+Comparing contents
+cleanpyc.py DIFFERS
+========================================
+Diffs found: 10
+- files differ at examples\package.csh - cpexamples\package.csh
+- files differ at examples\README-PP2E.txt - cpexamples\README-PP2E.txt
+- files differ at examples\readme-old-pp1E.txt - cpexamples\readme-old-pp1E.txt
+- files differ at examples\temp - cpexamples\temp
+- files differ at examples\remp - cpexamples\remp
+- files differ at examples\Internet\Cgi-Web\fixcgi.py - 
+			cpexamples\Internet\Cgi-Web\fixcgi.py
+- unique files at examples\System\Filetools - 
+			cpexamples\System\Filetools
+- files differ at examples\System\Processes\output.txt - 
+			cpexamples\System\Processes\output.txt
+- unique files at examples\PyTools - cpexamples\PyTools
+- files differ at examples\PyTools\cleanpyc.py - cpexamples\PyTools\cleanpyc.py</PRE>
+
+<P class="docText">I added line breaks and tabs in a few of these output lines to make
+them fit on this page, but the report is simple to understand. Ten
+differences were found -- the eight files we changed (trashed)
+with the replacement script, and the two directories we threw out of
+sync with the three <I>rm</I> remove commands.
+</P>
+
+<A NAME="python2-CHP-5-SECT-8.2.1"></A>
+<H5 class="docSection3Title">5.8.2.1 Verifying CD backups</H5>
+
+<P class="docText">So how does this script placate CD backup paranoia? To double-check
+my CD writer's work, I run a command like the following. I can
+also use a command like this to find out what has been changed since
+the last backup. Again, since the CD is "G:" on my
+machine when plugged in, I provide a path rooted there; use a root
+such as <I>/dev/cdrom</I> on Linux:
+</P>
+
+<PRE>C:\temp&gt;<B>python %X%\system\filetools\diffall.py  </B>
+<B>                    examples g:\PP2ndEd\examples\PP2E &gt; exdiffs091500 </B>
+
+C:\temp&gt;<B>more exdiffs091500 </B>
+--------------------
+Comparing examples to g:\PP2ndEd\examples\PP2E
+Files unique to examples
+... .cshrc
+Comparing contents
+tounix.py DIFFERS
+--------------------
+Comparing examples\old_Part2 to g:\PP2ndEd\examples\PP2E\old_Part2
+Directory lists are identical
+Comparing contents
+--------------------
+<I> ...more</I>
+visitor_fixeoln.py DIFFERS
+visitor_fixnames.py DIFFERS
+========================================
+Diffs found: 41
+- unique files at examples - g:\PP2ndEd\examples\PP2E
+- files differ at examples\tounix.py - g:\PP2ndEd\examples\PP2E\tounix.py
+<I> ...more</I></PRE>
+
+<P class="docText">The CD spins, the script compares, and a summary of 41 differences
+appears at the end of the report (in this case, representing changes
+to the examples tree since the latest backup CD was burned). For an
+example of a full difference report, see file
+<I>exdiffs091500</I> on the book's CD. More
+typically, this is what turns up for most of my example
+backups -- files with a leading "." are not copied to
+the CD:
+</P>
+
+<PRE>C:\temp&gt;<B>python %X%\System\Filetools\diffall.py </B>
+<B>                    examples g:\PP2ndEd\examples\PP2E</B>
+...
+--------------------
+Comparing examples\Config to g:\PP2ndEd\examples\PP2E\Config
+Files unique to examples\Config
+... .cshrc
+Comparing contents
+========================================
+Diffs found: 1
+- unique files at examples\Config - g:\PP2ndEd\examples\PP2E\Config</PRE>
+
+<P class="docText">And to <span class="docEmphasis">really</span> be sure, I run the following
+global comparison command against the true book directory, to verify
+the entire book tree backup on CD:
+</P>
+
+<PRE>C:\&gt;<B>python %X%\System\Filetools\diffall.py PP2ndEd G:\PP2ndEd </B>
+--------------------
+Comparing PP2ndEd to G:\PP2ndEd
+Files unique to G:\PP2ndEd
+... examples.tar.gz
+Comparing contents
+README.txt DIFFERS
+--------------------
+<I> ...more</I>
+--------------------
+Comparing PP2ndEd\examples\PP2E\Config to G:\PP2ndEd\examples\PP2E\Config
+Files unique to PP2ndEd\examples\PP2E\Config
+... .cshrc
+Comparing contents
+--------------------
+<I> ...more</I>
+--------------------
+Comparing PP2ndEd\chapters to G:\PP2ndEd\chapters
+Directory lists are identical
+Comparing contents
+ch01-intro.doc DIFFERS
+ch04-os3.doc DIFFERS
+ch05-gui1.doc DIFFERS
+ch06-gui2.doc DIFFERS
+--------------------
+<I> ...more</I>
+========================================
+Diffs found: 11
+- unique files at PP2ndEd - G:\PP2ndEd
+- files differ at PP2ndEd\README.txt - G:\PP2ndEd\README.txt
+<I> ...more</I></PRE>
+
+<P class="docText">This particular run indicates that I've changed a
+"readme" file, four chapter files, and a bunch more since
+the last backup; if run immediately after making a backup, only the
+.<I>cshrc</I> unique file shows up on
+<TT>diffall</TT> radar. This global comparison can take a
+few minutes -- it performs byte-for-byte comparisons of all
+chapter files and screen shots, the examples tree, an image of the
+book's CD, and more, but it's an accurate and complete
+verification. Given that this book tree contained roughly 119M of
+data in 7300 files and 570 directories the last time I checked, a
+more manual verification procedure without Python's help would
+be utterly impossible.
+</P>
+
+<P class="docText">Finally, it's worth noting that this script still only
+<span class="docEmphasis">detects</span> differences in the tree, but does not
+give any further details about individual file differences. In fact,
+it simply loads and compares the binary contents of corresponding
+files with a single string comparison -- it's a simple
+yes/no result.<sup class="docFootnote"><A class="docLink" HREF="#">[11]</A></sup> If and when I need
+more details about how two reported files actually differ, I either
+edit the files, or run the file-comparison command on the host
+platform (e.g., <I>fc</I> on Windows/DOS,
+<I>diff</I> or <I>cmp</I> on Unix and Linux).
+That's not a portable solution for this last step; but for my
+purposes, just finding the differences in a 1300-file tree was much
+more critical than reporting which lines differ in files flagged in
+the report.
+</P>
+<blockquote><p class="docFootnote"><sup><A NAME="">[11]</A></sup> We might try to do a bit better here,
+by opening text files in text mode to ignore line-terminator
+differences, but it's not clear that such differences should be
+blindly ignored (what if the caller wants to know if line-end markers
+have been changed?). We could also be smarter by avoiding the load
+and compare steps for files that differ in size, and read files in
+small chunks, instead of all at once, to minimize memory requirements
+for huge files (see earlier examples such as the
+<TT>cpall</TT> script for hints). For my comparisons, such
+optimizations are unnecessary.</p></blockquote>
+
+<P class="docText">Of course, since we can always run shell commands in Python, this
+last step could be automated by spawning a <I>diff</I> or
+<I>fc</I> command with <TT>os.popen</TT> as
+differences are encountered (or after the traversal, by scanning the
+report summary). Because Python excels at processing files and
+strings, though, it's possible to go one step further and code
+a Python equivalent of the <I>fc</I> and
+<I>diff</I> commands. Since this is beyond both this
+script's scope and this chapter's size limits, that will
+have to await the attention of a curious reader.
+</P>
+
+
+
+
+<ul></ul>
+</td>
+</tr>
+</table>
+<td></td>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#CCCCCC">
+<td><font color="black" size=1>I l<font color="#FF0000">@</font>ve RuBoard</td>
+<td valign="top" class="v2" align="right">
+          <a href="0596000855_python2-CHP-5-SECT-7.html"><img src="FILES/previous.gif" width="62" height="15" border="0" align="absmiddle" alt="Previous Section"></a>
+          <a href="0596000855_python2-PART-II.html"><img src="FILES/next.gif" width="41" height="15" border="0" align="absmiddle" alt="Next Section"></a>
+</td></table>
+</body></html>
